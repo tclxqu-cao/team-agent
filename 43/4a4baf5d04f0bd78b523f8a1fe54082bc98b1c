@@ -1,0 +1,125 @@
+packages/core/src/application/collaboration/prompts.test.ts
+  s_2911aca65abb96::t_ec12a6081838c5 1-145
+packages/core/src/application/collaboration/prompts.ts
+  s_2911aca65abb96::t_0614cb16620887 7-45,59,62-63,76-77,82-85
+packages/core/src/application/supervision/SupervisionInterventions.test.ts
+  s_3ceb53ac8d08a5::t_6507dffdf41642 1-184
+packages/core/src/application/supervision/SupervisionService.test.ts
+  s_2911aca65abb96::t_2a173d610b4ad5 4,12,15,17-18,20-21,60-136,196-198,219
+packages/core/src/application/supervision/SupervisionService.ts
+  s_2911aca65abb96::t_dee76d246e38d0 2-3,22,41-78,87-88,99,104-119,126,146,148,198-199,204-208,210,215,220,222,225-237,249-251,254,256,308,310,315-325,328,330-334,339-340,343-377,379-387
+packages/core/src/application/supervision/ports.ts
+  s_2911aca65abb96::t_51e2bd59e22311 2,7-9,16-18
+packages/core/src/domain/collaboration/CollaborationDiscussion.ts
+  s_2911aca65abb96::t_4d642e1a499771 41
+packages/core/src/domain/collaboration/CollaborationGroup.test.ts
+  s_e5ecdbe762e554::t_5a19b6173dd316 6-13
+packages/core/src/domain/collaboration/images.ts
+  s_1ee35f0d7d1f1c::t_f8b9748e43fa7f 1-26
+packages/core/src/domain/collaboration/types.ts
+  s_e5ecdbe762e554::t_7b11d031ed6cbc 7,25-27,38-39,60-61,162,179
+packages/core/src/domain/supervision/messages.ts
+  s_797a9328904a51::t_a0c98b634120c9 1-20
+packages/core/src/domain/supervision/types.ts
+  s_797a9328904a51::t_44e2f6cb13f0f9 28-29,41-70,78,100
+packages/core/src/infrastructure/SQLiteSupervisionRepository.ts
+  s_2911aca65abb96::t_b4daf60151e6c6 2-3,19-24,26,36-80
+packages/server/lib/collaboration/collaboration-e2e.test.ts
+  s_329709ed0bce18::t_c3c0876b2c22f2 100-113
+packages/server/lib/collaboration/runtime.test.ts
+  s_1ee35f0d7d1f1c::t_b234f0282e79a6 42-54
+packages/server/lib/collaboration/runtime.ts
+  s_1dc5bc88e0d2f8::t_fbb8ffd114911d 22,27-34,189,207
+packages/server/lib/supervision/runtime.test.ts
+  s_521ae04822eb74::t_fc3fc7826e6c75 4,7-8,14-15,18,20-23,35-36,43-46,52-64,66-68,75-144
+packages/server/lib/supervision/runtime.ts
+  s_521ae04822eb74::t_0fa1d9b17b27e4 2,5-6,49-59,63-65,78,83,94,98,103-116,139-142,152,154-182,184-192,203,217-218
+packages/core/src/application/collaboration/CollaborationService.test.ts
+  s_1dc5bc88e0d2f8::t_0a50667d401a92 40-139
+packages/core/src/application/collaboration/CollaborationService.ts
+  s_1dc5bc88e0d2f8::t_78a7a4cfe41a40 9,131-150,167,229,231,240,512,627
+packages/core/src/application/collaboration/ports.ts
+  s_1dc5bc88e0d2f8::t_bf963d29d5ef1a 52,56-57
+packages/core/src/domain/collaboration/CollaborationGroup.ts
+  s_1dc5bc88e0d2f8::t_b99e7ae0aec4b5 17-22,113,116-119
+packages/core/src/infrastructure/SQLiteSupervisionRepository.test.ts
+  s_797a9328904a51::t_6b5ed7a9c96127 6,21-22,32-55
+packages/server/app/api/collaboration/route.ts
+  s_1dc5bc88e0d2f8::t_b5f199f8001bea 5-6,27-30,63,97,99,128-133
+packages/server/lib/collaboration/schedules.test.ts
+  s_1dc5bc88e0d2f8::t_ef87a903668e8c 1-53
+packages/server/lib/collaboration/schedules.ts
+  s_1dc5bc88e0d2f8::t_ea24d711d56e1f 1-41
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "434a4baf5d04f0bd78b523f8a1fe54082bc98b1c",
+  "prompts": {},
+  "sessions": {
+    "s_1dc5bc88e0d2f8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a19ebc-e76d-7da1-b279-80330e5e449d",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_1ee35f0d7d1f1c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a19c5f-95d8-7f12-89bd-9b30d43d1751",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_2911aca65abb96": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a17d71-f537-7bc0-bdf2-3f59811b32b3",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_329709ed0bce18": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a19c77-5d08-75a0-bcf7-ebc801b44714",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_3ceb53ac8d08a5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a19ca6-d064-7201-a001-535a24a777fe",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_521ae04822eb74": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a19cda-c364-7381-9c96-0859a7789785",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_797a9328904a51": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a19cca-fd70-7701-869a-d1900fff9700",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_e5ecdbe762e554": {
+      "agent_id": {
+        "tool": "github-copilot-cli",
+        "id": "b1fcc3ad-91d4-4ba5-a1ec-d801ddea34a1",
+        "model": "unknown"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
