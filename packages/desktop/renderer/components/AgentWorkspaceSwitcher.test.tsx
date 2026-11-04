@@ -6,7 +6,7 @@ import { AGENT_TYPES } from "../../../core/src/domain/agent/agent-type";
 import { AGENT_LABELS } from "../lib/agent-catalog";
 
 describe("AgentWorkspaceSwitcher", () => {
-  it("renders all eight independent Agent choices in stable order", () => {
+  it("renders all independent Agent choices in stable order", () => {
     const html = renderToStaticMarkup(createElement(AgentWorkspaceSwitcher, {
       value: "codex",
       health: [],
@@ -20,13 +20,13 @@ describe("AgentWorkspaceSwitcher", () => {
     expect(html.indexOf("OpenCode")).toBeLessThan(html.indexOf("DeepSeek Harness"));
     expect(html).toContain('aria-label="Codex"');
     expect(html).toContain('aria-selected="true"');
-    expect(html.match(/data-agent-icon=/g)).toHaveLength(8);
+    expect(html.match(/data-agent-icon=/g)).toHaveLength(AGENT_TYPES.length);
     expect(html).toContain('data-agent-icon="customer-agent"');
     expect(html).toContain('data-agent-icon="codex"');
     expect(html).toContain('data-agent-icon="claude-code"');
     expect(html).toContain('data-agent-icon="opencode"');
     expect(html).toContain('data-agent-icon="deepseek-harness"');
-    for (const id of ["qoder", "zcode", "workbuddy"]) expect(html).toContain(`data-agent-icon="${id}"`);
+    for (const id of ["qoder", "zcode", "workbuddy", "copilot"]) expect(html).toContain(`data-agent-icon="${id}"`);
     expect(html).not.toMatch(/>CA<|>CX<|>CC<|>OC</);
     expect(html).not.toMatch(/<i\b/);
   });
@@ -44,7 +44,7 @@ describe("AgentWorkspaceSwitcher", () => {
     }));
 
     expect(html).toContain('aria-orientation="vertical"');
-    expect(html.match(/data-agent-icon=/g)).toHaveLength(8);
+    expect(html.match(/data-agent-icon=/g)).toHaveLength(AGENT_TYPES.length);
     expect(html).not.toMatch(/<i\b/);
     expect(html).toContain("远程未安装 OpenCode");
     expect(html).toContain('aria-disabled="true"');

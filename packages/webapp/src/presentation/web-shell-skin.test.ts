@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => {
   const setSkinMock = vi.fn();
-  const getStateMock = vi.fn(() => ({ setSkin: setSkinMock }));
+  const getStateMock = vi.fn(() => ({ skin: undefined as string | undefined, setSkin: setSkinMock }));
   return { setSkinMock, getStateMock };
 });
 
@@ -91,6 +91,16 @@ describe("installWebShellSkinBridge", () => {
       f.fireMessage({ type: WEB_SHELL_SKIN_MESSAGE_TYPE, skin });
     }
     expect(mocks.setSkinMock.mock.calls).toEqual(skins.map((skin) => [skin]));
+    dispose();
+  });
+
+  it("does not write a stale pane's full preference record when the skin is unchanged", () => {
+    const f = makeFakeWindow({ isTopLevel: false });
+    (globalThis as { window: unknown }).window = f.window;
+    mocks.getStateMock.mockReturnValueOnce({ skin: "glass", setSkin: mocks.setSkinMock });
+    const dispose = installWebShellSkinBridge();
+    f.fireMessage({ type: WEB_SHELL_SKIN_MESSAGE_TYPE, skin: "glass" });
+    expect(mocks.setSkinMock).not.toHaveBeenCalled();
     dispose();
   });
 

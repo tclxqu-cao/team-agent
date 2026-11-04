@@ -17,7 +17,8 @@ export function installWebShellSkinBridge(): () => void {
     const data = event.data as { type?: unknown; skin?: unknown } | null;
     if (!data || typeof data !== "object" || data.type !== WEB_SHELL_SKIN_MESSAGE_TYPE) return;
     if (typeof data.skin !== "string" || !SKIN_IDS.includes(data.skin as SkinId)) return;
-    useUIStore.getState().setSkin(data.skin as SkinId);
+    const state = useUIStore.getState();
+    if (state.skin !== data.skin) state.setSkin(data.skin as SkinId);
   };
 
   window.addEventListener("message", onMessage);

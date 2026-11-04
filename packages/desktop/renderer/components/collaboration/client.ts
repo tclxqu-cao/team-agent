@@ -17,6 +17,7 @@ export const AGENT_NAMES = {
   qoder: "Qoder",
   zcode: "ZCode",
   workbuddy: "WorkBuddy",
+  copilot: "VS Code Copilot",
 } as const;
 export const DISCUSSION_STATUS = {
   idle: "未开始",

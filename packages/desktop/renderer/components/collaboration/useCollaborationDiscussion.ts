@@ -20,6 +20,7 @@ export function useCollaborationDiscussion(groupId: string, initialDiscussionId?
     null,
   );
   const sending = useRef(false);
+  const pollError = useRef<string | null>(null);
   const begin = () => {
     pending.current++;
     setBusy(true);
@@ -107,9 +108,16 @@ export function useCollaborationDiscussion(groupId: string, initialDiscussionId?
           setDiscussion(snapshot);
           await refreshHistory();
         }
-        setError("");
+        if (pollError.current) {
+          const previousError = pollError.current;
+          setError(value => value === previousError ? "" : value);
+          pollError.current = null;
+        }
       } catch (err) {
-        if (live) setError(err instanceof Error ? err.message : String(err));
+        if (live) {
+          pollError.current = err instanceof Error ? err.message : String(err);
+          setError(pollError.current);
+        }
       } finally {
         inFlight = false;
       }
@@ -185,7 +193,7 @@ export function useCollaborationDiscussion(groupId: string, initialDiscussionId?
       end();
     }
   };
-  const send = async (text: string, messageId: string) => {
+  const send = async (text: string, messageId: string, images?: string[], onCreated?: (id: string) => void) => {
     if (sending.current) return false;
     sending.current = true;
     begin();
@@ -193,8 +201,9 @@ export function useCollaborationDiscussion(groupId: string, initialDiscussionId?
     try {
       const target = selected || (await create())?.id;
       if (!target) return false;
+      if (!selected) onCreated?.(target);
       const snapshot = await collaborationRequest<CollaborationDiscussionState>(
-        { action: "send", discussionId: target, text, messageId },
+        { action: "send", discussionId: target, text, messageId, ...(images?.length ? { images } : {}) },
       );
       if (
         current.current.selected === target &&

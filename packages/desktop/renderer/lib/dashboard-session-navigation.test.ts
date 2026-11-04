@@ -100,11 +100,23 @@ it("reuses the navigation core page for the first paint instead of reading the s
   expect(result.session).not.toHaveProperty("messages");
 });
 
-it("keeps the ordinary history contract for other Agents", async () => {
+it("reuses the ordinary first history page for other Agents without another loading gap", async () => {
   const { api, getSession } = fixture();
   const other = { ...target, id: "harness-session", agentType: "deepseek-harness" as const };
   getSession.mockResolvedValue({ ...other, projectId: "project" } as unknown as Awaited<ReturnType<typeof getSession>>);
   const result = await resolveDashboardSession(api, other, new AbortController().signal);
-  expect(getSession).toHaveBeenCalledWith(other.id, { limit: 1 });
-  expect(result.initialHistory).toBeUndefined();
+  expect(getSession).toHaveBeenCalledWith(other.id, { limit: 50 });
+  const paint = vi.fn();
+  await loadProgressiveSessionHistoryPage(api, other.id, other.agentType, { limit: 50 }, paint, () => true,
+    async () => result.initialHistory.detail);
+  expect(getSession).toHaveBeenCalledTimes(1);
+  expect(paint).toHaveBeenCalledWith(expect.objectContaining({ id: other.id }), "full");
+});
+
+it("provides a distinct history seed when the same session is reopened", async () => {
+  const { api } = fixture();
+  const first = await resolveDashboardSession(api, target, new AbortController().signal);
+  const repeated = await resolveDashboardSession(api, target, new AbortController().signal);
+  expect(repeated.initialHistory.sessionId).toBe(first.initialHistory.sessionId);
+  expect(repeated.initialHistory).not.toBe(first.initialHistory);
 });

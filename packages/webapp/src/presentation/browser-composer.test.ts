@@ -51,7 +51,7 @@ describe("shared composer panel layout", () => {
     expect(chatView).toContain('type="file"');
     expect(chatView).toContain("fileInputRef.current?.click()");
     expect(chatView).not.toContain("isBrowserRuntime");
-    expect(chatView).toContain('placeholder={codexReleaseState === "released" ? "已停止在 AgentRoam 中使用；Codex Desktop 最长约 30 分钟后可用" : isCompatibilityReadOnly ? (compatibilityStatus === "incompatible" ? "Codex 版本不兼容" : "正在验证会话兼容性")');
+    expect(chatView).toContain('codexReleaseState === "released" ? "已停止在 AgentRoam 中使用；Codex Desktop 最长约 30 分钟后可用" : isCompatibilityReadOnly ? (compatibilityStatus === "incompatible" ? "Codex 版本不兼容" : "正在验证会话兼容性")');
 
     expect(css).toContain(".web-native-composer-textarea {");
     expect(css).toContain("min-height: 76px");
@@ -60,7 +60,7 @@ describe("shared composer panel layout", () => {
   });
 
   it("preserves queue-send and stop actions while the agent is running", () => {
-    expect(chatView).toContain('aria-label={shouldQueueMessage ? "排队发送" : "发送"}');
+    expect(chatView).toContain('shouldQueueMessage ? "排队发送" : "发送"');
     expect(chatView).toContain('className="web-native-stop-button" aria-label="停止生成"');
   });
 
@@ -74,7 +74,7 @@ describe("shared composer panel layout", () => {
   it("routes picker images into the sent payload before enabling send", () => {
     expect(chatView).toContain("blobToDataUrl(await normalizeComposerImage(file))");
     expect(chatView).toContain("setPendingImages((previous) => [...previous, ...prepared.images])");
-    expect(chatView).toContain("!canCompose || pendingImageReads > 0 || !input.trim()");
+    expect(chatView).toContain("pendingImageReads > 0 || (!input.trim() && !pendingImages.length)");
     expect(chatView).toContain("images: imagesToSend");
   });
 

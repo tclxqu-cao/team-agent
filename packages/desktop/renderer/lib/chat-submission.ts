@@ -24,7 +24,7 @@ export function createComposerSubmission(input: ComposerSubmissionInput): ChatSu
   const agentIds = cloneNonEmpty(input.agentIds);
   const images = cloneNonEmpty(input.images);
   return {
-    text: input.text.trim(),
+    text: input.text.trim() || (images ? "请查看图片。" : ""),
     origin: "composer",
     applyGoalMode: true,
     clearComposer: true,
@@ -32,6 +32,19 @@ export function createComposerSubmission(input: ComposerSubmissionInput): ChatSu
     ...(agentIds ? { agentIds } : {}),
     ...(input.agentName ? { agentName: input.agentName } : {}),
     ...(images ? { images } : {}),
+  };
+}
+
+/** A failed send must not replace anything composed while admission was pending. */
+export function restoreFailedComposerDraft(
+  current: { text: string; images: string[] },
+  failed: { content: string; images?: string[] },
+): { text: string; images: string[] } {
+  return {
+    text: !current.text ? failed.content
+      : current.text === failed.content || current.text.startsWith(`${failed.content}\n\n`) ? current.text
+      : `${failed.content}\n\n${current.text}`,
+    images: [...new Set([...(failed.images ?? []), ...current.images])],
   };
 }
 

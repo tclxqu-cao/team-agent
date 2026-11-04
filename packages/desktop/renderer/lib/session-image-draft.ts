@@ -139,6 +139,12 @@ export class SessionImageDraftCoordinator {
     return { sessionId, images };
   }
 
+  adopt(sessionId: string, images: string[]): Promise<void> {
+    this.selectionGeneration += 1;
+    this.selectedSessionId = sessionId;
+    return this.repository.write(sessionId, images);
+  }
+
   save(sessionId: string, images: string[]): Promise<void> {
     this.invalidatePendingRestore(sessionId);
     return this.repository.write(sessionId, images);

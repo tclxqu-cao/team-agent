@@ -1005,7 +1005,7 @@ body[data-web-shell="1"] {
      override values inherited from body and leave phone spacing too wide. */
   body[data-web-shell="1"] .chat-view {
     --chat-header-height: 52px;
-    --chat-messages-padding: 14px 12px 10px;
+    --chat-messages-padding: 14px max(16px, env(safe-area-inset-right)) 10px max(16px, env(safe-area-inset-left));
     --chat-message-gap: 4px;
     --chat-turn-gap: 14px;
     --chat-row-gap: 0px;
@@ -1053,6 +1053,13 @@ body[data-web-shell="1"] {
     box-shadow: 10px 0 28px rgba(17, 24, 39, 0.18) !important;
   }
 
+  /* A closed drawer must stop painting immediately, even if its transform
+     transition is suspended while the phone switches tabs or backgrounds. */
+  body[data-web-shell="1"] .app-sidebar[aria-hidden="true"] {
+    visibility: hidden;
+    pointer-events: none;
+  }
+
   body[data-web-shell="1"] .chat-top-bar {
     min-width: 0;
     padding-left: max(58px, calc(env(safe-area-inset-left) + 54px)) !important;
@@ -1078,6 +1085,7 @@ body[data-web-shell="1"] {
 
   body[data-web-shell="1"] .chat-messages {
     padding: var(--chat-messages-padding) !important;
+    overflow-x: hidden !important;
     overscroll-behavior: contain;
     scrollbar-width: none;
   }

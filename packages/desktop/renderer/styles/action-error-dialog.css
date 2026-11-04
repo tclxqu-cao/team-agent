@@ -1,0 +1,18 @@
+.action-error-dialog {
+  inset: 0;
+  margin: auto;
+  width: min(360px, calc(100vw - 36px));
+  max-height: calc(100vh - 36px);
+  max-height: calc(100dvh - 36px);
+  overflow: auto;
+  background: var(--bg-surface);
+  font-family: var(--font-body, system-ui, sans-serif);
+}
+.action-error-dialog::backdrop { background: color-mix(in srgb, var(--bg-deepest) 64%, transparent); }
+.action-error-dialog p { max-height: 45vh; max-height: 45dvh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+.action-error-dialog .sidebar-delete-confirmation-actions button { min-height: 38px; }
+.action-error-dialog .sidebar-delete-confirmation-actions .is-primary { background: var(--accent); border-color: var(--accent); color: var(--text-inverse, #fff); }
+@media (max-width: 640px) {
+  .action-error-dialog { width: min(292px, calc(100vw - 36px)); }
+  .action-error-dialog .sidebar-delete-confirmation-actions button { min-height: 44px; }
+}

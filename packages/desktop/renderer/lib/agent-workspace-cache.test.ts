@@ -3,6 +3,7 @@ import {
   AGENT_WORKSPACE_CACHE_KEY,
   emptyAgentWorkspaceCache,
   emptyAgentWorkspacePartition,
+  isSessionOnlyWorkspace,
   preservePendingNativeSession,
   readAgentWorkspaceCache,
   refreshCachedRunningSessionPages,
@@ -147,6 +148,32 @@ describe("agent workspace cache", () => {
 
     expect(reconcileSessionNextCursor(current, page, true, "page-four")).toBe("page-four");
     expect(reconcileSessionPage(current, page, true).map(({ id }) => id)).toEqual(["new", "first", "later"]);
+  });
+
+  it("keeps an opened session-only workspace when it is absent from the native catalog", () => {
+    const direct = { ...workspace("codex", "direct-session"), source: "derived" as const, canCreateSession: false };
+    const recent = { ...workspace("codex", "codex:recent"), roots: [], source: "derived" as const, canCreateSession: false };
+    const page = { data: [recent], nextCursor: null, watermark: "2" };
+    expect(isSessionOnlyWorkspace(direct)).toBe(true);
+    expect(isSessionOnlyWorkspace(recent)).toBe(false);
+    expect(reconcileWorkspacePage([direct], page, true, direct.workspaceId)).toEqual([recent, direct]);
+    expect(reconcileWorkspacePage([direct], page, true)).toEqual([recent]);
+  });
+
+  it("replaces a session-only workspace when native discovery catches up", () => {
+    const direct = { ...workspace("codex", "direct-session"), source: "derived" as const, canCreateSession: false };
+    const native = workspace("codex", direct.workspaceId);
+    expect(reconcileWorkspacePage([direct], { data: [native], nextCursor: null, watermark: "2" }, true, direct.workspaceId)).toEqual([native]);
+  });
+
+  it("retains the open root or child session through a complete directory refresh", () => {
+    const root = session("open");
+    const child = session("child", { parentSessionId: root.id });
+    const other = session("other");
+    const page = { data: [other], nextCursor: null, watermark: "2" };
+    expect(reconcileSessionPage([root, child], page, true, root.id)).toEqual([other, root]);
+    expect(reconcileSessionPage([root, child], page, true, child.id)).toEqual([other, child]);
+    expect(reconcileSessionPage([root, child], page, true)).toEqual([other]);
   });
 
   it("does not reopen exhausted history during a first-page refresh", () => {

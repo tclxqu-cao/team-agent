@@ -11,7 +11,8 @@ import CollaborationCreateDialog from "./components/collaboration/CollaborationC
 import CollaborationDashboard from "./components/collaboration/CollaborationDashboard";
 import SessionDashboard from "./components/collaboration/SessionDashboard";
 import MessagingPage from "./components/messaging/MessagingPage";
-import { MESSAGING_OPEN } from "../../core/src/domain/web-console/MessagingBridge";
+import { openShellMessaging } from "./lib/messaging-navigation";
+import { MESSAGING_OPEN_QUERY } from "../../core/src/domain/web-console/MessagingBridge";
 import SupervisionNotifier from "./components/collaboration/SupervisionNotifier";
 import { collaborationRequest } from "./components/collaboration/client";
 import { resolveDashboardSession } from "./lib/dashboard-session-navigation";
@@ -60,6 +61,8 @@ import WakeOverlay from "./components/WakeOverlay";
 import AgentWorkspaceSwitcher from "./components/AgentWorkspaceSwitcher";
 import { agentUnavailableMessage } from "./lib/agent-availability";
 import AgentWorkspaceHeader from "./components/AgentWorkspaceHeader";
+import SidebarLayoutSwitcher from "./components/SidebarLayoutSwitcher";
+import SessionLoading from "./components/SessionLoading";
 import "./styles/sidebar-navigation.css";
 import AgentSessionRail from "./components/AgentSessionRail";
 import AgentBrandIcon from "./components/AgentBrandIcon";
@@ -83,6 +86,7 @@ import type {
 } from "./global";
 import {
   emptyAgentWorkspacePartition,
+  isSessionOnlyWorkspace,
   preservePendingNativeSession,
   readAgentWorkspaceCache,
   refreshCachedRunningSessionPages,
@@ -291,6 +295,7 @@ export default function App() {
   const workspaceRequestIds = useRef(new Map<AgentType, number>());
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(initialPartition.selectedWorkspaceId);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(initialPartition.selectedSessionId);
+  const [createdSessionReceipt, setCreatedSessionReceipt] = useState<Session | null>(null);
   const selectedProjectIdRef = useRef(selectedProjectId);
   const selectedSessionIdRef = useRef(selectedSessionId);
   selectedProjectIdRef.current = selectedProjectId;
@@ -319,22 +324,42 @@ export default function App() {
   /** 新建会话输入框聚焦序号：从 Dashboard 等入口进入时递增，触发 composer focus。 */
   const [newSessionFocusNonce, setNewSessionFocusNonce] = useState(0);
   const [initialSessionHistory, setInitialSessionHistory] = useState<SessionHistorySeed>();
+  const [pendingSessionNavigation, setPendingSessionNavigation] = useState<{ id: string; title: string } | null>(null);
   /** 进入新建会话态后，等待目标 Agent 的目录列表就绪再落定目录。 */
   const newSessionEntryRef = useRef<{ agentType: AgentType; preferredPath: string | null } | null>(null);
   const [initialDiscussions, setInitialDiscussions] = useState<Record<string, string | undefined>>({});
   const dashboardNavigation = useRef<(intent: SessionDashboardIntent) => void>(() => {});
   const navigationRequest = useRef<AbortController | null>(null);
+  const navigationHistory = useRef<{ controller: AbortController; sessionId: string; seed?: SessionHistorySeed } | null>(null);
+  const handleSessionHistorySettled = useCallback((sessionId: string, seed?: SessionHistorySeed) => {
+    const pending = navigationHistory.current;
+    if (!pending || pending.sessionId !== sessionId || pending.seed !== seed
+      || navigationRequest.current !== pending.controller || pending.controller.signal.aborted) return;
+    navigationHistory.current = null;
+    navigationRequest.current = null;
+    setPendingSessionNavigation(null);
+    if (window.parent !== window) window.parent.postMessage({ type: SESSION_DASHBOARD_APPLIED, sessionId }, window.location.origin);
+  }, []);
   const chatNavigationInstance = useRef(`${Date.now()}-${Math.random().toString(36).slice(2)}`);
   const hasWorkspaceTabs = messagingVisible || sessionDashboardVisible || collaborationDashboardVisible || collaborationTabs.length > 0;
   const openMessaging = () => {
     setSidebarDrawerOpen(false);
     if (isWebShell() && window.parent !== window) {
-      window.parent.postMessage({ type: MESSAGING_OPEN }, window.location.origin);
+      void openShellMessaging().catch(error => {
+        setNotice(error instanceof Error ? error.message : "消息接入打开失败");
+        setNoticeType("error");
+      });
       return;
     }
     setMessagingVisible(true); setMessagingOpen(true);
     setSessionDashboardOpen(false); setCollaborationDashboardOpen(false); setActiveCollaboration(null);
   };
+  useEffect(() => {
+    if (!isWebShell() || window.parent === window) return;
+    try {
+      if (new URL(window.parent.location.href).searchParams.get(MESSAGING_OPEN_QUERY) === "messaging") openMessaging();
+    } catch { /* A native parent can use a different origin. */ }
+  }, []);
   const openSessionDashboard = () => {
     setMessagingOpen(false);
     if (isWebShell() && window.parent !== window) {
@@ -781,6 +806,7 @@ export default function App() {
     : null;
   const selectedSession = selectedSessionId
     ? allKnownSessions.find((session) => session.id === selectedSessionId)
+      ?? (createdSessionReceipt?.id === selectedSessionId ? createdSessionReceipt : undefined)
     : undefined;
   const selectedSessionTitle = selectedSession?.title;
   const selectedWorkspacePath = selectedSession?.cwd
@@ -905,6 +931,8 @@ export default function App() {
   const enterNewSessionComposer = (agentType?: AgentType, workspaceId?: string) => {
     navigationRequest.current?.abort();
     navigationRequest.current = null;
+    navigationHistory.current = null;
+    setPendingSessionNavigation(null);
     setInitialSessionHistory(undefined);
     const targetAgent = agentType ?? activeAgentRef.current;
     const preferredPath = selectedWorkspacePath;
@@ -979,7 +1007,15 @@ export default function App() {
       return;
     }
     navigationRequest.current?.abort();
-    navigationRequest.current = null;
+    navigationHistory.current = null;
+    const controller = new AbortController();
+    navigationRequest.current = controller;
+    setPendingSessionNavigation(intent.kind === "session" ? intent.session : null);
+    if (intent.kind === "session") {
+      setSessionDashboardOpen(false); setCollaborationDashboardOpen(false); setActiveCollaboration(null);
+      setHubOpen(false);
+      if (mobileDrawer) setSidebarDrawerOpen(false);
+    }
     void (async () => {
       if (intent.kind === "dashboard") { openSessionDashboard(); return; }
       if (intent.kind === "groups") { openCollaborationDashboard(); return; }
@@ -989,7 +1025,6 @@ export default function App() {
         setInitialDiscussions(current => ({ ...current, [group.id]: intent.discussionId }));
         openCollaboration(group); return;
       }
-      const controller = new AbortController(); navigationRequest.current = controller;
       const targetAgent = intent.kind === "agent" ? intent.agentType : intent.session.agentType;
       const health = runtimeHealth.some(runtime => runtime.agentType === targetAgent)
         ? runtimeHealth : await window.agentApi.getRuntimeHealth();
@@ -1012,11 +1047,18 @@ export default function App() {
       if (!controller.signal.aborted) {
         setInitialSessionHistory(result.initialHistory);
         openAgentSession(result.session, result.snapshot, true);
-        if (window.parent !== window) window.parent.postMessage({ type: SESSION_DASHBOARD_APPLIED, sessionId: result.session.id }, window.location.origin);
+        navigationHistory.current = { controller, sessionId: result.session.id, seed: result.initialHistory };
       }
     })().catch(error => {
-      if (error instanceof Error && error.name === "AbortError") return;
+      if (controller.signal.aborted || error instanceof Error && error.name === "AbortError") return;
       setNotice(error instanceof Error ? error.message : "打开会话失败"); setNoticeType("error"); setTimeout(() => setNotice(null), 5000);
+    }).finally(() => {
+      if (navigationRequest.current !== controller) return;
+      // ChatView owns the second stage: keep the same loading surface until
+      // the selected history (or its actionable error) has been restored.
+      if (navigationHistory.current?.controller === controller) return;
+      navigationRequest.current = null;
+      setPendingSessionNavigation(null);
     });
   };
   useEffect(() => {
@@ -1093,7 +1135,8 @@ export default function App() {
         source: project.source ?? (agentType === "claude-code" ? "derived" : "native"),
         canCreateSession: project.canCreateSession,
       }));
-      const workspaces = reconcileWorkspacePage(current, page, !options.cursor);
+      const workspaces = reconcileWorkspacePage(current, page, !options.cursor,
+        selectedSessionIdRef.current ? selectedProjectIdRef.current : null);
       const list = workspaces.map(workspaceToProject);
       projectsRef.current = list;
       setProjects(list);
@@ -1167,6 +1210,10 @@ export default function App() {
   ) {
     const agentApi = window.agentApi;
     if (!agentApi) return;
+    // Directly opened sessions can have a local presentation workspace that
+    // the native runtime cannot list. Their history is refreshed by ChatView.
+    if (isSessionOnlyWorkspace(workspaceCacheRef.current.agents[activeAgentRef.current]?.workspaces
+      .find(workspace => workspace.workspaceId === projectId))) return;
     if ((options.cursor || options.background) && loadingProjectIdsRef.current.has(projectId)) return;
     const agentType = activeAgentRef.current;
     const requestKey = `${agentType}:${projectId}`;
@@ -1221,7 +1268,8 @@ export default function App() {
         : firstPage;
       if (activeAgentRef.current !== agentType || projectSessionRequestIds.current.get(requestKey) !== requestId) return;
 
-      const list = reconcileSessionPage(current, page, !options.cursor)
+      const list = reconcileSessionPage(current, page, !options.cursor,
+        selectedProjectIdRef.current === projectId ? selectedSessionIdRef.current : null)
         .map((session) => ({ ...session, projectId: session.projectId ?? projectId }));
       const refreshedRoots = orderSessionsForAgent(
         list.filter((session) => !session.parentSessionId),
@@ -1844,12 +1892,15 @@ export default function App() {
               <AgentBrandIcon agentType="customer-agent" size={24} />
             </div>
             <span className="sidebar-brand-name">AgentRoam</span>
-            {!webShell && navigationLayout === "classic" && (
-              <DesktopAppActions
-                onOpenFlowStudio={handleOpenFlowStudio}
-                openingFlowStudio={flowStudioOpening}
-              />
-            )}
+            <div className="sidebar-brand-actions">
+              <SidebarLayoutSwitcher />
+              {!webShell && navigationLayout === "classic" && (
+                <DesktopAppActions
+                  onOpenFlowStudio={handleOpenFlowStudio}
+                  openingFlowStudio={flowStudioOpening}
+                />
+              )}
+            </div>
           </div>
         </div>}
 
@@ -2404,7 +2455,10 @@ export default function App() {
         position: "relative",
         zIndex: 5,
       }}>
-        <div className="app-chat-surface" style={{
+        <div className="app-chat-surface"
+          aria-hidden={pendingSessionNavigation ? true : undefined}
+          ref={element => { if (element) element.inert = Boolean(pendingSessionNavigation); }}
+          style={{
           height: "100%",
           paddingTop: 0,
           display: hubOpen ? "none" : undefined,
@@ -2427,6 +2481,7 @@ export default function App() {
             sessionTitle={selectedSessionTitle}
             sessionSummary={selectedSession}
             initialSessionHistory={initialSessionHistory}
+            onSessionHistorySettled={handleSessionHistorySettled}
             workspacePath={selectedWorkspacePath}
             workspaceSource={projects.find(project => project.id === selectedProjectId)?.source}
             runtimeHealth={runtimeHealth}
@@ -2463,6 +2518,7 @@ export default function App() {
             appearanceOpen={showAppearance}
             hideToBackgroundTitle={wakeEnabled ? `隐藏到后台（说“${wakeWord}”唤醒）` : "隐藏到后台"}
             onSessionCreated={(sessionId, pendingSession) => {
+              setCreatedSessionReceipt(pendingSession ?? null);
               const projectId = selectedProjectIdRef.current;
               if (projectId && pendingSession) {
                 const key = `${pendingSession.agentType}:${projectId}`;
@@ -2533,6 +2589,8 @@ export default function App() {
             }}
           />
         </div>
+
+        {pendingSessionNavigation && <SessionLoading className="session-navigation-loading" />}
 
         {/* AI Hub（多 AI 网页聚合）：与 ChatView 互斥显示 */}
         {hubOpen && (

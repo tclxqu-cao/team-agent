@@ -2,6 +2,7 @@ import { X } from "lucide-react";
 import type { AgentType, RuntimeHealth } from "../global";
 import { AGENT_LABELS } from "../lib/agent-catalog";
 import AgentBrandIcon from "./AgentBrandIcon";
+import SidebarLayoutSwitcher from "./SidebarLayoutSwitcher";
 
 interface Props {
   value: AgentType;
@@ -19,6 +20,9 @@ export default function AgentWorkspaceHeader({ value, health, onClose }: Props) 
       <span className="sidebar-agent-header-name" title={AGENT_LABELS[value]}>{AGENT_LABELS[value]}</span>
       <span className={`sidebar-agent-header-status is-${state}`} title={runtime?.error}><i aria-hidden="true" />{label}</span>
     </div>
-    <button type="button" className="ui-icon-button sidebar-agent-header-close" onClick={onClose} aria-label="收起会话列表" title="收起会话列表"><X size={18} aria-hidden="true" /></button>
+    <div className="sidebar-agent-header-actions">
+      <SidebarLayoutSwitcher />
+      <button type="button" className="ui-icon-button sidebar-agent-header-close" onClick={onClose} aria-label="收起会话列表" title="收起会话列表"><X size={18} aria-hidden="true" /></button>
+    </div>
   </header>;
 }

@@ -741,5 +741,3 @@
     padding-left: 2px;
   }
 }
-
-.composer-creating-session { display: flex; align-items: center; gap: 6px; margin-top: 8px; color: var(--text-muted); font-size: 12px; }

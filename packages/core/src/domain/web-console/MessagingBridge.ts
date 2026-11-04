@@ -1,6 +1,7 @@
 /** Shared UI announces readiness only after the message page has mounted. */
 export const MESSAGING_READY = "agentroam:messaging-ready:v1";
 export const MESSAGING_OPEN = "agentroam:messaging-open:v1";
+export const MESSAGING_OPEN_QUERY = "openTab";
 
 /** Only the same-origin assistant frame may open the shell's messaging tab. */
 export function readMessagingOpen(

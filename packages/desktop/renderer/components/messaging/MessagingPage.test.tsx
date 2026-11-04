@@ -29,9 +29,8 @@ it("keeps the list outcome columns separate and the default model settings free 
   expect(html).toContain("已完成"); expect(html).toContain("回传失败"); expect(html).toContain("结果回传");
   const settings = renderToStaticMarkup(createElement(MessageSettings, {
     value: { enabled: false, routingMode: "model", source: { accountId: "", database: "" }, rules: [], subscriptions: [] },
-    candidates: candidateFixture, sources: [], busy: false, error: "发现账号失败", onChange() {}, onDiscover() {}, onSave() {}, onClose() {},
+    candidates: candidateFixture, sources: [], busy: false, onChange() {}, onDiscover() {}, onSave() {}, onClose() {},
   }));
   expect(settings).toContain("模型判断（默认）"); expect(settings).not.toContain("群会话 ID"); expect(settings).toContain("默认回到原渠道原会话");
   expect(settings).toContain('<dialog');
-  expect(settings).toContain('role="alert">发现账号失败');
 });

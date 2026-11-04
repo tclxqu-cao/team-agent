@@ -1,6 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { SupervisionMessage } from "../../../../core/src/domain/supervision/types";
 import {
   groupFixture,
   stateFixture,
@@ -30,12 +31,29 @@ function queuedDiscussion() {
   return state;
 }
 
-const fixture = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
+const fixture = vi.hoisted(() => ({ value: {} as Record<string, unknown>, messages: [] as SupervisionMessage[] }));
 vi.mock("./useCollaborationDiscussion", () => ({
   useCollaborationDiscussion: () => fixture.value,
 }));
+vi.mock("./useSupervisionMessages", () => ({ useSupervisionMessages: () => ({ messages: fixture.messages, error: "", loading: false, hasOlder: false, loadingOlder: false, loadOlder: vi.fn() }) }));
+beforeEach(() => { fixture.messages = []; });
 
 describe("collaboration group history presentation", () => {
+  it("shows monitoring activity, sent and received content even when the group has no discussion", () => {
+    const group = groupFixture(); group.monitoring = { supervisorId: "a", targets: [{ id: "source", agentType: "codex", title: "被监管任务", cwd: "/project" }] };
+    fixture.value = { group, discussion: null, selected: null, history: [], error: "", busy: false, select: vi.fn(), create: vi.fn(), act: vi.fn(), send: vi.fn(), setError: vi.fn(), updateRole: vi.fn() };
+    fixture.messages = [
+      { id: "received", groupId: "g", direction: "received", title: "收到原会话进展", sender: "被监管任务", recipient: "开发", content: "任务中断，需要核对成果", sessionTitle: "被监管任务", createdAt: "2026-11-02T12:00:00Z" },
+      { id: "sent", groupId: "g", direction: "sent", title: "接续指令", sender: "开发", recipient: "被监管任务", content: "先核对 /project/result.md 后继续", createdAt: "2026-11-02T12:00:01Z" },
+      { id: "old", groupId: "g", direction: "activity", title: "等待你决策", sender: "开发", content: "介入后仍未确认新进度", historical: true, createdAt: "2026-11-02T12:00:02Z" },
+    ];
+    const html = renderToStaticMarkup(createElement(CollaborationPage, { groupId: "g" }));
+    expect(html).toContain("任务中断，需要核对成果"); expect(html).toContain("先核对"); expect(html).toContain("介入后仍未确认新进度");
+    expect(html).toContain("被监管任务 → 开发"); expect(html).toContain("开发 → 被监管任务");
+    expect(html).toContain("历史监工记录"); expect(html).toMatch(/datetime="2026-11-02T12:00:01Z"/i);
+    expect(html).not.toContain("把目标交给这个群"); expect(html).toContain("监工动态");
+    expect(fixture.value.create).not.toHaveBeenCalled(); expect(fixture.value.send).not.toHaveBeenCalled();
+  });
   it("explains workspace contention in the conversation and roster when nothing is executing", () => {
     const html = renderDiscussion(queuedDiscussion());
     expect(html).toContain("1 个任务等待工作目录空闲，空闲后会自动继续。");

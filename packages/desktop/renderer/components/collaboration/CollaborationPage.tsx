@@ -5,6 +5,7 @@ import {
   Clock3,
   Crown,
   History,
+  ImagePlus,
   LoaderCircle,
   Menu,
   Plus,
@@ -17,6 +18,12 @@ import AgentBrandIcon from "../AgentBrandIcon";
 import { useUIStore } from "../../stores/uiStore";
 import CollaborationMessageText from "./CollaborationMessageText";
 import GroupSupervisionSummary from "./GroupSupervisionSummary";
+import SupervisionMessageItem from "./SupervisionMessageItem";
+import { useSupervisionMessages } from "./useSupervisionMessages";
+import { groupTimeline } from "./supervision-timeline";
+import CollaborationImages from "./CollaborationImages";
+import MessageImageLightbox from "../MessageImageLightbox";
+import { useCollaborationComposer } from "./useCollaborationComposer";
 import { AGENT_NAMES, DISCUSSION_STATUS, collaborationRequest } from "./client";
 import { useCollaborationDiscussion } from "./useCollaborationDiscussion";
 import { COLLABORATION_CONTENT_READY_TYPE } from "../../../../core/src/domain/web-console/CollaborationTabBridge";
@@ -125,9 +132,13 @@ export default function CollaborationPage({
     setError,
     updateRole,
   } = useCollaborationDiscussion(groupId, initialDiscussionId);
-  const [draft, setDraft] = useState(""),
-    [drawer, setDrawer] = useState(false),
+  const supervision = useSupervisionMessages(groupId);
+  const { draft, setDraft, images, reading, addImages, removeImage, submit: submitDraft } =
+    useCollaborationComposer(groupId, selected, setError);
+  const [drawer, setDrawer] = useState(false),
     [detailMember, setDetailMember] = useState<string | null>(null);
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
   const textarea = useRef<HTMLTextAreaElement | null>(null);
   const [mention, setMention] = useState<{
     query: string;
@@ -149,11 +160,9 @@ export default function CollaborationPage({
   const end = useRef<HTMLDivElement>(null),
     scroller = useRef<HTMLDivElement>(null),
     follow = useRef(true);
-  const pendingMessage = useRef<{ text: string; id: string } | null>(null);
-  const drafts = useRef(new Map<string, string>());
   useEffect(() => {
     if (follow.current) end.current?.scrollIntoView({ block: "end" });
-  }, [discussion?.messages.length, selected]);
+  }, [discussion?.messages.length, supervision.messages.length, selected]);
   useEffect(() => {
     follow.current = true;
   }, [selected]);
@@ -225,40 +234,30 @@ export default function CollaborationPage({
     : discussion
       ? DISCUSSION_STATUS[discussion.status]
       : "准备好了";
-  const shownMessages =
-    discussion?.messages.filter((m) => m.kind !== "progress") || [];
+  const timeline = groupTimeline(discussion?.messages ?? [], supervision.messages);
   const switchDiscussion = (id: string) => {
-    drafts.current.set(selected || "new", draft);
-    setDraft(drafts.current.get(id) || "");
-    pendingMessage.current = null;
     select(id);
     setDrawer(false);
+    setMention(null);
     follow.current = true;
   };
   const newDiscussion = async () => {
     try {
-      drafts.current.set(selected || "new", draft);
-      if (await create()) {
-        setDraft("");
-        pendingMessage.current = null;
-      }
+      if (await create()) { setDrawer(false); setMention(null); textarea.current?.focus(); }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
   };
   const submit = async () => {
-    if (!draft.trim() || busy) return;
-    if (!pendingMessage.current || pendingMessage.current.text !== draft)
-      pendingMessage.current = { text: draft, id: crypto.randomUUID() };
-    if (await send(draft, pendingMessage.current.id)) {
-      setDraft("");
-      pendingMessage.current = null;
+    if (busy || reading) return;
+    if (await submitDraft(send)) {
+      setMention(null);
       follow.current = true;
     }
   };
   return (
     <div className="collab-page">
-      <GroupSupervisionSummary group={group}/>
+      <MessageImageLightbox image={previewImage ? { src: previewImage, alt: "群聊图片" } : null} onClose={() => setPreviewImage(null)}/>
       {drawer && (
         <button
           className="collab-drawer-mask"
@@ -331,7 +330,7 @@ export default function CollaborationPage({
                     </span>
                     <span className="collab-member-status">{status}</span>
                   </button>
-                  <p>
+                  <p className={detailMember === member.id ? "is-expanded" : undefined}>
                     {member.role ||
                       discussion?.roles[member.id] ||
                       "等待群主分配定位"}
@@ -450,11 +449,12 @@ export default function CollaborationPage({
                 </button>
               ))
             ) : (
-              <p className="collab-muted">发送第一条任务，记录会保存在这里。</p>
+              <p className="collab-muted">{group.monitoring?.targets.length ? "监工动态持续保存在群内，普通讨论会列在这里。" : "发送第一条任务，记录会保存在这里。"}</p>
             )}
           </div>
         </section>
         <footer className="collab-sidebar-footer" title={group.cwd}>
+          <GroupSupervisionSummary group={group}/>
           {group.cwd}
         </footer>
       </aside>
@@ -468,7 +468,7 @@ export default function CollaborationPage({
             <Menu size={20} />
           </button>
           <div className="collab-discussion-title">
-            <h1>{discussion?.title || "开始一起做事"}</h1>
+            <h1>{discussion?.title || (group.monitoring?.targets.length ? "监工动态" : "开始一起做事")}</h1>
             <span
               className="collab-discussion-status"
               data-status={isQueued ? "queued" : discussion?.status || "idle"}
@@ -559,7 +559,15 @@ export default function CollaborationPage({
                 el.scrollHeight - el.scrollTop - el.clientHeight < 120;
           }}
         >
-          {!shownMessages.length && (
+          {supervision.error && <p className="collab-error" role="alert">{supervision.error}</p>}
+          {supervision.hasOlder && <button className="collab-supervision-load" disabled={supervision.loadingOlder} onClick={async () => {
+            follow.current = false;
+            const element = scroller.current, height = element?.scrollHeight ?? 0;
+            await supervision.loadOlder();
+            requestAnimationFrame(() => { if (element) element.scrollTop += element.scrollHeight - height; });
+          }}>{supervision.loadingOlder ? "正在加载…" : "查看更早的监工消息"}</button>}
+          {supervision.loading && !timeline.length && <p className="collab-muted" role="status">正在加载群内消息…</p>}
+          {!timeline.length && !supervision.loading && (
             <div className="collab-empty">
               <span className="collab-empty-icon">
                 <Users size={34} />
@@ -590,11 +598,13 @@ export default function CollaborationPage({
               </div>
             </div>
           )}
-          {shownMessages.map((message) => {
+          {timeline.map((entry) => {
+            if (entry.kind === "supervision") return <SupervisionMessageItem key={`supervision:${entry.message.id}`} message={entry.message} group={group}/>;
+            const message = entry.message;
             const member = group.members.find((m) => m.id === message.memberId);
             return (
               <article
-                key={message.id}
+                key={`discussion:${message.id}`}
                 className={`collab-message collab-message--${message.kind}`}
               >
                 <CollaborationAvatar
@@ -603,6 +613,7 @@ export default function CollaborationPage({
                   isOwner={message.kind !== "user" && member?.id === owner.id}
                 />
                 <div className="collab-message-body">
+                  <CollaborationImages images={message.images ?? []} onPreview={setPreviewImage}/>
                   <CollaborationMessageText
                     text={message.content}
                     cwd={
@@ -660,6 +671,9 @@ export default function CollaborationPage({
             </p>
           )}
           <div className="collab-composer">
+            <CollaborationImages images={images} onPreview={setPreviewImage} onRemove={removeImage}/>
+            <input ref={fileInput} type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden aria-label="选择群聊图片"
+              onChange={event => { const files = Array.from(event.target.files ?? []); event.target.value = ""; void addImages(files); }}/>
             {mention && mentionMembers.length > 0 && (
               <ul
                 className="collab-mention-list"
@@ -703,6 +717,12 @@ export default function CollaborationPage({
                 isChat ? "@成员 或 @群主，说说要做什么…" : "告诉群主，你想完成什么…"
               }
               rows={3}
+              onPaste={event => {
+                const files = Array.from(event.clipboardData.items).filter(item => item.type.startsWith("image/")).flatMap(item => {
+                  const file = item.getAsFile(); return file ? [file] : [];
+                });
+                if (files.length) { event.preventDefault(); void addImages(files); }
+              }}
               onChange={(e) => {
                 setDraft(e.target.value);
                 detectMention(
@@ -746,8 +766,9 @@ export default function CollaborationPage({
               }}
             />
             <footer>
+              <button type="button" className="collab-add-image" aria-label="添加群聊图片" title="添加图片" disabled={busy || reading} onClick={() => fileInput.current?.click()}><ImagePlus size={18}/></button>
               <span>
-                {draft.includes("@")
+                {reading ? "正在处理图片…" : draft.includes("@")
                   ? "@成员 直接指派，不打扰群主；@群主 触发一轮安排"
                   : isChat
                     ? "chat 模式：@成员 直接指派 · @群主 安排分工 · 无 @ 不会回应"
@@ -759,7 +780,7 @@ export default function CollaborationPage({
                 aria-label="发送群消息"
                 className="collab-primary"
                 disabled={
-                  busy || !draft.trim() || discussion?.status === "stopping"
+                  busy || reading || (!draft.trim() && !images.length) || discussion?.status === "stopping"
                 }
                 onClick={() => {
                   void submit();

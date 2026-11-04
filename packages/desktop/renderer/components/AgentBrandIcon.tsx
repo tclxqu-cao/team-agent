@@ -3,6 +3,7 @@ import type { AgentType } from "../global";
 // Frame the visible artwork, excluding the macOS icon canvas padding/shadow.
 // Original app-bundle assets and their provenance remain unchanged.
 const OFFICIAL_BRAND_ICONS: Partial<Record<AgentType, { src: string; viewBox: string }>> = {
+  copilot: { src: new URL("../assets/agent-brands/copilot.png", import.meta.url).href, viewBox: "0 0 256 256" },
   qoder: { src: new URL("../assets/agent-brands/qoder.png", import.meta.url).href, viewBox: "14 14 100 100" },
   zcode: { src: new URL("../assets/agent-brands/zcode.png", import.meta.url).href, viewBox: "12 12 104 104" },
   workbuddy: { src: new URL("../assets/agent-brands/workbuddy.png", import.meta.url).href, viewBox: "13 13 102 102" },
@@ -22,7 +23,7 @@ export default function AgentBrandIcon({ agentType, size = 16, className }: Agen
   const officialIcon = OFFICIAL_BRAND_ICONS[agentType];
   if (officialIcon) {
     return <svg className={className} data-agent-icon={agentType} width={size} height={size} viewBox={officialIcon.viewBox} aria-hidden="true">
-      <image href={officialIcon.src} width="128" height="128" />
+      <image href={officialIcon.src} width={agentType === "copilot" ? 256 : 128} height={agentType === "copilot" ? 256 : 128} />
     </svg>;
   }
   if (agentType === "customer-agent") {

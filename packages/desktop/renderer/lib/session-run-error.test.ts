@@ -12,14 +12,27 @@ describe("restored session run failures", () => {
     ] })).toBe("fetch failed");
   });
 
-  it("does not keep an earlier error after completion, interruption, or a new active run", () => {
-    const error = { type: "error", message: "quota exceeded" };
+  it("keeps the first failure for the same run even after done or abort cleanup", () => {
+    const error = { type: "error", runId: "failed-run", message: "quota exceeded" };
     for (const type of ["done", "turn_aborted"]) {
-      expect(latestSessionRunError({ status: "idle", events: [error, { type }] })).toBeNull();
+      expect(latestSessionRunError({ status: "idle", events: [error, { type, runId: "failed-run" }] })).toBe("quota exceeded");
+      expect(latestSessionRunError({ status: "idle", events: [error, { type, runId: "new-run" }] })).toBeNull();
     }
+    expect(latestSessionRunError({ status: "idle", events: [
+      { type: "error", message: "quota exceeded" }, { type: "done" },
+    ] })).toBe("quota exceeded");
     for (const status of ["running", "active"] as const) {
       expect(latestSessionRunError({ status, events: [error] })).toBeNull();
     }
+  });
+
+  it("restores safe results from projected messages even when core history omits events", () => {
+    expect(latestSessionRunError({ status: "idle", messages: [{ role: "user", content: "run", presentation: {
+      runResult: { status: "failed", reason: "quota_exceeded", durationMs: 1_000, runId: "r1" },
+    } }] })).toBe("运行失败：额度不足");
+    expect(latestSessionRunError({ status: "idle", events: [{ type: "done", result: {
+      status: "failed", reason: "auth_required", durationMs: 1_000, runId: "r1",
+    } }] })).toBe("运行失败：需要重新登录或检查凭据");
   });
 
   it("does not misinterpret tool errors, occupied-session recovery, or older trace pages", () => {

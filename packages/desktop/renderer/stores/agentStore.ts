@@ -6,6 +6,8 @@ import type {
   type MessagePresentation,
   type NativeSubagentActivity,
   type RuntimeProgress,
+  type RunResult,
+  type TokenUsage,
   type SessionToolResultRef,
 } from "@agent/core";
 import type { CronTask } from "../global";
@@ -14,6 +16,8 @@ import {
   type CodexLiveExecutionEvent,
 } from "../lib/codex-execution-trace";
 import { mergeReasoningSummaryDelta, upsertRuntimeProgress } from "../lib/native-runtime-progress";
+import { uniqueSessionMessages } from "../lib/session-message-identity";
+import { applyRunResultToMessages, type RunResultEvent } from "../lib/run-result";
 
 export type { ContextUsageSnapshot, CronTask };
 
@@ -32,11 +36,13 @@ export interface StreamEvent {
   message?: string;
   code?: string;
   toolCall?: { id: string; name: string; arguments: Record<string, unknown> };
-  result?: { toolCallId: string; content: string; isError?: boolean };
+  result?: { toolCallId: string; content: string; isError?: boolean } | RunResult;
   finalText?: string;
   durationMs?: number;
+  runId?: string;
+  _runId?: string;
   forkPoint?: import("@agent/core").SessionForkPoint;
-  usage?: ContextUsageSnapshot;
+  usage?: ContextUsageSnapshot | TokenUsage;
   todos?: TodoItem[];
   tasks?: CronTask[];
   agentName?: string;
@@ -77,10 +83,11 @@ export interface StreamEvent {
 }
 
 export function findLatestContextUsage(
-  events: Array<{ type?: string; usage?: ContextUsageSnapshot }>,
+  events: Array<{ type?: string; usage?: ContextUsageSnapshot | TokenUsage }>,
 ): ContextUsageSnapshot | undefined {
   for (let i = events.length - 1; i >= 0; i--) {
-    if (events[i].type === "context_usage" && events[i].usage) return events[i].usage;
+    const event = events[i];
+    if (event.type === "context_usage" && event.usage && "segments" in event.usage) return event.usage;
   }
   return undefined;
 }
@@ -196,6 +203,7 @@ interface AgentState {
   getMessagesForSession: (sessionId: string) => ChatMessage[];
   getSessionHistoryWindow: (sessionId: string) => SessionHistoryWindow | undefined;
   setContextUsage: (usage: ContextUsageSnapshot, sessionId?: string) => void;
+  applyRunResult: (event: RunResultEvent, sessionId?: string) => void;
   applyRuntimeProgress: (progress: RuntimeProgress, sessionId?: string) => void;
   setRuntimeProgress: (progress: RuntimeProgress[], sessionId?: string) => void;
   clearRuntimeProgress: (sessionId?: string) => void;
@@ -228,9 +236,10 @@ export function resolveVisibleSessionMessages(
   // session identity has already been cleared but old output remains cached.
   if (selectedSessionId !== undefined && !selectedSessionId?.trim()) return [];
   if (selectedSessionId !== undefined && selectedSessionId !== storeSessionId) {
-    return selectedSessionId ? messagesBySession[selectedSessionId] ?? [] : [];
+    return uniqueSessionMessages(selectedSessionId ? messagesBySession[selectedSessionId] ?? [] : []);
   }
-  return messages;
+  // Duplicate React keys can strand old DOM nodes even after this list clears.
+  return uniqueSessionMessages(messages);
 }
 
 function canAppendAssistantOutput(message: ChatMessage | undefined): message is ChatMessage {
@@ -450,6 +459,19 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   }),
 
   getContextUsageForSession: (sid) => get().contextUsageBySession[sid],
+
+  applyRunResult: (event, sid) => set((state) => {
+    const targetSid = sid ?? state.sessionId;
+    if (!targetSid) return state;
+    const isVisible = targetSid === state.sessionId;
+    const current = isVisible ? state.messages : state.messagesBySession[targetSid] ?? [];
+    const updated = applyRunResultToMessages(current, event);
+    if (updated === current) return state;
+    return {
+      messages: isVisible ? updated : state.messages,
+      messagesBySession: { ...state.messagesBySession, [targetSid]: updated },
+    };
+  }),
 
   applyRuntimeProgress: (progress, sid) => set((state) => {
     const targetSid = sid ?? state.sessionId ?? undefined;

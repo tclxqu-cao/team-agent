@@ -13,10 +13,13 @@ import {
 import { createTaskCompletionNotification } from "../../../core/src/application/notification/task-completion";
 import { ArrowDownToLine, AlarmClock, Check, CircleAlert, Copy, CornerUpRight, FileText, GitFork, GripVertical, LoaderCircle, Mic, PanelLeftClose, PanelLeftOpen, Paperclip, Pencil, Play, RefreshCw, Square, Target, Trash2, Unplug, Volume2 } from "lucide-react";
 import AgentBrandIcon from "./AgentBrandIcon";
+import SessionLoading from "./SessionLoading";
 import ComposerAgentPicker from "./ComposerAgentPicker";
 import ComposerWorkspacePicker from "./ComposerWorkspacePicker";
 import AppActionNotice from "./AppActionNotice";
 import RunFailureNotice from "./RunFailureNotice";
+import RunResultSummary from "./RunResultSummary";
+import { authoritativeRunResultEvent, eventRunId, firstRunTerminalEvent, isRunTerminalEvent, runResultTargetMessage, terminalRunError } from "../lib/run-result";
 import { latestSessionRunError, openRunErrorModelPicker } from "../lib/session-run-error";
 import MessageLink from "./MessageLink";
 import MessageMedia, { MessageMediaWorkspace } from "./MessageMedia";
@@ -57,6 +60,7 @@ import {
   mergePaginatedSessionHistory,
   loadCodexExecutionTracePage,
   loadProgressiveSessionHistoryPage,
+  SESSION_HISTORY_PAGE_SIZE,
   resolveOlderHistoryCursor,
   restoreCodexExecutionTrace,
   restoreSessionHistoryPage,
@@ -74,11 +78,12 @@ import {
   loadSessionWithRetry,
 } from "../lib/session-load-recovery";
 import { normalizeComposerImage } from "../lib/browser-image-normalization";
-import { supportsMidTurnSteering } from "../lib/runtime-capabilities";
+import { supportsMidTurnSteering, usesNativeSessionPermissions } from "../lib/runtime-capabilities";
 import { copyTextToClipboard } from "../lib/clipboard";
 import {
   createComposerSubmission,
   createSuggestionSubmission,
+  restoreFailedComposerDraft,
   type ChatSubmission,
 } from "../lib/chat-submission";
 import {
@@ -102,6 +107,7 @@ import {
   reconcileDurableQueuedMessages,
 } from "../lib/queued-message-order";
 import { canSteerQueuedMessage, steerQueuedMessage } from "../lib/queued-message-steering";
+import { applyCopilotLiveMessage } from "../lib/copilot-live-message";
 import { isWebShell } from "../web/webLayout";
 import { OPEN_BROWSER_LIVE_EVENT } from "../web/shellEvents";
 import { WEB_SHELL_OPEN_BROWSER_LIVE_TYPE } from "../../../core/src/domain/web-console/WebShellLiveBridge";
@@ -127,7 +133,6 @@ import {
   shouldRestoreLocalNativeRun,
 } from "../lib/native-session-view-state";
 
-const SESSION_HISTORY_PAGE_SIZE = 50;
 const CODEX_LATEST_HISTORY_PAGE_SIZE = 1;
 // Codex pages carry inline image attachments. Load only the requested turn,
 // including its complete answer, instead of downloading unrelated screenshots.
@@ -482,6 +487,7 @@ interface ChatViewProps {
   sessionTitle?: string;
   sessionSummary?: UnifiedSessionSummary;
   initialSessionHistory?: SessionHistorySeed;
+  onSessionHistorySettled?: (sessionId: string, seed?: SessionHistorySeed) => void;
   workspacePath?: string | null;
   workspaceSource?: AgentWorkspace["source"];
   onOpenSettings?: () => void;
@@ -579,6 +585,7 @@ export default function ChatView({
   sessionTitle,
   sessionSummary,
   initialSessionHistory,
+  onSessionHistorySettled,
   workspacePath = null,
   workspaceSource,
   onOpenSettings,
@@ -606,6 +613,14 @@ export default function ChatView({
   onPickWorkspaceFolder,
   focusComposerNonce,
 }: ChatViewProps) {
+  const onSessionHistorySettledRef = useRef(onSessionHistorySettled);
+  onSessionHistorySettledRef.current = onSessionHistorySettled;
+  const [settledSessionHistory, setSettledSessionHistory] = useState<{ sessionId: string; seed?: SessionHistorySeed } | null>(null);
+  useLayoutEffect(() => {
+    if (settledSessionHistory?.sessionId === selectedSessionId && settledSessionHistory.seed === initialSessionHistory) {
+      onSessionHistorySettledRef.current?.(settledSessionHistory.sessionId, settledSessionHistory.seed);
+    }
+  }, [initialSessionHistory, selectedSessionId, settledSessionHistory]);
   const renderMessageContent = useCallback(
     (text: string) => renderAssistantText(text, onOpenArtifact),
     [onOpenArtifact],
@@ -629,6 +644,7 @@ export default function ChatView({
     runtimeProgressBySession,
     nativeSubagentsBySession,
     setContextUsage,
+    applyRunResult,
     applyRuntimeProgress,
     setRuntimeProgress,
     clearRuntimeProgress,
@@ -645,11 +661,9 @@ export default function ChatView({
   const [goalState, setGoalState] = useState<SessionGoalState>({ active: null, queued: [], history: [] });
   const [threadGoal, setThreadGoal] = useState<ThreadGoalInfo | null>(null);
   const [codexTraceRefreshSignal, setCodexTraceRefreshSignal] = useState(0);
-  const visibleMessages = resolveVisibleSessionMessages(
-    messages,
-    messagesBySession,
-    sessionId,
-    selectedSessionId,
+  const visibleMessages = useMemo(
+    () => resolveVisibleSessionMessages(messages, messagesBySession, sessionId, selectedSessionId),
+    [messages, messagesBySession, sessionId, selectedSessionId],
   );
   const renderedMessages = useMemo(
     () => coalesceAdjacentToolCallMessages(presentQuestionAnswers(hideQueuedGoalMessages(
@@ -884,7 +898,7 @@ export default function ChatView({
   const [permissionMenuOpen, setPermissionMenuOpen] = useState(false);
   const [permissionMode, setPermissionMode] = useState<ToolPermissionMode>("full-access");
   const [nativePermissions, setNativePermissions] = useState<UnifiedSessionSummary["nativePermissions"]>(sessionSummary?.nativePermissions);
-  const usesNativePermissions = composerAgentType === "deepseek-harness";
+  const usesNativePermissions = usesNativeSessionPermissions(composerAgentType);
   const permissionLabel = usesNativePermissions
     ? nativePermissions ? nativePermissionLabel(nativePermissions.currentValue, nativePermissions.options.find(option => option.value === nativePermissions.currentValue)?.label) : "原生权限"
     : PERMISSION_OPTIONS.find(option => option.value === permissionMode)?.label;
@@ -969,7 +983,6 @@ export default function ChatView({
   const [pendingImageReads, setPendingImageReads] = useState(0);
   const [previewedMessageImage, setPreviewedMessageImage] = useState<MessageImagePreview | null>(null);
   const messagesScrollRef = useRef<HTMLDivElement>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
   const historyScrollTimerRef = useRef<number | null>(null);
   const loadOlderHistoryRef = useRef<() => void>(() => undefined);
   const historyPullGestureRef = useRef(new HistoryPullGesture());
@@ -998,7 +1011,11 @@ export default function ChatView({
   const toolResultScopeRef = useRef<string | null>(null);
   const toolResultLoadsRef = useRef<Map<string, Promise<Awaited<ReturnType<NonNullable<typeof window.agentApi>["getSessionToolResult"]>>>>>(new Map());
   const seenNativeEventKeysRef = useRef<Set<string>>(new Set());
+  const runTerminalBySessionRef = useRef(new Map<string, StreamEvent>());
   const draftSessionRef = useRef<string | null>(null);
+  const createdSessionDraftRef = useRef<string | null>(null);
+  const composerDraftRef = useRef({ text: input, images: pendingImages });
+  composerDraftRef.current = { text: input, images: pendingImages };
   const preserveNativeDraftRef = useRef(false);
   const preserveNativeImageDraftSessionRef = useRef<string | null>(null);
   const imageDraftRestoringSessionRef = useRef<string | null>(null);
@@ -1161,15 +1178,28 @@ export default function ChatView({
   }, []);
 
   useEffect(() => {
-    const action = resolveSessionDraftAction(draftSessionRef.current, viewSessionId, input);
+    const previousOwner = draftSessionRef.current;
+    const action = resolveSessionDraftAction(previousOwner, viewSessionId, input);
     draftSessionRef.current = action.ownerSessionId;
     if (action.type === "inactive") {
-      imageDraftRestoringSessionRef.current = null;
-      void imageDraftCoordinator.restore(null);
-      setPendingImages([]);
+      if (previousOwner) {
+        imageDraftRestoringSessionRef.current = null;
+        void imageDraftCoordinator.restore(null);
+        setPendingImages([]);
+      }
       return;
     }
     if (action.type === "restore") {
+      if (createdSessionDraftRef.current === action.ownerSessionId) {
+        createdSessionDraftRef.current = null;
+        // The composer stayed editable while creation was pending. Its current
+        // draft belongs to the new session, rather than an empty stored draft.
+        writeSessionDraft(action.ownerSessionId, input);
+        imageDraftRestoringSessionRef.current = null;
+        void imageDraftCoordinator.adopt(action.ownerSessionId, composerDraftRef.current.images);
+        return;
+      }
+      createdSessionDraftRef.current = null;
       const nativeDraftOwner = action.ownerSessionId.startsWith("runtime:");
       const recovery = nativeDraftOwner
         ? findOccupiedRecovery(occupiedRecoveriesRef.current, action.ownerSessionId)
@@ -1706,7 +1736,10 @@ export default function ChatView({
     if (!autoFollowRef.current.shouldFollow(mode)) return;
     // Streaming updates must not leave an in-flight smooth animation that can
     // fight a reader who starts scrolling upward.
-    messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
+    // Scroll only the transcript. scrollIntoView can move clipped workspace
+    // ancestors and, in embedded browsers, the surrounding page as well.
+    const container = messagesScrollRef.current;
+    container?.scrollTo({ top: container.scrollHeight, behavior: "auto" });
   }, [visibleMessages]);
 
   // Global event listener — receives both user-initiated and cron-fired events.
@@ -1730,7 +1763,10 @@ export default function ChatView({
       const agentApi = window.agentApi;
       if (!agentApi) return;
       // Capture at call time — used to detect stale responses from fast session switching.
-      if (shouldSkipVoiceSessionReload(runningSessionRef.current, sessionIdRef.current, targetSid, !isWorkspaceWelcome && viewSessionId !== null)) return;
+      if (shouldSkipVoiceSessionReload(runningSessionRef.current, sessionIdRef.current, targetSid, !isWorkspaceWelcome && viewSessionId !== null)) {
+        if (targetSid && isCurrentLoad()) setSettledSessionHistory({ sessionId: targetSid, seed: initialSessionHistory });
+        return;
+      }
       if (!targetSid) {
         if (!isCurrentLoad()) return;
         historyPrefetchRef.current?.invalidate();
@@ -1886,6 +1922,7 @@ export default function ChatView({
         if (isCurrentLoad()) {
           setIsInitialHistoryLoading(false);
           setShowInitialHistoryLoading(false);
+          setSettledSessionHistory({ sessionId: targetSid, seed: initialSessionHistory });
         }
       }
     };
@@ -2024,7 +2061,7 @@ export default function ChatView({
             nextAutoScrollRef.current = isNearBottom ? null : "skip";
             setMessages(merged, targetSid, restoredWindow.window);
             syncToolResultScope(targetSid, detail?.history?.revision);
-            if (detail?.agentType === "deepseek-harness") setNativePermissions(detail.nativePermissions);
+            if (usesNativeSessionPermissions(detail?.agentType)) setNativePermissions(detail?.nativePermissions);
             if (detail?.goalState) setGoalState(projectSessionGoals(detail.goalState) as SessionGoalState);
 
             if (historyCursorRef.current !== restoredWindow.window.olderCursor) {
@@ -2523,6 +2560,23 @@ export default function ChatView({
       // Confirm the specific input against persisted history before clearing it.
       void refreshLatestHistory(eventSid);
     }
+    let runTerminal: StreamEvent | undefined;
+    if (eventSid && isRunTerminalEvent(event)) {
+      let first = runTerminalBySessionRef.current.get(eventSid);
+      const runId = eventRunId(event);
+      const persisted = runId
+        ? getMessagesForSession(eventSid).find((message) => message.presentation?.runResult?.runId === runId)?.presentation?.runResult
+        : undefined;
+      if (!first && persisted) {
+        first = { type: persisted.status === "failed" || persisted.status === "interrupted" ? "error" : "done", result: persisted };
+      }
+      runTerminal = firstRunTerminalEvent(first, event);
+      runTerminalBySessionRef.current.set(eventSid, runTerminal);
+      if (!isAnchoredView) {
+        const resultEvent = authoritativeRunResultEvent(runTerminal, event);
+        applyRunResult(resultEvent, eventSid);
+      }
+    }
     if (isAnchoredView) {
       setHasLatestHistoryUpdates(true);
       if (shouldDeferAnchoredSessionEvent(event.type)) return;
@@ -2545,6 +2599,7 @@ export default function ChatView({
     }
     switch (event.type) {
       case "run_admitted":
+        if (eventSid) runTerminalBySessionRef.current.delete(eventSid);
         if (isViewed) {
           setRestoredRunError(null);
           updateAgentActivity("thinking");
@@ -2565,15 +2620,21 @@ export default function ChatView({
             }
             commitOccupiedRecovery(undefined, eventSid);
           }
-          clearSessionDraft(eventSid);
-          void imageDraftCoordinator.clear(eventSid);
+          if (isViewed && draftSessionRef.current === eventSid) {
+            const draft = composerDraftRef.current;
+            writeSessionDraft(eventSid, draft.text);
+            void imageDraftCoordinator.save(eventSid, draft.images);
+          } else {
+            clearSessionDraft(eventSid);
+            void imageDraftCoordinator.clear(eventSid);
+          }
           if (preserveNativeImageDraftSessionRef.current === eventSid) {
             preserveNativeImageDraftSessionRef.current = null;
           }
         }
         break;
       case "context_usage":
-        if (event.usage) {
+        if (event.usage && "segments" in event.usage) {
           setContextUsage(event.usage, eventSid);
           if (eventSid && !eventSid.startsWith("runtime:")) {
             const remaining = (useAgentStore.getState().runtimeProgressBySession[eventSid] ?? [])
@@ -2584,7 +2645,11 @@ export default function ChatView({
         break;
       case "text_chunk":
         if (event.text) {
-          if (
+          const copilot = eventSid && historyAgentType(eventSid) === "copilot"
+            ? applyCopilotLiveMessage(getMessagesForSession(eventSid), { type: "text_chunk", text: event.text, turnId: event.turnId, itemId: event.itemId })
+            : null;
+          if (copilot) setMessages(copilot, eventSid);
+          else if (
             eventSid
             && event.turnId
             && event.messagePhase === "commentary"
@@ -2631,7 +2696,11 @@ export default function ChatView({
             delta: event.delta,
             ...(event.turnId ? { turnId: event.turnId } : {}),
           } as const;
-          if (eventSid && event.turnId && historyAgentType(eventSid) === "codex") {
+          const copilot = eventSid && historyAgentType(eventSid) === "copilot"
+            ? applyCopilotLiveMessage(getMessagesForSession(eventSid), reasoningEvent)
+            : null;
+          if (copilot) setMessages(copilot, eventSid);
+          else if (eventSid && event.turnId && historyAgentType(eventSid) === "codex") {
             applyCodexExecutionEvent(event.turnId, reasoningEvent, eventSid);
           } else {
             applyReasoningSummary(reasoningEvent, eventSid);
@@ -2679,7 +2748,11 @@ export default function ChatView({
         // ask_user is handled by the subsequent "ask_user" event with its own card.
         // show_widget is handled by the subsequent "show_widget" event with its own card.
         if (event.toolCall && event.toolCall.name !== "dispatch_agent" && event.toolCall.name !== "ask_user" && event.toolCall.name !== "show_widget") {
-          if (eventSid && event.turnId && historyAgentType(eventSid) === "codex") {
+          const copilot = eventSid && historyAgentType(eventSid) === "copilot"
+            ? applyCopilotLiveMessage(getMessagesForSession(eventSid), { type: "tool_call", toolCall: event.toolCall, turnId: event.turnId })
+            : null;
+          if (copilot) setMessages(copilot, eventSid);
+          else if (eventSid && event.turnId && historyAgentType(eventSid) === "codex") {
             applyCodexExecutionEvent(event.turnId, {
               type: "tool_call",
               toolCall: event.toolCall,
@@ -2699,7 +2772,7 @@ export default function ChatView({
         }
         break;
       case "tool_result":
-        if (event.result) {
+        if (event.result && "toolCallId" in event.result) {
           if (eventSid && event.turnId && historyAgentType(eventSid) === "codex") {
             applyCodexExecutionEvent(event.turnId, {
               type: "tool_result",
@@ -2843,7 +2916,11 @@ export default function ChatView({
         }
         break;
       case "done":
-        if (isViewed) setRestoredRunError(null);
+        if (isViewed) {
+          const failure = runTerminal ? terminalRunError(runTerminal) : null;
+          setRestoredRunError(failure && eventSid ? { sessionId: eventSid, message: failure } : null);
+          if (!failure) setError(null);
+        }
         if (eventSid && cancellationTimeoutSessionId === eventSid) {
           setCancellationTimeoutSessionId(null);
           if (isViewed) setError(null);
@@ -2851,12 +2928,7 @@ export default function ChatView({
         if (eventSid && !isAnchoredView) {
           const durationMs = validCompletionDurationMs(event.durationMs);
           if (durationMs !== undefined || event.forkPoint) {
-            const completedMessage = [...getMessagesForSession(eventSid)].reverse().find((message) => (
-              message.role === "assistant"
-              && Boolean(message.content.trim())
-              && !message.toolCalls?.length
-              && !message.isCompactionSummary
-            ));
+            const completedMessage = runResultTargetMessage(getMessagesForSession(eventSid), eventRunId(event));
             if (completedMessage) {
               updateMessage(completedMessage.id, (message) => ({
                 ...message,
@@ -2879,7 +2951,7 @@ export default function ChatView({
         if (isViewed) {
           updateAgentActivity("idle");
           // Auto voice output uses the configured local/remote TTS model only.
-          if (!isAnchoredView && useUIStore.getState().autoSpeak) {
+          if (!isAnchoredView && !terminalRunError(runTerminal ?? event) && useUIStore.getState().autoSpeak) {
             const msgs = useAgentStore.getState().messages;
             const lastAssistant = [...msgs].reverse().find(
               (m) => m.role === "assistant" && m.content && !m.isCompactionSummary,
@@ -2909,6 +2981,7 @@ export default function ChatView({
         }
         break;
       case "error":
+        if (runTerminal && runTerminal !== event) break;
         if (!event._preserveActiveRun) clearRuntimeProgress(eventSid);
         if (eventSid && event.code === "SESSION_OCCUPIED" && !isAnchoredView) {
           const failedMessages = useAgentStore.getState().getMessagesForSession(eventSid);
@@ -2963,7 +3036,7 @@ export default function ChatView({
         }
         if (
           eventSid
-          && eventSid.startsWith("runtime:")
+          && (eventSid.startsWith("runtime:") || pendingNativeSendPayloadRef.current.has(eventSid))
           && event.code !== "SESSION_OCCUPIED"
           && event.code !== "SESSION_ALREADY_RUNNING"
           && event.code !== "CANCEL_CONFIRMATION_TIMEOUT"
@@ -2991,12 +3064,16 @@ export default function ChatView({
           } : undefined);
           if (forkRecovery) {
             restoreForkRecoveryToComposer(eventSid, forkRecovery);
-          } else if (recoveryPayload?.content) {
-            writeSessionDraft(eventSid, recoveryPayload.content);
-            void imageDraftCoordinator.save(eventSid, recoveryPayload.images ?? []);
+          } else if (recoveryPayload?.content && capturedPayload?.restoreDraftOnFailure !== false) {
+            const restored = restoreFailedComposerDraft(isViewed ? composerDraftRef.current : {
+              text: readSessionDraft(eventSid), images: [],
+            }, recoveryPayload);
+            writeSessionDraft(eventSid, restored.text);
+            void imageDraftCoordinator.save(eventSid, restored.images);
             if (isViewed) {
-              setInput(recoveryPayload.content);
-              setPendingImages(recoveryPayload.images ?? []);
+              composerDraftRef.current = restored;
+              setInput(restored.text);
+              setPendingImages(restored.images);
             }
           }
           pendingNativeSendPayloadRef.current.delete(eventSid);
@@ -3507,22 +3584,24 @@ export default function ChatView({
       agentName?: string;
       images?: string[];
       restoreDraftOnFailure?: boolean;
+      restoreDraftScope?: string;
     },
     targetSessionId: string,
     agentIds?: string[],
   ) {
     const notificationRunId = crypto.randomUUID();
+    runTerminalBySessionRef.current.delete(targetSessionId);
     let runCompleted = false;
     if (viewSessionIdRef.current === targetSessionId) setRestoredRunError(null);
-    if (targetSessionId.startsWith("runtime:")) {
-      pendingNativeSendPayloadRef.current.set(targetSessionId, {
-        content: message.content,
-        images: message.images ? [...message.images] : undefined,
-        agentIds: agentIds ? [...agentIds] : undefined,
-        agentName: message.agentName,
-        restoreDraftOnFailure: message.restoreDraftOnFailure,
-      });
-    }
+    // The HTTP gateway reports admission failures through onEvent, including
+    // Customer Agent failures; it does not reject the run promise.
+    pendingNativeSendPayloadRef.current.set(targetSessionId, {
+      content: message.content,
+      images: message.images ? [...message.images] : undefined,
+      agentIds: agentIds ? [...agentIds] : undefined,
+      agentName: message.agentName,
+      restoreDraftOnFailure: message.restoreDraftOnFailure,
+    });
     abortRef.current = false;
     managedRunSessionsRef.current.add(targetSessionId);
     beginAgentRunActivity(targetSessionId);
@@ -3550,14 +3629,21 @@ export default function ChatView({
         restoreForkRecoveryToComposer(targetSessionId, recovery);
       } else {
         updatePendingSendState(targetSessionId, "failed");
-        const failedPayload = pendingNativeSendPayloadRef.current.get(targetSessionId);
-        if (targetSessionId.startsWith("runtime:") && failedPayload?.content) {
+        const failedPayload = targetSessionId.startsWith("runtime:")
+          ? pendingNativeSendPayloadRef.current.get(targetSessionId) : message;
+        if (failedPayload?.content) {
           if (failedPayload.restoreDraftOnFailure !== false) {
-            writeSessionDraft(targetSessionId, failedPayload.content);
-            void imageDraftCoordinator.save(targetSessionId, failedPayload.images ?? []);
-            if ((selectedSessionIdRef.current || sessionIdRef.current) === targetSessionId) {
-              setInput(failedPayload.content);
-              setPendingImages(failedPayload.images ?? []);
+            const isViewed = viewSessionIdRef.current === targetSessionId
+              || (message.restoreDraftScope !== undefined && composerScopeRef.current === message.restoreDraftScope);
+            const restored = restoreFailedComposerDraft(isViewed ? composerDraftRef.current : {
+              text: readSessionDraft(targetSessionId), images: [],
+            }, failedPayload);
+            writeSessionDraft(targetSessionId, restored.text);
+            void imageDraftCoordinator.save(targetSessionId, restored.images);
+            if (isViewed) {
+              composerDraftRef.current = restored;
+              setInput(restored.text);
+              setPendingImages(restored.images);
             }
           }
           pendingNativeSendPayloadRef.current.delete(targetSessionId);
@@ -3625,19 +3711,31 @@ export default function ChatView({
 
   const createComposerSession = async (title: string, projectId?: string): Promise<UnifiedSessionSummary> => {
     if (!window.agentApi) throw new Error("agentApi 未就绪");
+    const scope = composerScopeRef.current;
     creatingSessionRef.current = true;
     setCreatingSession(true);
     try {
-      return await createSessionForWorkspace(window.agentApi, title, {
+      const created = await createSessionForWorkspace(window.agentApi, title, {
         projectId,
         agentType: composerAgentType,
         workspaceSource,
         workspacePath,
       });
+      if (composerScopeRef.current === scope) createdSessionDraftRef.current = created.id;
+      return created;
     } finally {
       creatingSessionRef.current = false;
       setCreatingSession(false);
     }
+  };
+
+  const prepareHarnessModeSession = async (): Promise<UnifiedSessionSummary> => {
+    if (creatingSessionRef.current) throw new Error("正在创建会话，请稍候");
+    if (!selectedProjectId && !workspacePath?.trim()) throw new Error("请先选择会话目录，再选择模式");
+    const scope = composerScopeRef.current;
+    const created = await createComposerSession(input.trim().slice(0, 60) || "新会话", selectedProjectId || undefined);
+    if (composerScopeRef.current !== scope) throw new Error("会话目录已切换，请重新选择模式");
+    return created;
   };
 
   const submitChatMessage = async (submission: ChatSubmission) => {
@@ -3656,6 +3754,7 @@ export default function ChatView({
     const userMsg = submission.text;
     const clearSubmittedComposer = () => {
       if (!submission.clearComposer) return;
+      composerDraftRef.current = { text: "", images: [] };
       setInput("");
       setAttachedFiles([]);
       setPendingImages([]);
@@ -3912,10 +4011,6 @@ export default function ChatView({
           onSessionCreated,
         });
         admittedSessionId = targetSessionId;
-        if (submission.clearComposer && targetSessionId !== viewSessionId) {
-          clearSessionDraft(targetSessionId);
-          void imageDraftCoordinator.clear(targetSessionId);
-        }
         const state = await window.agentApi.enqueueSessionGoal(
           targetSessionId,
           goalObjective,
@@ -3941,8 +4036,8 @@ export default function ChatView({
           (failedSessionId && currentlyViewedSessionId === failedSessionId)
           || (!failedSessionId && !currentlyViewedSessionId)
         )) {
-          setInput(finalMsg);
-          setPendingImages(imagesToSend ?? []);
+          setInput(current => current ? `${finalMsg}\n\n${current}` : finalMsg);
+          setPendingImages(current => [...new Set([...(imagesToSend ?? []), ...current])]);
         }
         setRunningSession(null);
         setError(goalError instanceof Error ? goalError.message : "目标创建失败");
@@ -4003,6 +4098,7 @@ export default function ChatView({
 
     // ── Normal send flow ───────────────────────────────────────────────────
     const submittedSessionId = viewSessionId;
+    const submittedComposerScope = composerScopeRef.current;
     if (submission.clearComposer && isNativeRuntime && submittedSessionId) {
       preserveNativeDraftRef.current = true;
       preserveNativeImageDraftSessionRef.current = submittedSessionId;
@@ -4048,6 +4144,7 @@ export default function ChatView({
           agentName: agentNamesLabel,
           images: imagesToSend,
           restoreDraftOnFailure: submission.restoreDraftOnFailure,
+          restoreDraftScope: submittedComposerScope,
         },
         targetSessionId,
         agentIdsToSend.length > 0 ? agentIdsToSend : undefined,
@@ -4055,9 +4152,14 @@ export default function ChatView({
     } catch (err) {
       const targetSessionId = viewSessionId ?? sessionIdRef.current;
       if (targetSessionId) updatePendingSendState(targetSessionId, "failed");
-      if (submission.restoreDraftOnFailure) {
-        setInput(finalMsg);
-        setPendingImages(imagesToSend ?? []);
+      if (submission.restoreDraftOnFailure && (
+        composerScopeRef.current === submittedComposerScope
+        || (targetSessionId && viewSessionIdRef.current === targetSessionId)
+      )) {
+        const restored = restoreFailedComposerDraft(composerDraftRef.current, { content: finalMsg, images: imagesToSend });
+        composerDraftRef.current = restored;
+        setInput(restored.text);
+        setPendingImages(restored.images);
       }
       if (runningSessionRef.current === targetSessionId) runningSessionRef.current = null;
       setError(err instanceof Error ? err.message : "Agent run failed");
@@ -4214,7 +4316,7 @@ export default function ChatView({
 
       {/* Messages area */}
       <div className="chat-messages-frame">
-        <div ref={messagesScrollRef} className="chat-messages" onScroll={handleHistoryScroll}
+        <div key={viewSessionId ?? "new-session"} ref={messagesScrollRef} className="chat-messages" onScroll={handleHistoryScroll}
           onWheel={event => {
             if (shouldLoadOlderHistoryFromWheel(event, event.currentTarget.scrollTop)) loadOlderHistoryRef.current();
           }}
@@ -4264,24 +4366,18 @@ export default function ChatView({
           </div>
         )}
 
-        {!isWorkspaceWelcome && visibleMessages.length === 0 && isInitialHistoryLoading && showInitialHistoryLoading && (
-          <div className="chat-history-initial-loading" role="status" style={{
-            height: "100%",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 9,
-            color: "var(--text-muted)",
-            fontSize: 13,
-          }}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" style={{ animation: "spin 0.8s linear infinite" }} aria-hidden="true">
-              <path d="M21 12a9 9 0 1 1-6.22-8.56" />
-            </svg>
-            <span>正在加载历史消息</span>
+        {creatingSession && (
+          <div className="chat-session-creating" role="status" aria-live="polite">
+            <LoaderCircle size={18} aria-hidden="true" />
+            <span>创建会话中</span>
           </div>
         )}
 
-        {(isWorkspaceWelcome || (visibleMessages.length === 0 && !isRunning && !isInitialHistoryLoading && !error)) && (
+        {!creatingSession && !isWorkspaceWelcome && visibleMessages.length === 0 && isInitialHistoryLoading && showInitialHistoryLoading && (
+          <SessionLoading className="chat-history-initial-loading" label="正在加载历史消息" />
+        )}
+
+        {!creatingSession && (isWorkspaceWelcome || (visibleMessages.length === 0 && !isRunning && !isInitialHistoryLoading && !error)) && (
           <EmptySessionWelcome
             key={viewSessionId ?? "initial-empty-session"}
             agentType={sessionSummary?.agentType ?? activeAgentType}
@@ -4322,6 +4418,7 @@ export default function ChatView({
           );
           const actionPolicy = messageActionPolicy(renderedMessages, i, isRunning);
           const completionDuration = formatCompletionDuration(chatMsg.presentation?.completionDurationMs);
+          const runResult = chatMsg.presentation?.runResult;
 
           // ── Compaction banner ──────────────────────────────────────────
           if (chatMsg.isCompactionSummary) {
@@ -4744,7 +4841,7 @@ export default function ChatView({
                       ? "正在发送"
                       : chatMsg.sendState === "failed"
                         ? "发送失败"
-                        : "已引导"}
+                        : chatMsg.name === "__native_steering_pending" ? "等待 Copilot 读取" : "已引导"}
                   >
                     {chatMsg.sendState === "pending" && (
                       <span className="msg-send-status__dots" aria-hidden="true">
@@ -4761,25 +4858,26 @@ export default function ChatView({
                     {chatMsg.isSteered && (
                       <span
                         className="msg-steered-status"
-                        title="已引导"
-                        aria-label="已引导"
+                        title={chatMsg.name === "__native_steering_pending" ? "等待 Copilot 读取" : "已引导"}
+                        aria-label={chatMsg.name === "__native_steering_pending" ? "等待 Copilot 读取" : "已引导"}
                         role="img"
                       >
                         <CornerUpRight size={13} strokeWidth={2} aria-hidden="true" />
+                        {chatMsg.name === "__native_steering_pending" && <span>等待 Copilot 读取</span>}
                       </span>
                     )}
                   </div>
                 )}
               </div>
               {/* Completed assistant footer remains visible after the live run disappears. */}
-              {actionPolicy.showCompletion && (
+              {(runResult || actionPolicy.showCompletion) && (
                 <div className="msg-completion-footer">
-                  <span className="msg-completion-status">
-                    <Check size={13} strokeWidth={2} aria-hidden="true" />
-                    <span>已完成</span>
-                    {completionDuration && <span> · 总耗时 {completionDuration}</span>}
-                  </span>
-                  <span className="msg-completion-actions">
+                  {runResult ? <RunResultSummary result={runResult} /> : (
+                    <span className="msg-completion-status">
+                      {completionDuration && <span>总耗时 {completionDuration}</span>}
+                    </span>
+                  )}
+                  {actionPolicy.showCompletion && <span className="msg-completion-actions">
                     {viewSessionId && (completedTurnForkPoint(msg, viewSessionId) || !viewSessionId.startsWith("runtime:")) && (
                       <button
                         type="button"
@@ -4816,7 +4914,7 @@ export default function ChatView({
                     >
                       <Copy size={13} strokeWidth={1.8} aria-hidden="true" />
                     </button>
-                  </span>
+                  </span>}
                 </div>
               )}
               {/* User controls and goal markers retain their existing behavior. */}
@@ -4978,7 +5076,6 @@ export default function ChatView({
           </RunFailureNotice>
         )}
 
-        <div ref={messagesEndRef} />
         </div>
 
         <QueryNavigationRail
@@ -5777,7 +5874,7 @@ export default function ChatView({
             onBlur={() => setTimeout(() => { setAtQuery(null); setSlashQuery(null); }, 120)}
             onKeyDown={handleComposerKeyDown}
             placeholder={canComposeNativeGoal && goalMode ? "输入要持续推进的目标" : codexReleaseState === "released" ? "已停止在 AgentRoam 中使用；Codex Desktop 最长约 30 分钟后可用" : isCompatibilityReadOnly ? (compatibilityStatus === "incompatible" ? "Codex 版本不兼容" : "正在验证会话兼容性") : isReadOnly ? "原客户端使用中，当前只读" : runtimeReady ? (goalMode ? "输入要持续推进的目标" : shouldQueueMessage ? "输入下一条排队消息" : isNewSessionComposer ? "描述你想做的事，第一条消息会创建会话" : "提出后续修改要求") : "请先在设置中配置 API Key"}
-            disabled={!canSubmitComposer || creatingSession}
+            disabled={!canSubmitComposer}
             readOnly={isRecording}
           />
 
@@ -5803,7 +5900,7 @@ export default function ChatView({
                     <button type="button" aria-label="附件 / 图片" title="附件 / 图片" onClick={() => { setAddMenuOpen(false); fileInputRef.current?.click(); }}>
                       <Paperclip size={20} aria-hidden="true" />
                     </button>
-                    <button type="button" aria-label="语音输入" title="语音输入" disabled={!canSubmitComposer || creatingSession} onClick={() => { setAddMenuOpen(false); handleMicToggle(); }}>
+                    <button type="button" aria-label="语音输入" title="语音输入" disabled={!canSubmitComposer} onClick={() => { setAddMenuOpen(false); handleMicToggle(); }}>
                       <Mic size={20} aria-hidden="true" />
                     </button>
                   </div>
@@ -5880,7 +5977,13 @@ export default function ChatView({
 
               <div className="web-native-context-control">
                 {composerAgentType === "deepseek-harness" ? (
-                  <HarnessModeControl sessionId={viewSessionId} mode={sessionSummary?.nativeMode} />
+                  <HarnessModeControl sessionId={viewSessionId} mode={sessionSummary?.nativeMode}
+                    prepareSession={isNewSessionComposer ? prepareHarnessModeSession : undefined}
+                    onSessionPrepared={async created => {
+                      sessionIdRef.current = created.id;
+                      setSessionId(created.id);
+                      if (onSessionCreated) await onSessionCreated(created.id, created);
+                    }} />
                 ) : (
                   <ContextUsageBar
                     usage={viewSessionId ? contextUsageBySession[viewSessionId] : undefined}
@@ -6054,7 +6157,7 @@ export default function ChatView({
               <button
                 type="button"
                 onClick={handleSend}
-                disabled={creatingSession || !canSubmitComposer || nativeGoal.pending || pendingImageReads > 0 || !input.trim()}
+                disabled={creatingSession || !canSubmitComposer || nativeGoal.pending || pendingImageReads > 0 || (!input.trim() && !pendingImages.length)}
                 className="web-native-send-button"
                 aria-busy={creatingSession}
                 aria-label={creatingSession ? "正在创建会话" : shouldQueueMessage ? "排队发送" : "发送"}
@@ -6069,7 +6172,6 @@ export default function ChatView({
         </div>{/* end input box */}
         </div>{/* end relative wrapper */}
 
-        {creatingSession && <div role="status" className="composer-creating-session"><LoaderCircle size={14} className="animate-spin" />正在创建会话并发送…</div>}
         <AppActionNotice message={dictationError} type="error" />
 
         {/* Hint */}

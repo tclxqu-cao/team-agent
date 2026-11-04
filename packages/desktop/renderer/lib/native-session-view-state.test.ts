@@ -98,6 +98,14 @@ describe("native session view state", () => {
     expect(shouldQueueMessageForActiveRun(session, true)).toBe(true);
   });
 
+  it("observes a shared VS Code turn without restoring a nonexistent broker run or queueing behind it", () => {
+    const session: NativeSessionViewState = { agentType: "copilot", status: "running", occupancy: "available" };
+    expect(isObservedNativeRun(session)).toBe(true);
+    expect(shouldRestoreLocalNativeRun(session)).toBe(false);
+    expect(shouldQueueMessageForActiveRun(session, false)).toBe(false);
+    expect(shouldQueueMessageForActiveRun({ ...session, occupancy: "owned-by-customer-agent" }, false)).toBe(true);
+  });
+
   it.each(["codex", "claude-code", "opencode", "deepseek-harness"] as const)(
     "follows an available idle %s session so later transcript writes appear without a reload",
     (agentType) => {

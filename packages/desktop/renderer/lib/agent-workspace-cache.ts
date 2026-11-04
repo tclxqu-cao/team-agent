@@ -85,16 +85,23 @@ export function writeAgentWorkspaceCache(
   }
 }
 
+/** Read-only presentation fallback for a directly opened session, not a native catalog ID. */
+export function isSessionOnlyWorkspace(workspace: AgentWorkspace | undefined): boolean {
+  return workspace?.source === "derived" && workspace.canCreateSession === false && workspace.roots.length > 0;
+}
+
 export function reconcileWorkspacePage(
   current: readonly AgentWorkspace[],
   page: WorkspacePage<AgentWorkspace>,
   replace: boolean,
+  selectedWorkspaceId?: string | null,
 ): AgentWorkspace[] {
   const pageIds = new Set(page.data.map((workspace) => workspace.workspaceId));
   const source = replace
     ? page.nextCursor
       ? [...page.data, ...current.filter((workspace) => !pageIds.has(workspace.workspaceId))]
-      : page.data
+      : [...page.data, ...current.filter(workspace => workspace.workspaceId === selectedWorkspaceId
+          && isSessionOnlyWorkspace(workspace) && !pageIds.has(workspace.workspaceId))]
     : [...current, ...page.data];
   const seen = new Set<string>();
   return source.filter((workspace) => {
@@ -121,6 +128,7 @@ export function reconcileSessionPage<T extends UnifiedSessionSummary>(
   current: readonly T[],
   page: WorkspacePage<T>,
   replace: boolean,
+  selectedSessionId?: string | null,
 ): T[] {
   const freshIds = new Set(page.data.map((session) => session.id));
   const freshById = new Map(page.data.map((session) => [session.id, session]));
@@ -128,7 +136,7 @@ export function reconcileSessionPage<T extends UnifiedSessionSummary>(
   const source = replace
     ? page.nextCursor
       ? [...page.data, ...current.filter((session) => !freshIds.has(session.id))]
-      : page.data
+      : [...page.data, ...current.filter(session => session.id === selectedSessionId && !freshIds.has(session.id))]
     : [
         ...current.map((session) => freshById.get(session.id) ?? session),
         ...page.data.filter((session) => !currentIds.has(session.id)),

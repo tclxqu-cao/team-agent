@@ -200,6 +200,42 @@ describe("loadCodexExecutionTracePage", () => {
   });
 });
 
+describe("run result history projection", () => {
+  const runResult = { status: "failed" as const, reason: "quota_exceeded" as const, durationMs: 1_200, runId: "r1" };
+
+  it("restores user failures and assistant results directly from server presentation", () => {
+    for (const role of ["user", "assistant"] as const) {
+      const restored = restoreSessionHistoryPage({ messages: [{ role, content: "kept", presentation: { runResult } }] });
+      expect(restored).toHaveLength(1);
+      expect(restored[0].presentation?.runResult).toEqual(runResult);
+    }
+    const imported = restoreSessionHistoryPage({ status: "idle", messages: [{ role: "assistant", content: "imported answer" }] });
+    expect(imported[0].presentation?.runResult).toBeUndefined();
+  });
+
+  it("updates a cached Codex user-only failed turn from core history", () => {
+    const current = [message("u", "run")];
+    const refreshed = [{ ...current[0], presentation: { runResult } }];
+    const merged = mergeProgressiveSessionHistoryPage(current, refreshed, "core", { delivery: "core", revision: "v2" });
+    expect(merged).toHaveLength(1);
+    expect(merged[0].presentation?.runResult).toEqual(runResult);
+  });
+
+  it("preserves the first same-run result through delayed snapshots and accepts the next run", () => {
+    const current = [message("u", "run"), { ...assistant("a", "partial"), presentation: { runResult } }];
+    const success = { status: "completed" as const, reason: "completed" as const, durationMs: 3_000, runId: "r1" };
+    for (const merge of [
+      (next: ChatMessage[]) => mergeRefreshedSessionHistory(current, next),
+      (next: ChatMessage[]) => mergeProgressiveSessionHistoryPage(current, next, "core", { delivery: "core", revision: "v2" }),
+    ]) {
+      const merged = merge([{ ...current[0] }, { ...current[1], presentation: { runResult: success } }]);
+      expect(merged[1].presentation?.runResult).toEqual(runResult);
+      const newer = merge([{ ...current[0] }, { ...current[1], presentation: { runResult: { ...success, runId: "r2" } } }]);
+      expect(newer[1].presentation?.runResult?.status).toBe("completed");
+    }
+  });
+});
+
 describe("restoreSessionHistoryPage", () => {
   it("adds one stable Codex execution disclosure from core turn metadata", () => {
     const restored = restoreSessionHistoryPage({

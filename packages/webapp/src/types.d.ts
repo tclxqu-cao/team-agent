@@ -26,6 +26,10 @@ declare module "@desktop/renderer/stores/uiStore" {
   export const useUIStore: {
     getState: () => UIStateSlice;
     subscribe: (listener: (state: UIStateSlice, previous: UIStateSlice) => void) => () => void;
+    persist: {
+      getOptions: () => { name: string };
+      rehydrate: () => Promise<void> | void;
+    };
   };
 }
 

@@ -1,17 +1,23 @@
 import type {
   AgentType,
   MessagePresentation,
+  RunResult,
+  TokenUsage,
   SessionHistoryQuery,
   SessionToolResultRef,
 } from "@agent/core";
 import type { ChatMessage, ContextUsageSnapshot, SessionHistoryWindow } from "../stores/agentStore";
 import type { SessionGoalState, UnifiedSessionSummary } from "../global";
+import { uniqueSessionMessages } from "./session-message-identity";
+import { mergeRunResultPresentation } from "./run-result";
 import {
   applyCodexLiveExecutionEvent,
   groupCodexExecutionTrace,
   isCodexExecutionCarrier,
   type CodexLiveExecutionEvent,
 } from "./codex-execution-trace";
+
+export const SESSION_HISTORY_PAGE_SIZE = 50;
 
 export interface PersistedHistoryEvent {
   type?: string;
@@ -20,13 +26,17 @@ export interface PersistedHistoryEvent {
   text?: string;
   finalText?: string;
   toolCall?: { id: string; name: string; arguments: Record<string, unknown> };
-  result?: { toolCallId?: string; content?: string; isError?: boolean };
+  result?: { toolCallId?: string; content?: string; isError?: boolean } | RunResult;
+  runId?: string;
+  _runId?: string;
+  _nativeRunId?: string;
+  durationMs?: number;
   turnId?: string;
   itemId?: string;
   messagePhase?: "commentary" | "final_answer";
   sectionIndex?: number;
   delta?: string;
-  usage?: ContextUsageSnapshot;
+  usage?: ContextUsageSnapshot | TokenUsage;
   questionId?: string;
   question?: string;
   options?: Array<{ label: string; description: string }>;
@@ -188,20 +198,6 @@ export function mergePaginatedSessionHistory(
   return direction === "older" ? [...additions, ...retained] : [...retained, ...additions];
 }
 
-function uniqueSessionMessages(messages: ChatMessage[]): ChatMessage[] {
-  const seen = new Set<string>();
-  // Old pagination prepended duplicates. Keep the last occurrence so a cache
-  // polluted by that path recovers its original chronological window.
-  const retained: ChatMessage[] = [];
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index];
-    if (seen.has(message.id)) continue;
-    seen.add(message.id);
-    retained.push(message);
-  }
-  return retained.length === messages.length ? messages : retained.reverse();
-}
-
 function mergeCoreSessionHistory(
   current: ChatMessage[],
   refreshed: ChatMessage[],
@@ -265,6 +261,10 @@ function mergeCoreSessionHistory(
         executionTrace: { ...message.executionTrace, revision: refreshedRevision },
       }
     : message);
+  merged[currentTurnStart] = {
+    ...merged[currentTurnStart],
+    presentation: mergeRunResultPresentation(merged[currentTurnStart].presentation, refreshedUser.presentation),
+  };
   if (confirmsSend) {
     merged[currentTurnStart] = {
       ...merged[currentTurnStart],
@@ -306,7 +306,7 @@ function mergeCoreSessionHistory(
       id: next.id.startsWith("history-message.v1.") ? next.id : previous.id,
       timestamp: previous.timestamp,
       images: next.images ?? previous.images,
-      presentation: next.presentation ?? previous.presentation,
+      presentation: mergeRunResultPresentation(previous.presentation, next.presentation),
     };
   }
 
@@ -362,7 +362,7 @@ function restoreSessionMessages(
   );
   const eventToolResults = new Map<string, { content: string; isError?: boolean }>();
   for (const event of events) {
-    if (event.type === "tool_result" && event.result?.toolCallId) {
+    if (event.type === "tool_result" && event.result && "toolCallId" in event.result && event.result.toolCallId) {
       eventToolResults.set(event.result.toolCallId, {
         content: event.result.content ?? "",
         isError: event.result.isError,
@@ -517,6 +517,7 @@ export function mergeRefreshedSessionHistory(
       id: message.id.startsWith("history-message.v1.") ? message.id : previous.id,
       timestamp: previous.timestamp,
       images: hasPersistedImage ? undefined : message.images ?? previous.images,
+      presentation: mergeRunResultPresentation(previous.presentation, carried.presentation),
       ...(toolCalls ? { toolCalls } : {}),
     };
   });
@@ -743,13 +744,14 @@ function toChatMessage(message: NonNullable<SessionHistoryDetail["messages"]>[nu
     };
   }
   return {
-    id: message.historyId ?? crypto.randomUUID(),
+    id: (message.role === "assistant" ? message.presentation?.nativeMessageId : undefined) ?? message.historyId ?? crypto.randomUUID(),
     role: message.role as "user" | "assistant" | "tool",
     content: message.content ?? "",
     toolCalls: message.toolCalls?.length ? message.toolCalls : undefined,
     toolCallId: message.toolCallId,
     toolResultRef: message.toolResultRef,
     name: message.name,
+    ...(message.name?.startsWith("__native_steered:") || message.name === "__native_steering_pending" ? { isSteered: true } : {}),
     presentation: message.presentation,
     ...(message.presentation?.question ? { askUser: {
       ...message.presentation.question,
@@ -795,7 +797,7 @@ function restoreCodexLiveExecutionEvents(
       };
     } else if (event.type === "tool_call" && event.toolCall) {
       liveEvent = { type: "tool_call", turnId: event.turnId, toolCall: event.toolCall };
-    } else if (event.type === "tool_result" && event.result?.toolCallId) {
+    } else if (event.type === "tool_result" && event.result && "toolCallId" in event.result && event.result.toolCallId) {
       liveEvent = {
         type: "tool_result",
         turnId: event.turnId,
@@ -830,7 +832,7 @@ function recoverEventOnlyAssistant(
       toolCalls.push(toolCall);
       toolCallsById.set(toolCall.id, toolCall);
     }
-    if (includeTools && event.type === "tool_result" && event.result?.toolCallId) {
+    if (includeTools && event.type === "tool_result" && event.result && "toolCallId" in event.result && event.result.toolCallId) {
       const toolCall = toolCallsById.get(event.result.toolCallId);
       if (toolCall) {
         toolCall.result = event.result.content ?? "";

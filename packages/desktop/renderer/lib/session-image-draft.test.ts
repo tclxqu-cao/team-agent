@@ -83,4 +83,32 @@ describe("session image drafts", () => {
     await expect(repository.read("session-a")).resolves.toEqual([]);
     await expect(repository.read("session-b")).resolves.toEqual([IMAGE_B]);
   });
+
+  it("keeps attachments added during creation when the new session takes ownership", async () => {
+    const repository = new MemoryImageDraftRepository();
+    const coordinator = new SessionImageDraftCoordinator(repository);
+
+    await coordinator.restore(null);
+    await coordinator.adopt("new-session", [IMAGE_A]);
+    await coordinator.saveSelected("new-session", [IMAGE_A, IMAGE_B]);
+
+    await expect(new SessionImageDraftCoordinator(repository).restore("new-session")).resolves.toEqual({
+      sessionId: "new-session",
+      images: [IMAGE_A, IMAGE_B],
+    });
+  });
+
+  it("rejects a stale restore after the composer is adopted by a created session", async () => {
+    let releaseRestore!: (images: string[]) => void;
+    const repository = new MemoryImageDraftRepository();
+    repository.read = () => new Promise(resolve => { releaseRestore = resolve; });
+    const coordinator = new SessionImageDraftCoordinator(repository);
+
+    const stale = coordinator.restore("old-session");
+    await coordinator.adopt("new-session", [IMAGE_B]);
+    releaseRestore([IMAGE_A]);
+
+    await expect(stale).resolves.toBeNull();
+    expect(repository.values.get("new-session")).toEqual([IMAGE_B]);
+  });
 });

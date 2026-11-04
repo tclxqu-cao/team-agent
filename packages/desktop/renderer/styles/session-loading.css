@@ -1,0 +1,85 @@
+.session-loading {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  min-height: 160px;
+  box-sizing: border-box;
+  padding: 24px;
+  color: var(--text-secondary);
+}
+
+.session-loading.session-navigation-loading {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  background: var(--bg-surface);
+}
+
+.session-loading-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 22px;
+  animation: session-loading-appear 180ms ease-out both;
+}
+
+.session-loading-orbit {
+  position: relative;
+  display: block;
+  width: 56px;
+  height: 56px;
+  color: var(--accent);
+}
+
+.session-loading-track {
+  position: absolute;
+  inset: 4px;
+  border: 1px solid color-mix(in srgb, currentColor 14%, transparent);
+  border-radius: 50%;
+}
+
+.session-loading-dots {
+  position: absolute;
+  inset: 0;
+  animation: session-loading-orbit 1.8s linear infinite;
+}
+
+.session-loading-dots i {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  transform: translate(24px, 0);
+}
+
+.session-loading-dots i:nth-child(2) { opacity: .55; transform: translate(44.8px, 36px); }
+.session-loading-dots i:nth-child(3) { opacity: .24; transform: translate(3.2px, 36px); }
+
+.session-loading-core {
+  position: absolute;
+  inset: 23px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 20px color-mix(in srgb, currentColor 24%, transparent);
+  animation: session-loading-breathe 1.8s ease-in-out infinite;
+}
+
+.session-loading-label {
+  font-size: 12px;
+  line-height: 1.6;
+  letter-spacing: .06em;
+}
+
+@keyframes session-loading-orbit { to { transform: rotate(360deg); } }
+@keyframes session-loading-breathe { 0%, 100% { opacity: .4; transform: scale(.7); } 50% { opacity: .85; transform: scale(1); } }
+@keyframes session-loading-appear { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .session-loading-content,
+  .session-loading-dots,
+  .session-loading-core { animation: none; }
+}

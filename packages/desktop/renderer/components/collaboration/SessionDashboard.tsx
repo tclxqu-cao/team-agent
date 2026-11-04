@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { Activity, ArrowRight, ChevronDown, Layers, List, Pause, Play, Plus, RefreshCw, ShieldCheck, Users, X } from "lucide-react";
 import type { AgentType } from "../../../../core/src/domain/agent/agent-type";
 import type { DashboardGroup, MonitoredSession, SessionDashboardSnapshot, SupervisionIncident } from "../../../../core/src/domain/supervision/types";
@@ -6,6 +6,7 @@ import { SESSION_DASHBOARD_READY } from "../../../../core/src/domain/web-console
 import { postDashboardIntent } from "../../lib/dashboard-navigation-delivery";
 import { useUIStore } from "../../stores/uiStore";
 import AgentBrandIcon from "../AgentBrandIcon";
+import ActionErrorDialog from "../ActionErrorDialog";
 import { AGENT_NAMES, DISCUSSION_STATUS, collaborationRequest } from "./client";
 import DashboardDecision from "./DashboardDecision";
 import { useSessionDashboard } from "./useSessionDashboard";
@@ -33,6 +34,8 @@ export function SupervisionIncidentDecision({ incident, target, refresh, onOpen 
 }
 
 function GroupCard({ item, onOpenGroup, onOpenSession, refresh }: { item: DashboardGroup; onOpenGroup: (group: DashboardGroup) => void; onOpenSession: (session: MonitoredSession) => void; refresh: () => Promise<void> }) {
+  const [expanded, setExpanded] = useState(false);
+  const detailsId = useId();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const scope = item.supervision;
@@ -47,7 +50,14 @@ function GroupCard({ item, onOpenGroup, onOpenSession, refresh }: { item: Dashbo
     finally { setBusy(false); }
   };
   return <article className={`session-dashboard-group is-${item.status}`}>
-    <header><button className="session-dashboard-title" onClick={() => onOpenGroup(item)}><Users size={18}/><strong>{item.group.name}</strong></button><span className={`session-dashboard-status is-${item.status}`}>{DISCUSSION_STATUS[item.status]}</span></header>
+    <div className="session-dashboard-group-summary">
+      <button className="session-dashboard-group-open" aria-label={`进入群聊：${item.group.name}`} onClick={() => onOpenGroup(item)}>
+        <Users size={20}/><span><strong title={item.group.name}>{item.group.name}</strong><small title={item.group.cwd}>{item.group.cwd}</small></span>
+        <span className={`session-dashboard-status is-${item.status}`}>{item.decisionCount ? `${item.decisionCount} 待决策` : DISCUSSION_STATUS[item.status]}</span>
+      </button>
+      <button className="session-dashboard-group-toggle" aria-label={`${expanded ? "收起" : "展开"}群聊详情：${item.group.name}`} aria-expanded={expanded} aria-controls={detailsId} onClick={() => setExpanded(value => !value)}><ChevronDown size={16}/></button>
+    </div>
+    {expanded && <div id={detailsId} className="session-dashboard-group-details">
     <p className="session-dashboard-progress">{item.progress}</p>
     <div className="session-dashboard-meta"><span>{item.runningCount} 运行中</span><span className={item.decisionCount ? "needs-attention" : ""}>{item.decisionCount} 待决策</span>{supervisor && <span><ShieldCheck size={13}/>{supervisor.name}{scope?.paused ? " · 已暂停监管" : " · 监工"}</span>}</div>
     <details className="session-dashboard-linked"><summary><span>{item.sessions.length ? `${item.sessions.length} 条${(scope?.group ?? item.group).monitoring?.targets.length ? "原始" : "群内"}会话` : "暂无工作会话"}</span><ChevronDown size={15}/></summary>
@@ -62,9 +72,10 @@ function GroupCard({ item, onOpenGroup, onOpenSession, refresh }: { item: Dashbo
       const target = scope?.group.monitoring?.targets.find(target => target.id === incident.sessionId);
       return target ? <SupervisionIncidentDecision key={incident.id} incident={incident} target={target} refresh={refresh} onOpen={onOpenSession}/> : null;
     })}
-    {!!scope?.incidents.length && <details className="session-dashboard-history"><summary>监工记录</summary>{scope.incidents.slice(-6).reverse().map(incident => <p key={incident.id}><time>{new Date(incident.updatedAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}</time> {incident.message} <small>{incident.status === "verifying" ? "核对新进度中" : incident.status === "resolved" ? "已处理" : incident.status === "waiting" ? "等你处理" : incident.status === "dismissed" ? "已结束" : "处理中"}</small></p>)}</details>}
+    {!!scope?.incidents.length && <details className="session-dashboard-history"><summary>监工记录</summary>{scope.incidents.slice(-6).reverse().map(incident => <p key={incident.id}><time>{new Date(incident.updatedAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}</time> {incident.message} <small>{incident.status === "queued" ? "排队中" : incident.status === "verifying" ? "核对新进度中" : incident.status === "resolved" ? "已处理" : incident.status === "waiting" ? "等你处理" : incident.status === "dismissed" ? "已结束" : "处理中"}</small></p>)}</details>}
     {error && <p className="collab-error" role="alert">{error}</p>}
-    <footer><span title={item.group.cwd}>{item.group.cwd.split(/[\\/]/).filter(Boolean).at(-1) || item.group.cwd}</span><button onClick={() => onOpenGroup(item)}>进入群聊 <ArrowRight size={14}/></button></footer>
+    <button onClick={() => onOpenGroup(item)}>进入群聊 <ArrowRight size={14}/></button>
+    </div>}
   </article>;
 }
 
@@ -92,7 +103,7 @@ function mergedDashboardEntries(snapshot: SessionDashboardSnapshot): DashboardEn
 }
 
 export default function SessionDashboard(props: DashboardProps) {
-  const { snapshot, error, loading, refresh } = useSessionDashboard();
+  const { snapshot, notice, dismissError, loading, refresh } = useSessionDashboard();
   const skin = useUIStore(state => state.skin);
   const sessionsMerged = useUIStore(state => state.dashboardSessionsMerged);
   const setSessionsMerged = useUIStore(state => state.setDashboardSessionsMerged);
@@ -108,8 +119,7 @@ export default function SessionDashboard(props: DashboardProps) {
   return <main className="session-dashboard">
     <header className="session-dashboard-heading"><div><span className="collab-eyebrow">会话总览</span><h1>Dashboard <span className="session-dashboard-live"><i/>实时</span></h1><p>在一个地方查看运行、交接与需要你决定的事。</p></div><div className="session-dashboard-toolbar"><button onClick={() => setSessionsMerged(!sessionsMerged)} aria-pressed={sessionsMerged} title={sessionsMerged ? "恢复按 Agent 分组" : "合并显示群聊和所有 Agent 的运行会话"}>{sessionsMerged ? <Layers size={16}/> : <List size={16}/>}<span>{sessionsMerged ? "按 Agent 分组" : "合并会话"}</span></button><button onClick={() => void refresh()} aria-label="刷新会话看板"><RefreshCw size={16}/></button><button onClick={viewGroups}><Users size={16}/>群聊列表</button><button className="session-dashboard-new-session" onClick={newSession}><Plus size={16}/>创建会话</button>{props.onClose && <button onClick={props.onClose} aria-label="关闭会话看板"><X size={17}/></button>}</div></header>
     <div className="session-dashboard-stats"><span><Activity size={16}/><strong>{running}</strong>运行中的原始会话</span><span className={decisions ? "needs-attention" : ""}><strong>{decisions}</strong>待你决策</span><span><strong>{snapshot?.groupTotal ?? 0}</strong>协作群</span><small>无变化时监工保持安静</small></div>
-    {error && <p role="alert" className="collab-error">{error}<button onClick={() => void refresh()}>重试</button></p>}
-    {snapshot?.discoveryError && <p role="alert" className="collab-error">原生会话状态暂时不可用：{snapshot.discoveryError}</p>}
+    {notice && <ActionErrorDialog {...notice} onClose={dismissError}/>}
     {loading && !snapshot && <p role="status">正在加载会话总览…</p>}
     {snapshot && !sessionsMerged && (snapshot.groups.length ? <section aria-label="群聊运行总览"><div className="session-dashboard-section-title"><h2><Users size={18}/>群聊 <small>Top 10 · 运行中和待决策优先</small></h2><button onClick={viewGroups}>查看全部 {snapshot.groupTotal} <ArrowRight size={14}/></button></div>
       <div className="session-dashboard-group-grid">{snapshot.groups.map(item => <GroupCard key={item.group.id} item={item} onOpenGroup={openGroup} onOpenSession={openSession} refresh={refresh}/>)}</div>

@@ -7,13 +7,12 @@ interface Props {
   candidates: RoutingCandidate[];
   sources: Array<{ database: string; accountId: string }>;
   busy: boolean;
-  error?: string | null;
   onChange: (value: MessagingSettings) => void;
   onDiscover: () => void;
   onSave: () => void;
   onClose: () => void;
 }
-export default function MessageSettings({ value, candidates, sources, busy, error, onChange, onDiscover, onSave, onClose }: Props) {
+export default function MessageSettings({ value, candidates, sources, busy, onChange, onDiscover, onSave, onClose }: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     const element = dialog.current;
@@ -33,7 +32,6 @@ export default function MessageSettings({ value, candidates, sources, busy, erro
     }}>
     <header><h2>接入设置</h2><button type="button" aria-label="关闭接入设置" onClick={onClose}>关闭</button></header>
     <div className="messaging-settings-body">
-    {error && <div className="messaging-error" role="alert">{error}</div>}
     <label>路由方式<select value={value.routingMode} onChange={event => onChange({ ...value, routingMode: event.target.value as "model" | "rules" })}>
       <option value="model">模型判断（默认）</option><option value="rules">规则判断</option>
     </select></label>

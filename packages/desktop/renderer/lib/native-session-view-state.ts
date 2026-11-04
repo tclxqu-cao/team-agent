@@ -24,11 +24,12 @@ export function isActiveNativeSession(session: NativeSessionViewState | null | u
 }
 
 export function isObservedNativeRun(session: NativeSessionViewState | null | undefined): boolean {
-  return isActiveNativeSession(session) && session?.occupancy === "owned-externally";
+  return isActiveNativeSession(session) && (session?.occupancy === "owned-externally"
+    || (session?.agentType === "copilot" && session?.occupancy === "available"));
 }
 
 export function shouldRestoreLocalNativeRun(session: NativeSessionViewState | null | undefined): boolean {
-  return isActiveNativeSession(session) && session?.occupancy !== "owned-externally";
+  return isActiveNativeSession(session) && !isObservedNativeRun(session);
 }
 
 export function shouldRestoreCustomerAgentRun(session: NativeSessionViewState | null | undefined): boolean {
@@ -60,5 +61,5 @@ export function shouldPollNativeHistoryFallback(session: NativeSessionViewState 
 
 /** These runtimes have no transcript watcher; idle does not mean unchanged. */
 export function prefersNativeHistoryPolling(session: NativeSessionViewState | null | undefined): boolean {
-  return session?.agentType === "qoder" || session?.agentType === "zcode" || session?.agentType === "workbuddy";
+  return session?.agentType === "qoder" || session?.agentType === "zcode" || session?.agentType === "workbuddy" || session?.agentType === "copilot";
 }

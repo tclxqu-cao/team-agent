@@ -225,7 +225,7 @@ describe("shared Codex-style message history", () => {
     expect(chatView).toContain("autoFollowRef.current.requestReturn()");
     expect(chatView).toContain("autoFollowRef.current.shouldFollow(mode)");
     expect(chatView).toContain("autoFollowRef.current.reset()");
-    expect(chatView).toContain('messagesEndRef.current?.scrollIntoView({ behavior: "auto" })');
+    expect(chatView).toContain('container?.scrollTo({ top: container.scrollHeight, behavior: "auto" })');
   });
 
   it("loads older history near the top without flashing a fast-request spinner", () => {
@@ -353,7 +353,8 @@ describe("shared Codex-style message history", () => {
     expect(chatView).toContain("messageActionPolicy(renderedMessages, i, isRunning)");
     expect(chatView).toContain("actionPolicy.showCompletion && (");
     expect(chatView).toContain('className="msg-completion-footer"');
-    expect(chatView).toContain("已完成");
+    expect(chatView).toContain("<RunResultSummary result={runResult} />");
+    expect(chatView).not.toContain("<span>已完成</span>");
     expect(chatView).toContain("总耗时 {completionDuration}");
     expect(chatView).toContain('!isWebShell() && actionPolicy.showSpeak && typeof window.agentApi?.ttsSpeak');
     expect(chatView).toContain("actionPolicy.showCopy && <button");
@@ -393,7 +394,7 @@ describe("shared Codex-style message history", () => {
     expect(chatView).toContain('aria-label="复制内容"');
     expect(messageBubble).toContain('className="msg-steered-status"');
     expect(messageBubble).toContain('<CornerUpRight size={13}');
-    expect(messageBubble).toContain('aria-label="已引导"');
+    expect(messageBubble).toContain('aria-label={chatMsg.name === "__native_steering_pending" ? "等待 Copilot 读取" : "已引导"}');
     expect(chatView).not.toContain("{isUser && (chatMsg.isQueued || chatMsg.isSteered) && (");
     expect(chatView.match(/\{chatMsg\.isSteered && \(/g)).toHaveLength(1);
     expect(globalCss).toMatch(/\.msg-steered-status\s*\{[\s\S]*?color:\s*var\(--success\);/);

@@ -272,7 +272,7 @@ export default function CollaborationDashboard({
             >
               <h2 id="collab-delete-title">删除“{deleting.name}”？</h2>
               <p id="collab-delete-description">
-                删除后将从看板移除，工作目录中的文件不会删除。进行中的协作需要先停止。
+                删除后将停止监工并取消关联定时任务，原始业务会话和工作目录文件会保留。进行中的协作需要先停止。
               </p>
               {mutationError && (
                 <p className="collab-error" role="alert">

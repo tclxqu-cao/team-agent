@@ -70,6 +70,39 @@ describe("agentStore session message cache", () => {
     expect(resolveVisibleSessionMessages(previous, { old: previous }, "old", undefined)).toBe(previous);
   });
 
+  it("renders one row per message identity before switching to a new session", () => {
+    const old = { id: "replayed", role: "assistant" as const, content: "old output", timestamp: 1 };
+    const question = { id: "question", role: "user" as const, content: "continue", timestamp: 2 };
+    const latest = { ...old, content: "latest output", timestamp: 3 };
+    const previous = [old, question, latest];
+    const cache = { old: previous };
+
+    expect(resolveVisibleSessionMessages(previous, cache, "old", "old")).toEqual([question, latest]);
+    expect(resolveVisibleSessionMessages([], cache, "other", "old")).toEqual([question, latest]);
+    expect(resolveVisibleSessionMessages(previous, cache, "old", undefined)).toEqual([question, latest]);
+    expect(resolveVisibleSessionMessages(previous, cache, "old", null)).toEqual([]);
+    expect(previous).toEqual([old, question, latest]);
+  });
+
+  it("keeps live run results with their session across navigation without inventing an assistant", () => {
+    const store = useAgentStore.getState();
+    store.setSessionId("visible");
+    store.addMessage({ id: "visible-user", role: "user", content: "visible", timestamp: 1 }, "visible");
+    store.addMessage({ id: "background-user", role: "user", content: "background", timestamp: 1 }, "background");
+    const failed = { status: "failed" as const, reason: "quota_exceeded" as const, durationMs: 1_000, runId: "r1" };
+    store.applyRunResult({ type: "error", result: failed }, "background");
+    expect(useAgentStore.getState().messages[0].presentation?.runResult).toBeUndefined();
+    expect(store.getMessagesForSession("background")).toHaveLength(1);
+    store.setSessionId("background");
+    expect(useAgentStore.getState().messages[0].presentation?.runResult).toEqual(failed);
+    store.applyRunResult({ type: "done", result: { ...failed, status: "completed", reason: "completed" } }, "background");
+    expect(useAgentStore.getState().messages[0].presentation?.runResult).toEqual(failed);
+  });
+
+  it("does not use reported token usage as a context snapshot", () => {
+    expect(findLatestContextUsage([{ type: "done", usage: { inputTokens: 10, outputTokens: 2, totalTokens: 12 } }])).toBeUndefined();
+  });
+
   it("keeps background session text out of the visible message list", () => {
     useAgentStore.getState().setSessionId("visible");
     useAgentStore.getState().appendText("background text", "background");

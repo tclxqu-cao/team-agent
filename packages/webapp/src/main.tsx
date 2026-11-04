@@ -16,6 +16,7 @@ import { installWebShellSkinBridge } from "./presentation/web-shell-skin";
 import { installWebShellNavigationBridge } from "./presentation/web-shell-navigation";
 import { installWebShellLiveBridge } from "./presentation/web-shell-live";
 import { announceWebappReady } from "./presentation/webapp-ready";
+import { reloadDeployedBuild } from "./presentation/reload-deployed-build";
 // The desktop renderer's design-token sheet — the Electron entry imports it
 // via its own main.tsx; without it every var(--…) in the shared UI is void.
 import "@desktop/renderer/styles/global.css";
@@ -249,7 +250,7 @@ function startBuildWatchdog(): void {
       if (res.status === 401 || res.status === 423) { location.reload(); return; }
       const info = (await res.json()) as { buildId?: string };
       const server = (info.buildId || "").replace(/^index-|\.js$/g, "");
-      if (server && server !== own) location.reload();
+      if (server && server !== own) reloadDeployedBuild();
     } catch { /* offline — retry next tick */ }
   }, 60000);
 }

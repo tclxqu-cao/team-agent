@@ -1,14 +1,17 @@
 import type { SessionHistoryDetail } from "./session-history";
+import { isRunResult, latestRunTerminalEvent, terminalRunError } from "./run-result";
 
 /** Restore the last terminal failure, not a tool error or an earlier failed turn. */
 export function latestSessionRunError(detail: SessionHistoryDetail | null): string | null {
   if (!detail || detail.status === "running" || detail.status === "active"
     || detail.history?.newerCursor || detail.history?.delivery === "trace") return null;
-  const terminal = detail.events?.slice().reverse().find((event) => (
-    event.type === "done" || event.type === "error" || event.type === "turn_aborted"
-  ));
-  if (terminal?.code === "SESSION_OCCUPIED" || terminal?.code === "SESSION_ALREADY_RUNNING") return null;
-  if (terminal?.type === "error") return terminal.message?.trim() || "运行失败，但未记录具体错误";
+  const terminal = latestRunTerminalEvent(detail.events ?? []);
+  if (terminal) return terminalRunError(terminal);
+  const messages = detail.messages ?? [];
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const projected = messages[index].presentation?.runResult;
+    if (isRunResult(projected)) return terminalRunError({ type: "done", result: projected });
+  }
   if (!terminal && detail.status === "failed") return "运行失败，但未记录具体错误";
   return null;
 }
