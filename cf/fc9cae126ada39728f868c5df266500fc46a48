@@ -1,0 +1,315 @@
+packages/desktop/renderer/components/collaboration/useSessionDashboard.ts
+  s_aaa628f19933db::t_c52a24a9df3a1f 4,8,12,17-24,26,29-31,35
+packages/desktop/renderer/components/collaboration/SessionDashboard.test.tsx
+  s_aaa628f19933db::t_c52a24a9df3a1f 7,19-23,54-55
+packages/desktop/renderer/lib/copilot-live-message.ts
+  s_9ed0db3f39d1f3::t_0770fd3552f0e6 3-18,20-31
+  s_9ed0db3f39d1f3::t_9f9fbb61ee1d0d 19
+  s_9ed0db3f39d1f3::t_06cbaedf99365a 1-2
+packages/desktop/renderer/components/messaging/MessagingPage.test.tsx
+  s_aaa628f19933db::t_c52a24a9df3a1f 32
+packages/core/src/domain/web-console/MessagingBridge.ts
+  s_aaa628f19933db::t_30c5055ebe9736 4
+packages/desktop/renderer/lib/copilot-live-message.test.ts
+  s_9ed0db3f39d1f3::t_f60474984d3a4b 1,3-16,21-41
+  s_9ed0db3f39d1f3::t_9f9fbb61ee1d0d 2,17-20
+packages/desktop/renderer/App.tsx
+  s_aaa628f19933db::t_614e08b94111b9 15,357-362
+  s_aaa628f19933db::t_9bd64e88ac1350 64-65,89,298,327,333-342,809,934-935,1010-1018,1050,1053,1055-1061,1138-1139,1213-1216,1271-1272,1895-1903,2458-2461,2484,2521,2593
+  s_aaa628f19933db::t_30c5055ebe9736 14,348-351
+  s_b4afdef366801b::t_79005ffaf39d1e 2594
+packages/desktop/renderer/lib/session-history.ts
+  s_9ed0db3f39d1f3::t_9f9fbb61ee1d0d 747
+  s_9ed0db3f39d1f3::t_0770fd3552f0e6 4-5,11-12,20-21,29-33,39,264-267,309,365,520,754,800,835
+packages/webapp/src/presentation/reload-deployed-build.ts
+  s_aaa628f19933db::t_5a2ce9cfa7e731 1-12
+packages/webapp/src/presentation/reload-deployed-build.test.ts
+  s_aaa628f19933db::t_a4c593c683bb93 1-29
+packages/desktop/renderer/components/HarnessModeControl.tsx
+  s_aaa628f19933db::t_705198a880793a 7-12,19-21,23-30,39-54,56-57,66,68,72,75-76
+packages/desktop/renderer/styles/action-error-dialog.css
+  s_aaa628f19933db::t_c52a24a9df3a1f 1-18
+packages/webapp/src/main.tsx
+  s_aaa628f19933db::t_5a2ce9cfa7e731 19,253
+packages/desktop/renderer/components/collaboration/SessionDashboard.tsx
+  s_aaa628f19933db::t_c52a24a9df3a1f 1,9,37-38,53-60,75,77-78,106,122
+packages/desktop/renderer/components/ChatView.tsx
+  s_9ed0db3f39d1f3::t_0770fd3552f0e6 110,2648-2652,2699-2703,2751-2755
+  s_aaa628f19933db::t_705198a880793a 16,21-22,63,81,86,490,588,616-623,647,664-666,901,1014,1016-1018,1181-1182,1185-1189,1193-1202,1739-1742,1766-1769,1925,2064,2563-2579,2602,2623-2630,2637,2775,2919-2923,2931,2954,2984,3039,3067-3072,3074-3076,3587,3593,3596-3604,3632-3634,3636-3646,3714,3718,3724-3725,3732-3740,3757,4039-4040,4101,4147,4155-4162,4319,4369-4372,4376-4380,4421,4873,4875-4880,4917,5877,5903,5980-5986,6160
+  s_9ed0db3f39d1f3::t_f60474984d3a4b 4844,4861-4862,4866
+packages/desktop/renderer/components/messaging/MessagingPage.tsx
+  s_aaa628f19933db::t_78573996e2dfdb 60,74-75,81,87
+  s_aaa628f19933db::t_55cebd6e0b4f7d 1,10-11,38-44,52-55,57,64-71,77,83-84,89-91,93,102-104,113-114,119,133-134,137
+packages/desktop/renderer/components/ChatHistoryStyle.test.ts
+  s_9ed0db3f39d1f3::t_065764f0841cab 228,356-357,397
+packages/desktop/renderer/lib/use-error-notice.test.ts
+  s_aaa628f19933db::t_55cebd6e0b4f7d 1-44
+packages/desktop/renderer/components/messaging/MessageSettings.tsx
+  s_aaa628f19933db::t_c52a24a9df3a1f 15
+packages/desktop/renderer/components/ActionErrorDialog.tsx
+  s_aaa628f19933db::t_c52a24a9df3a1f 1-34
+packages/desktop/renderer/lib/messaging-navigation.test.ts
+  s_aaa628f19933db::t_22a323a2fc037b 4-18,20,27,32,36,39-40,42-44,52-53
+  s_aaa628f19933db::t_a4c593c683bb93 1-3,19,21-26,28-31,33-35,37-38,41,45-51,54-63
+packages/desktop/renderer/lib/use-error-notice.ts
+  s_aaa628f19933db::t_c52a24a9df3a1f 1-40
+packages/desktop/renderer/lib/messaging-navigation.ts
+  s_aaa628f19933db::t_614e08b94111b9 1,11,13,16-18,21-25,32,44-47
+  s_aaa628f19933db::t_30c5055ebe9736 2-10,12,14-15,30-31,33-42,52-54
+  s_aaa628f19933db::t_4b7eb53b0a59ed 43,48-51
+  s_aaa628f19933db::t_03e2f96b722b2f 19-20,26-29
+packages/desktop/renderer/assets/agent-brands/sources.json
+  s_e5ecdbe762e554::t_cd5ce83b5a31b7 27-34
+packages/desktop/renderer/components/AgentBrandIcon.tsx
+  s_e5ecdbe762e554::t_663b57540556cd 6,26
+packages/desktop/renderer/components/AgentWorkspaceHeader.tsx
+  s_2911aca65abb96::t_c1e73854ec46b5 5,23-26
+packages/desktop/renderer/components/AgentWorkspaceSwitcher.test.tsx
+  s_bdf9f0732d5ca4::t_c517e02eec8817 9,23,29,47
+packages/desktop/renderer/components/RunResultSummary.test.tsx
+  s_b5ecb9f37b31b6::t_d35725f7aa9739 1-52
+packages/desktop/renderer/components/RunResultSummary.tsx
+  s_b5ecb9f37b31b6::t_64b954c0f09007 1-15
+packages/desktop/renderer/components/SessionLoading.tsx
+  s_b5ecb9f37b31b6::t_1d05cdf392fbd7 1-17
+packages/desktop/renderer/components/SidebarLayoutSwitcher.tsx
+  s_c714d2800e4b8d::t_fa80a2ad13d36b 1-123
+packages/desktop/renderer/components/collaboration/CollaborationImages.tsx
+  s_2911aca65abb96::t_d8d737ee78afe2 1-17
+packages/desktop/renderer/components/collaboration/CollaborationPage.test.tsx
+  s_2911aca65abb96::t_f796660901f5de 3-4,34,38-39,42-56
+packages/desktop/renderer/components/collaboration/GroupSupervisionSummary.tsx
+  s_2911aca65abb96::t_5499c7901f3c0f 8
+packages/desktop/renderer/components/collaboration/SupervisionMessageItem.test.tsx
+  s_521ae04822eb74::t_4f4adc1d5e3e45 1-78
+packages/desktop/renderer/components/collaboration/SupervisionMessageItem.tsx
+  s_521ae04822eb74::t_37db38cb9feedd 1-50
+packages/desktop/renderer/components/collaboration/client.ts
+  s_b5ecb9f37b31b6::t_de0731a5dd07bc 20
+packages/desktop/renderer/components/collaboration/collaboration.css
+  s_521ae04822eb74::t_a5edb7f4b75332 12,193-196,198,1253-1277
+packages/desktop/renderer/components/collaboration/session-dashboard.css
+  s_290ddf4a4a9e2b::t_371ae00de84a9c 27,30-40
+packages/desktop/renderer/components/collaboration/supervision-timeline.test.ts
+  s_2911aca65abb96::t_30a60f24ed0426 1-16
+packages/desktop/renderer/components/collaboration/supervision-timeline.ts
+  s_2911aca65abb96::t_159ae710cacf3e 1-17
+packages/desktop/renderer/components/collaboration/useCollaborationComposer.ts
+  s_2911aca65abb96::t_51395c7329dc99 1-62
+packages/desktop/renderer/components/collaboration/useCollaborationDiscussion.ts
+  s_329709ed0bce18::t_15ce9a4d96715b 23,111-115,117-120,196,204,206
+packages/desktop/renderer/components/collaboration/useSupervisionMessages.ts
+  s_2911aca65abb96::t_a71843920f9571 1-59
+packages/desktop/renderer/lib/agent-catalog.ts
+  s_b5ecb9f37b31b6::t_99d26061e6e761 7
+packages/desktop/renderer/lib/chat-submission.test.ts
+  s_329709ed0bce18::t_a396c65a3ab84a 2,38-54
+packages/desktop/renderer/lib/chat-submission.ts
+  s_329709ed0bce18::t_72d8fed6f437a5 27,38-50
+packages/desktop/renderer/lib/native-session-view-state.test.ts
+  s_1238034a29f521::t_477ed34ed20e79 101-108
+packages/desktop/renderer/lib/native-session-view-state.ts
+  s_1238034a29f521::t_8eb23e9cb84d45 27-28,32,64
+packages/desktop/renderer/lib/run-result.ts
+  s_b5ecb9f37b31b6::t_ed7b0eb32db144 1-164
+packages/desktop/renderer/lib/runtime-capabilities.test.ts
+  s_1238034a29f521::t_45d06d0f6a913d 2,11,14-19
+packages/desktop/renderer/lib/runtime-capabilities.ts
+  s_1238034a29f521::t_3d8040eb7f2031 5-9
+packages/desktop/renderer/lib/session-history.test.ts
+  s_b5ecb9f37b31b6::t_88ca3aa790ce58 203-238
+packages/desktop/renderer/lib/session-image-draft.test.ts
+  s_1ee35f0d7d1f1c::t_ecc8b56cf0c1dd 86-113
+packages/desktop/renderer/lib/session-image-draft.ts
+  s_23693ca58ab4bb::t_d739559e64f935 142-147
+packages/desktop/renderer/lib/session-run-error.test.ts
+  s_b5ecb9f37b31b6::t_c9295ab5f067af 15-16,18-19,21-23,29-37
+packages/desktop/renderer/lib/session-run-error.ts
+  s_b5ecb9f37b31b6::t_7992fbbf91cc29 2,8-14
+packages/desktop/renderer/stores/agentStore.test.ts
+  s_b5ecb9f37b31b6::t_fae0e2e7a0bcde 73-105
+packages/desktop/renderer/stores/agentStore.ts
+  s_e5ecdbe762e554::t_dea7a116c52a48 9-10,19-20,39,42-43,45,86,89-90,206,239,241-242,463-475
+packages/desktop/renderer/styles/global.css
+  s_b5ecb9f37b31b6::t_cbfa6531b43494 2313-2338,3497-3518
+packages/desktop/renderer/styles/session-loading.css
+  s_2911aca65abb96::t_2829d677cd6dc7 1-85
+packages/desktop/renderer/styles/sidebar-layout-switcher.css
+  s_c714d2800e4b8d::t_cab59a7f268176 1-99
+packages/webapp/src/presentation/browser-composer.test.ts
+  s_329709ed0bce18::t_c4624998921b3c 54,63,77
+packages/webapp/src/presentation/web-shell-navigation.test.ts
+  s_b5ecb9f37b31b6::t_08012922101c82 1,4-8,13,17-22,28-33,36-39,46,61,65-87
+packages/webapp/src/presentation/web-shell-navigation.ts
+  s_b5ecb9f37b31b6::t_5ea276248c0ef2 11-12,15-21,23,26
+packages/webapp/src/presentation/web-shell-preferences.test.ts
+  s_b5ecb9f37b31b6::t_0fa89d0b259f9d 1-64
+packages/webapp/src/presentation/web-shell-skin.test.ts
+  s_b5ecb9f37b31b6::t_21dc3401e9da67 5,97-106
+packages/webapp/src/presentation/web-shell-skin.ts
+  s_b5ecb9f37b31b6::t_c9b0fbbce31327 20-21
+packages/webapp/src/presentation/web.css
+  s_01304fc3ab6869::t_44da51e17258d0 1008,1056-1062,1088
+packages/webapp/src/types.d.ts
+  s_b5ecb9f37b31b6::t_14b825c2eae469 29-32
+packages/desktop/renderer/components/collaboration/CollaborationDashboard.tsx
+  s_1dc5bc88e0d2f8::t_2c2e8a3b019c26 275
+packages/desktop/renderer/components/collaboration/CollaborationPage.tsx
+  s_521ae04822eb74::t_29c5598833093f 8,21-26,135-138,140-141,165,237,241,246,252-254,260,333,452,457,471,562-570,601-603,607,616,674-676,720-725,769,771,783
+packages/desktop/renderer/lib/agent-workspace-cache.test.ts
+  s_dcb60ff8188b39::t_09f3ee5f32e229 6,153-178
+packages/desktop/renderer/lib/agent-workspace-cache.ts
+  s_dcb60ff8188b39::t_3c2e279d1c617a 88-92,97,103-104,131,139
+packages/desktop/renderer/lib/dashboard-session-navigation.test.ts
+  s_dcb60ff8188b39::t_695a2d502538c2 103,108-121
+packages/desktop/renderer/lib/dashboard-session-navigation.ts
+  s_dcb60ff8188b39::t_499ff4b3742cfa 4,7,11-13,43
+packages/desktop/renderer/lib/run-result.test.ts
+  s_b5ecb9f37b31b6::t_c91804e3a5e432 1-133
+packages/desktop/renderer/lib/session-message-identity.ts
+  s_01304fc3ab6869::t_8ca2d2946a69e6 1-12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cffc9cae126ada39728f868c5df266500fc46a48",
+  "prompts": {},
+  "sessions": {
+    "s_01304fc3ab6869": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a19cdc-7b6e-73c2-9778-e2458cdccbdc",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_1238034a29f521": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a18ba1-df71-70e3-8c84-fa9ad86cd8ef",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_1dc5bc88e0d2f8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a19ebc-e76d-7da1-b279-80330e5e449d",
+        "model": "unknown"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_1ee35f0d7d1f1c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a19c5f-95d8-7f12-89bd-9b30d43d1751",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_23693ca58ab4bb": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a19c60-9193-74b1-95b3-fa6af0aa2534",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_290ddf4a4a9e2b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a19c9f-2ae9-7731-a6c0-8b6df184de60",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_2911aca65abb96": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a17d71-f537-7bc0-bdf2-3f59811b32b3",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_329709ed0bce18": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a19c77-5d08-75a0-bcf7-ebc801b44714",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_521ae04822eb74": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a19cda-c364-7381-9c96-0859a7789785",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_9ed0db3f39d1f3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1a3cf-50ef-7513-bc74-df36872f06c8",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_aaa628f19933db": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1a1c0-0a71-77d3-8fc7-490ba85dd728",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_b4afdef366801b": {
+      "agent_id": {
+        "tool": "github-copilot-cli",
+        "id": "fd68e7be-7ed7-42dc-8c00-f0170bed63f2",
+        "model": "unknown"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_b5ecb9f37b31b6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1a094-2425-7d91-a4af-cf33962b0804",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_bdf9f0732d5ca4": {
+      "agent_id": {
+        "tool": "github-copilot-cli",
+        "id": "490491f2-d1a3-4565-a4a9-130537146d29",
+        "model": "unknown"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_c714d2800e4b8d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1a0ac-efa0-7603-b122-676d8fe9ea6a",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_dcb60ff8188b39": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a19ce7-6af0-7f30-a632-fd19e92d9a31",
+        "model": "unknown"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_e5ecdbe762e554": {
+      "agent_id": {
+        "tool": "github-copilot-cli",
+        "id": "b1fcc3ad-91d4-4ba5-a1ec-d801ddea34a1",
+        "model": "unknown"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
