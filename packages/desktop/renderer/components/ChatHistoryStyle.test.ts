@@ -1,5 +1,8 @@
 import { readFileSync } from "node:fs";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import MessageLink from "./MessageLink";
 
 const chatView = readFileSync(new URL("./ChatView.tsx", import.meta.url), "utf8");
 const codexExecutionTrace = readFileSync(new URL("./CodexExecutionTrace.tsx", import.meta.url), "utf8");
@@ -113,7 +116,7 @@ describe("shared Codex-style message history", () => {
   });
 
   it("folds adjacent same-action tools in both trace and fallback rendering", () => {
-    expect(chatView).toContain("coalesceAdjacentToolCallMessages(hideQueuedGoalMessages(");
+    expect(chatView).toMatch(/coalesceAdjacentToolCallMessages\(\s*presentQuestionAnswers\(\s*hideQueuedGoalMessages\(/);
     expect(chatView).toContain("groupAdjacentToolCallEntries(toolCallEntries)");
     expect(chatView).not.toContain("renderToolCallsIndividually");
     expect(codexExecutionTrace).toContain("groupAdjacentToolCallEntries(toolEntries)");
@@ -229,19 +232,26 @@ describe("shared Codex-style message history", () => {
   });
 
   it("loads older history near the top without flashing a fast-request spinner", () => {
+    const pageStatusCss = globalCss.match(/\.chat-history-page-status\s*\{([^}]*)\}/)?.[1] ?? "";
+
     expect(chatView).toContain("container.scrollTop <= 240");
     expect(chatView).toContain('import { SinglePageHistoryPrefetch } from "../lib/session-history-prefetch"');
     expect(chatView).toContain(".prefetch(targetSid, cursor");
     expect(chatView).toContain("historyPrefetchRef.current!.consume(");
     expect(chatView).toContain("prefetchOlderHistory(targetSid, nextCursor)");
-    expect(chatView).toContain("resolveOlderHistoryCursor(cursor, detail, olderMessages.length)");
+    expect(chatView).toContain("const currentIds = new Set(currentMessages.map((message) => message.id))");
+    expect(chatView).toContain("const addedCount = olderMessages.filter((message) => !currentIds.has(message.id)).length");
+    expect(chatView).toContain("resolveOlderHistoryCursor(cursor, detail, addedCount)");
     expect(chatView).toContain("before: cursor");
     expect(chatView).toContain("scrollTop: container.scrollTop");
     expect(chatView).toContain("container.scrollHeight - anchor.scrollHeight");
     expect(chatView).toContain("const slowLoadingTimer = window.setTimeout");
     expect(chatView).toContain("}, 500)");
-    expect(chatView).toContain('position: "absolute"');
-    expect(chatView).toContain('transform: "translateX(-50%)"');
+    expect(chatView).toContain('className="chat-history-page-status"');
+    expect(pageStatusCss).toContain("display: flex;");
+    expect(pageStatusCss).toContain("justify-content: center;");
+    expect(pageStatusCss).toContain("flex-shrink: 0;");
+    expect(pageStatusCss).not.toMatch(/position:\s*(absolute|fixed)/);
     expect(chatView).toContain("点击重试");
   });
 
@@ -255,14 +265,13 @@ describe("shared Codex-style message history", () => {
     expect(chatView).toContain("visibleMessages.length === 0 && isInitialHistoryLoading && showInitialHistoryLoading");
   });
 
-  it("follows selected native history immediately and limits fallback polling", () => {
+  it("follows selected native history immediately and uses runtime-aware fallback polling", () => {
     expect(chatView).toContain("shouldFollowNativeHistory(sessionSummary, targetSid, runningSessionId)");
     expect(chatView).toContain("shouldRestoreLocalNativeRun(detail)");
     expect(chatView).toContain("isLocallyRunning || isObservedNativeRun(sessionSummary)");
     expect(chatView).not.toContain('sessionSummary?.occupancy === "owned-externally"\n      && sessionSummary.status === "running"');
-    expect(chatView).toContain('const shouldPollFallback = sessionSummary?.agentType === "customer-agent"');
-    expect(chatView).toContain('|| sessionSummary?.occupancy === "owned-externally"');
-    expect(chatView).toContain('|| sessionSummary?.status === "running";');
+    expect(chatView).toContain("const shouldPollFallback = shouldPollNativeHistoryFallback(sessionSummary)");
+    expect(chatView).toContain('prefersNativeHistoryPolling(sessionSummary) || typeof window.agentApi.observeSession !== "function"');
     expect(chatView).toContain("if (shouldPollFallback) startPolling()");
     expect(chatView).toContain("window.setInterval(refresh, 2_000)");
   });
@@ -310,10 +319,16 @@ describe("shared Codex-style message history", () => {
   });
 
   it("renders safe Markdown links as clickable Chinese text", () => {
-    expect(chatView).toContain('className="chat-message-link"');
+    const href = "https://example.com/docs";
+    const html = renderToStaticMarkup(createElement(MessageLink, { href, children: "查看中文文档" }));
+
+    expect(chatView).toContain("<MessageLink");
     expect(chatView).toContain("href={token.href}");
-    expect(chatView).toContain('target="_blank"');
-    expect(chatView).toContain('rel="noopener noreferrer"');
+    expect(html).toContain('class="chat-message-link"');
+    expect(html).toContain(`href="${href}"`);
+    expect(html).toContain('target="_blank"');
+    expect(html).toContain('rel="noopener noreferrer"');
+    expect(html).toContain(">查看中文文档</a>");
     expect(globalCss).toContain(".chat-message-link:hover");
     expect(globalCss).toContain(".chat-message-link:focus-visible");
   });
@@ -351,12 +366,14 @@ describe("shared Codex-style message history", () => {
 
   it("limits message actions to user copy and completed assistant responses", () => {
     expect(chatView).toContain("messageActionPolicy(renderedMessages, i, isRunning)");
-    expect(chatView).toContain("actionPolicy.showCompletion && (");
+    expect(chatView).toContain("(runResult || actionPolicy.showCompletion) && (");
+    expect(chatView).toContain('actionPolicy.showCompletion && <span className="msg-completion-actions">');
     expect(chatView).toContain('className="msg-completion-footer"');
     expect(chatView).toContain("<RunResultSummary result={runResult} />");
     expect(chatView).not.toContain("<span>已完成</span>");
     expect(chatView).toContain("总耗时 {completionDuration}");
-    expect(chatView).toContain('!isWebShell() && actionPolicy.showSpeak && typeof window.agentApi?.ttsSpeak');
+    expect(chatView).toContain('actionPolicy.showSpeak && typeof window.agentApi?.ttsSpeak === "function"');
+    expect(chatView).not.toContain("!isWebShell() && actionPolicy.showSpeak");
     expect(chatView).toContain("actionPolicy.showCopy && <button");
     expect(chatView).toContain("copyTextToClipboard(msg.content)");
     expect(chatView).toContain('aria-label="复制内容"');
