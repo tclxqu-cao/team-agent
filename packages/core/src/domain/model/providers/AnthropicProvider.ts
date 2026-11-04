@@ -1,5 +1,6 @@
 import type { IModelProvider, Message, StreamEvent, StreamOptions, ModelProviderConfig } from '../entities.js';
 import { isModelRequestTimeout, modelRequestTimeoutEvent } from './requestTimeout.js';
+import { ProviderUsage } from './usage.js';
 
 const DEFAULT_BASE_URL = "https://api.anthropic.com";
 const DEFAULT_TIMEOUT_MS = 120_000;
@@ -82,7 +83,7 @@ export class AnthropicProvider implements IModelProvider {
 
     if (!response.ok) {
       const errText = await response.text().catch(() => "unknown error");
-      yield { type: "error", message: `Anthropic API error ${response.status}: ${errText}` };
+      yield { type: "error", code: `MODEL_HTTP_${response.status}`, message: `Anthropic API error ${response.status}: ${errText}` };
       return;
     }
 
@@ -93,6 +94,8 @@ export class AnthropicProvider implements IModelProvider {
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
+    const usage = new ProviderUsage();
+    let hasFinalUsage = false;
     let buffer = "";
     let reasoningBuffer = "";
     let reasoningLastFlushedAt = Date.now();
@@ -121,20 +124,23 @@ export class AnthropicProvider implements IModelProvider {
     try {
       while (true) {
         const { done, value } = await readWithTimeout();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
+        buffer += done ? decoder.decode() : decoder.decode(value, { stream: true });
         const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
+        buffer = done ? "" : lines.pop() ?? "";
 
         for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
-          const data = line.slice(6).trim();
+          if (!line.startsWith("data:")) continue;
+          const data = line.slice(5).trim();
           if (data === "[DONE]") continue;
           if (!data) continue;
 
           try {
             const parsed = JSON.parse(data);
+            if (parsed.type === "message_start") {
+              usage.recordAnthropic(parsed.message?.usage);
+            } else if (parsed.type === "message_delta") {
+              hasFinalUsage = usage.recordAnthropic(parsed.usage) || hasFinalUsage;
+            }
             if (terminatedWithError) continue;
 
             if (parsed.type === "content_block_start" && parsed.content_block?.type === "tool_use") {
@@ -191,6 +197,8 @@ export class AnthropicProvider implements IModelProvider {
             } else if (parsed.type === "error") {
               const reasoningEvent = takeReasoningBuffer();
               if (reasoningEvent) yield reasoningEvent;
+              const usageEvent = usage.take(false, true);
+              if (usageEvent) yield usageEvent;
               yield { type: "error", message: parsed.error?.message ?? "Stream error" };
               return;
             }
@@ -198,13 +206,18 @@ export class AnthropicProvider implements IModelProvider {
             // skip unparseable lines
           }
         }
+        if (done) break;
       }
+      const usageEvent = usage.take(hasFinalUsage, true);
+      if (usageEvent) yield usageEvent;
       if (!terminatedWithError) {
         const reasoningEvent = takeReasoningBuffer();
         if (reasoningEvent) yield reasoningEvent;
         yield { type: "text_done" };
       }
     } catch (err) {
+      const usageEvent = usage.take(false, true);
+      if (usageEvent) yield usageEvent;
       if (isModelRequestTimeout(err, requestSignal)) {
         const reasoningEvent = takeReasoningBuffer();
         if (reasoningEvent) yield reasoningEvent;

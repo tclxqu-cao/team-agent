@@ -94,6 +94,18 @@ function adapter(agentType: AgentType, discovered: UnifiedSessionSummary[], over
 }
 
 describe("UnifiedSessionService", () => {
+  it("restores Copilot approvals on latest history pages and forwards durable steering IDs", async () => {
+    const native = summary("copilot", "ahp-session:/earth", "/repo", "2026-11-03T14:50:48Z", { status: "running" });
+    const copilot = adapter("copilot", [native], { steerResult: true });
+    const pending: AgentEvent = { type: "ask_user", questionId: "copilot:cdn", question: "Allow CDN check?" };
+    copilot.getSession = vi.fn(async () => ({ ...detail(native), events: [pending] }));
+    const service = new UnifiedSessionService([copilot], async () => []);
+    expect((await service.get(native.id, { limit: 50 })).events).toEqual([pending]);
+    expect((await service.get(native.id, { limit: 50, view: "core" })).events).toEqual([pending]);
+    await expect(service.steer(native.id, "follow up", "queue-id")).resolves.toBe(true);
+    expect(copilot.steer).toHaveBeenCalledWith(native.nativeSessionId, "follow up", "queue-id");
+  });
+
   it("uses fresh summary-only admission metadata when the adapter supports it", async () => {
     const session = summary("opencode", "ses_1", "/repo", "2026-01-02T00:00:00.000Z");
     const opencode = adapter("opencode", [session]);

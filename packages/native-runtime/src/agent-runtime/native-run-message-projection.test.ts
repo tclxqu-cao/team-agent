@@ -9,7 +9,7 @@ const thought = (itemId: string, text: string): Message => ({
 });
 const reasoning = (itemId: string, delta: string): AgentEvent => ({ type: "reasoning_summary_delta", itemId, sectionIndex: 0, delta });
 
-function project(messages: Message[], events: AgentEvent[], agentType: "qoder" | "zcode" | "workbuddy" | "codex" = "qoder") {
+function project(messages: Message[], events: AgentEvent[], agentType: "qoder" | "zcode" | "workbuddy" | "codex" | "copilot" = "qoder") {
   const run: NonNullable<Parameters<typeof mergeProjectionMessages>[1]> = {
     runId: "run", sessionId: "session", agentType, nativeSessionId: "native", input: "Question",
     permissionMode: "request-approval", controller: "web", status: "terminal", nextSequence: events.length,
@@ -24,7 +24,7 @@ describe("native run transcript reconciliation", () => {
     expect(project(native, [reasoning("codex-item", "Check first"), { type: "text_chunk", text: "Answer" }], "codex")).toEqual(native);
   });
 
-  it.each(["qoder", "zcode", "workbuddy"] as const)("keeps %s reasoning before the completed answer when live and history IDs differ", agent => {
+  it.each(["qoder", "zcode", "workbuddy", "copilot"] as const)("keeps %s reasoning before the completed answer when live and history IDs differ", agent => {
     const native = [user(), thought("native-thought", "Check first"), answer()];
     const merged = project(native, [reasoning("live-thought", "Check first"), { type: "text_chunk", text: "Answer" }, { type: "done", finalText: "Answer" }], agent);
     expect(merged).toEqual(native);

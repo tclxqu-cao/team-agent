@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import { AGENT_TYPES, NATIVE_AGENT_TYPES, isAgentType, isNativeAgentType } from "./agent-type";
 
 describe("Agent type registry", () => {
-  it("keeps all eight independent Agents in stable order", () => {
-    expect(AGENT_TYPES).toEqual(["customer-agent", "codex", "claude-code", "opencode", "deepseek-harness", "qoder", "zcode", "workbuddy"]);
-    expect(new Set(AGENT_TYPES).size).toBe(8);
+  it("keeps all independent Agents in stable order", () => {
+    expect(AGENT_TYPES).toEqual(["customer-agent", "codex", "claude-code", "opencode", "deepseek-harness", "qoder", "zcode", "workbuddy", "copilot"]);
+    expect(new Set(AGENT_TYPES).size).toBe(AGENT_TYPES.length);
     expect(NATIVE_AGENT_TYPES).toEqual(AGENT_TYPES.filter(type => type !== "customer-agent"));
   });
 

@@ -17,6 +17,8 @@ import { estimateContextUsage } from './ContextUsageEstimator.js';
 import { estimateRequestTokens } from '../model/tokenBudget.js';
 import { GOAL_MESSAGE_NAME } from '../goal/ThreadGoal.js';
 import { validateRunCheckpoint, type RunCheckpoint } from './run-checkpoint.js';
+import { RunUsageAccumulator } from './run-usage.js';
+import { createRunResult, type RunReasonCode } from './run-result.js';
 
 const TOOL_OBSERVATION_MESSAGE = "__tool_observation__";
 const ITERATION_FINALIZATION_MESSAGE = "__iteration_finalization__";
@@ -185,8 +187,19 @@ export class AgentLoop implements IAgentLoop {
 
   async *run(input: string, sessionId: string, images?: string[]): AsyncIterable<AgentEvent> {
     this.abortController = new AbortController();
+    const runUsage = new RunUsageAccumulator();
+    const runStartedAt = performance.now();
+    const limitedResult = (reason: RunReasonCode) => ({
+      ...createRunResult({ type: "done", finalText: "" }, { durationMs: performance.now() - runStartedAt }),
+      reason,
+    });
+    const usageFields = () => {
+      const usage = runUsage.snapshot();
+      return usage ? { usage } : {};
+    };
 
     const restored = await this.config.runCheckpointStore?.load();
+    if (restored) runUsage.markPartial();
     if (restored) {
       validateRunCheckpoint(restored);
       if (restored.sessionId !== sessionId || restored.input !== input ||
@@ -350,8 +363,8 @@ export class AgentLoop implements IAgentLoop {
     // 3. ReAct Loop
     while (!iterationLimitReached() || finalizationReason !== null) {
       if (this.abortController.signal.aborted) {
-        yield { type: "turn_aborted" };
-        yield { type: "done", finalText: currentText || "Aborted" };
+        yield { type: "turn_aborted", ...usageFields() };
+        yield { type: "done", finalText: currentText || "Aborted", ...usageFields() };
         return;
       }
 
@@ -416,6 +429,7 @@ export class AgentLoop implements IAgentLoop {
         };
         // model-only observations are deliberately excluded from summaries and
         // durable compaction checkpoints.
+        runUsage.markPartial();
         const result = await this.compactor.compact(messages, tokenCount > inputBudget ? 1 : 8, tokenLimit);
         messages = result.messages;
         if (result.removedMessages > 0) {
@@ -438,7 +452,7 @@ export class AgentLoop implements IAgentLoop {
         requestTokens = await countRequest(requestMessages, toolDefs);
       }
       if (requestTokens > hardInputBudget) {
-        yield { type: "error", code: "context_limit", message:
+        yield { type: "error", code: "context_limit", ...usageFields(), message:
           `模型上下文上限为 ${tokenLimit} tokens，当前输入和工具约 ${requestTokens} tokens，另需至少预留 ${minimumOutputTokens} tokens 用于回答。请减少启用的工具/技能、缩短输入或增大模型服务的上下文窗口。` };
         return;
       }
@@ -504,7 +518,7 @@ export class AgentLoop implements IAgentLoop {
           // Exponential backoff: 1s, 2s, 4s, … capped at 10s
           const delay = Math.min(1000 * Math.pow(2, totalRetries - 1) + Math.random() * 500, 10_000);
           if (!(await waitForRetry(delay))) {
-            yield { type: "turn_aborted" };
+            yield { type: "turn_aborted", ...usageFields() };
             return;
           }
         }
@@ -512,6 +526,8 @@ export class AgentLoop implements IAgentLoop {
         let streamHadError = false;
         let streamProducedOutput = false;
         let streamEnded = false;
+        let streamError: Extract<AgentEvent, { type: "error" }> | undefined;
+        runUsage.beginRequest();
         try {
           for await (const event of this.config.modelProvider.streamChat(requestMessages, {
             sessionId,
@@ -523,6 +539,9 @@ export class AgentLoop implements IAgentLoop {
             if (this.abortController?.signal.aborted) break;
 
             switch (event.type) {
+              case "usage":
+                runUsage.observe(event.usage);
+                break;
               case "reasoning_delta":
                 yield {
                   type: "reasoning_summary_delta",
@@ -550,11 +569,12 @@ export class AgentLoop implements IAgentLoop {
                 hasError = true;
                 {
                   const code = modelErrorCode(event.message, event.code);
-                  yield { type: "error", message: event.message, ...(code ? { code } : {}) };
+                  streamError ??= { type: "error", message: event.message, ...(code ? { code } : {}) };
                 }
                 break;
             }
           }
+          if (streamError) yield { ...streamError, ...usageFields() };
           if (!streamProducedOutput && !this.abortController?.signal.aborted) {
             if (emptyStreamRetries === 0) {
               emptyStreamRetries++;
@@ -562,27 +582,39 @@ export class AgentLoop implements IAgentLoop {
               continue;
             }
             hasError = true;
-            yield { type: "error", message: "Model stream ended without producing a response after retry" };
+            yield { type: "error", message: "Model stream ended without producing a response after retry", ...usageFields() };
           }
           if (streamHadError || hasError) break; // model-level error, not retryable
           if (streamEnded) yield { type: "text_done" };
           break; // success — exit retry loop
         } catch (err) {
           if (this.abortController?.signal.aborted) {
-            yield { type: "turn_aborted" };
+            yield { type: "turn_aborted", ...usageFields() };
             return;
+          }
+          if (streamError) {
+            yield { ...streamError, ...usageFields() };
+            hasError = true;
+            break;
           }
           const msg = err instanceof Error ? err.message : String(err);
           const isRetryable = /timeout|rate\s*limit|5\d{2}|econnrefused|econnreset|network|temporary|too many|retry/i.test(msg);
           if (streamProducedOutput || !isRetryable || networkRetries >= maxRetries) {
             const code = modelErrorCode(msg);
-            yield { type: "error", message: msg, ...(code ? { code } : {}) };
+            yield { type: "error", message: msg, ...(code ? { code } : {}), ...usageFields() };
             hasError = true;
             break;
           }
           networkRetries++;
           totalRetries++;
+        } finally {
+          runUsage.finishRequest();
         }
+      }
+
+      if (this.abortController.signal.aborted) {
+        yield { type: "turn_aborted", ...usageFields() };
+        return;
       }
 
       // Model-only observations are valid for one request iteration. Network
@@ -593,7 +625,12 @@ export class AgentLoop implements IAgentLoop {
       // If no tool calls, we're done
       if (toolCalls.length === 0 || hasError) {
         if (!hasError) await checkpoint('completed', [], currentText);
-        yield { type: "done", finalText: currentText };
+        yield {
+          type: "done",
+          finalText: currentText,
+          ...usageFields(),
+          ...(activeFinalizationReason ? { result: limitedResult(activeFinalizationReason === "iteration_limit" ? "iteration_limit" : "tool_cycle") } : {}),
+        };
         return;
       }
 
@@ -608,6 +645,8 @@ export class AgentLoop implements IAgentLoop {
           finalText: currentText || (activeFinalizationReason === "iteration_limit"
             ? `Reached max iterations (${this.config.maxIterations})`
             : "Stopped after repeated identical tool results"),
+          ...usageFields(),
+          result: limitedResult(activeFinalizationReason === "iteration_limit" ? "iteration_limit" : "tool_cycle"),
         };
         return;
       }
@@ -696,8 +735,8 @@ export class AgentLoop implements IAgentLoop {
       }
 
       if (wasAborted) {
-        yield { type: "turn_aborted" };
-        yield { type: "done", finalText: currentText || "Aborted" };
+        yield { type: "turn_aborted", ...usageFields() };
+        yield { type: "done", finalText: currentText || "Aborted", ...usageFields() };
         return;
       }
 
@@ -748,6 +787,7 @@ export class AgentLoop implements IAgentLoop {
           detail: "正在整理工具结果和较早消息",
         };
         // Never feed pending model-only observations to the summarizer.
+        runUsage.markPartial();
         const result = await this.compactor.compact(messages, postTokenCount > inputBudget ? 1 : 8, tokenLimit);
         messages = result.messages;
         if (result.removedMessages > 0) {
@@ -781,6 +821,8 @@ export class AgentLoop implements IAgentLoop {
     yield {
       type: "done",
       finalText: currentText || `Reached max iterations (${this.config.maxIterations})`,
+      ...usageFields(),
+      result: limitedResult("iteration_limit"),
     };
   }
 

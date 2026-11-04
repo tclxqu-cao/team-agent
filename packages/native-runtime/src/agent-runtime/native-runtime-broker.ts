@@ -14,6 +14,9 @@ import {
   enqueueSessionMessage,
   finishActiveSessionGoal,
   mergeReasoningSummaryDelta,
+  createRunResult,
+  type RunResult,
+  type RunTerminalEvent,
   NEW_SESSION_PLACEHOLDER_TITLE,
   normalizeToolPermissionMode,
   paginateSessionHistory,
@@ -42,6 +45,8 @@ import {
 import { AsyncEventQueue } from "./async-event-queue.js";
 import { normalizeAgentWorkspacePath, workspacePageSize } from "./agent-workspace-index.js";
 import { ClaudeRuntimeAdapter } from "./claude-runtime-adapter.js";
+import { CopilotRuntimeAdapter } from "./copilot-runtime-adapter.js";
+import { isCopilotQuestionId } from "./copilot-approvals.js";
 import { CodexAppServerClient } from "./codex-app-server-client.js";
 import {
   CodexSessionDiskCatalog,
@@ -91,6 +96,7 @@ import {
 } from "./unified-session-service.js";
 
 const BROKER_SOCKET_NAME = "native-runtime.sock";
+const BROKER_RESTART_MESSAGE = "Native runtime restarted; this turn was interrupted. You can send again.";
 const EXTERNAL_OBSERVATION_DEBOUNCE_MS = 5_000;
 const TERMINAL_RETENTION_MS = 10 * 60_000;
 const ABORT_FALLBACK_MS = 3_000;
@@ -130,6 +136,8 @@ export interface BrokerQueuedMessageInput {
 export interface NativeRuntimeBrokerSnapshot {
   sessionId: string;
   runId: string | null;
+  /** Durable queue item that owns this run, when admitted from the queue. */
+  queueItemId?: string;
   snapshotRevision: number;
   events: BrokerRunEvent[];
   controller: NativeRuntimeController | null;
@@ -232,6 +240,7 @@ interface StoredTurnCompletionRow {
   final_text: string;
   duration_ms: number;
   completed_at: number;
+  result?: string | null;
 }
 
 interface StoredImportedWorkspaceRow {
@@ -289,7 +298,7 @@ class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, Code
     this.database.db.exec(`
       CREATE TABLE IF NOT EXISTS native_runtime_message_receipt (
         session_id TEXT NOT NULL, source_message_id TEXT NOT NULL, queue_item_id TEXT NOT NULL,
-        item TEXT NOT NULL, status TEXT NOT NULL, run_id TEXT, terminal_sequence INTEGER, terminal_event TEXT,
+        item TEXT NOT NULL, status TEXT NOT NULL, run_id TEXT, terminal_sequence INTEGER, terminal_event TEXT, steering_turn_id TEXT,
         PRIMARY KEY(session_id, source_message_id), UNIQUE(session_id, queue_item_id)
       );
       CREATE TABLE IF NOT EXISTS native_runtime_policy (
@@ -324,7 +333,8 @@ class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, Code
         input TEXT NOT NULL,
         final_text TEXT NOT NULL,
         duration_ms INTEGER NOT NULL,
-        completed_at INTEGER NOT NULL
+        completed_at INTEGER NOT NULL,
+        result TEXT
       );
       CREATE INDEX IF NOT EXISTS native_runtime_turn_completion_by_session
         ON native_runtime_turn_completion(session_id, completed_at ASC, run_id ASC);
@@ -411,6 +421,14 @@ class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, Code
     const runColumns = this.database.db.prepare("PRAGMA table_info(native_runtime_run)").all() as Array<{ name: string }>;
     if (!runColumns.some((column) => column.name === "goal_id")) {
       this.database.db.exec("ALTER TABLE native_runtime_run ADD COLUMN goal_id TEXT");
+    }
+    const completionColumns = this.database.db.prepare("PRAGMA table_info(native_runtime_turn_completion)").all() as Array<{ name: string }>;
+    if (!completionColumns.some((column) => column.name === "result")) {
+      this.database.db.exec("ALTER TABLE native_runtime_turn_completion ADD COLUMN result TEXT");
+    }
+    const receiptColumns = this.database.db.prepare("PRAGMA table_info(native_runtime_message_receipt)").all() as Array<{ name: string }>;
+    if (!receiptColumns.some(column => column.name === "steering_turn_id")) {
+      this.database.db.exec("ALTER TABLE native_runtime_message_receipt ADD COLUMN steering_turn_id TEXT");
     }
   }
 
@@ -573,7 +591,7 @@ class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, Code
       this.appendTerminal(row.run_id, {
         type: "error",
         code: "NATIVE_PROTOCOL_ERROR",
-        message: "Native runtime restarted; this turn was interrupted. You can send again.",
+        message: BROKER_RESTART_MESSAGE,
       });
       const activeItem = this.getGoalState(row.session_id).active;
       if (
@@ -772,6 +790,63 @@ class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, Code
     return this.updateGoalState(sessionId, (state) => cancelQueuedSessionMessage(state, messageId));
   }
 
+  completeSteeredMessage(sessionId: string, messageId: string, runId: string | null): SessionGoalState {
+    return this.database.db.transaction(() => {
+      const next = this.updateGoalState(sessionId, state => {
+        const item = state.queued.find(candidate => candidate.id === messageId && candidate.kind === "message");
+        if (!item) return state;
+        return { ...state, queued: state.queued.filter(candidate => candidate.id !== messageId), history: [
+          ...state.history,
+          { ...item, status: "completed" as const, position: 0, updatedAt: this.now(), lastReason: "steered" },
+        ] };
+      });
+      const item = next.history.find(candidate => candidate.id === messageId && candidate.lastReason === "steered");
+      const nativeTurn = runId ? this.database.db.prepare(
+        "SELECT json_extract(payload,'$.turnId') AS turn_id FROM native_runtime_event WHERE run_id=? AND json_extract(payload,'$.turnId') IS NOT NULL ORDER BY sequence ASC LIMIT 1",
+      ).get(runId) as { turn_id: string } | undefined : undefined;
+      if (item) this.database.db.prepare(
+        "UPDATE native_runtime_message_receipt SET item=?,status='completed',run_id=?,steering_turn_id=? WHERE session_id=? AND queue_item_id=?",
+      ).run(JSON.stringify(item), runId, nativeTurn?.turn_id ?? null, sessionId, messageId);
+      return next;
+    })();
+  }
+
+  private restoreSteeredMessages(sessionId: string, messages: Message[]): Message[] {
+    const queuedIds = new Set(this.getGoalState(sessionId).queued.map(item => `copilot-steering:${item.id}`));
+    const restored = messages.filter(message => !message.historyId || !queuedIds.has(message.historyId));
+    const rows = this.database.db.prepare(
+      "SELECT item,run_id,steering_turn_id FROM native_runtime_message_receipt WHERE session_id=? AND status='completed' ORDER BY rowid ASC",
+    ).all(sessionId) as Array<{ item: string; run_id: string | null; steering_turn_id: string | null }>;
+    for (const row of rows) {
+      let item: SessionGoal;
+      try { item = JSON.parse(row.item); } catch { continue; }
+      if (item.lastReason !== "steered") continue;
+      const historyId = item.sourceMessageId || `copilot-steered:${item.id}`;
+      if (restored.some(message => message.historyId === historyId)) continue;
+      const run = row.run_id ? this.getRunById(row.run_id) : null;
+      const name = `__native_steered:${row.run_id ?? item.id}`;
+      let anchor = -1;
+      for (let index = 0; index < restored.length; index += 1) {
+        const message = restored[index];
+        if (message.name === name || (row.steering_turn_id && message.historyId?.startsWith(`${row.steering_turn_id}:`))) anchor = index;
+      }
+      if (anchor < 0 && run) {
+        let userIndex = -1;
+        for (let index = 0; index < restored.length; index += 1) {
+          if (restored[index].role === "user" && restored[index].content === run.input) userIndex = index;
+        }
+        if (userIndex >= 0) {
+          const nextUser = restored.findIndex((message, index) => index > userIndex && message.role === "user");
+          anchor = nextUser < 0 ? restored.length - 1 : nextUser - 1;
+        }
+      }
+      restored.splice(anchor < 0 ? restored.length : anchor + 1, 0, {
+        role: "user", content: item.objective, historyId, name, images: item.messagePayload?.images,
+      });
+    }
+    return restored;
+  }
+
   finishGoal(sessionId: string, goalId: string, outcome: "completed" | "failed", reason?: string): SessionGoalState {
     return this.updateGoalState(sessionId, (state) => (
       state.active?.id === goalId
@@ -895,9 +970,18 @@ class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, Code
       const run = this.getRunById(runId);
       if (!run || run.status !== "active") return null;
       const eventAt = this.now();
-      const recordedEvent: AgentEvent = event.type === "done"
-        ? { ...event, durationMs: Math.max(0, eventAt - run.createdAt) }
-        : event;
+      let recordedEvent = event;
+      if (isTerminalEvent(event)) {
+        const stop = this.database.db.prepare("SELECT stopped_at FROM native_runtime_stop_intent WHERE session_id = ?").get(run.sessionId) as { stopped_at: number } | undefined;
+        const context = { runId, durationMs: Math.max(0, eventAt - run.createdAt) };
+        const classified = createRunResult(event, context);
+        // Stop intent alone does not confirm cancellation (e.g. confirmation
+        // timeout, startup rejection, transport loss or broker restart).
+        const result = event.type === "done" && !!stop && stop.stopped_at >= run.createdAt
+          ? createRunResult(event, { ...context, cancelled: true })
+          : classified;
+        recordedEvent = { ...event, durationMs: result.durationMs, usage: result.usage, result };
+      }
       const sequence = run.nextSequence + 1;
       this.database.db.prepare(
         "INSERT INTO native_runtime_event(run_id, sequence, payload, created_at) VALUES (?, ?, ?, ?)",
@@ -912,24 +996,26 @@ class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, Code
           ON CONFLICT(question_id) DO NOTHING
         `).run(recordedEvent.questionId, runId, eventAt);
       }
-      if (recordedEvent.type === "done") {
+      if (isTerminalEvent(recordedEvent)) {
+        const previousEvents = this.database.db.prepare("SELECT payload FROM native_runtime_event WHERE run_id = ? ORDER BY sequence ASC").all(runId) as Array<{ payload: string }>;
+        const finalText = recordedEvent.type === "done" ? recordedEvent.finalText
+          : previousEvents.map(({ payload }) => parseAgentEvent(payload)).flatMap((entry) => entry?.type === "text_chunk" ? [entry.text] : []).join("");
         this.database.db.prepare(`
           INSERT OR IGNORE INTO native_runtime_turn_completion(
-            run_id, session_id, input, final_text, duration_ms, completed_at
-          ) VALUES (?, ?, ?, ?, ?, ?)
+            run_id, session_id, input, final_text, duration_ms, completed_at, result
+          ) VALUES (?, ?, ?, ?, ?, ?, ?)
         `).run(
           run.runId,
           run.sessionId,
           run.input,
-          recordedEvent.finalText,
+          finalText,
           recordedEvent.durationMs,
           eventAt,
+          JSON.stringify(recordedEvent.result),
         );
-      }
-      if (isTerminalEvent(recordedEvent)) {
         if (run.goalId) this.database.db.prepare(
           "UPDATE native_runtime_message_receipt SET status=?,run_id=?,terminal_sequence=?,terminal_event=? WHERE session_id=? AND queue_item_id=?"
-        ).run(recordedEvent.type === "done" ? "completed" : recordedEvent.type === "error" && ["NATIVE_ABORTED", "USER_ABORTED", "RUN_CANCELLED"].includes(recordedEvent.code ?? "") ? "cancelled" : "failed",
+        ).run(recordedEvent.result?.status === "cancelled" ? "cancelled" : recordedEvent.type === "done" ? "completed" : recordedEvent.type === "error" && ["NATIVE_ABORTED", "USER_ABORTED", "RUN_CANCELLED"].includes(recordedEvent.code ?? "") ? "cancelled" : "failed",
           run.runId, sequence, JSON.stringify(recordedEvent), run.sessionId, run.goalId);
         this.finalizeRun(run, eventAt);
       }
@@ -938,7 +1024,7 @@ class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, Code
     return append();
   }
 
-  appendTerminal(runId: string, event: Extract<AgentEvent, { type: "error" | "done" }>): BrokerRunEvent | null {
+  appendTerminal(runId: string, event: RunTerminalEvent): BrokerRunEvent | null {
     const current = this.getRunById(runId);
     if (!current || current.status !== "active") return null;
     return this.appendEvent(runId, event);
@@ -949,6 +1035,7 @@ class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, Code
     return {
       sessionId,
       runId: projection.run?.runId ?? null,
+      ...(projection.run?.goalId ? { queueItemId: projection.run.goalId } : {}),
       snapshotRevision: projection.run?.nextSequence ?? 0,
       events: projection.events,
       controller: projection.run?.status === "active" ? projection.run.controller : null,
@@ -1124,7 +1211,7 @@ class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, Code
     };
   }
 
-  applyDetail(detail: UnifiedSessionDetail, options: { mergeProjection?: boolean; includePendingQuestions?: boolean } = {}): UnifiedSessionDetail {
+  applyDetail(detail: UnifiedSessionDetail, options: { mergeProjection?: boolean; includePendingQuestions?: boolean; windowed?: boolean } = {}): UnifiedSessionDetail {
     const summary = this.applySummary(detail);
     const projection = this.projection(detail.id);
     // Windowed pages that exclude the session tail must not merge the retained
@@ -1135,18 +1222,55 @@ class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, Code
     const projectedMessages = mergeProjection
       ? mergeProjectionMessages(detail.messages, projection.run, projection.events)
       : detail.messages;
-    const completionRows = this.database.db.prepare(`
-      SELECT run_id, session_id, input, final_text, duration_ms, completed_at
+    const storedCompletions = this.database.db.prepare(`
+      SELECT run_id, session_id, input, final_text, duration_ms, completed_at, result
       FROM native_runtime_turn_completion
       WHERE session_id = ?
       ORDER BY completed_at ASC, run_id ASC
     `).all(detail.id) as StoredTurnCompletionRow[];
-    const messages = applyTurnCompletions(projectedMessages, completionRows);
+    // VS Code owns Copilot execution across gateway restarts. Losing this
+    // observer cannot turn its still-live/native-completed turn into a failure.
+    const interruptedCopilotRuns = detail.agentType === "copilot" ? new Set((this.database.db.prepare(`
+      SELECT run.run_id FROM native_runtime_run run
+      WHERE run.session_id = ? AND EXISTS (
+        SELECT 1 FROM native_runtime_event event WHERE event.run_id = run.run_id
+          AND json_extract(event.payload, '$.type') = 'error'
+          AND json_extract(event.payload, '$.message') = ?
+      )
+    `).all(detail.id, BROKER_RESTART_MESSAGE) as Array<{ run_id: string }>).map(row => row.run_id)) : null;
+    const completionRows = interruptedCopilotRuns
+      ? storedCompletions.filter(row => !interruptedCopilotRuns.has(row.run_id))
+      : storedCompletions;
+    const windowed = options.windowed ?? (!!detail.history && (detail.history.delivery === "core" || detail.history.delivery === "trace"
+      || detail.history.olderCursor != null || detail.history.newerCursor != null
+      || detail.history.totalItems > detail.messages.length));
+    const latestCompletion = completionRows.at(-1);
+    let completionMessages = projectedMessages;
+    if (!windowed && projection.run?.status !== "active" && latestCompletion
+      && !projectedMessages.some((message) => message.role === "user" && message.content === latestCompletion.input)) {
+      const result = readCompletionResult(latestCompletion);
+      if (result && result.status !== "completed" && result.reason !== "unknown_error") {
+        // This input was accepted by the broker even if native startup failed
+        // before its transcript existed. Never synthesize an assistant answer.
+        completionMessages = [...projectedMessages, {
+          role: "user", content: latestCompletion.input, name: `__native_run:${latestCompletion.run_id}`,
+          presentation: { runResult: result },
+        }];
+      }
+    }
+    const completedMessages = applyTurnCompletions(completionMessages, completionRows, { windowed });
+    const messages = detail.agentType === "copilot"
+      ? this.restoreSteeredMessages(detail.id, completedMessages)
+      : completedMessages;
     return {
       ...detail,
       ...summary,
       messages,
-      events: detail.agentType === "opencode"
+      events: detail.agentType === "copilot"
+        ? [...(mergeProjection ? projection.events.flatMap(({ event }) =>
+          event.type === "ask_user" || event.type === "approval_resolved"
+            || (event.type === "error" && event.message === BROKER_RESTART_MESSAGE) ? [] : [event]) : []), ...detail.events]
+        : detail.agentType === "opencode"
         ? [...detail.events, ...projection.events.flatMap(({ event }) => {
           if ((event.type === "ask_user" || event.type === "approval_resolved") && isOpenCodeQuestionId(event.questionId)) return [];
           return mergeProjection || (options.includePendingQuestions && event.type === "ask_user") ? [event] : [];
@@ -1485,6 +1609,7 @@ export class NativeRuntimeBrokerHost {
         const progressiveDelivery = native.history?.delivery === "core"
           || native.history?.delivery === "trace";
         return this.state.applyDetail(native, {
+          windowed: true,
           mergeProjection: !progressiveDelivery && native.history?.newerCursor == null,
           // Restore only actionable cards before advancing the SSE cursor.
           // Tool/commentary history must remain in the lazy trace path.
@@ -1500,7 +1625,7 @@ export class NativeRuntimeBrokerHost {
       this.queryIndexCache.getOrCreate(id, projected.messages);
       return query
         ? { ...projected, ...paginateSessionHistory(projected.messages, projected.events, query, {
-            includePendingQuestions: projected.agentType === "deepseek-harness" || projected.agentType === "opencode",
+            includePendingQuestions: projected.agentType === "deepseek-harness" || projected.agentType === "opencode" || projected.agentType === "copilot",
           }) }
         : projected;
     } catch (error) {
@@ -1509,7 +1634,7 @@ export class NativeRuntimeBrokerHost {
       const projected = this.state.applyDetail({ ...pending, messages: [], events: [] });
       return query
         ? { ...projected, ...paginateSessionHistory(projected.messages, projected.events, query, {
-            includePendingQuestions: projected.agentType === "deepseek-harness" || projected.agentType === "opencode",
+            includePendingQuestions: projected.agentType === "deepseek-harness" || projected.agentType === "opencode" || projected.agentType === "copilot",
           }) }
         : projected;
     }
@@ -1628,8 +1753,10 @@ export class NativeRuntimeBrokerHost {
   async getGoals(
     sessionId: string,
     controller: NativeRuntimeController = "web",
+    resume = true,
   ): Promise<SessionGoalState> {
     let state = this.state.getGoalState(sessionId);
+    if (!resume) return state;
     if (!state.active && state.queued.length > 0 && !this.state.activeRun(sessionId)) {
       state = this.state.promoteNextItem(sessionId);
     }
@@ -1702,16 +1829,22 @@ export class NativeRuntimeBrokerHost {
   }
 
   async steerMessage(sessionId: string, messageId: string): Promise<BrokerMessageSteerResult> {
-    decodeNativeSessionId(sessionId);
+    const native = decodeNativeSessionId(sessionId);
     const item = this.state.queuedMessages(sessionId).find((message) => message.id === messageId);
     if (!item) {
       return { steered: true, state: this.state.getGoalState(sessionId) };
     }
-    const steered = await this.runtime.steer(sessionId, item.objective);
+    const copilot = native.agentType === "copilot";
+    const runId = this.state.activeRun(sessionId)?.runId ?? null;
+    const steered = copilot
+      ? await this.runtime.steer(sessionId, item.objective, messageId)
+      : await this.runtime.steer(sessionId, item.objective);
     return {
       steered,
       state: steered
-        ? this.state.cancelMessage(sessionId, messageId)
+        ? copilot
+          ? this.state.completeSteeredMessage(sessionId, messageId, runId)
+          : this.state.cancelMessage(sessionId, messageId)
         : this.state.getGoalState(sessionId),
     };
   }
@@ -1758,6 +1891,11 @@ export class NativeRuntimeBrokerHost {
     // OpenCode's authoritative pending Form can be recovered without a Broker
     // run, and its stable card identity survives browser refreshes.
     if (isOpenCodeQuestionId(questionId)) return this.runtime.answerQuestion(questionId, answer);
+    if (isCopilotQuestionId(questionId)) {
+      const resolved = await this.runtime.answerQuestion(questionId, answer);
+      if (resolved) this.handleApprovalResolved(questionId);
+      return resolved;
+    }
     const run = this.state.claimApproval(questionId);
     if (!run) return false;
     try {
@@ -1951,8 +2089,10 @@ export class NativeRuntimeBrokerHost {
         if (event.type === "error" && event.code === "SESSION_OCCUPIED") {
           this.state.recordExplicitExternalOwnership(run.sessionId);
         }
-        terminalSeen ||= isTerminalEvent(event);
-        completed ||= event.type === "done";
+        if (recorded && isTerminalEvent(recorded.event)) {
+          terminalSeen = true;
+          completed = recorded.event.type === "done";
+        }
       }
       if (!terminalSeen) {
         logGlobal("error", "native-broker", "native run ended without a terminal event", undefined, {
@@ -2246,6 +2386,7 @@ export class NativeRuntimeBrokerHost {
       case "getGoals": return this.getGoals(
         requireSessionId(sessionId),
         controllerParam(request.params.controller),
+        request.params.resume !== false,
       );
       case "enqueueGoal": return this.enqueueGoal(
         requireSessionId(sessionId),
@@ -2536,8 +2677,8 @@ export class NativeRuntimeBrokerClient {
     return this.request("messageSnapshot", { sessionId: id, sourceMessageId, afterSequence, queueItemId });
   }
 
-  async getGoals(id: string, controller: NativeRuntimeController = "web"): Promise<SessionGoalState> {
-    return this.request("getGoals", { sessionId: id, controller });
+  async getGoals(id: string, controller: NativeRuntimeController = "web", resume = true): Promise<SessionGoalState> {
+    return this.request("getGoals", { sessionId: id, controller, resume });
   }
 
   async enqueueGoal(
@@ -2868,6 +3009,7 @@ export function createNativeRuntimeBrokerHostRuntime(
     new QoderRuntimeAdapter(),
     new ZCodeRuntimeAdapter(),
     new WorkBuddyRuntimeAdapter(),
+    new CopilotRuntimeAdapter(),
     new OpenCodeRuntimeAdapter({
       server: opencodeServer,
       executable: opencodeExecutable || "opencode",
@@ -2970,7 +3112,7 @@ export function mergeProjectionMessages(
   ) {
     return messages;
   }
-  const preserveNativeOrder = run.agentType === "qoder" || run.agentType === "zcode" || run.agentType === "workbuddy";
+  const preserveNativeOrder = run.agentType === "qoder" || run.agentType === "zcode" || run.agentType === "workbuddy" || run.agentType === "copilot";
   const projected = [...messages];
   let runUserIndex = -1;
   for (let index = projected.length - 1; index >= 0; index -= 1) {
@@ -3133,14 +3275,23 @@ export function mergeProjectionMessages(
 
 interface NativeTurnCandidate {
   turnIndex: number;
+  userIndex: number;
   assistantIndex: number;
   input: string;
   finalText: string;
+  combinedText: string;
+  runId?: string;
+}
+
+function readCompletionResult(row: StoredTurnCompletionRow): RunResult | undefined {
+  try { return row.result ? JSON.parse(row.result) as RunResult : undefined; }
+  catch { return undefined; }
 }
 
 function applyTurnCompletions(
   messages: Message[],
   rows: StoredTurnCompletionRow[],
+  options: { windowed?: boolean } = {},
 ): Message[] {
   const turns: NativeTurnCandidate[] = [];
   let turnIndex = 0;
@@ -3161,27 +3312,37 @@ function applyTurnCompletions(
         candidate.role === "assistant"
         && candidate.content.trim()
         && !candidate.toolCalls?.length
-        && !candidate.presentation?.reasoning?.length
+        && candidate.presentation?.agentMessagePhase !== "commentary"
       ) {
         assistantIndex = index;
       }
     }
-    if (assistantIndex >= 0) {
-      turns.push({
-        turnIndex,
-        assistantIndex,
-        input: userMessage.content,
-        finalText: messages[assistantIndex].content,
-      });
-    }
+    const turnMessages = messages.slice(userIndex + 1, nextUserIndex);
+    turns.push({
+      turnIndex,
+      userIndex,
+      assistantIndex,
+      input: userMessage.content,
+      finalText: assistantIndex >= 0 ? messages[assistantIndex].content : "",
+      combinedText: turnMessages.filter((message) => message.role === "assistant").map((message) => message.content).join(""),
+      runId: userMessage.name?.startsWith("__native_run:") ? userMessage.name.slice("__native_run:".length)
+        : userMessage.presentation?.runResult?.runId ?? turnMessages.find((message) => message.presentation?.runResult)?.presentation?.runResult?.runId,
+    });
     turnIndex += 1;
   }
 
   const matchableRows = rows.flatMap((row) => {
-    const candidateIndexes = turns.flatMap((turn, index) => (
-      turn.input === row.input && turn.finalText === row.final_text ? [index] : []
-    ));
-    return candidateIndexes.length > 0 ? [{ row, candidateIndexes }] : [];
+    const result = readCompletionResult(row);
+    const candidateIndexes = turns.flatMap((turn, index) => {
+      if (turn.runId) return turn.runId === row.run_id ? [index] : [];
+      // A page-local unique text match may still refer to an identical off-page turn.
+      if (options.windowed || turn.input !== row.input) return [];
+      const textMatches = result?.status && result.status !== "completed"
+        ? turn.combinedText === row.final_text || turn.finalText === row.final_text
+        : turn.assistantIndex >= 0 && turn.finalText === row.final_text;
+      return textMatches ? [index] : [];
+    });
+    return candidateIndexes.length > 0 ? [{ row, result, candidateIndexes }] : [];
   });
   if (matchableRows.length === 0) return messages;
 
@@ -3207,15 +3368,18 @@ function applyTurnCompletions(
   const completed = [...messages];
   for (let index = 0; index < matchableRows.length; index += 1) {
     if (earliest[index] !== latest[index]) continue;
-    const durationMs = matchableRows[index].row.duration_ms;
+    const { row, result } = matchableRows[index];
+    const durationMs = row.duration_ms;
     if (!Number.isFinite(durationMs) || durationMs < 0) continue;
-    const messageIndex = turns[earliest[index]].assistantIndex;
+    const turn = turns[earliest[index]];
+    const messageIndex = turn.assistantIndex >= 0 ? turn.assistantIndex : turn.userIndex;
     const message = completed[messageIndex];
     completed[messageIndex] = {
       ...message,
       presentation: {
         ...message.presentation,
-        completionDurationMs: durationMs,
+        ...(!result || result.status === "completed" ? { completionDurationMs: durationMs } : {}),
+        ...(result ? { runResult: result } : {}),
       },
     };
   }
@@ -3309,8 +3473,8 @@ function parseAgentEvent(value: string): AgentEvent | null {
   }
 }
 
-function isTerminalEvent(event: AgentEvent): event is Extract<AgentEvent, { type: "done" | "error" }> {
-  return event.type === "done" || event.type === "error";
+function isTerminalEvent(event: AgentEvent): event is RunTerminalEvent {
+  return event.type === "done" || event.type === "error" || event.type === "turn_aborted";
 }
 
 function serializeBrokerError(error: unknown): { message: string; code?: string } {

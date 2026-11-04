@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { NATIVE_AGENT_TYPES, type NativeAgentType } from "@agent/core";
 import { ClaudeRuntimeAdapter } from "./claude-runtime-adapter.js";
 import { CodexRuntimeAdapter } from "./codex-runtime-adapter.js";
+import { CopilotRuntimeAdapter } from "./copilot-runtime-adapter.js";
 import { DeepSeekHarnessRuntimeAdapter } from "./deepseek-harness-runtime-adapter.js";
 import { OpenCodeRuntimeAdapter } from "./opencode-runtime-adapter.js";
 import { StdioNativeRuntimeAdapter } from "./stdio-native-runtime-adapter.js";
@@ -11,7 +12,7 @@ afterEach(() => vi.restoreAllMocks());
 
 describe("broker host native runtime registration", () => {
   it("exposes every registered native Agent through the shared facade without launching a CLI", async () => {
-    for (const Adapter of [CodexRuntimeAdapter, ClaudeRuntimeAdapter, DeepSeekHarnessRuntimeAdapter, OpenCodeRuntimeAdapter, StdioNativeRuntimeAdapter]) {
+    for (const Adapter of [CodexRuntimeAdapter, ClaudeRuntimeAdapter, CopilotRuntimeAdapter, DeepSeekHarnessRuntimeAdapter, OpenCodeRuntimeAdapter, StdioNativeRuntimeAdapter]) {
       vi.spyOn(Adapter.prototype, "health").mockImplementation(async function (this: { agentType: NativeAgentType }) {
         return { agentType: this.agentType, label: this.agentType, available: true };
       });
@@ -23,10 +24,10 @@ describe("broker host native runtime registration", () => {
     try {
       const health = await runtime.health();
       expect(health.map(entry => entry.agentType).sort()).toEqual([...NATIVE_AGENT_TYPES].sort());
-      for (const agent of ["qoder", "zcode", "workbuddy"] as const) {
+      for (const agent of ["qoder", "zcode", "workbuddy", "copilot"] as const) {
         await expect(runtime.listModels(agent)).resolves.toEqual([{ id: `${agent}-native-model`, providerID: agent }]);
       }
-      expect(models).toHaveBeenCalledTimes(3);
+      expect(models).toHaveBeenCalledTimes(4);
       await expect(runtime.listModels("customer-agent")).rejects.toMatchObject({ code: "OPERATION_NOT_SUPPORTED" });
     } finally {
       await runtime.dispose();

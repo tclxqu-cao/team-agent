@@ -68,9 +68,9 @@ export async function POST(request: Request) {
       } as unknown as AgentEvent);
       let unsubscribe: (() => void) | null = null;
       let terminalSeen = false;
-      void service.subscribe(sessionId, 0, ({ event }) => {
-        agentHost.publishExternal(sessionId, event);
-        if (event.type === "done" || event.type === "error") {
+      void service.subscribe(sessionId, 0, ({ runId, sequence, event }) => {
+        agentHost.publishExternal(sessionId, { ...event, _nativeRunId: runId, _nativeSequence: sequence } as unknown as AgentEvent);
+        if (event.type === "done" || event.type === "error" || event.type === "turn_aborted") {
           terminalSeen = true;
           unsubscribe?.();
         }

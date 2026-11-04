@@ -94,6 +94,99 @@ function createConfig(overrides?: Partial<AgentConfig>): AgentConfig {
 }
 
 describe("AgentLoop", () => {
+  it("aggregates reported request snapshots without substituting context estimates", async () => {
+    const model = createMockModel();
+    let request = 0;
+    model.streamChat = async function* () {
+      request++;
+      if (request === 1) {
+        yield { type: "usage", usage: { inputTokens: 10, outputTokens: 1, totalTokens: 11 } };
+        yield { type: "usage", usage: { inputTokens: 10, outputTokens: 3, totalTokens: 13 } };
+        yield { type: "tool_call", toolCall: { id: "echo-1", name: "echo", arguments: { message: "hi" } } };
+      } else {
+        yield { type: "text_chunk", text: "OK" };
+        yield { type: "usage", usage: { inputTokens: 20, outputTokens: 4, totalTokens: 24 } };
+      }
+      yield { type: "text_done" };
+    };
+    const events: AgentEvent[] = [];
+    for await (const event of new AgentLoop(createConfig({ modelProvider: model })).run("Hi", "reported")) events.push(event);
+    expect(events.find((event) => event.type === "done")).toMatchObject({
+      usage: { inputTokens: 30, outputTokens: 7, totalTokens: 37, source: "provider", coverage: "complete" },
+    });
+    expect(events.some((event) => (event as { type: string }).type === "usage")).toBe(false);
+  });
+
+  it("keeps missing usage unknown and marks partially metered requests", async () => {
+    const unknown: AgentEvent[] = [];
+    for await (const event of new AgentLoop(createConfig()).run("Hi", "unknown")) unknown.push(event);
+    expect(unknown.find((event) => event.type === "done")).not.toHaveProperty("usage");
+    const model = createMockModel();
+    let request = 0;
+    model.streamChat = async function* () {
+      if (++request === 1) {
+        yield { type: "tool_call", toolCall: { id: "echo-1", name: "echo", arguments: { message: "hi" } } };
+      } else {
+        yield { type: "text_chunk", text: "OK" };
+        yield { type: "usage", usage: { inputTokens: 20, outputTokens: 4, totalTokens: 24 } };
+      }
+    };
+    const events: AgentEvent[] = [];
+    for await (const event of new AgentLoop(createConfig({ modelProvider: model })).run("Hi", "partial")) events.push(event);
+    expect(events.find((event) => event.type === "done")).toMatchObject({ usage: { inputTokens: 20, outputTokens: 4, coverage: "partial" } });
+  });
+
+  it("attaches late reported usage to the first terminal error", async () => {
+    const model = createMockModel();
+    model.streamChat = async function* () {
+      yield { type: "text_chunk", text: "Partial" };
+      yield { type: "error", message: "output max_tokens reached" };
+      yield { type: "usage", usage: { inputTokens: 20, outputTokens: 4, totalTokens: 24 } };
+      yield { type: "error", message: "later error must not replace the first" };
+    };
+    const events: AgentEvent[] = [];
+    for await (const event of new AgentLoop(createConfig({ modelProvider: model })).run("Hi", "late-usage")) events.push(event);
+    expect(events.filter((event) => event.type === "error")).toEqual([{
+      type: "error", message: "output max_tokens reached", usage: { inputTokens: 20, outputTokens: 4, totalTokens: 24, source: "provider", coverage: "complete" },
+    }]);
+  });
+
+  it("does not reuse usage from a completed request after a cancelled follow-up", async () => {
+    const model = createMockModel();
+    let request = 0;
+    let loop: AgentLoop;
+    model.streamChat = async function* () {
+      if (++request === 1) {
+        yield { type: "usage", usage: { inputTokens: 10, outputTokens: 2, totalTokens: 12 } };
+        yield { type: "tool_call", toolCall: { id: "echo-1", name: "echo", arguments: { message: "hi" } } };
+      } else {
+        loop.abort();
+        throw new Error("request aborted");
+      }
+    };
+    loop = new AgentLoop(createConfig({ modelProvider: model }));
+    const events: AgentEvent[] = [];
+    for await (const event of loop.run("Hi", "cancel-follow-up")) events.push(event);
+    expect(events.find((event) => event.type === "turn_aborted")).toMatchObject({ usage: {
+      inputTokens: 10, outputTokens: 2, totalTokens: 12, coverage: "partial",
+    } });
+  });
+
+  it("emits cancellation rather than success when abort closes a model stream normally", async () => {
+    const model = createMockModel();
+    let loop: AgentLoop;
+    model.streamChat = async function* () {
+      yield { type: "text_chunk", text: "Partial" };
+      loop.abort();
+      yield { type: "text_done" };
+    };
+    loop = new AgentLoop(createConfig({ modelProvider: model }));
+    const events: AgentEvent[] = [];
+    for await (const event of loop.run("Hi", "cancel-normal-close")) events.push(event);
+    expect(events.at(-1)?.type).toBe("turn_aborted");
+    expect(events.some((event) => event.type === "done")).toBe(false);
+  });
+
   it("caps an oversized setting to the runtime 8192 window and reserves output and native tools", async () => {
     const model = createMockModel();
     model.getContextWindow = async () => 8192;

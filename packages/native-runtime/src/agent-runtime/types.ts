@@ -269,7 +269,7 @@ export interface AgentRuntimeAdapter {
     agentName?: string,
     options?: RuntimeRunOptions,
   ): AsyncIterable<AgentEvent>;
-  steer?(nativeSessionId: string, input: string): Promise<boolean>;
+  steer?(nativeSessionId: string, input: string, messageId?: string): Promise<boolean>;
   abort(nativeSessionId: string): Promise<void>;
   release?(nativeSessionId: string): Promise<void>;
   answerQuestion(questionId: string, answer: RuntimeQuestionAnswer): Promise<boolean>;

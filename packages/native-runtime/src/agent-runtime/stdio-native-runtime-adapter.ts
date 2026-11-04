@@ -2,7 +2,7 @@ import type { AgentEvent, Message } from "@agent/core";
 import { basename } from "node:path";
 import { normalizeAgentWorkspacePath, paginateByOffset } from "./agent-workspace-index.js";
 import { encodeUnifiedSessionId } from "./session-id.js";
-import type { BridgedNativeAgentType } from "./native-cli-command.js";
+import type { NativeAgentType } from "@agent/core";
 import { RuntimeSessionError, type AgentRuntimeAdapter, type AgentWorkspace, type CreateRuntimeSessionOptions, type NativeSessionPermissions, type RuntimeHealth, type RuntimeModelInfo, type RuntimeQuestionAnswer, type RuntimeRunOptions, type UnifiedSessionDetail, type UnifiedSessionSummary, type WorkspacePage, type WorkspaceQuery, type WorkspaceSessionQuery } from "./types.js";
 
 export interface NativeProtocolSession {
@@ -20,7 +20,7 @@ export interface NativeProtocolSession {
 export interface NativeSessionProtocol {
   available(): Promise<void>;
   list(): Promise<NativeProtocolSession[]>;
-  read(id: string): Promise<{ session: NativeProtocolSession; messages: Message[] }>;
+  read(id: string): Promise<{ session: NativeProtocolSession; messages: Message[]; events?: AgentEvent[] }>;
   create(options: CreateRuntimeSessionOptions): Promise<NativeProtocolSession>;
   run(id: string, input: string, images?: string[], options?: RuntimeRunOptions): AsyncIterable<AgentEvent>;
   abort(id: string): Promise<void>;
@@ -35,19 +35,20 @@ export class StdioNativeRuntimeAdapter implements AgentRuntimeAdapter {
   private readonly running = new Set<string>();
   private readonly drafts = new Map<string, UnifiedSessionSummary>();
 
-  constructor(readonly agentType: BridgedNativeAgentType, private readonly label: string, private readonly client: NativeSessionProtocol) {}
+  constructor(readonly agentType: NativeAgentType, private readonly label: string, private readonly client: NativeSessionProtocol) {}
 
   async health(): Promise<RuntimeHealth> {
     try { await this.client.available(); return { agentType: this.agentType, label: this.label, available: true }; }
     catch (error) { return { agentType: this.agentType, label: this.label, available: false, error: error instanceof Error ? error.message : "Native runtime unavailable" }; }
   }
 
-  private summary(session: NativeProtocolSession): UnifiedSessionSummary {
+  protected summary(session: NativeProtocolSession): UnifiedSessionSummary {
     const owned = this.running.has(session.id);
+    const external = session.running && !owned;
     return { id: encodeUnifiedSessionId(this.agentType, session.id), agentType: this.agentType, nativeSessionId: session.id,
       title: session.title || this.label, cwd: session.cwd, created: session.created, updated: session.updated,
-      status: owned || session.running ? "running" : "idle", occupancy: owned ? "owned-by-customer-agent" : session.running ? "owned-externally" : "available",
-      sourceLabel: this.label, canResume: !session.readOnly && (!session.running || owned), canDelete: false, nativePermissions: session.nativePermissions,
+      status: owned || session.running ? "running" : "idle", occupancy: owned ? "owned-by-customer-agent" : external ? "owned-externally" : "available",
+      sourceLabel: this.label, canResume: !session.readOnly && !external, canDelete: false, nativePermissions: session.nativePermissions,
       ...(session.readOnly ? { readOnly: true } : {}),
       ...(session.parentSessionId ? { parentSessionId: encodeUnifiedSessionId(this.agentType, session.parentSessionId) } : {}) };
   }
@@ -129,7 +130,7 @@ export class StdioNativeRuntimeAdapter implements AgentRuntimeAdapter {
 
   async getSession(id: string): Promise<UnifiedSessionDetail> {
     const detail = await this.client.read(id);
-    return { ...this.drafts.get(id), ...this.summary(detail.session), messages: detail.messages, events: [] };
+    return { ...this.drafts.get(id), ...this.summary(detail.session), messages: detail.messages, events: detail.events ?? [] };
   }
 
   async create(options: CreateRuntimeSessionOptions): Promise<UnifiedSessionSummary> {

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as filesystem from "node:fs/promises";
 import { appendFile, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -977,7 +977,127 @@ describe("Codex live execution events", () => {
   });
 });
 
+describe("Codex terminal token usage", () => {
+  beforeEach(() => {
+    vi.spyOn(nativeProcesses, "listOpenSessionFiles").mockResolvedValue(new Set());
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  function setup(emit?: (notify: (message: any) => void, turnId: string) => void) {
+    let notify: (message: any) => void = () => undefined;
+    let turnIndex = 0;
+    const thread = {
+      id: "cx-usage", parentThreadId: null, preview: "usage", name: "usage",
+      createdAt: 1_788_220_800, updatedAt: 1_788_220_800, status: { type: "idle" },
+      path: null, cwd: "/repo", source: { custom: "customer-agent" }, turns: [],
+    };
+    const request = vi.fn(async (method: string) => {
+      if (method === "thread/read" || method === "thread/resume") return { thread };
+      if (method === "turn/start") {
+        const id = `usage-turn-${++turnIndex}`;
+        if (emit) queueMicrotask(() => emit(notify, id));
+        return { turn: { id } };
+      }
+      return {};
+    });
+    const client = {
+      onNotification: (handler: typeof notify) => { notify = handler; return () => undefined; },
+      onExit: () => () => undefined, setServerRequestHandler: () => undefined, request,
+    };
+    return { adapter: new CodexRuntimeAdapter({ client: client as never, sessionRoot: "/tmp" }), notify, threadId: thread.id, request };
+  }
+
+  it.each([
+    { input_tokens: 20, output_tokens: 4, cached_input_tokens: 12 },
+    { inputTokens: 20, outputTokens: 4, cachedInputTokens: 12 },
+  ])("reports complete turn usage without counting cached input twice (%j)", async (usage) => {
+    const { adapter, threadId } = setup((notify, id) => {
+      const completed = { method: "turn/completed", params: { threadId: "cx-usage", turn: { id, status: "completed", items: [], usage } } };
+      notify(completed);
+      notify(completed);
+    });
+    const events = await drain(adapter.run(threadId, "hi"));
+    expect(events.filter((event) => event.type === "done" || event.type === "error")).toEqual([{
+      type: "done", finalText: "", usage: { inputTokens: 20, outputTokens: 4, totalTokens: 24, cacheReadTokens: 12, source: "runtime", coverage: "complete" },
+    }]);
+    expect(events.find((event) => event.type === "context_usage")?.usage.totalTokens).toBe(24);
+  });
+
+  it.each([
+    undefined, {}, { input_tokens: 3 }, { output_tokens: 2 },
+    { input_tokens: -1, output_tokens: 2 }, { input_tokens: NaN, output_tokens: 2 },
+    { input_tokens: 3, output_tokens: Infinity }, { input_tokens: "3", output_tokens: 2 },
+    { input_tokens: 3.5, output_tokens: 2 }, { input_tokens: Number.MAX_SAFE_INTEGER, output_tokens: 2 },
+    { input_tokens: 3, output_tokens: 2, cached_input_tokens: 4 },
+    { input_tokens: 3, output_tokens: 2, cached_input_tokens: -1 },
+  ])("omits missing or invalid turn usage instead of reading thread totals (%j)", async (usage) => {
+    const { adapter, threadId } = setup((notify, id) => {
+      notify({ method: "thread/tokenUsage/updated", params: { threadId: "cx-usage", turnId: id, tokenUsage: { total: { inputTokens: 900, outputTokens: 80 }, last: { inputTokens: 50, outputTokens: 8 } } } });
+      notify({ method: "turn/completed", params: { threadId: "cx-usage", turn: { id, status: "completed", items: [], usage } } });
+    });
+    expect(await drain(adapter.run(threadId, "hi"))).toEqual([{ type: "done", finalText: "" }]);
+  });
+
+  it.each(["completed", "failed", "interrupted"])("retains explicit zero usage on %s turns", async (status) => {
+    const { adapter, threadId } = setup((notify, id) => notify({ method: "turn/completed", params: { threadId: "cx-usage", turn: { id, status, error: { message: "boom" }, items: [], usage: { inputTokens: 0, outputTokens: 0, cachedInputTokens: 0 } } } }));
+    const events = await drain(adapter.run(threadId, "hi"));
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      type: status === "completed" ? "done" : "error",
+      usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0, cacheReadTokens: 0, source: "runtime", coverage: "complete" },
+    });
+  });
+
+  it("does not reuse usage or let late old-turn completion settle another run", async () => {
+    const { adapter, threadId } = setup((notify, id) => {
+      notify({ method: "turn/completed", params: { threadId: "cx-usage", turn: { id: "usage-turn-1", status: "completed", items: [], usage: { input_tokens: 10, output_tokens: 2 } } } });
+      if (id !== "usage-turn-1") notify({ method: "turn/completed", params: { threadId: "cx-usage", turn: { id, status: "completed", items: [] } } });
+    });
+    const first = (await drain(adapter.run(threadId, "first"))).find((event) => event.type === "done");
+    expect(first?.usage?.totalTokens).toBe(12);
+    expect(await drain(adapter.run(threadId, "second"))).toEqual([{ type: "done", finalText: "" }]);
+  });
+
+  it.each([false, true])("deduplicates goal turns and marks missing usage partial (%s)", async (missing) => {
+    const { adapter, threadId } = setup((notify, id) => {
+      const first = { method: "turn/completed", params: { threadId: "cx-usage", turn: { id, status: "completed", items: [], usage: { input_tokens: 10, output_tokens: 2, cached_input_tokens: 3 } } } };
+      notify(first);
+      notify(first);
+      notify({ method: "turn/started", params: { threadId: "cx-usage", turn: { id: "goal-second" } } });
+      notify(first);
+      notify({ method: "turn/completed", params: { threadId: "cx-usage", turn: { id: "goal-second", status: "completed", items: [], ...(missing ? {} : { usage: { inputTokens: 20, outputTokens: 4, cachedInputTokens: 7 } }) } } });
+      notify({ method: "thread/goal/updated", params: { threadId: "cx-usage", goal: { status: "complete" } } });
+      notify({ method: "thread/goal/updated", params: { threadId: "cx-usage", goal: { status: "complete" } } });
+    });
+    const events = await drain(adapter.run(threadId, "goal", undefined, undefined, undefined, { goal: { id: "g", objective: "finish" } }));
+    expect(events.map((event) => event.type)).toEqual(["runtime_progress", "done"]);
+    expect(events.filter((event) => event.type === "done" || event.type === "error")).toEqual([{
+      type: "done", finalText: "", usage: {
+        inputTokens: missing ? 10 : 30, outputTokens: missing ? 2 : 6, totalTokens: missing ? 12 : 36,
+        cacheReadTokens: missing ? 3 : 10, source: "runtime", coverage: missing ? "partial" : "complete",
+      },
+    }]);
+  });
+
+  it("keeps local cancel semantics and usage with one terminal despite duplicate notifications", async () => {
+    const { adapter, threadId, notify, request } = setup();
+    const run = drain(adapter.run(threadId, "hi"));
+    await vi.waitFor(() => expect(request).toHaveBeenCalledWith("turn/start", expect.anything()));
+    await adapter.abort(threadId);
+    const completed = { method: "turn/completed", params: { threadId, turn: { id: "usage-turn-1", status: "interrupted", items: [], usage: { input_tokens: 7, output_tokens: 3 } } } };
+    notify(completed);
+    notify(completed);
+    notify({ method: "turn/interrupt", params: { threadId, turnId: "usage-turn-1" } });
+    expect(await run).toEqual([{ type: "done", finalText: "", usage: { inputTokens: 7, outputTokens: 3, totalTokens: 10, source: "runtime", coverage: "complete" } }]);
+  });
+});
+
 describe("Codex steering and user interruption", () => {
+  beforeEach(() => {
+    vi.spyOn(nativeProcesses, "listOpenSessionFiles").mockResolvedValue(new Set());
+  });
+  afterEach(() => vi.restoreAllMocks());
+
   const thread = {
     id: "cx-steering",
     parentThreadId: null,
@@ -2284,8 +2404,8 @@ describe("Codex transcript watch paths", () => {
   });
 });
 
-async function drain(iterable: AsyncIterable<unknown>): Promise<unknown[]> {
-  const events: unknown[] = [];
+async function drain<T>(iterable: AsyncIterable<T>): Promise<T[]> {
+  const events: T[] = [];
   for await (const event of iterable) events.push(event);
   return events;
 }

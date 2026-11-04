@@ -191,7 +191,7 @@ export class UnifiedSessionService {
     this.queryIndexCache.getOrCreate(id, associated.messages);
     if (!query) return associated;
     const page = paginateSessionHistory(associated.messages, associated.events, query, {
-      includePendingQuestions: associated.agentType === "deepseek-harness",
+      includePendingQuestions: associated.agentType === "deepseek-harness" || associated.agentType === "copilot",
     });
     return {
       ...associated,
@@ -435,7 +435,7 @@ export class UnifiedSessionService {
     this.invalidate(id);
   }
 
-  async steer(id: string, input: string): Promise<boolean> {
+  async steer(id: string, input: string, messageId?: string): Promise<boolean> {
     const { adapter, nativeSessionId } = this.resolveAdapter(id);
     if (!adapter.steer) {
       throw new RuntimeSessionError(
@@ -443,8 +443,10 @@ export class UnifiedSessionService {
         "OPERATION_NOT_SUPPORTED",
       );
     }
-    if (!this.activeSessionIds.has(id)) return false;
-    return adapter.steer(nativeSessionId, input);
+    if (!this.activeSessionIds.has(id) && adapter.agentType !== "copilot") return false;
+    return messageId === undefined
+      ? adapter.steer(nativeSessionId, input)
+      : adapter.steer(nativeSessionId, input, messageId);
   }
 
   async answerQuestion(questionId: string, answer: RuntimeQuestionAnswer): Promise<boolean> {

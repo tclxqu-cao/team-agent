@@ -40,6 +40,7 @@ import {
   type SessionQueryIndex,
   type ToolCall,
   type ToolPermissionMode,
+  type TokenUsage,
 } from "@agent/core";
 import { AsyncEventQueue } from "./async-event-queue.js";
 import { parseImageDataUrls } from "./image-input.js";
@@ -717,22 +718,35 @@ export class ClaudeRuntimeAdapter implements AgentRuntimeAdapter {
         }
         if (next.result.done) {
           const aborted = this.abortedSessions.delete(nativeSessionId);
+          const metadata = mainResult ? claudeResultMetadata(mainResult) : {};
           if (subagents.hasActiveBackgroundTasks()) {
             for (const event of subagents.stopActive()) yield event;
             yield aborted
-              ? { type: "turn_aborted" }
+              ? { type: "turn_aborted", ...metadata }
               : {
                   type: "error",
                   message: "Claude Code ended before a background subagent completed",
                   code: "NATIVE_PROTOCOL_ERROR",
+                  ...metadata,
                 };
             mainResult = null;
           } else if (aborted) {
-            yield { type: "turn_aborted" };
+            yield { type: "turn_aborted", ...metadata };
           }
           break;
         }
         const message = next.result.value;
+        // A resumed/sidechain result must never supply this run's terminal data.
+        if (message.type === "result" && (
+          parentToolUseId(message)
+          || (message.session_id && message.session_id !== nativeSessionId)
+        )) {
+          sdkNext = sdkIterator.next();
+          continue;
+        }
+        if (mainResult && !parentToolUseId(message) && (
+          message.type === "assistant" || message.type === "user" || message.type === "stream_event"
+        )) mainResult = null;
         if (message.type === "assistant" && !parentToolUseId(message)) finalMessageId = message.uuid;
         sdkNext = sdkIterator.next();
         for (const event of subagents.consume(message)) yield event;
@@ -771,7 +785,7 @@ export class ClaudeRuntimeAdapter implements AgentRuntimeAdapter {
         code,
         message,
       });
-      yield { type: "error", message, code };
+      yield { type: "error", message, code, ...(mainResult ? claudeResultMetadata(mainResult) : {}) };
     } finally {
       this.rejectPermissionsForSession(nativeSessionId, "Claude Code run ended");
       permissionQueue.close();
@@ -1610,8 +1624,8 @@ export function claudeSdkMessageToEvents(
   return [];
 }
 
-// The claude-code result message carries the LAST request's token accounting;
-// input + cache numbers approximate the context the next request will resend.
+// Result usage covers the current turn's main loop (not the full query or its
+// subagents). This context-ring approximation is separate from terminal usage.
 const CLAUDE_DEFAULT_CONTEXT_WINDOW = 200_000;
 function claudeContextUsageEvent(
   message: Extract<SDKMessage, { type: "result" }>,
@@ -1647,19 +1661,63 @@ function claudeContextUsageEvent(
   } as AgentEvent;
 }
 
+function claudeResultMetadata(
+  message: Extract<SDKMessage, { type: "result" }>,
+): { usage?: TokenUsage; durationMs?: number } {
+  const usage = claudeResultUsage(message.usage);
+  const durationMs = typeof message.duration_ms === "number"
+    && Number.isFinite(message.duration_ms) && message.duration_ms >= 0
+    ? message.duration_ms
+    : undefined;
+  return {
+    ...(usage ? { usage } : {}),
+    ...(durationMs !== undefined ? { durationMs } : {}),
+  };
+}
+
+function claudeResultUsage(value: unknown): TokenUsage | undefined {
+  const usage = asRecord(value);
+  const input = claudeTokenCount(usage.input_tokens);
+  const outputTokens = claudeTokenCount(usage.output_tokens);
+  const cacheReadTokens = claudeTokenCount(usage.cache_read_input_tokens);
+  const cacheWriteTokens = claudeTokenCount(usage.cache_creation_input_tokens);
+  if (input === undefined || outputTokens === undefined) return undefined;
+  if ((usage.cache_read_input_tokens !== undefined && cacheReadTokens === undefined)
+    || (usage.cache_creation_input_tokens !== undefined && cacheWriteTokens === undefined)) return undefined;
+  // Anthropic input_tokens excludes cache reads/writes; our inputTokens includes them.
+  const inputTokens = input + (cacheReadTokens ?? 0) + (cacheWriteTokens ?? 0);
+  const totalTokens = inputTokens + outputTokens;
+  if (!Number.isSafeInteger(totalTokens)) return undefined;
+  return {
+    inputTokens,
+    outputTokens,
+    totalTokens,
+    ...(cacheReadTokens !== undefined ? { cacheReadTokens } : {}),
+    ...(cacheWriteTokens !== undefined ? { cacheWriteTokens } : {}),
+    source: "runtime",
+    // SDK result.usage excludes subagents, sidechains, and auxiliary calls.
+    coverage: "partial",
+  };
+}
+
+function claudeTokenCount(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
+}
+
 function claudeResultToEvent(
   message: Extract<SDKMessage, { type: "result" }>,
   streamedText: string,
 ): Extract<AgentEvent, { type: "done" | "error" }> {
+  const metadata = claudeResultMetadata(message);
   if (message.subtype === "success" && !message.is_error) {
-    return { type: "done", finalText: message.result || streamedText };
+    return { type: "done", finalText: message.result || streamedText, ...metadata };
   }
   const text = "result" in message && typeof message.result === "string"
     ? message.result
     : "errors" in message && Array.isArray(message.errors)
       ? message.errors.join("\n")
       : "Claude Code run failed";
-  return { type: "error", message: text || "Claude Code run failed" };
+  return { type: "error", message: text || "Claude Code run failed", ...metadata };
 }
 
 function parentToolUseId(message: SDKMessage): string | null {

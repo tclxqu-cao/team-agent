@@ -1,5 +1,5 @@
 import { realpathSync, rmSync } from "node:fs";
-import { AgentBuilder, getDatabase, type IModelProvider, type Message, type StreamEvent, type StreamOptions } from "@agent/core";
+import { AgentBuilder, getDatabase, type AgentEvent, type IAgentLoop, type IModelProvider, type Message, type StreamEvent, type StreamOptions } from "@agent/core";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 
 const isolatedAgentData = vi.hoisted(() => {
@@ -154,6 +154,158 @@ describe("agentHost singleton", () => {
     } finally { stop(); await catalog.agents.delete(first.id); await catalog.agents.delete(second.id); }
   });
 
+  it.each([
+    ["done", "completed", "completed"],
+    ["error", "failed", "quota_exceeded"],
+    ["turn_aborted", "cancelled", "user_cancelled"],
+  ] as const)("persists %s results with the admitted run identity before broadcast", async (kind, status, reason) => {
+    const provider = new CapturingModelProvider();
+    const builder = new AgentBuilder().withModelProvider(provider).withSemanticSkillMatching(false);
+    const terminal: AgentEvent = kind === "done" ? { type: "done", finalText: "answer" }
+      : kind === "error" ? { type: "error", message: "private billing detail", code: "INSUFFICIENT_QUOTA" }
+      : { type: "turn_aborted" };
+    vi.spyOn(builder, "build").mockResolvedValue({ run: async function* () { yield terminal; }, abort() {} } as unknown as IAgentLoop);
+    agentHost.setBuilder(builder);
+    const session = await agentHost.createSession("result contract");
+    const events: AgentEvent[] = [];
+    const stop = agentHost.subscribe(session.id, (event) => events.push(event));
+    const run = agentHost.startRun("request", session.id);
+    try { await run.completion; } finally { stop(); }
+    const stored = await agentHost.getSessionStore().get(session.id);
+    const result = { status, reason, runId: run.runId, durationMs: expect.any(Number) };
+    expect(stored?.metadata.lastRunResult).toMatchObject(result);
+    expect(stored?.messages.find((message) => message.presentation?.runResult)?.presentation?.runResult).toMatchObject(result);
+    expect(stored?.messages.filter((message) => message.role === "assistant")).toHaveLength(kind === "done" ? 1 : 0);
+    expect(events.find((event) => event.type === kind)).toMatchObject({ result });
+    expect((stored?.metadata.lastRunResult as { usage?: unknown }).usage).toBeUndefined();
+    expect(JSON.stringify(stored?.messages)).not.toContain("private billing detail");
+  });
+
+  it("keeps the first failed result while preserving a later partial final without duplicates", async () => {
+    const builder = new AgentBuilder().withModelProvider(new CapturingModelProvider()).withSemanticSkillMatching(false);
+    vi.spyOn(builder, "build").mockResolvedValue({ run: async function* () {
+      yield { type: "text_chunk", text: "partial" };
+      yield { type: "error", message: "quota exhausted", code: "INSUFFICIENT_QUOTA", usage: { inputTokens: 7, outputTokens: 2, totalTokens: 9 } };
+      yield { type: "done", finalText: "partial final" };
+    }, abort() {} } as unknown as IAgentLoop);
+    agentHost.setBuilder(builder);
+    const session = await agentHost.createSession("first result wins");
+    await agentHost.run("request", session.id);
+    const stored = await agentHost.getSessionStore().get(session.id);
+    expect(stored?.status).toBe("failed");
+    expect(stored?.messages).toMatchObject([
+      { role: "user", content: "request" },
+      { role: "assistant", content: "partial final", presentation: { runResult: { status: "failed", reason: "quota_exceeded", usage: { totalTokens: 9 } } } },
+    ]);
+    const terminals = stored?.events.filter((event) => event.type === "done" || event.type === "error");
+    expect(terminals?.map((event) => "result" in event && event.result)).toEqual([stored?.metadata.lastRunResult, stored?.metadata.lastRunResult]);
+  });
+
+  it("moves the result from the user to a reasoning-only message when a partial answer arrives", async () => {
+    const builder = new AgentBuilder().withModelProvider(new CapturingModelProvider()).withSemanticSkillMatching(false);
+    vi.spyOn(builder, "build").mockResolvedValue({ run: async function* () {
+      yield { type: "reasoning_summary_delta", itemId: "reason-1", sectionIndex: 0, delta: "checking" };
+      yield { type: "error", message: "quota exhausted", code: "INSUFFICIENT_QUOTA" };
+      yield { type: "done", finalText: "partial answer" };
+    }, abort() {} } as unknown as IAgentLoop);
+    agentHost.setBuilder(builder);
+    const session = await agentHost.createSession("single summary owner");
+    await agentHost.run("request", session.id);
+    const stored = await agentHost.getSessionStore().get(session.id);
+    expect(stored?.messages.filter((message) => message.presentation?.runResult)).toHaveLength(1);
+    expect(stored?.messages[0].presentation?.runResult).toBeUndefined();
+    expect(stored?.messages.find((message) => message.content === "partial answer")?.presentation).toMatchObject({
+      runResult: { status: "failed", reason: "quota_exceeded" },
+    });
+  });
+
+  it.each(["throw", "missing", "build"] as const)("settles a %s failure even without an in-band terminal", async (failure) => {
+    const builder = new AgentBuilder().withModelProvider(new CapturingModelProvider()).withSemanticSkillMatching(false);
+    const error = Object.assign(new Error("private startup failure"), { code: "AUTH_REQUIRED" });
+    const build = vi.spyOn(builder, "build");
+    if (failure === "build") build.mockRejectedValue(error);
+    else build.mockResolvedValue({ run: async function* () {
+      if (failure === "throw") throw error;
+      yield { type: "thinking", message: "starting" };
+    }, abort() {} } as unknown as IAgentLoop);
+    agentHost.setBuilder(builder);
+    const session = await agentHost.createSession("synthetic result");
+    const run = agentHost.startRun("request", session.id);
+    if (failure === "build") await expect(run.completion).rejects.toBe(error);
+    else await run.completion;
+    const stored = await agentHost.getSessionStore().get(session.id);
+    expect(stored).toMatchObject({ status: "failed", metadata: { lastRunResult: { runId: run.runId, status: "failed", reason: failure === "missing" ? "protocol_error" : "auth_required" } } });
+    expect(stored?.messages).toMatchObject([{ role: "user", presentation: { runResult: { status: "failed" } } }]);
+  });
+
+  it("does not promote an intermediate selected-agent done to a successful run result", async () => {
+    const builder = new AgentBuilder().withModelProvider(new CapturingModelProvider()).withSemanticSkillMatching(false);
+    vi.spyOn(builder, "build")
+      .mockResolvedValueOnce({ run: async function* () { yield { type: "done", finalText: "first", usage: { inputTokens: 5, outputTokens: 1, totalTokens: 6 } }; }, abort() {} } as unknown as IAgentLoop)
+      .mockResolvedValueOnce({ run: async function* () { yield { type: "error", message: "quota exceeded", usage: { inputTokens: 3, outputTokens: 1, totalTokens: 4 } }; }, abort() {} } as unknown as IAgentLoop);
+    agentHost.setBuilder(builder);
+    const catalog = businessCatalog();
+    const first = await catalog.call("createAgentDef", [{ name: "first-result", systemPrompt: "First" }]) as { id: string };
+    const second = await catalog.call("createAgentDef", [{ name: "second-result", systemPrompt: "Second" }]) as { id: string };
+    const session = await agentHost.createSession("sequential result failure");
+    try {
+      await agentHost.startRun("request", session.id, undefined, { agentIds: [first.id, second.id] }).completion;
+      const stored = await agentHost.getSessionStore().get(session.id);
+      expect(stored?.status).toBe("failed");
+      expect((stored?.events.find((event) => event.type === "done") as { result?: unknown }).result).toBeUndefined();
+      expect(stored?.metadata.lastRunResult).toMatchObject({ status: "failed", usage: { inputTokens: 3, outputTokens: 1, totalTokens: 4, coverage: "partial" } });
+      expect(stored?.messages.filter((message) => message.role === "assistant")).toHaveLength(1);
+      expect(stored?.messages.find((message) => message.content === "first")?.presentation?.runResult?.status).toBe("failed");
+      expect(stored?.messages[0].presentation?.runResult).toBeUndefined();
+    } finally { await catalog.agents.delete(first.id); await catalog.agents.delete(second.id); }
+  });
+
+  it("preserves a later agent's partial final without changing an earlier agent's answer", async () => {
+    const builder = new AgentBuilder().withModelProvider(new CapturingModelProvider()).withSemanticSkillMatching(false);
+    vi.spyOn(builder, "build")
+      .mockResolvedValueOnce({ run: async function* () { yield { type: "done", finalText: "earlier answer" }; }, abort() {} } as unknown as IAgentLoop)
+      .mockResolvedValueOnce({ run: async function* () {
+        yield { type: "tool_call", toolCall: { id: "later-tool", name: "lookup", arguments: {} } };
+        yield { type: "error", message: "quota exceeded" };
+        yield { type: "done", finalText: "later partial answer" };
+      }, abort() {} } as unknown as IAgentLoop);
+    agentHost.setBuilder(builder);
+    const catalog = businessCatalog();
+    const first = await catalog.call("createAgentDef", [{ name: "first-partial", systemPrompt: "First" }]) as { id: string };
+    const second = await catalog.call("createAgentDef", [{ name: "second-partial", systemPrompt: "Second" }]) as { id: string };
+    const session = await agentHost.createSession("partial fragment boundary");
+    try {
+      await agentHost.startRun("request", session.id, undefined, { agentIds: [first.id, second.id] }).completion;
+      const stored = await agentHost.getSessionStore().get(session.id);
+      expect(stored?.messages.filter((message) => message.role === "assistant").map((message) => message.content)).toEqual(["earlier answer", "", "later partial answer"]);
+      expect(stored?.messages.at(-1)?.presentation?.runResult).toMatchObject({ status: "failed", reason: "quota_exceeded" });
+      expect(stored?.messages[0].presentation?.runResult).toBeUndefined();
+    } finally { await catalog.agents.delete(first.id); await catalog.agents.delete(second.id); }
+  });
+
+  it("marks dispatched usage partial and reports a user stop as cancelled rather than failed", async () => {
+    const builder = new AgentBuilder().withModelProvider(new CapturingModelProvider()).withSemanticSkillMatching(false);
+    let stop = false;
+    vi.spyOn(builder, "build").mockResolvedValue({ run: async function* () {
+      yield { type: "agent_dispatch", agentName: "worker", task: "work" };
+      if (stop) agentHost.abort(session.id);
+      yield { type: "done", finalText: stop ? "" : "answer", usage: { inputTokens: 5, outputTokens: 2, totalTokens: 7, coverage: "complete" } };
+    }, abort() {} } as unknown as IAgentLoop);
+    agentHost.setBuilder(builder);
+    const session = await agentHost.createSession("delegated coverage");
+    await agentHost.run("delegate", session.id);
+    expect((await agentHost.getSessionStore().get(session.id))?.metadata.lastRunResult).toMatchObject({ status: "completed", usage: { totalTokens: 7, coverage: "partial" } });
+    stop = true;
+    const settled = vi.fn();
+    const previous = agentHost.onRunSettled;
+    agentHost.onRunSettled = settled;
+    try {
+      await agentHost.run("stop delegate", session.id);
+      expect((await agentHost.getSessionStore().get(session.id))?.metadata.lastRunResult).toMatchObject({ status: "cancelled", reason: "user_cancelled" });
+      expect(settled).toHaveBeenCalledWith(expect.objectContaining({ failed: false }));
+    } finally { agentHost.onRunSettled = previous; }
+  });
+
   it("starts an explicitly configured Skill through the persistent shared run contract", async () => {
     process.env.AGENT_WEB_ROOTS = realpathSync(isolatedAgentData.directory);
     const catalog = businessCatalog();
@@ -236,6 +388,7 @@ describe("agentHost singleton", () => {
   });
 
   afterEach(async () => {
+    vi.restoreAllMocks();
     process.env = { ...originalEnv };
     await businessCatalog().agents.delete("configured-agent");
     await businessCatalog().skills.delete("configured-skill");
@@ -478,7 +631,7 @@ describe("agentHost singleton", () => {
         {
           role: "assistant",
           content: "Persisted first",
-          presentation: { completionDurationMs: expect.any(Number) },
+          presentation: { completionDurationMs: expect.any(Number), runResult: expect.objectContaining({ status: "completed", runId: expect.any(String), durationMs: expect.any(Number) }) },
         },
       ],
     });
@@ -546,9 +699,9 @@ describe("agentHost singleton", () => {
     const stored = await agentHost.getSessionStore().get(session.id);
     expect(stored?.messages).toEqual([
       { role: "user", content: "first question" },
-      { role: "assistant", content: "first answer", presentation: { completionDurationMs: expect.any(Number) } },
+      { role: "assistant", content: "first answer", presentation: { completionDurationMs: expect.any(Number), runResult: expect.objectContaining({ status: "completed", runId: expect.any(String), durationMs: expect.any(Number) }) } },
       { role: "user", content: "second question" },
-      { role: "assistant", content: "second answer", presentation: { completionDurationMs: expect.any(Number) } },
+      { role: "assistant", content: "second answer", presentation: { completionDurationMs: expect.any(Number), runResult: expect.objectContaining({ status: "completed", runId: expect.any(String), durationMs: expect.any(Number) }) } },
     ]);
   });
 
@@ -582,7 +735,7 @@ describe("agentHost singleton", () => {
       status: "completed",
       messages: [
         { role: "user", content: "old question" },
-        { role: "assistant", content: "old partial" },
+        { role: "assistant", content: "old partial", presentation: { runResult: { runId: "stale-run", status: "interrupted", reason: "runtime_interrupted", durationMs: expect.any(Number) } } },
         { role: "user", content: "new question" },
         { role: "assistant", content: "new answer" },
       ],
@@ -878,7 +1031,7 @@ describe("agentHost singleton", () => {
       {
         role: "assistant",
         content: "Final answer",
-        presentation: { completionDurationMs: expect.any(Number) },
+        presentation: { completionDurationMs: expect.any(Number), runResult: expect.objectContaining({ status: "completed", runId: expect.any(String), durationMs: expect.any(Number) }) },
       },
     ]);
   });
@@ -969,7 +1122,7 @@ describe("agentHost singleton", () => {
       {
         role: "assistant",
         content: "No skill was needed",
-        presentation: { completionDurationMs: expect.any(Number) },
+        presentation: { completionDurationMs: expect.any(Number), runResult: expect.objectContaining({ status: "completed", runId: expect.any(String), durationMs: expect.any(Number) }) },
       },
     ]);
   });

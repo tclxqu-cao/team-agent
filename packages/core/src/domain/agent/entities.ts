@@ -78,9 +78,9 @@ export type AgentEvent =
   | { type: "text_done" }
   | { type: "context_usage"; usage: ContextUsageSnapshot }
   | { type: "compacted"; summary: string; removedMessages: number }
-  | { type: "turn_aborted" }
-  | { type: "error"; message: string; code?: string }
-  | { type: "done"; finalText: string; usage?: TokenUsage; durationMs?: number; forkPoint?: SessionForkPoint }
+  | { type: "turn_aborted"; usage?: TokenUsage; durationMs?: number; result?: import('./run-result.js').RunResult }
+  | { type: "error"; message: string; code?: string; usage?: TokenUsage; durationMs?: number; result?: import('./run-result.js').RunResult }
+  | { type: "done"; finalText: string; usage?: TokenUsage; durationMs?: number; forkPoint?: SessionForkPoint; result?: import('./run-result.js').RunResult }
   | { type: "todo_update"; todos: TodoItem[] }
   | { type: "agent_dispatch"; agentName: string; task: string; subSessionId?: string; agentId?: string; role?: string; parentSessionId?: string }
   | { type: "agent_started"; agentName: string; subSessionId: string; agentId?: string; parentSessionId?: string; startedAt?: string }
@@ -137,9 +137,14 @@ export interface ContextUsageSnapshot {
 }
 
 export interface TokenUsage {
+  /** Total input, including cache reads and writes; cache counters are subsets. */
   inputTokens: number;
   outputTokens: number;
   totalTokens: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
+  source?: "provider" | "runtime";
+  coverage?: "complete" | "partial";
 }
 
 export interface AgentConfig {

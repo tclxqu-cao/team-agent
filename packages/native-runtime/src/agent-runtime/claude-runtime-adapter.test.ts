@@ -737,6 +737,103 @@ describe("ClaudeRuntimeAdapter", () => {
     ]);
   });
 
+  it("reports per-turn main-loop usage including caches, not cumulative model totals", async () => {
+    state.sessions = [sdkSession("cc-1")];
+    const result = {
+      type: "result", subtype: "success", is_error: false, result: "done",
+      usage: { input_tokens: 12, output_tokens: 5, cache_read_input_tokens: 30, cache_creation_input_tokens: 8 },
+      duration_ms: 1234,
+      modelUsage: { sonnet: { inputTokens: 9000, outputTokens: 8000 } }, total_cost_usd: 42,
+    };
+    state.stream = [result, result];
+    const adapter = new ClaudeRuntimeAdapter({ occupancyTtlMs: 0, sessionRoot: "/tmp/claude-projects" });
+    const events = await drain(adapter.run("cc-1", "first"));
+    expect(events.filter((event) => event.type === "done" || event.type === "error")).toEqual([{
+      type: "done", finalText: "done", durationMs: 1234,
+      usage: { inputTokens: 50, outputTokens: 5, totalTokens: 55, cacheReadTokens: 30, cacheWriteTokens: 8, source: "runtime", coverage: "partial" },
+    }]);
+    state.stream = [{ ...result, usage: undefined, duration_ms: undefined }];
+    expect((await drain(adapter.run("cc-1", "second"))).at(-1)).toEqual({ type: "done", finalText: "done" });
+  });
+
+  it.each([
+    undefined, {}, { input_tokens: 4 }, { output_tokens: 2 },
+    { input_tokens: -1, output_tokens: 2 }, { input_tokens: NaN, output_tokens: 2 },
+    { input_tokens: 4, output_tokens: Infinity }, { input_tokens: "4", output_tokens: 2 },
+    { input_tokens: 1.5, output_tokens: 2 },
+    { input_tokens: 4, output_tokens: 2, cache_read_input_tokens: -1 },
+    { input_tokens: 4, output_tokens: 2, cache_creation_input_tokens: NaN },
+    { input_tokens: Number.MAX_SAFE_INTEGER, output_tokens: 2 },
+  ])("omits absent or invalid result usage without estimating zeros (%j)", async (usage) => {
+    state.sessions = [sdkSession("cc-1")];
+    state.stream = [{ type: "result", subtype: "success", is_error: false, result: "done", usage }];
+    const adapter = new ClaudeRuntimeAdapter({ occupancyTtlMs: 0, sessionRoot: "/tmp/claude-projects" });
+    const events = await drain(adapter.run("cc-1", "hi"));
+    expect(events.at(-1)).toEqual({ type: "done", finalText: "done" });
+  });
+
+  it.each(["success", "error_during_execution"])("retains explicit zero usage on %s results", async (subtype) => {
+    state.sessions = [sdkSession("cc-1")];
+    state.stream = [{
+      type: "result", subtype, is_error: subtype !== "success", result: "text", errors: ["boom"],
+      usage: { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }, duration_ms: 0,
+    }];
+    const adapter = new ClaudeRuntimeAdapter({ occupancyTtlMs: 0, sessionRoot: "/tmp/claude-projects" });
+    expect((await drain(adapter.run("cc-1", "hi"))).at(-1)).toEqual({
+      ...(subtype === "success" ? { type: "done", finalText: "text" } : { type: "error", message: "text" }),
+      usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, source: "runtime", coverage: "partial" }, durationMs: 0,
+    });
+  });
+
+  it.each([-1, NaN, Infinity, "12"])("omits invalid result duration %s while retaining error usage", async (duration_ms) => {
+    state.sessions = [sdkSession("cc-1")];
+    state.stream = [{ type: "result", subtype: "error_during_execution", is_error: true, errors: ["boom"], usage: { input_tokens: 4, output_tokens: 2 }, duration_ms }];
+    const adapter = new ClaudeRuntimeAdapter({ occupancyTtlMs: 0, sessionRoot: "/tmp/claude-projects" });
+    expect((await drain(adapter.run("cc-1", "hi"))).at(-1)).toEqual({
+      type: "error", message: "boom", usage: { inputTokens: 4, outputTokens: 2, totalTokens: 6, source: "runtime", coverage: "partial" },
+    });
+  });
+
+  it("ignores other-session and child results instead of using their usage", async () => {
+    state.sessions = [sdkSession("cc-1")];
+    const base = { type: "result", subtype: "success", is_error: false, result: "stale", usage: { input_tokens: 100, output_tokens: 200 } };
+    state.stream = [{ ...base, session_id: "other" }, { ...base, parent_tool_use_id: "child" }, { ...base, result: "current", usage: undefined }];
+    const adapter = new ClaudeRuntimeAdapter({ occupancyTtlMs: 0, sessionRoot: "/tmp/claude-projects" });
+    expect(await drain(adapter.run("cc-1", "hi"))).toEqual([{ type: "done", finalText: "current" }]);
+  });
+
+  it("does not reuse an earlier result after the main loop starts another turn", async () => {
+    state.sessions = [sdkSession("cc-1")];
+    state.stream = [
+      { type: "system", subtype: "task_started", task_id: "task-1", tool_use_id: "agent-tool", task_type: "local_agent", description: "Inspect", is_backgrounded: true },
+      { type: "result", subtype: "success", is_error: false, result: "old", usage: { input_tokens: 3, output_tokens: 2 } },
+      { type: "assistant", message: { content: [{ type: "text", text: "new turn" }] } },
+      { type: "system", subtype: "task_notification", task_id: "task-1", status: "completed", output_file: "/tmp/task", summary: "finished" },
+      { type: "result", subtype: "success", is_error: false, result: "new" },
+    ];
+    const adapter = new ClaudeRuntimeAdapter({ occupancyTtlMs: 0, sessionRoot: "/tmp/claude-projects" });
+    const terminal = (await drain(adapter.run("cc-1", "hi"))).filter((event) => event.type === "done" || event.type === "error");
+    expect(terminal).toEqual([{ type: "done", finalText: "new" }]);
+  });
+
+  it("keeps available main-loop usage on abort while a background task is outstanding", async () => {
+    state.sessions = [sdkSession("cc-1")];
+    state.stream = [
+      { type: "system", subtype: "task_started", task_id: "task-1", tool_use_id: "agent-tool", task_type: "local_agent", description: "Inspect", is_backgrounded: true },
+      { type: "result", subtype: "success", is_error: false, result: "launched", usage: { input_tokens: 3, output_tokens: 2 }, duration_ms: 120 },
+    ];
+    const adapter = new ClaudeRuntimeAdapter({ occupancyTtlMs: 0, sessionRoot: "/tmp/claude-projects" });
+    const events = [];
+    for await (const event of adapter.run("cc-1", "delegate")) {
+      events.push(event);
+      if (event.type === "context_usage") await adapter.abort("cc-1");
+    }
+    expect(events.filter((event) => event.type === "done" || event.type === "error" || event.type === "turn_aborted")).toEqual([{
+      type: "turn_aborted", durationMs: 120,
+      usage: { inputTokens: 3, outputTokens: 2, totalTokens: 5, source: "runtime", coverage: "partial" },
+    }]);
+  });
+
   it("streams Claude thinking before text without duplicating completed blocks", async () => {
     state.sessions = [sdkSession("cc-1")];
     state.stream = [

@@ -1,6 +1,7 @@
 export const AGENT_TYPES = [
   "customer-agent", "codex", "claude-code", "opencode", "deepseek-harness",
   "qoder", "zcode", "workbuddy",
+  "copilot",
 ] as const;
 
 export type AgentType = typeof AGENT_TYPES[number];

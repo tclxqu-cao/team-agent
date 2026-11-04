@@ -66,7 +66,7 @@ export async function GET(request: Request) {
         sessionId,
         (event, id) => {
           if (!push(`id: ${id}\ndata: ${JSON.stringify(event)}\n\n`)) return;
-          if (event.type === "done" || event.type === "error") finish();
+          if (event.type === "done" || event.type === "error" || event.type === "turn_aborted") finish();
         },
         lastEventId,
       );
@@ -141,7 +141,7 @@ async function nativeStream(request: Request, sessionId: string): Promise<Respon
         unsubscribe = await service.subscribe(sessionId, afterSequence, ({ runId, sequence, event }) => {
           const payload = { ...event, _nativeRunId: runId, _nativeSequence: sequence };
           if (!push(`id: ${runId}:${sequence}\ndata: ${JSON.stringify(payload)}\n\n`)) return;
-          if (event.type === "done" || event.type === "error") finish();
+          if (event.type === "done" || event.type === "error" || event.type === "turn_aborted") finish();
         });
         abortListener = finish;
         if (request.signal.aborted) finish();

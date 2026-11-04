@@ -134,7 +134,7 @@ export interface NativeRuntimePort {
   stopBackgroundJob?(id: string, jobId: string): Promise<RuntimeBackgroundJobStopResult>;
   mutateNativeGoal?(id: string, mutation: NativeGoalMutation): Promise<NativeSessionGoal | null>;
   handoff?(id: string, controller: NativeRuntimeController): Promise<NativeRuntimeBrokerSnapshot>;
-  getGoals?(id: string, controller?: NativeRuntimeController): Promise<SessionGoalState>;
+  getGoals?(id: string, controller?: NativeRuntimeController, resume?: boolean): Promise<SessionGoalState>;
   enqueueGoal?(
     id: string,
     objective: string,
@@ -432,9 +432,9 @@ export class NativeRuntimeService implements NativeRuntimePort {
     return this.runtime.handoff(id, controller);
   }
 
-  async getGoals(id: string, controller: NativeRuntimeController = "web"): Promise<SessionGoalState> {
+  async getGoals(id: string, controller: NativeRuntimeController = "web", resume = true): Promise<SessionGoalState> {
     if (!this.runtime.getGoals) throw new RuntimeSessionError("Goal mode is unavailable", "OPERATION_NOT_SUPPORTED");
-    return this.runtime.getGoals(id, controller);
+    return resume ? this.runtime.getGoals(id, controller) : this.runtime.getGoals(id, controller, false);
   }
 
   async enqueueGoal(

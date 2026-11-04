@@ -1,6 +1,7 @@
 import type { IModelProvider, Message, StreamEvent, StreamOptions, ModelProviderConfig } from '../entities.js';
 import { openAIEndpoint } from './openAIEndpoint.js';
 import { isModelRequestTimeout, modelRequestTimeoutEvent } from './requestTimeout.js';
+import { fetchWithUsageFallback, ProviderUsage } from './usage.js';
 
 const DEFAULT_BASE_URL = "https://api.deepseek.com";
 const DEFAULT_TIMEOUT_MS = 300_000;
@@ -43,6 +44,7 @@ export class DeepSeekProvider implements IModelProvider {
       max_tokens: options?.maxTokens ?? this.defaultMaxTokens,
       temperature: options?.temperature ?? this.defaultTemperature,
       stream: true,
+      stream_options: { include_usage: true },
     };
 
     if (options?.reasoningEffort && options.reasoningEffort !== "off") {
@@ -63,15 +65,14 @@ export class DeepSeekProvider implements IModelProvider {
     const requestSignal = AbortSignal.timeout(this.timeoutMs);
     let response: Response;
     try {
-      response = await fetch(this.baseUrl, {
+      response = await fetchWithUsageFallback(this.baseUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${this.apiKey}`,
         },
-        body: JSON.stringify(body),
         signal: requestSignal,
-      });
+      }, body);
     } catch (error) {
       if (isModelRequestTimeout(error, requestSignal)) {
         yield modelRequestTimeoutEvent("DeepSeek", this.timeoutMs);
@@ -82,7 +83,7 @@ export class DeepSeekProvider implements IModelProvider {
 
     if (!response.ok) {
       const errText = await response.text().catch(() => "unknown error");
-      yield { type: "error", message: `DeepSeek API error ${response.status}: ${errText}` };
+      yield { type: "error", code: `MODEL_HTTP_${response.status}`, message: `DeepSeek API error ${response.status}: ${errText}` };
       return;
     }
 
@@ -93,6 +94,7 @@ export class DeepSeekProvider implements IModelProvider {
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
+    const usage = new ProviderUsage();
     let buffer = "";
     const toolCalls = new Map<number, { id: string; name: string; arguments: string }>();
 
@@ -111,20 +113,25 @@ export class DeepSeekProvider implements IModelProvider {
     try {
       while (true) {
         const { done, value } = await readWithTimeout();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
+        buffer += done ? decoder.decode() : decoder.decode(value, { stream: true });
         const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
+        buffer = done ? "" : lines.pop() ?? "";
 
         for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
-          const data = line.slice(6).trim();
+          if (!line.startsWith("data:")) continue;
+          const data = line.slice(5).trim();
           if (data === "[DONE]") continue;
           if (!data) continue;
 
           try {
             const parsed = JSON.parse(data);
+            usage.recordOpenAI(parsed?.usage);
+            if (parsed?.error) {
+              const usageEvent = usage.take(false);
+              if (usageEvent) yield usageEvent;
+              yield { type: "error", message: parsed.error.message ?? "Stream error" };
+              return;
+            }
             const delta = parsed.choices?.[0]?.delta;
 
             if (!delta) continue;
@@ -174,7 +181,10 @@ export class DeepSeekProvider implements IModelProvider {
             // skip malformed SSE lines
           }
         }
+        if (done) break;
       }
+      const usageEvent = usage.take(true);
+      if (usageEvent) yield usageEvent;
       // Flush any tool calls not emitted due to missing/unexpected finish_reason
       for (const [, tc] of toolCalls) {
         try {
@@ -188,6 +198,8 @@ export class DeepSeekProvider implements IModelProvider {
       }
       yield { type: "text_done" };
     } catch (err) {
+      const usageEvent = usage.take(false);
+      if (usageEvent) yield usageEvent;
       if (isModelRequestTimeout(err, requestSignal)) {
         yield modelRequestTimeoutEvent("DeepSeek", this.timeoutMs);
       } else if (err instanceof Error && err.name !== "AbortError") {

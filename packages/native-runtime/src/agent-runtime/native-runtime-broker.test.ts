@@ -2,7 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { reduceRuntimeProgress, type AgentEvent } from "@agent/core";
+import { reduceRuntimeProgress, SQLiteDatabase, type AgentEvent } from "@agent/core";
 import { encodeUnifiedSessionId } from "./session-id";
 import type { CodexDiskSessionCatalogEntry, CodexSessionCatalogRepository } from "./codex-session-disk-catalog";
 import {
@@ -72,7 +72,7 @@ class FakeNativeRuntime {
   completeOnAbort = true;
   eventsBeforeApproval: AgentEvent[] = [];
   messages: UnifiedSessionDetail["messages"] = [];
-  terminalEvent: Extract<AgentEvent, { type: "error" | "done" }> = { type: "done", finalText: "completed" };
+  terminalEvent: Extract<AgentEvent, { type: "error" | "done" | "turn_aborted" }> = { type: "done", finalText: "completed" };
   cleanupAfterTerminal: Promise<void> | null = null;
   rejectOverlappingRuns = false;
   listResult: UnifiedSessionSummary[] | null = null;
@@ -396,6 +396,8 @@ describe("NativeRuntimeBrokerHost", () => {
               type: "error",
               code: "NATIVE_PROTOCOL_ERROR",
               message: "Native turn was interrupted before the runtime confirmed completion.",
+              durationMs: expect.any(Number),
+              result: expect.objectContaining({ status: "interrupted", reason: "runtime_interrupted" }),
             },
           }),
         ]),
@@ -492,6 +494,144 @@ describe("NativeRuntimeBrokerHost", () => {
     } finally {
       await replacementHost.stop();
     }
+  });
+
+  it.each([
+    [{ type: "error", code: "INSUFFICIENT_QUOTA", message: "private quota detail" }, "failed", "quota_exceeded"],
+    [{ type: "error", code: "NATIVE_ABORTED", message: "native stopped" }, "cancelled", "user_cancelled"],
+    [{ type: "error", code: "NATIVE_PROTOCOL_ERROR", message: "Native transport disconnected" }, "interrupted", "runtime_interrupted"],
+    [{ type: "turn_aborted" }, "cancelled", "user_cancelled"],
+  ] as const)("retains %j as a durable summary without an assistant answer", async (terminal, status, reason) => {
+    const path = await directory();
+    let now = 1_000;
+    const runtime = new FakeNativeRuntime();
+    runtime.terminalEvent = terminal;
+    const host = new NativeRuntimeBrokerHost(path, runtime as unknown as UnifiedSessionService, () => now);
+    const started = await host.startRun(sessionId, "failed request");
+    await waitFor(() => expect(host.snapshot(sessionId).events).toHaveLength(1));
+    now = 3_000;
+    const question = host.snapshot(sessionId).events[0].event;
+    await host.answerQuestion(question.type === "ask_user" ? question.questionId : "", { answer: "允许一次" });
+    await waitFor(() => expect(host.snapshot(sessionId).controller).toBeNull());
+    const result = { runId: started.runId, status, reason, durationMs: 2_000 };
+    expect(host.snapshot(sessionId).events.at(-1)?.event).toMatchObject({ result });
+    runtime.messages = [{ role: "user", content: "failed request" }];
+    expect((await host.get(sessionId)).messages).toMatchObject([{ role: "user", content: "failed request", presentation: { runResult: result } }]);
+    await host.stop();
+    now += 10 * 60_000 + 1;
+    const replacementRuntime = new FakeNativeRuntime();
+    replacementRuntime.messages = runtime.messages;
+    const replacement = new NativeRuntimeBrokerHost(path, replacementRuntime as unknown as UnifiedSessionService, () => now);
+    try {
+      await replacement.start();
+      expect(replacement.snapshot(sessionId).events).toEqual([]);
+      const detail = await replacement.get(sessionId);
+      expect(detail.messages).toHaveLength(1);
+      expect(detail.messages[0].presentation?.runResult).toEqual(result);
+      expect(detail.messages[0].presentation?.runResult?.usage).toBeUndefined();
+      expect(JSON.stringify(detail.messages)).not.toContain("private quota detail");
+    } finally { await replacement.stop(); }
+  });
+
+  it("broadcasts only the first recorded terminal and preserves reported usage", async () => {
+    const runtime = new FakeNativeRuntime();
+    const usage = { inputTokens: 9, outputTokens: 2, totalTokens: 11, cacheReadTokens: 4, source: "runtime" as const };
+    runtime.eventsBeforeApproval = [{ type: "error", code: "INSUFFICIENT_QUOTA", message: "quota exhausted", usage }];
+    const host = new NativeRuntimeBrokerHost(await directory(), runtime as unknown as UnifiedSessionService);
+    try {
+      const admitted = await host.startRun(sessionId, "first wins");
+      await waitFor(() => expect(host.snapshot(sessionId).controller).toBeNull());
+      // The fake adapter proceeds to done after the error; the transaction rejects it.
+      await runtime.abort();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      const events = host.snapshot(sessionId).events;
+      expect(events).toHaveLength(1);
+      expect(events[0].event).toMatchObject({ type: "error", result: { runId: admitted.runId, status: "failed", reason: "quota_exceeded", usage } });
+    } finally { await host.stop(); }
+  });
+
+  it("migrates a legacy completion table without fabricating results and keeps paging stable", async () => {
+    const path = await directory();
+    const legacy = new SQLiteDatabase(path);
+    legacy.db.exec(`CREATE TABLE native_runtime_turn_completion (
+      run_id TEXT PRIMARY KEY, session_id TEXT NOT NULL, input TEXT NOT NULL, final_text TEXT NOT NULL,
+      duration_ms INTEGER NOT NULL, completed_at INTEGER NOT NULL
+    )`);
+    legacy.db.prepare("INSERT INTO native_runtime_turn_completion VALUES (?, ?, ?, ?, ?, ?)").run("legacy", sessionId, "old request", "old answer", 42, 1_000);
+    legacy.close();
+    const runtime = new FakeNativeRuntime();
+    runtime.messages = [{ role: "user", content: "old request" }, { role: "assistant", content: "old answer" }];
+    const host = new NativeRuntimeBrokerHost(path, runtime as unknown as UnifiedSessionService);
+    try {
+      const detail = await host.get(sessionId);
+      expect(detail.messages[1].presentation).toEqual({ completionDurationMs: 42 });
+      const page = await host.get(sessionId, { limit: 1 });
+      const again = await host.get(sessionId, { limit: 1 });
+      expect(again.messages).toEqual(page.messages);
+      expect(runtime.messages).toHaveLength(2);
+    } finally { await host.stop(); }
+    const database = new SQLiteDatabase(path);
+    try {
+      expect(database.db.prepare("PRAGMA table_info(native_runtime_turn_completion)").all()).toEqual(expect.arrayContaining([expect.objectContaining({ name: "result" })]));
+      expect(database.db.prepare("SELECT result FROM native_runtime_turn_completion WHERE run_id = 'legacy'").get()).toEqual({ result: null });
+    } finally { database.close(); }
+  });
+
+  it("does not attach an off-page identical summary to a native window or create messages", async () => {
+    const runtime = new FakeNativeRuntime();
+    runtime.immediateTerminal = true;
+    const host = new NativeRuntimeBrokerHost(await directory(), runtime as unknown as UnifiedSessionService);
+    try {
+      await host.startRun(sessionId, "repeat");
+      await waitFor(() => expect(host.snapshot(sessionId).controller).toBeNull());
+      const messages = [{ role: "user" as const, content: "repeat" }, { role: "assistant" as const, content: "completed" }];
+      const getPagedDetail = async () => ({ ...summary(), messages, events: [], history: { nextCursor: null, hasMore: true, pageSize: 2, totalItems: 10, olderCursor: null, newerCursor: "later", kind: "before" as const } });
+      Object.assign(runtime, { getPagedDetail });
+      const page = await host.get(sessionId, { limit: 2 });
+      expect(page.messages).toEqual(messages);
+      expect((await host.get(sessionId, { limit: 2 })).messages).toEqual(messages);
+    } finally { await host.stop(); }
+  });
+
+  it("restores only the accepted user input for a failed startup after retention pruning", async () => {
+    const path = await directory();
+    let now = 1_000;
+    const runtime = new FakeNativeRuntime();
+    runtime.runFailure = { type: "error", code: "AUTH_REQUIRED", message: "private auth failure" };
+    const host = new NativeRuntimeBrokerHost(path, runtime as unknown as UnifiedSessionService, () => now);
+    const started = await host.startRun(sessionId, "accepted startup input");
+    await waitFor(() => expect(host.snapshot(sessionId).controller).toBeNull());
+    await host.stop();
+    now += 10 * 60_000 + 1;
+    const replacementRuntime = new FakeNativeRuntime();
+    const replacement = new NativeRuntimeBrokerHost(path, replacementRuntime as unknown as UnifiedSessionService, () => now);
+    try {
+      await replacement.start();
+      expect(replacement.snapshot(sessionId).events).toEqual([]);
+      const expected = [{ role: "user", content: "accepted startup input", name: `__native_run:${started.runId}`, presentation: { runResult: { runId: started.runId, status: "failed", reason: "auth_required" } } }];
+      expect((await replacement.get(sessionId)).messages).toMatchObject(expected);
+      expect((await replacement.get(sessionId)).messages).toHaveLength(1);
+      Object.assign(replacementRuntime, { getPagedDetail: async () => ({ ...summary(), messages: [], events: [], history: { nextCursor: null, hasMore: false, pageSize: 0, totalItems: 0, delivery: "core" } }) });
+      expect((await replacement.get(sessionId, { limit: 20, view: "core" })).messages).toEqual([]);
+    } finally { await replacement.stop(); }
+  });
+
+  it.each([
+    [{ type: "error", code: "CANCEL_CONFIRMATION_TIMEOUT", message: "Codex cancellation confirmation timed out; it may still be running" }, "failed"],
+    [{ type: "error", code: "NATIVE_PROTOCOL_ERROR", message: "Native runtime restarted; turn interrupted" }, "interrupted"],
+  ] as const)("does not treat stop intent as confirmed cancellation for %j", async (terminal, status) => {
+    const runtime = new FakeNativeRuntime();
+    runtime.terminalEvent = terminal;
+    const host = new NativeRuntimeBrokerHost(await directory(), runtime as unknown as UnifiedSessionService);
+    try {
+      await host.startRun(sessionId, "request stop");
+      await waitFor(() => expect(host.snapshot(sessionId).events).toHaveLength(1));
+      await host.abort(sessionId);
+      await waitFor(() => expect(host.snapshot(sessionId).controller).toBeNull());
+      expect(host.snapshot(sessionId).events.at(-1)?.event).toMatchObject({ result: { status } });
+      const event = host.snapshot(sessionId).events.at(-1)?.event;
+      expect(event?.type === "error" && event.result?.status).not.toBe("cancelled");
+    } finally { await host.stop(); }
   });
 
   it("omits duration when identical native turns make attribution ambiguous", async () => {
@@ -1714,6 +1854,25 @@ describe("NativeRuntimeBrokerHost", () => {
     }
   });
 
+  it("inspects a pending message over the socket without starting it and identifies its later run", async () => {
+    const runtime = new FakeNativeRuntime(); runtime.status = "running";
+    const path = await directory();
+    const host = new NativeRuntimeBrokerHost(path, runtime as unknown as UnifiedSessionService);
+    await host.start();
+    try {
+      const client = new NativeRuntimeBrokerClient({ directory: path });
+      const queued = await client.enqueueMessage(sessionId, { sourceMessageId: "supervision:original-action", content: "核对后继续" });
+      expect(queued.started).toBeUndefined();
+      runtime.status = "idle";
+      expect((await client.getGoals(sessionId, "web", false)).active?.id).toBe(queued.state.active?.id);
+      expect(runtime.runInputs).toHaveLength(0);
+      expect((await client.snapshot(sessionId)).runId).toBeNull();
+      await client.getGoals(sessionId);
+      await waitFor(() => expect(runtime.runInputs).toHaveLength(1));
+      expect(await client.snapshot(sessionId)).toMatchObject({ runId: expect.any(String), queueItemId: queued.state.active!.id });
+    } finally { await host.stop(); }
+  });
+
   it("waits for interrupted adapter cleanup before admitting the next run", async () => {
     const runtime = new FakeNativeRuntime();
     runtime.rejectOverlappingRuns = true;
@@ -2279,6 +2438,98 @@ describe("NativeRuntimeBrokerHost", () => {
       await expect(host.get(id, { limit: 50 })).resolves.toMatchObject({ events: [{ type: "ask_user", questionId }] });
       await expect(host.get(id, { limit: 1, view: "core" })).resolves.toMatchObject({ events: [{ type: "ask_user", questionId }] });
     } finally { await host.stop(); }
+  });
+
+  it("restores only the current Copilot approval on latest pages, including after a retained run", async () => {
+    const id = encodeUnifiedSessionId("copilot", "ahp-session:/earth");
+    const native = { ...summary(), id, agentType: "copilot" as const, nativeSessionId: "ahp-session:/earth" };
+    const runtime = new FakeNativeRuntime();
+    let pending: AgentEvent[] = [{ type: "ask_user", questionId: "copilot:cdn", question: "Allow CDN?" }];
+    runtime.get = async () => ({ ...native, messages: [
+      { role: "user", content: "older", historyId: "old:user" },
+      { role: "assistant", content: "older answer", historyId: "old:answer" },
+      { role: "user", content: "Earth", historyId: "earth:user" },
+    ], events: pending });
+    const host = new NativeRuntimeBrokerHost(await directory(), runtime as unknown as UnifiedSessionService);
+    try {
+      const latest = await host.get(id, { limit: 1 });
+      expect(latest.events).toEqual(pending);
+      expect((await host.get(id, { limit: 1, view: "core" })).events).toEqual(pending);
+      expect(latest.history?.nextCursor).toBeTruthy();
+      const older = await host.get(id, { before: latest.history!.nextCursor!, limit: 1 });
+      expect(older.events).not.toContainEqual(pending[0]);
+      await host.startRun(id, "Earth");
+      await waitFor(() => expect(host.snapshot(id).events).toHaveLength(1));
+      expect((await host.get(id, { limit: 50 })).events.filter(event => event.type === "ask_user")).toEqual(pending);
+      pending = [];
+      expect((await host.get(id, { limit: 50 })).events.filter(event => event.type === "ask_user")).toEqual([]);
+    } finally { await host.stop(); }
+  });
+
+  it("answers a recovered native Copilot card without requiring an active Broker run", async () => {
+    const runtime = new FakeNativeRuntime();
+    const host = new NativeRuntimeBrokerHost(await directory(), runtime as unknown as UnifiedSessionService);
+    const questionId = `copilot:${"a".repeat(64)}`;
+    try {
+      await expect(host.answerQuestion(questionId, { answer: "允许一次", selectedIndices: [0] })).resolves.toBe(true);
+      expect(runtime.answers).toEqual([{ questionId, answer: { answer: "允许一次", selectedIndices: [0] } }]);
+      await expect(host.answerQuestion("copilot:invalid", { answer: "允许一次" })).resolves.toBe(false);
+    } finally { await host.stop(); }
+  });
+
+  it("does not label an independently running Copilot turn as failed after a gateway restart", async () => {
+    const id = encodeUnifiedSessionId("copilot", "ahp-session:/earth");
+    const native = { ...summary(), id, agentType: "copilot" as const, nativeSessionId: "ahp-session:/earth", status: "running" as const };
+    const runtime = new FakeNativeRuntime();
+    runtime.runFailure = { type: "error", code: "NATIVE_PROTOCOL_ERROR", message: "Native runtime restarted; this turn was interrupted. You can send again." };
+    runtime.get = async () => ({ ...native, messages: [
+      { role: "user", content: "Earth", historyId: "earth:user" },
+      { role: "assistant", content: "Checking", historyId: "earth:text" },
+    ], events: [{ type: "ask_user", questionId: `copilot:${"b".repeat(64)}`, question: "Allow?" }] });
+    const host = new NativeRuntimeBrokerHost(await directory(), runtime as unknown as UnifiedSessionService);
+    try {
+      await host.startRun(id, "Earth");
+      await waitFor(() => expect(host.snapshot(id).events.some(({ event }) => event.type === "error")).toBe(true));
+      const detail = await host.get(id);
+      expect(detail.status).toBe("running");
+      expect(detail.events.map(event => event.type)).toEqual(["ask_user"]);
+      expect(detail.messages.some(message => message.presentation?.runResult)).toBe(false);
+    } finally { await host.stop(); }
+  });
+
+  it("keeps durable Copilot steering until consumption and restores it once after reload", async () => {
+    const id = encodeUnifiedSessionId("copilot", "ahp-session:/earth");
+    const native = { ...summary(), id, agentType: "copilot" as const, nativeSessionId: "ahp-session:/earth" };
+    const runtime = new FakeNativeRuntime();
+    runtime.eventsBeforeApproval = [{ type: "text_chunk", text: "Checking", turnId: "earth-turn", itemId: "text" }];
+    runtime.get = async () => ({ ...native, messages: [
+      { role: "user", content: "Earth", historyId: "earth-turn:user" },
+      { role: "assistant", content: "Checking", historyId: "earth-turn:text" },
+    ], events: [] });
+    const path = await directory();
+    const host = new NativeRuntimeBrokerHost(path, runtime as unknown as UnifiedSessionService);
+    try {
+      await host.startRun(id, "Earth");
+      await waitFor(() => expect(host.snapshot(id).events).toHaveLength(2));
+      const queued = await host.enqueueMessage(id, { sourceMessageId: "source-steer", content: "follow up" });
+      const queueId = queued.state.queued[0].id;
+      let consume!: (value: boolean) => void;
+      const steering = vi.spyOn(runtime, "steer").mockImplementation(() => new Promise(resolve => { consume = resolve; }));
+      const operation = host.steerMessage(id, queueId);
+      await waitFor(() => expect(steering).toHaveBeenCalledWith(id, "follow up", queueId));
+      expect((await host.getGoals(id)).queued).toHaveLength(1);
+      consume(true);
+      await expect(operation).resolves.toMatchObject({ steered: true, state: { queued: [], history: [expect.objectContaining({ status: "completed", lastReason: "steered" })] } });
+      expect((await host.get(id)).messages.filter(message => message.content === "follow up")).toEqual([
+        expect.objectContaining({ role: "user", historyId: "source-steer" }),
+      ]);
+    } finally { await host.stop(); }
+    const replacement = new NativeRuntimeBrokerHost(path, runtime as unknown as UnifiedSessionService);
+    try {
+      const detail = await replacement.get(id, { limit: 50 });
+      expect(detail.messages.map(message => message.content)).toEqual(["Earth", "Checking", "follow up"]);
+      expect(detail.messages.filter(message => message.name?.startsWith("__native_steered:") && message.content === "follow up")).toHaveLength(1);
+    } finally { await replacement.stop(); }
   });
 
   it("forwards native permission presets over the socket without replacing the native projection with broker policy", async () => {

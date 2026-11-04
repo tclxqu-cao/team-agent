@@ -69,6 +69,7 @@ export * from './application/agent-run/index.js';
 export * from './application/file-workspace/index.js';
 export * from './application/notification/index.js';
 export * from './domain/collaboration/types.js';
+export * from './domain/collaboration/images.js';
 export * from './domain/collaboration/CollaborationDiscussion.js';
 export * from './application/collaboration/ports.js';
 export * from './application/collaboration/CollaborationService.js';

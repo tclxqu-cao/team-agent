@@ -1,6 +1,7 @@
 export { DeepSeekHarnessRuntimeAdapter } from "./deepseek-harness-runtime-adapter.js";
 export { DeepSeekHarnessClient } from "./deepseek-harness-client.js";
 export { ClaudeRuntimeAdapter } from "./claude-runtime-adapter.js";
+export { CopilotRuntimeAdapter } from "./copilot-runtime-adapter.js";
 export { CodexRuntimeAdapter } from "./codex-runtime-adapter.js";
 export { OpenCodeRuntimeAdapter } from "./opencode-runtime-adapter.js";
 export { OpenCodeServerClient } from "./opencode-server-client.js";

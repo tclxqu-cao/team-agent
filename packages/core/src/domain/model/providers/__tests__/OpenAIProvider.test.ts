@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { OpenAIProvider } from '../OpenAIProvider.js';
 import { DeepSeekProvider } from '../DeepSeekProvider.js';
 import { estimateRequestTokens } from '../../tokenBudget.js';
+import { collectEvents, fixtureResponse, openAIUsageFrames, usageEvents } from './usage-fixtures.js';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -16,6 +17,223 @@ const streamResponse = (...payloads: unknown[]) => new Response([
 
 describe('OpenAI compatible endpoints', () => {
   for (const Provider of [OpenAIProvider, DeepSeekProvider]) {
+    describe(`${Provider.name} reported usage`, () => {
+      const createProvider = () => new Provider({ baseUrl: 'https://example.com/v1', apiKey: 'test', modelId: 'model' });
+
+      it('requests usage and emits only the final snapshot from byte-sliced usage-only frames', async () => {
+        const fetchMock = vi.fn().mockResolvedValue(fixtureResponse([
+          ': heartbeat', 'event: message', 'data: {malformed', ...openAIUsageFrames,
+        ], { chunkSize: 1, trailingNewline: false }));
+        vi.stubGlobal('fetch', fetchMock);
+
+        const events = await collectEvents(createProvider());
+
+        expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({
+          stream: true, stream_options: { include_usage: true }, max_tokens: 16384, temperature: 0.7,
+        });
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+        expect(events).toEqual([
+          { type: 'text_chunk', text: '你好' },
+          { type: 'usage', usage: { inputTokens: 12, outputTokens: 5, totalTokens: 17, cacheReadTokens: 7, source: 'provider', coverage: 'complete' } },
+          { type: 'text_done' },
+        ]);
+      });
+
+      it.each([
+        [400, 'Unknown parameter: stream_options'],
+        [422, 'include_usage is unsupported'],
+        [400, 'Unrecognized request argument supplied: include_usage'],
+        [422, 'Unexpected field stream_options'],
+        [422, "Additional properties are not allowed ('stream_options' was unexpected)"],
+        [400, 'stream_options.include_usage is not supported'],
+      ])('falls back once for explicit HTTP %i usage-option rejection %s', async (status, message) => {
+        const fetchMock = vi.fn()
+          .mockResolvedValueOnce(Response.json({ error: { message } }, { status }))
+          .mockImplementationOnce(done);
+        vi.stubGlobal('fetch', fetchMock);
+
+        expect(await collectEvents(createProvider())).toEqual([{ type: 'text_chunk', text: 'OK' }, { type: 'text_done' }]);
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+        const [first, fallback] = fetchMock.mock.calls;
+        const firstBody = JSON.parse(first[1].body);
+        const { stream_options, ...withoutUsage } = firstBody;
+        expect(stream_options).toEqual({ include_usage: true });
+        expect(JSON.parse(fallback[1].body)).toEqual(withoutUsage);
+        expect(fallback[0]).toBe(first[0]);
+        expect(fallback[1].headers).toEqual(first[1].headers);
+        expect(fallback[1].signal).toBe(first[1].signal);
+      });
+
+      it.each([
+        [400, 'Invalid messages payload'],
+        [422, 'Unknown parameter: messages; stream_options was supplied'],
+        [400, 'Invalid value for stream_options.include_usage'],
+        [400, 'Unknown model; request contains stream_options'],
+        [429, 'Unsupported parameter: stream_options'],
+        [503, 'Unknown parameter: include_usage'],
+      ])('does not retry HTTP %i without an explicit usage-option rejection %s', async (status, raw) => {
+        const fetchMock = vi.fn().mockResolvedValue(new Response(raw, { status }));
+        vi.stubGlobal('fetch', fetchMock);
+        expect(await collectEvents(createProvider())).toEqual([{
+          type: 'error', code: `MODEL_HTTP_${status}`,
+          message: `${Provider === OpenAIProvider ? 'OpenAI' : 'DeepSeek'} API error ${status}: ${raw}`,
+        }]);
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+      });
+
+      it('does not retry a network failure', async () => {
+        const error = new Error('connection reset');
+        const fetchMock = vi.fn().mockRejectedValue(error);
+        vi.stubGlobal('fetch', fetchMock);
+        await expect(collectEvents(createProvider())).rejects.toBe(error);
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+      });
+
+      it('does not repeat the fallback if its response also fails', async () => {
+        const raw = 'Unsupported parameter: include_usage';
+        const fetchMock = vi.fn()
+          .mockResolvedValueOnce(new Response('Unknown parameter: stream_options', { status: 400 }))
+          .mockResolvedValueOnce(new Response(raw, { status: 422 }));
+        vi.stubGlobal('fetch', fetchMock);
+        expect(await collectEvents(createProvider())).toEqual([{
+          type: 'error', code: 'MODEL_HTTP_422',
+          message: `${Provider === OpenAIProvider ? 'OpenAI' : 'DeepSeek'} API error 422: ${raw}`,
+        }]);
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+      });
+
+      it('keeps genuine zero counters and cache hits without adding cache twice', async () => {
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue(fixtureResponse([
+          { choices: [], usage: { prompt_tokens: 9, completion_tokens: 0, total_tokens: 99, prompt_cache_hit_tokens: 4, prompt_cache_miss_tokens: 5 } },
+          { choices: [], usage: null },
+        ])));
+        expect(usageEvents(await collectEvents(createProvider()))).toEqual([{
+          type: 'usage', usage: { inputTokens: 9, outputTokens: 0, totalTokens: 9, cacheReadTokens: 4, source: 'provider', coverage: 'complete' },
+        }]);
+      });
+
+      it('supports DeepSeek cache-hit counters even when a compatible details object reports zero', async () => {
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue(fixtureResponse([
+          { choices: [], usage: { prompt_tokens: 9, completion_tokens: 2, prompt_cache_hit_tokens: 4, prompt_tokens_details: { cached_tokens: 0 } } },
+        ])));
+        expect(usageEvents(await collectEvents(createProvider()))).toEqual([{
+          type: 'usage', usage: { inputTokens: 9, outputTokens: 2, totalTokens: 11, cacheReadTokens: 4, source: 'provider', coverage: 'complete' },
+        }]);
+      });
+
+      it('does not leak usage into another request on the same provider instance', async () => {
+        vi.stubGlobal('fetch', vi.fn()
+          .mockResolvedValueOnce(fixtureResponse(openAIUsageFrames))
+          .mockResolvedValueOnce(fixtureResponse([{ choices: [{ delta: { content: 'OK' }, finish_reason: 'stop' }] }])));
+        const provider = createProvider();
+        expect(usageEvents(await collectEvents(provider))).toHaveLength(1);
+        expect(usageEvents(await collectEvents(provider))).toEqual([]);
+      });
+
+      it('preserves an actual all-zero usage snapshot', async () => {
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue(fixtureResponse([
+          { choices: [], usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, prompt_tokens_details: { cached_tokens: 0 } } },
+        ])));
+        expect(usageEvents(await collectEvents(createProvider()))).toEqual([{
+          type: 'usage', usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0, cacheReadTokens: 0, source: 'provider', coverage: 'complete' },
+        }]);
+      });
+
+      it('does not reset valid counters from repeated, cleared, missing, or invalid snapshots', async () => {
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue(fixtureResponse([
+          { choices: [], usage: { prompt_tokens: 12, completion_tokens: 4, prompt_tokens_details: { cached_tokens: 7 } } },
+          { choices: [], usage: { prompt_tokens: 0, completion_tokens: 0, prompt_tokens_details: { cached_tokens: 0 } } },
+          { choices: [], usage: { completion_tokens: 6 } },
+          { choices: [], usage: { prompt_tokens: -1, completion_tokens: 999 } },
+          { choices: [], usage: {} },
+        ])));
+        expect(usageEvents(await collectEvents(createProvider()))).toEqual([{
+          type: 'usage', usage: { inputTokens: 12, outputTokens: 6, totalTokens: 18, cacheReadTokens: 7, source: 'provider', coverage: 'complete' },
+        }]);
+      });
+
+      it.each([
+        undefined, null, {}, [], 0,
+        { total_tokens: 4 },
+        { prompt_tokens: 4 },
+        { completion_tokens: 3 },
+        { prompt_tokens: -1, completion_tokens: 3 },
+        { prompt_tokens: '4', completion_tokens: 3 },
+        { prompt_tokens: 4, completion_tokens: null },
+        { prompt_tokens: 4, completion_tokens: 1.5 },
+        { prompt_tokens: 4, completion_tokens: 3, total_tokens: -1 },
+        { prompt_tokens: 4, completion_tokens: 3, prompt_tokens_details: { cached_tokens: -1 } },
+        { prompt_tokens: 4, completion_tokens: 3, prompt_cache_hit_tokens: 5 },
+        { prompt_tokens: Number.MAX_SAFE_INTEGER, completion_tokens: 1 },
+      ])('does not synthesize usage from missing or invalid counters %j', async (usage) => {
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue(fixtureResponse([
+          { choices: [{ delta: { content: 'OK' }, finish_reason: 'stop' }], usage },
+        ])));
+        const events = await collectEvents(createProvider());
+        expect(usageEvents(events)).toEqual([]);
+        expect(events).toEqual([{ type: 'text_chunk', text: 'OK' }, { type: 'text_done' }]);
+      });
+
+      it('retains known usage as partial when the stream reader fails', async () => {
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue(fixtureResponse([
+          { choices: [], usage: { prompt_tokens: 12, completion_tokens: 3 } },
+        ], { error: new Error('connection reset') })));
+        const events = await collectEvents(createProvider());
+        expect(events).toEqual([
+          { type: 'usage', usage: { inputTokens: 12, outputTokens: 3, totalTokens: 15, source: 'provider', coverage: 'partial' } },
+          { type: 'error', message: 'connection reset' },
+        ]);
+      });
+
+      it('flushes known partial usage before the existing request-timeout error without waiting', async () => {
+        const error = new Error('The operation was aborted due to timeout');
+        error.name = 'TimeoutError';
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue(fixtureResponse([
+          { choices: [], usage: { prompt_tokens: 12, completion_tokens: 0 } },
+        ], { error })));
+        expect(await collectEvents(createProvider())).toEqual([
+          { type: 'usage', usage: { inputTokens: 12, outputTokens: 0, totalTokens: 12, source: 'provider', coverage: 'partial' } },
+          expect.objectContaining({ type: 'error', code: 'model_request_timeout' }),
+        ]);
+      });
+
+      it('retains reported usage when an SSE error frame terminates the request', async () => {
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue(fixtureResponse([
+          { choices: [], usage: { prompt_tokens: 12, completion_tokens: 3 } },
+          { error: { message: 'upstream overloaded' } },
+          { choices: [], usage: { prompt_tokens: 0, completion_tokens: 0 } },
+        ])));
+        expect(await collectEvents(createProvider())).toEqual([
+          { type: 'usage', usage: { inputTokens: 12, outputTokens: 3, totalTokens: 15, source: 'provider', coverage: 'partial' } },
+          { type: 'error', message: 'upstream overloaded' },
+        ]);
+      });
+
+      it('keeps the final usage-only frame after the existing tool truncation error', async () => {
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue(fixtureResponse([
+          { choices: [{ delta: { tool_calls: [{ index: 0, id: 'call-1', function: { name: 'write_file', arguments: '{' } }] }, finish_reason: 'length' }] },
+          { choices: [], usage: { prompt_tokens: 12, completion_tokens: 3 } },
+          { choices: [], usage: { prompt_tokens: 12, completion_tokens: 3 } },
+        ])));
+        const events = await collectEvents(createProvider());
+        expect(events[0]).toMatchObject({ type: 'error', message: expect.stringContaining('输出被截断') });
+        expect(usageEvents(events)).toEqual([{
+          type: 'usage', usage: { inputTokens: 12, outputTokens: 3, totalTokens: 15, source: 'provider', coverage: 'complete' },
+        }]);
+        expect(events.some((event) => event.type === 'tool_call')).toBe(false);
+      });
+
+      it.each([401, 403, 429, 500, 503])('keeps the raw HTTP %i error and adds a stable code without usage', async (status) => {
+        const raw = '  {"error":{"message":"upstream failure"}}\n';
+        const fetchMock = vi.fn().mockResolvedValue(new Response(raw, { status }));
+        vi.stubGlobal('fetch', fetchMock);
+        expect(await collectEvents(createProvider())).toEqual([{
+          type: 'error', code: `MODEL_HTTP_${status}`,
+          message: `${Provider === OpenAIProvider ? 'OpenAI' : 'DeepSeek'} API error ${status}: ${raw}`,
+        }]);
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+      });
+    });
     it.each(['https://example.com', 'https://example.com/v1/', ' https://example.com/v1/chat/completions/ '])(
       `${Provider.name} accepts %s`, async (baseUrl) => {
         const fetchMock = vi.fn().mockImplementation(done);

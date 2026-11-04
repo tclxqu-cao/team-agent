@@ -1,6 +1,6 @@
 // ── Model Domain: Provider abstraction ──
 
-import type { ReasoningSummarySection } from '../agent/entities.js';
+import type { ReasoningSummarySection, TokenUsage } from '../agent/entities.js';
 import type { SessionToolResultRef } from '../session/entities.js';
 
 export interface Message {
@@ -49,6 +49,8 @@ export interface MessageAttachment {
 export type SessionForkPoint = { turnId: string; messageId?: never } | { messageId: string; turnId?: never };
 
 export interface MessagePresentation {
+  /** Native assistant identity retained when generic pagination assigns a page-local history ID. */
+  nativeMessageId?: string;
   rawContent?: string;
   attachments?: MessageAttachment[];
   reasoning?: ReasoningSummarySection[];
@@ -58,6 +60,7 @@ export interface MessagePresentation {
   executionTrace?: { turnId: string; segmentIndex?: number };
   /** Authoritative wall-clock duration for a successfully completed turn. */
   completionDurationMs?: number;
+  runResult?: import('../agent/run-result.js').RunResult;
   forkPoint?: SessionForkPoint;
   /** A settled native question; pending questions come from ask_user events. */
   question?: {
@@ -120,6 +123,8 @@ export type StreamEvent =
   | { type: "text_chunk"; text: string }
   | { type: "tool_call"; toolCall: ToolCall }
   | { type: "text_done" }
+  /** One request's reported usage snapshot, not a token delta or context estimate. */
+  | { type: "usage"; usage: TokenUsage }
   | { type: "error"; message: string; code?: string };
 
 export interface IModelProvider {

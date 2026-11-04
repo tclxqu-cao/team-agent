@@ -90,6 +90,26 @@ describe("GET /api/agent/stream", () => {
     expect(body).toContain('"finalText":"recovered"');
   });
 
+  it("closes the customer-agent stream on turn_aborted with its result intact", async () => {
+    const session = await agentHost.createSession("aborted SSE");
+    const result = { status: "cancelled" as const, reason: "user_cancelled" as const, runId: "ca-stop", durationMs: 12 };
+    agentHost.resetExternalStream(session.id);
+    agentHost.publishExternal(session.id, { type: "turn_aborted", result });
+    const response = await GET(new Request(`http://test/api/agent/stream?sessionId=${session.id}&afterEventId=0`));
+    const body = await response.text();
+    expect(body).toContain('"type":"turn_aborted"');
+    expect(body).toContain(JSON.stringify(result));
+  });
+
+  it("closes the native stream on turn_aborted and preserves the recorded result", async () => {
+    const result = { status: "cancelled", reason: "user_cancelled", runId: "native-run-new", durationMs: 12 };
+    nativeState.events = [{ runId: "native-run-new", sequence: 2, event: { type: "turn_aborted", result } }];
+    const response = await GET(new Request("http://test/api/agent/stream?sessionId=runtime:codex:abc&afterSequence=0"));
+    const body = await response.text();
+    expect(body).toContain('"type":"turn_aborted"');
+    expect(body).toContain(JSON.stringify(result));
+  });
+
   it("replays a new native run from sequence zero when the browser cursor belongs to an older run", async () => {
     nativeState.afterSequence = null;
     nativeState.events = [

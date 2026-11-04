@@ -26,6 +26,7 @@ import {
   type SessionToolResultRef,
   type ToolCall,
   type ToolPermissionMode,
+  type TokenUsage,
 } from "@agent/core";
 import { AsyncEventQueue } from "./async-event-queue.js";
 import {
@@ -154,6 +155,15 @@ interface CodexGoalTerminalState {
   status: Exclude<CodexGoalStatus, "active"> | "cleared";
 }
 
+interface CodexRunUsage {
+  completedTurnIds: Set<string>;
+  startedTurnIds: Set<string>;
+  initialTurnId?: string;
+  pendingNotifications?: RpcNotification[];
+  usage?: TokenUsage;
+  partial: boolean;
+}
+
 export function codexThreadStatusToSessionStatus(
   statusType: unknown,
   ownedByUs = false,
@@ -205,6 +215,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
   private readonly finalizingAnswers = new Map<string, CodexRolloutFinalAnswer>();
   private readonly activeQueues = new Map<string, AsyncEventQueue<AgentEvent>>();
   private readonly activeTurnIds = new Map<string, string>();
+  private readonly runUsages = new Map<string, CodexRunUsage>();
   private readonly locallyInterruptedTurnIds = new Map<string, string>();
   private readonly unconfirmedInterruptedTurnIds = new Map<string, string>();
   private readonly localInterruptionTimers = new Map<string, {
@@ -289,7 +300,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     this.client.onExit((error) => {
       for (const [id, queue] of this.activeQueues) {
         if (this.desktopContinuations.has(id)) continue;
-        queue.push({ type: "error", code: "NATIVE_PROTOCOL_ERROR", message: error.message });
+        queue.push({ type: "error", code: "NATIVE_PROTOCOL_ERROR", message: error.message, ...this.runUsageMetadata(id) });
         queue.close();
       }
     });
@@ -1258,6 +1269,13 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       const text = skillInvocation
         ? `$${skillInvocation.name}${skillInvocation.rest ? ` ${skillInvocation.rest}` : ""}`
         : input;
+      const runUsage: CodexRunUsage = {
+        completedTurnIds: new Set(),
+        startedTurnIds: new Set(),
+        pendingNotifications: [],
+        partial: false,
+      };
+      this.runUsages.set(nativeSessionId, runUsage);
       const response = await this.client.request<{ turn: { id: string } }>("turn/start", {
         threadId: nativeSessionId,
         input: [
@@ -1272,7 +1290,16 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
         ...codexTurnPermissionOptions(permissionMode, detail.cwd),
       });
       imageDirectoryReferencedByTurn = imageDirectory !== null;
-      this.activeTurnIds.set(nativeSessionId, response.turn.id);
+      runUsage.initialTurnId = response.turn.id;
+      runUsage.startedTurnIds.add(response.turn.id);
+      // Notifications can precede the turn/start response. Replay only once the
+      // response binds them to this run, so a late prior turn cannot settle it.
+      const pendingNotifications = runUsage.pendingNotifications ?? [];
+      runUsage.pendingNotifications = undefined;
+      for (const notification of pendingNotifications) this.handleNotification(notification);
+      if (!this.activeTurnIds.has(nativeSessionId) && !runUsage.completedTurnIds.has(response.turn.id)) {
+        this.activeTurnIds.set(nativeSessionId, response.turn.id);
+      }
       for await (const event of queue) yield event;
     } catch (error) {
       const normalized = normalizeCodexError(error);
@@ -1281,12 +1308,13 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
         code: normalized.code,
         message: normalized.message,
       });
-      yield { type: "error", message: normalized.message, code: normalized.code };
+      yield { type: "error", message: normalized.message, code: normalized.code, ...this.runUsageMetadata(nativeSessionId) };
     } finally {
       this.desktopContinuations.get(nativeSessionId)?.close();
       this.desktopContinuations.delete(nativeSessionId);
       this.clearAsyncInputs(nativeSessionId);
       this.activeTurnIds.delete(nativeSessionId);
+      this.runUsages.delete(nativeSessionId);
       this.clearLocalInterruptionTimer(nativeSessionId);
       this.locallyInterruptedTurnIds.delete(nativeSessionId);
       this.activeQueues.delete(nativeSessionId);
@@ -1542,6 +1570,22 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       : typeof (params.turn as { id?: unknown } | undefined)?.id === "string"
         ? (params.turn as { id: string }).id
         : undefined;
+    if ((message.method === "turn/completed" || message.method === "turn/interrupt")
+      && notificationTurnId === this.unconfirmedInterruptedTurnIds.get(threadId)) {
+      this.unconfirmedInterruptedTurnIds.delete(threadId);
+    }
+    const runUsage = this.runUsages.get(threadId);
+    if (runUsage?.pendingNotifications) {
+      runUsage.pendingNotifications.push(message);
+      return;
+    }
+    if (message.method === "turn/started") {
+      if (!runUsage || !notificationTurnId || runUsage.completedTurnIds.has(notificationTurnId)) return;
+      if (!this.activeGoalThreads.has(threadId) && notificationTurnId !== runUsage.initialTurnId) return;
+    } else if (message.method === "turn/completed" || message.method === "turn/interrupt") {
+      if (!runUsage || !notificationTurnId || !runUsage.startedTurnIds.has(notificationTurnId)
+        || runUsage.completedTurnIds.has(notificationTurnId)) return;
+    }
     const replyItem = params.item as CodexItem | undefined;
     if ((message.method === "item/started" || message.method === "item/completed")
       && replyItem?.type === "userMessage") {
@@ -1589,7 +1633,10 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     }
     if (message.method === "turn/started") {
       const turn = params.turn as { id?: unknown } | undefined;
-      if (typeof turn?.id === "string") this.activeTurnIds.set(threadId, turn.id);
+      if (typeof turn?.id === "string") {
+        this.activeTurnIds.set(threadId, turn.id);
+        runUsage?.startedTurnIds.add(turn.id);
+      }
       this.completedGoalTurns.delete(threadId);
     }
     const eventTurnId = notificationTurnId ?? this.activeTurnIds.get(threadId);
@@ -1675,25 +1722,28 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     }
     if (message.method === "turn/completed") {
       const turn = params.turn as CodexTurn | undefined;
+      this.recordTurnUsage(threadId, notificationTurnId!, turn);
+      const metadata = this.runUsageMetadata(threadId);
       const locallyInterrupted = this.consumeLocalInterruption(threadId, turn?.id);
       this.activeTurnIds.delete(threadId);
       for (const key of this.agentMessagePhases.keys()) {
         if (key.startsWith(`${threadId}:`)) this.agentMessagePhases.delete(key);
       }
       if (turn?.status === "interrupted" && locallyInterrupted) {
-        queue.push({ type: "done", finalText: lastCodexAgentText(turn.items ?? []) });
+        queue.push({ type: "done", finalText: lastCodexAgentText(turn.items ?? []), ...metadata });
         queue.close();
         return;
       }
       if (this.activeGoalThreads.has(threadId)) {
         if (turn?.status === "failed") {
-          queue.push({ type: "error", message: readCodexErrorMessage(turn.error) ?? "Codex turn failed" });
+          queue.push({ type: "error", message: readCodexErrorMessage(turn.error) ?? "Codex turn failed", ...metadata });
           queue.close();
         } else if (turn?.status === "interrupted") {
           queue.push({
             type: "error",
             code: "NATIVE_PROTOCOL_ERROR",
             message: "Codex turn was interrupted.",
+            ...metadata,
           });
           queue.close();
         } else {
@@ -1704,26 +1754,29 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
         return;
       }
       if (turn?.status === "failed") {
-        queue.push({ type: "error", message: readCodexErrorMessage(turn.error) ?? "Codex turn failed" });
+        queue.push({ type: "error", message: readCodexErrorMessage(turn.error) ?? "Codex turn failed", ...metadata });
       } else if (turn?.status === "interrupted") {
         queue.push({
           type: "error",
           code: "NATIVE_PROTOCOL_ERROR",
           message: "Codex turn was interrupted.",
+          ...metadata,
         });
       } else {
         const finalText = lastCodexAgentText(turn?.items ?? []);
         const contextUsage = codexContextUsageEvent(turn, ++this.contextUsageRequestIndex);
         if (contextUsage) queue.push(contextUsage);
-        queue.push({ type: "done", finalText, ...(turn?.status === "completed" && finalText.trim() ? { forkPoint: { turnId: turn.id } } : {}) });
+        queue.push({ type: "done", finalText, ...metadata, ...(turn?.status === "completed" && finalText.trim() ? { forkPoint: { turnId: turn.id } } : {}) });
       }
       queue.close();
       return;
     }
     if (message.method === "turn/interrupt") {
+      this.recordTurnUsage(threadId, notificationTurnId!, undefined);
+      const metadata = this.runUsageMetadata(threadId);
       if (this.consumeLocalInterruption(threadId, params.turnId)) {
         this.activeTurnIds.delete(threadId);
-        queue.push({ type: "done", finalText: "" });
+        queue.push({ type: "done", finalText: "", ...metadata });
         queue.close();
         return;
       }
@@ -1731,6 +1784,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
         type: "error",
         code: "NATIVE_PROTOCOL_ERROR",
         message: "Codex turn was interrupted.",
+        ...metadata,
       });
       queue.close();
       return;
@@ -1742,9 +1796,50 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
         message: readCodexErrorMessage(params.error)
           ?? readCodexErrorMessage(params.message)
           ?? "Codex runtime error",
+        ...this.runUsageMetadata(threadId),
       });
       queue.close();
     }
+  }
+
+  private recordTurnUsage(threadId: string, turnId: string, turn: unknown): void {
+    const run = this.runUsages.get(threadId);
+    if (!run || run.completedTurnIds.has(turnId)) return;
+    run.completedTurnIds.add(turnId);
+    const usage = codexTurnUsage(turn);
+    if (!usage) {
+      run.partial = true;
+      return;
+    }
+    if (!run.usage) {
+      run.usage = usage;
+      return;
+    }
+    const inputTokens = run.usage.inputTokens + usage.inputTokens;
+    const outputTokens = run.usage.outputTokens + usage.outputTokens;
+    const totalTokens = inputTokens + outputTokens;
+    if (!Number.isSafeInteger(totalTokens)) {
+      run.partial = true;
+      return;
+    }
+    const cacheReadTokens = run.usage.cacheReadTokens !== undefined || usage.cacheReadTokens !== undefined
+      ? (run.usage.cacheReadTokens ?? 0) + (usage.cacheReadTokens ?? 0)
+      : undefined;
+    run.usage = {
+      inputTokens,
+      outputTokens,
+      totalTokens,
+      ...(cacheReadTokens !== undefined ? { cacheReadTokens } : {}),
+      source: "runtime",
+      coverage: "complete",
+    };
+  }
+
+  private runUsageMetadata(threadId: string): { usage?: TokenUsage } {
+    const run = this.runUsages.get(threadId);
+    if (!run?.usage) return {};
+    const partial = run.partial || [...run.startedTurnIds].some((id) => !run.completedTurnIds.has(id));
+    return { usage: { ...run.usage, coverage: partial ? "partial" : "complete" } };
   }
 
   private consumeLocalInterruption(threadId: string, turnId: unknown): boolean {
@@ -1773,6 +1868,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
         type: "error",
         code: "CANCEL_CONFIRMATION_TIMEOUT",
         message: "停止确认超时；Codex 可能仍在结束当前任务。请重试停止或释放会话。",
+        ...this.runUsageMetadata(threadId),
       });
       queue.close();
     }, CODEX_INTERRUPT_TIMEOUT_MS);
@@ -1826,10 +1922,12 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     this.activeTurnIds.delete(threadId);
     const queue = this.activeQueues.get(threadId);
     if (!queue) return;
+    this.recordTurnUsage(threadId, turn.id, turn);
+    const metadata = this.runUsageMetadata(threadId);
     if (turn.status === "failed") {
-      queue.push({ type: "error", message: readCodexErrorMessage(turn.error) ?? "Codex turn failed" });
+      queue.push({ type: "error", message: readCodexErrorMessage(turn.error) ?? "Codex turn failed", ...metadata });
     } else {
-      queue.push({ type: "done", finalText: lastCodexAgentText(turn.items ?? []) });
+      queue.push({ type: "done", finalText: lastCodexAgentText(turn.items ?? []), ...metadata });
     }
     queue.close();
   }
@@ -1921,13 +2019,15 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     if (!this.completedGoalTurns.has(threadId)) return;
     const terminal = this.goalTerminalStates.get(threadId);
     if (!terminal) return;
+    const metadata = this.runUsageMetadata(threadId);
     if (terminal.status === "complete") {
-      queue.push({ type: "done", finalText: this.lastGoalTurnText.get(threadId) ?? "" });
+      queue.push({ type: "done", finalText: this.lastGoalTurnText.get(threadId) ?? "", ...metadata });
     } else {
       queue.push({
         type: "error",
         code: "NATIVE_PROTOCOL_ERROR",
         message: codexGoalTerminalMessage(terminal.status),
+        ...metadata,
       });
     }
     queue.close();
@@ -2752,23 +2852,37 @@ function codexItemToToolResult(item?: CodexItem): { toolCallId: string; content:
   return null;
 }
 
-// Codex turns may report the token accounting of the completed turn; prompt
-// tokens approximate the context the next turn will resend. Missing usage data
-// simply yields no estimate — the ring stays empty rather than lying.
+function codexTurnUsage(turn: unknown): TokenUsage | undefined {
+  const usage = asRecord(asRecord(turn).usage);
+  const count = (value: unknown) => typeof value === "number" && Number.isSafeInteger(value) && value >= 0
+    ? value
+    : undefined;
+  const inputTokens = count(usage.inputTokens ?? usage.input_tokens);
+  const outputTokens = count(usage.outputTokens ?? usage.output_tokens);
+  if (inputTokens === undefined || outputTokens === undefined) return undefined;
+  const cached = usage.cachedInputTokens ?? usage.cached_input_tokens;
+  const cacheReadTokens = count(cached);
+  // Codex input already includes cached tokens. They are a subset, not additive.
+  if (cached !== undefined && (cacheReadTokens === undefined || cacheReadTokens > inputTokens)) return undefined;
+  const totalTokens = inputTokens + outputTokens;
+  if (!Number.isSafeInteger(totalTokens)) return undefined;
+  return {
+    inputTokens,
+    outputTokens,
+    totalTokens,
+    ...(cacheReadTokens !== undefined ? { cacheReadTokens } : {}),
+    source: "runtime",
+    coverage: "complete",
+  };
+}
+
+// The context ring is an estimate; terminal usage reads only verified turn.usage.
 const CODEX_DEFAULT_CONTEXT_WINDOW = 272_000;
 function codexContextUsageEvent(turn: unknown, requestIndex: number): AgentEvent | null {
-  const turnRecord = typeof turn === "object" && turn !== null ? (turn as Record<string, unknown>) : {};
-  const usage = typeof turnRecord.usage === "object" && turnRecord.usage !== null
-    ? (turnRecord.usage as Record<string, unknown>)
-    : {};
-  const tokens = (key: string) => {
-    const value = usage[key];
-    return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.round(value) : 0;
-  };
-  const promptTokens = tokens("input_tokens") + tokens("cached_input_tokens");
-  const outputTokens = tokens("output_tokens");
-  const totalTokens = promptTokens + outputTokens;
-  if (totalTokens <= 0) return null;
+  const turnRecord = asRecord(turn);
+  const usage = codexTurnUsage(turn);
+  if (!usage || usage.totalTokens <= 0) return null;
+  const { inputTokens: promptTokens, outputTokens, totalTokens } = usage;
   const contextWindow = typeof turnRecord.model_context_window === "number"
     && Number.isFinite(turnRecord.model_context_window)
     && turnRecord.model_context_window > 0

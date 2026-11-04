@@ -34,6 +34,10 @@ import {
   GOAL_MESSAGE_NAME,
   estimateTextTokens,
   mergeReasoningSummaryDelta,
+  createRunResult,
+  normalizeTokenUsage,
+  type RunResult,
+  type RunTerminalEvent,
 } from "@agent/core";
 import { homedir } from "node:os";
 import { getAgentWorkingDirectory, getServerBaseDir } from "../../lib/server-data-dir";
@@ -77,6 +81,10 @@ interface CustomerAgentRunMarker {
   runId: string;
   eventStart: number;
   startedAt: string;
+  /** Index of the owning user message, retained across sequential agents. */
+  messageStart?: number;
+  /** First message belonging to the current sequential agent's projection. */
+  fragmentMessageStart?: number;
 }
 
 interface ActiveCustomerAgentRun {
@@ -126,6 +134,12 @@ function readRunMarker(metadata: Record<string, unknown>): CustomerAgentRunMarke
     && typeof marker.startedAt === "string"
     ? marker as CustomerAgentRunMarker
     : null;
+}
+
+function errorCode(error: unknown): { code?: string } {
+  return error && typeof error === "object" && "code" in error && typeof error.code === "string"
+    ? { code: error.code }
+    : {};
 }
 
 /** Singleton agent host shared across API routes */
@@ -420,6 +434,7 @@ class AgentHost {
     const messages: Message[] = [];
     let streamingAssistant: Message | null = null;
     const toolCallNames = new Map<string, string>();
+    let runResult: RunResult | undefined;
     const ephemeralSkillCallIds = new Set(events.flatMap((event) =>
       event.type === "tool_result" && event.result.metadata?.ephemeralSkillContext === true
         ? [event.result.toolCallId]
@@ -481,6 +496,10 @@ class AgentHost {
         continue;
       }
 
+      if (event.type === "done" || event.type === "error" || event.type === "turn_aborted") {
+        runResult ??= event.result;
+      }
+
       if (event.type === "done") {
         const completionDurationMs = typeof event.durationMs === "number"
           && Number.isFinite(event.durationMs)
@@ -508,7 +527,27 @@ class AgentHost {
       }
     }
 
+    if (runResult) {
+      const target = [...messages].reverse().find((message) => message.role === "assistant"
+        && message.content.trim() && !message.toolCalls?.length && message.presentation?.agentMessagePhase !== "commentary");
+      if (target) target.presentation = { ...target.presentation, runResult };
+    }
     return messages;
+  }
+
+  private decorateTerminal(
+    event: RunTerminalEvent,
+    marker: CustomerAgentRunMarker,
+    options: { cancelled?: boolean; partialUsage?: boolean; result?: RunResult } = {},
+  ): RunTerminalEvent {
+    const reportedUsage = normalizeTokenUsage(event.usage ?? event.result?.usage);
+    const usage = reportedUsage && options.partialUsage ? { ...reportedUsage, coverage: "partial" as const } : reportedUsage;
+    const result = options.result ?? createRunResult({ ...event, usage }, {
+      runId: marker.runId,
+      durationMs: Math.max(0, Date.now() - Date.parse(marker.startedAt)),
+      cancelled: options.cancelled,
+    });
+    return { ...event, durationMs: result.durationMs, usage: result.usage, result };
   }
 
   startRun(input: string, sessionId: string, images?: string[], options: SharedRunOptions = {}): {
@@ -523,9 +562,24 @@ class AgentHost {
     this.activeRuns.set(sessionId, { runId, source: options.source === "goal" ? "goal" : "user", agent: null });
     const runStartedAt = performance.now();
     const runStats: RunStats = { failed: false, usageLimited: false, responseText: "", toolResultText: "" };
-    const execution = this.executeRun(input, sessionId, runId, images, sharedSettings().read(), options, runStats);
+    const execution = this.executeRun(input, sessionId, runId, images, sharedSettings().read(), options, runStats).catch(async (error) => {
+      // Setup failures outside the agent iterator must settle the admitted turn too.
+      const session = await this.sessionStore.get(sessionId);
+      const marker = session && readRunMarker(session.metadata);
+      if (marker?.runId === runId) {
+        const event = this.decorateTerminal({
+          type: "error",
+          message: error instanceof Error ? error.message : "Agent run failed",
+          ...errorCode(error),
+        }, marker, { cancelled: this.activeRuns.get(sessionId)?.aborted });
+        await this.sessionStore.addEvent(sessionId, event);
+        await this.commitRun(sessionId, marker, event.result?.status === "cancelled" ? "aborted" : "failed");
+        this.emit(sessionId, event);
+      }
+      throw error;
+    });
     // 先挂 catch（先于 finally 触发），让钩子能看到失败；completion 仍保持原有拒绝语义。
-    void execution.catch(() => { runStats.failed = true; });
+    void execution.catch(() => { runStats.failed = !this.activeRuns.get(sessionId)?.aborted; });
     const completion = execution.finally(() => {
       if (this.activeRuns.get(sessionId)?.runId === runId) {
         this.activeRuns.delete(sessionId);
@@ -561,22 +615,31 @@ class AgentHost {
     runStats: RunStats,
   ): Promise<void> {
     const goalSource = options.source === "goal";
-    const runStartedAt = performance.now();
     let session = await this.sessionStore.get(sessionId);
     if (!session) throw new Error(`Session not found: ${sessionId}`);
     const staleMarker = readRunMarker(session.metadata);
     if (staleMarker && staleMarker.runId !== runId) {
+      const terminal = session.events.slice(staleMarker.eventStart).find((event) =>
+        (event.type === "done" || event.type === "error" || event.type === "turn_aborted") && event.result,
+      );
+      if (!terminal) {
+        await this.sessionStore.addEvent(sessionId, this.decorateTerminal({
+          type: "error",
+          code: "RUNTIME_INTERRUPTED",
+          message: "Customer Agent runtime restarted; this turn was interrupted.",
+        }, staleMarker));
+      }
       await this.commitRun(sessionId, staleMarker, "failed");
       session = await this.sessionStore.get(sessionId);
       if (!session) throw new Error(`Session not found: ${sessionId}`);
     }
-    const runWorkingDirectory = await this.resolveProjectWorkingDirectory(session?.projectId, false, settings.workingDirectory || this.workingDirectory);
     if (!goalSource) await this.sessionStore.consumePendingAutoTitle(sessionId, input);
     session = await this.sessionStore.get(sessionId);
     if (!session) throw new Error(`Session not found: ${sessionId}`);
     let marker: CustomerAgentRunMarker = {
       runId,
       eventStart: session.events.length,
+      messageStart: session.messages.length,
       startedAt: new Date().toISOString(),
     };
     const presentation = sentImagePresentation(images);
@@ -590,6 +653,7 @@ class AgentHost {
       metadata: { ...session.metadata, supervisionStoppedAt: undefined, [ACTIVE_RUN_METADATA_KEY]: marker },
     });
     this.manuallyStopped.delete(sessionId);
+    const runWorkingDirectory = await this.resolveProjectWorkingDirectory(session.projectId, false, settings.workingDirectory || this.workingDirectory);
     // Replace the replay window for this run, but keep SSE ids monotonic so a
     // subscriber opened before admission does not reject the new run as stale.
     this.recentEvents.set(sessionId, []);
@@ -660,6 +724,17 @@ class AgentHost {
     if (owner) owner.abortChildren = () => dispatcher.abortAll();
     const selectedIds = options.agentIds?.length ? options.agentIds : settings.activeAgentIds.slice(0, 1);
     const agentIds: Array<string | undefined> = selectedIds.length ? selectedIds : [undefined];
+    let firstResult: RunResult | undefined;
+    let delegatedUsage = !!options.dynamicTeam || agentIds.length > 1;
+    const terminalEvent = (event: RunTerminalEvent): RunTerminalEvent => {
+      const decorated = this.decorateTerminal(event, marker, {
+        cancelled: this.activeRuns.get(sessionId)?.aborted,
+        partialUsage: delegatedUsage,
+        result: firstResult,
+      });
+      firstResult ??= decorated.result;
+      return decorated;
+    };
     for (let index = 0; index < agentIds.length; index++) {
       const lastAgent = index === agentIds.length - 1;
       let agent: IAgentLoop;
@@ -689,10 +764,12 @@ class AgentHost {
         await resources?.close();
         serverLogger().error("agent build failed", err, { sessionId, runId });
         // Emit error to SSE subscribers so the SDK can display it
-        const errorEvent = {
+        const errorEvent = terminalEvent({
           type: "error",
           message: err instanceof Error ? err.message : "Failed to build agent",
-        } as AgentEvent;
+          ...errorCode(err),
+        });
+        runStats.failed = errorEvent.result?.status !== "cancelled";
         try {
           await this.sessionStore.addEvent(sessionId, errorEvent);
           await this.commitRun(sessionId, marker, "failed");
@@ -710,7 +787,7 @@ class AgentHost {
       active.agent = agent;
       if (active.aborted) {
         await resources?.close();
-        const event = { type: "turn_aborted" } as AgentEvent;
+        const event = terminalEvent({ type: "turn_aborted" });
         await this.sessionStore.addEvent(sessionId, event);
         await this.commitRun(sessionId, marker, "aborted");
         this.emit(sessionId, event);
@@ -724,15 +801,18 @@ class AgentHost {
 
       try {
         for await (const event of activeRun) {
+          if (event.type === "agent_dispatch" || event.type === "agent_started") delegatedUsage = true;
           if (event.type === "done" && options.dynamicTeam) {
             await dispatcher.waitForIdle(options.dynamicTeam.workerTimeoutSeconds * 1_000);
           }
-          const emittedEvent: AgentEvent = event.type === "done" && !runFailed
-            ? {
-                ...event,
-                durationMs: Math.max(0, Math.round(performance.now() - runStartedAt)),
-              }
-            : event;
+          const intermediateDone = event.type === "done" && !lastAgent && !firstResult
+            && !active.aborted && (!event.result || event.result.status === "completed");
+          const emittedEvent: AgentEvent = intermediateDone
+            // A sequential agent's local completion is not the run's terminal result.
+            ? { ...event, result: undefined, durationMs: undefined }
+            : event.type === "done" || event.type === "error" || event.type === "turn_aborted"
+              ? terminalEvent(event)
+              : event;
           // 目标模式用量采集：估算本轮新增 token 的原始文本（有上限，防长循环撑爆内存）。
           if (runStats.responseText.length < 400_000 && event.type === "text_chunk") runStats.responseText += event.text;
           if (runStats.toolResultText.length < 400_000 && event.type === "tool_result") runStats.toolResultText += event.result.content;
@@ -753,6 +833,7 @@ class AgentHost {
           if (emittedEvent.type === "error") {
             dispatcher.abortAll();
             runFailed = true;
+            runStats.failed = emittedEvent.result?.status !== "cancelled";
             if (/rate\s*limit|quota|usage\s*limit|429|insufficient/i.test(emittedEvent.message)) runStats.usageLimited = true;
             if (!terminalCommitted) {
               await this.commitRun(sessionId, marker, "failed");
@@ -764,25 +845,38 @@ class AgentHost {
               await this.commitRun(sessionId, marker, "aborted");
               terminalCommitted = true;
             }
-          } else if (emittedEvent.type === "done" && !terminalCommitted) {
-            await this.commitRun(sessionId, marker, runFailed ? "failed" : lastAgent ? "completed" : "active");
-            terminalCommitted = true;
+          } else if (emittedEvent.type === "done") {
+            if (!terminalCommitted) {
+              const result = emittedEvent.result;
+              runFailed = !!result && result.status !== "completed";
+              runStats.failed ||= runFailed && result?.status !== "cancelled";
+              await this.commitRun(sessionId, marker, intermediateDone ? "active"
+                : result?.status === "cancelled" ? "aborted" : runFailed ? "failed" : "completed");
+              terminalCommitted = true;
+            } else if (firstResult?.status !== "completed") {
+              // Some loops yield error/abort followed by done with a partial final.
+              // Reproject only the uncommitted suffix, keeping the first result.
+              await this.commitPartialFinal(sessionId, marker, emittedEvent);
+            }
           }
 
-          if (emittedEvent.type !== "done" || lastAgent || runFailed) this.emit(sessionId, emittedEvent);
+          if (!intermediateDone) this.emit(sessionId, emittedEvent);
         }
       } catch (err) {
         // The loop itself threw (not an in-band error event) — without this the
         // subscriber would wait forever with no feedback.
         runFailed = true;
+        runStats.failed = true;
         dispatcher.abortAll();
         serverLogger().error("agent loop threw", err, { sessionId, runId });
         const msg = err instanceof Error ? err.message : String(err);
         if (/rate\s*limit|quota|usage\s*limit|429|insufficient/i.test(msg)) runStats.usageLimited = true;
-        const errorEvent = {
+        const errorEvent = terminalEvent({
           type: "error",
           message: err instanceof Error ? err.message : "Agent run failed",
-        } as AgentEvent;
+          ...errorCode(err),
+        });
+        runStats.failed = errorEvent.result?.status !== "cancelled";
         try {
           await this.sessionStore.addEvent(sessionId, errorEvent);
           if (!terminalCommitted) {
@@ -797,7 +891,8 @@ class AgentHost {
 
       if (!terminalCommitted) {
         serverLogger().error("agent run ended without a terminal event", undefined, { sessionId, runId });
-        const errorEvent = { type: "error", message: "Agent run ended without a terminal event" } as AgentEvent;
+        runStats.failed = true;
+        const errorEvent = terminalEvent({ type: "error", code: "PROTOCOL_ERROR", message: "Agent run ended without a terminal event" });
         try {
           await this.sessionStore.addEvent(sessionId, errorEvent);
           await this.commitRun(sessionId, marker, "failed");
@@ -806,16 +901,16 @@ class AgentHost {
         return;
       }
       const completed = await this.sessionStore.get(sessionId);
-      if (lastAgent || runFailed || completed?.status === "aborted" || !completed) return;
+      if (lastAgent || runFailed || firstResult || completed?.status === "aborted" || !completed) return;
+      marker = { ...marker, eventStart: completed.events.length, fragmentMessageStart: completed.messages.length };
+      await this.sessionStore.update(sessionId, { metadata: { ...completed.metadata, [ACTIVE_RUN_METADATA_KEY]: marker } });
       if (active.aborted) {
-        const event = { type: "turn_aborted" } as AgentEvent;
+        const event = terminalEvent({ type: "turn_aborted" });
         await this.sessionStore.addEvent(sessionId, event);
-        await this.sessionStore.update(sessionId, { status: "aborted" });
+        await this.commitRun(sessionId, marker, "aborted");
         this.emit(sessionId, event);
         return;
       }
-      marker = { ...marker, eventStart: completed.events.length };
-      await this.sessionStore.update(sessionId, { metadata: { ...completed.metadata, [ACTIVE_RUN_METADATA_KEY]: marker } });
     }
   }
 
@@ -852,14 +947,60 @@ class AgentHost {
 
     const metadata = { ...stored.metadata };
     delete metadata[ACTIVE_RUN_METADATA_KEY];
-    const projected = this.projectMessagesFromEvents(stored.events.slice(marker.eventStart));
-    await this.appendMessagesAndUpdate(sessionId, projected, { status, metadata });
+    const events = stored.events.slice(marker.eventStart);
+    const terminal = events.find((event): event is RunTerminalEvent =>
+      (event.type === "done" || event.type === "error" || event.type === "turn_aborted") && !!event.result,
+    );
+    const result = terminal?.result;
+    if (result) {
+      metadata.lastRunResult = result;
+      status = result.status === "completed" ? "completed" : result.status === "cancelled" ? "aborted" : "failed";
+    }
+    const projected = this.projectMessagesFromEvents(events);
+    await this.appendMessagesAndUpdate(sessionId, projected, { status, metadata },
+      result && !projected.some((message) => message.presentation?.runResult)
+        ? { result, messageIndex: marker.messageStart }
+        : undefined);
+  }
+
+  private async commitPartialFinal(
+    sessionId: string,
+    marker: CustomerAgentRunMarker,
+    event: Extract<AgentEvent, { type: "done" }>,
+  ): Promise<void> {
+    if (!event.result || !event.finalText.trim() || /^(aborted|cancelled|interrupted)$/i.test(event.finalText.trim())) return;
+    const database = getDatabase(this.baseDir).db;
+    database.transaction(() => {
+      const rows = database.prepare("SELECT id, role, content, tool_calls, presentation FROM messages WHERE session_id = ? ORDER BY id ASC").all(sessionId) as Array<{
+        id: number; role: string; content: string; tool_calls: string; presentation: string | null;
+      }>;
+      const userIndex = marker.messageStart ?? rows.map((row) => row.role).lastIndexOf("user");
+      if (userIndex < 0 || rows[userIndex]?.role !== "user") return;
+      const answer = rows.slice(marker.fragmentMessageStart ?? userIndex + 1).reverse()
+        .find((row) => row.role === "assistant" && !JSON.parse(row.tool_calls || "[]").length);
+      if (answer && !event.finalText.startsWith(answer.content)) return;
+      if (answer) {
+        const presentation = { ...(answer.presentation ? JSON.parse(answer.presentation) : {}), runResult: event.result };
+        database.prepare("UPDATE messages SET content = ?, presentation = ? WHERE id = ?").run(event.finalText, JSON.stringify(presentation), answer.id);
+      } else {
+        database.prepare("INSERT INTO messages (session_id, role, content, tool_calls, presentation, timestamp) VALUES (?, 'assistant', ?, '[]', ?, ?)")
+          .run(sessionId, event.finalText, JSON.stringify({ runResult: event.result }), Date.now());
+      }
+      for (const row of rows.slice(userIndex)) {
+        if (row.id === answer?.id || !row.presentation) continue;
+        const presentation = JSON.parse(row.presentation);
+        if (presentation.runResult?.runId !== marker.runId) continue;
+        delete presentation.runResult;
+        database.prepare("UPDATE messages SET presentation = ? WHERE id = ?").run(JSON.stringify(presentation), row.id);
+      }
+    })();
   }
 
   private async appendMessagesAndUpdate(
     sessionId: string,
     messages: Message[],
     update: Pick<Partial<Session>, "status" | "metadata">,
+    userResult?: { result: RunResult; messageIndex?: number },
   ): Promise<void> {
     const database = getDatabase(this.baseDir).db;
     const insert = database.prepare(
@@ -885,10 +1026,26 @@ class AgentHost {
           timestamp + index,
         );
       });
+      if (userResult) {
+        const rows = database.prepare("SELECT id, role, content, tool_calls, presentation FROM messages WHERE session_id = ? ORDER BY id ASC").all(sessionId) as Array<{ id: number; role: string; content: string; tool_calls: string; presentation: string | null }>;
+        const userIndex = userResult.messageIndex ?? rows.map((message) => message.role).lastIndexOf("user");
+        const user = rows[userIndex];
+        if (user?.role === "user") {
+          const owner = rows.slice(userIndex + 1).reverse().find((message) => message.role === "assistant"
+            && message.content.trim() && !JSON.parse(message.tool_calls || "[]").length
+            && (!message.presentation || JSON.parse(message.presentation).agentMessagePhase !== "commentary")) ?? user;
+          database.prepare("UPDATE messages SET presentation = ? WHERE id = ?").run(
+            JSON.stringify({ ...(owner.presentation ? JSON.parse(owner.presentation) : {}), runResult: userResult.result }), owner.id,
+          );
+        }
+      }
       const latestMetadata = JSON.parse(row.metadata);
       if (update.metadata) {
         if (ACTIVE_RUN_METADATA_KEY in update.metadata) latestMetadata[ACTIVE_RUN_METADATA_KEY] = update.metadata[ACTIVE_RUN_METADATA_KEY];
         else delete latestMetadata[ACTIVE_RUN_METADATA_KEY];
+        for (const key of ["lastRunResult", "supervisionStoppedAt"]) {
+          if (key in update.metadata) latestMetadata[key] = update.metadata[key];
+        }
       }
       database.prepare("UPDATE sessions SET status = ?, updated = ?, metadata = ? WHERE id = ?").run(
         update.status ?? row.status,
