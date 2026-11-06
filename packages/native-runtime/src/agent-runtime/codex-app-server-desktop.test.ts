@@ -219,13 +219,15 @@ describe("Desktop-first Codex transport", () => {
     expect(client.mode).toBeNull();
   });
 
-  it("re-probes Desktop on restart after standalone fallback", async () => {
+  it("re-probes Desktop after its failed startup cooldown expires", async () => {
+    let now = 0;
     const fallback = fallbackSpawner();
     const server = await desktopServer();
     const resolveDesktopEndpoint = vi.fn().mockResolvedValueOnce(null).mockResolvedValue(server.endpoint);
-    const client = clientFor({ resolveDesktopEndpoint, spawnProcess: fallback.spawnProcess as never });
+    const client = clientFor({ resolveDesktopEndpoint, spawnProcess: fallback.spawnProcess as never, now: () => now });
     await client.request("thread/list", {});
     expect(client.mode).toBe("standalone");
+    now = 5 * 60_000;
     await client.restart();
     expect(client.mode).toBe("desktop");
     expect(fallback.child.killSignals).toEqual(["SIGTERM"]);

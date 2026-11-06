@@ -11,7 +11,8 @@
       ],
       "@agent/core/*": [
         "../core/src/*"
-      ]
+      ],
+      "@agent/messaging": ["./packages/messaging/src"]
     },
     "plugins": [
       {

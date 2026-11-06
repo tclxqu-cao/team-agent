@@ -64,7 +64,7 @@ describe("rail layout compact toolbar", () => {
 
   it("enables compaction by layout without bypassing configured visibility or theme", () => {
     const page = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
-    expect(page).toContain('compact={navigationLayout === "agent-rail"}');
+    expect(page).toContain('compact={navigationLayout !== "classic"}');
     expect(page).toContain('glass={themeId === "glass"}');
     expect(page).toContain('computerConfiguration.settings.visibleTools.some(id => id === item.id)');
     expect(CONSOLE_CSS).toContain('backdrop-filter:blur(22px) saturate(1.2)');

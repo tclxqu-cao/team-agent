@@ -11,6 +11,7 @@ const server = resolve(root, "packages/server");
 const core = resolve(root, "packages/core");
 const computerUse = resolve(root, "packages/computer-use");
 const nativeRuntime = resolve(root, "packages/native-runtime");
+const messaging = resolve(root, "packages/messaging");
 const targetName = readRequiredOption("--target");
 const nodeVersion = process.versions.node;
 assertSupportedNodeVersion(nodeVersion);
@@ -19,7 +20,8 @@ const targetConfig = RUNTIME_TARGETS[targetName];
 if (!targetConfig) throw new Error(`unsupported staging target: ${targetName}`);
 
 const packageRoot = resolve(root, "packages", targetConfig.packageDir);
-const target = resolve(packageRoot, "runtime");
+const outputRoot = resolve(readOptionalOption("--output-dir") || packageRoot);
+const target = resolve(outputRoot, "runtime");
 await rm(target, { recursive: true, force: true });
 await mkdir(target, { recursive: true });
 
@@ -34,15 +36,14 @@ await cp(standaloneBuild, resolve(target, ".next"), { recursive: true });
 await cp(resolve(standaloneServer, "server.js"), resolve(target, "server.js"));
 await cp(resolve(buildRoot, "static"), resolve(target, ".next/static"), { recursive: true });
 await cp(resolve(server, "ws-server.mjs"), resolve(target, "ws-server.mjs"));
-await mkdir(resolve(target, "lib/messaging/wecom"), { recursive: true });
-for (const file of ["reader.py", "codec.py"]) {
-  await cp(resolve(server, "lib/messaging/wecom", file), resolve(target, "lib/messaging/wecom", file));
-}
 await mkdir(resolve(target, "lib"), { recursive: true });
 await mkdir(resolve(target, "lib/browser-live"), { recursive: true });
 await cp(resolve(server, "lib/browser-live/viewer-frame-flow.mjs"), resolve(target, "lib/browser-live/viewer-frame-flow.mjs"));
 await cp(resolve(server, "lib/remote-control"), resolve(target, "lib/remote-control"), { recursive: true, filter: (source) => !source.endsWith(".test.ts") });
 if (targetName === "darwin-arm64") {
+  execFileSync(process.execPath, [resolve(root, "scripts/build-wecom-send-helper.mjs")], { stdio: "inherit" });
+  await mkdir(resolve(target, "native/Support.noindex"), { recursive: true });
+  await cp(resolve(server, "native/WeComSendBridge.app"), resolve(target, "native/Support.noindex/WeComSendBridge.app"), { recursive: true });
   // Local builds on machines with a broken CLT Swift toolchain can reuse the
   // helper from the previous published runtime (sources unchanged) by setting
   // AGENT_REUSE_REMOTE_HELPER=1 with the .app pre-placed in server/native/.
@@ -148,6 +149,7 @@ for (const { dir, dist } of [
   { dir: core, dist: resolve(core, "dist") },
   { dir: computerUse, dist: resolve(computerUse, "dist") },
   { dir: nativeRuntime, dist: resolve(nativeRuntime, "dist") },
+  { dir: messaging, dist: resolve(messaging, "dist") },
 ]) {
   const name = JSON.parse(await readFile(resolve(dir, "package.json"), "utf8")).name;
   const destination = resolve(target, "node_modules", name);
@@ -180,6 +182,7 @@ for (const nativeRelativePath of targetConfig.nativeFiles) {
 }
 
 const packageJson = JSON.parse(await readFile(resolve(packageRoot, "package.json"), "utf8"));
+if (outputRoot !== packageRoot) await cp(resolve(packageRoot, "package.json"), resolve(outputRoot, "package.json"));
 const manifest = {
   packageVersion: packageJson.version,
   target: targetName,
@@ -188,7 +191,7 @@ const manifest = {
   minimumNodeVersion: MINIMUM_NODE_VERSION,
   nativeFiles,
 };
-await writeFile(resolve(packageRoot, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
+await writeFile(resolve(outputRoot, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
 console.log(`staged ${targetName} CLI runtime at ${target}`);
 
 function readRequiredOption(name) {
@@ -196,6 +199,10 @@ function readRequiredOption(name) {
   const value = index >= 0 ? process.argv[index + 1] : "";
   if (!value || value.startsWith("--")) throw new Error(`missing required ${name}`);
   return value;
+}
+
+function readOptionalOption(name) {
+  return process.argv.includes(name) ? readRequiredOption(name) : undefined;
 }
 
 async function mustExist(path) {

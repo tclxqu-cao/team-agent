@@ -126,7 +126,7 @@ export class WorkBuddyClient implements NativeSessionProtocol {
     const native = (await this.catalog.list()).find(session => session.id === id);
     const session = native ?? this.drafts.get(id);
     if (!session) throw new RuntimeSessionError("WorkBuddy session not found", "SESSION_NOT_FOUND");
-    if (native?.running) throw new RuntimeSessionError("WorkBuddy session is owned by another process", "SESSION_OCCUPIED");
+    if (native?.externallyOwned || native?.running) throw new RuntimeSessionError("WorkBuddy session is owned by another process", "SESSION_OCCUPIED");
     if (options?.reasoningEffort) throw new RuntimeSessionError("WorkBuddy model effort is not advertised by its native model list", "OPERATION_NOT_SUPPORTED");
     const content: NativeJsonPacket[] = [{ type: "text", text: input }, ...parseImageDataUrls(images).map(image => ({ type: "image", source: { type: "base64", media_type: image.mimeType, data: image.base64 } }))];
     const command = await this.command();

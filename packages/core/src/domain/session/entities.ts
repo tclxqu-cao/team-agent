@@ -19,6 +19,9 @@ export interface Session {
   metadata: Record<string, unknown>;
 }
 
+/** List projection: history is loaded only when opening a session. */
+export type SessionSummary = Omit<Session, "messages" | "events">;
+
 /** Opaque backward cursor used to request an older session-history window. */
 export type SessionHistoryView = "core" | "trace";
 
@@ -83,6 +86,7 @@ export interface ISessionStore {
   update(id: string, update: Partial<Session>): Promise<Session>;
   delete(id: string): Promise<void>;
   list(projectId?: string): Promise<Session[]>;
+  listSummaries?(projectId?: string): Promise<SessionSummary[]>;
   /** List direct children of a parent session */
   listChildren(parentId: string): Promise<Session[]>;
   addMessage(sessionId: string, message: Message): Promise<void>;

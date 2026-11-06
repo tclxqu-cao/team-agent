@@ -1,6 +1,6 @@
-import type { SessionForkPoint } from "@agent/core";
+import type { CreateParallelSessionsInput, ParallelSessionGroup, SessionForkPoint, SessionMessageRunOptions } from "@agent/core";
 import type { CollaborationCommand } from "@agent/core/domain/collaboration/types";
-import type { MessagingCommand } from "@agent/core/domain/messaging/types";
+import type { MessagingCommand } from "@agent/messaging";
 import type {
   AgentApi,
   AgentDefinition,
@@ -333,15 +333,25 @@ export class AgentHttpGateway {
     return result.state;
   }
 
-  async abort(sessionId?: string): Promise<void> {
-    try {
-      await this.http.post("/api/agent/abort", sessionId ? { sessionId } : {});
-    } finally {
-      // Aborted loops may not emit a terminal event — settle everything so
-      // the renderer never stays stuck in "running".
-      for (const sessionId of [...this.pendingRuns.keys()]) this.settle(sessionId);
-      for (const sessionId of [...this.streams.keys()]) this.closeStream(sessionId);
-      for (const sessionId of [...this.nativeRunRecoveries.keys()]) this.stopNativeRunRecovery(sessionId);
+  async abort(sessionId?: string, trigger?: "button" | "keyboard"): Promise<void> {
+    const expectedRunId = sessionId?.startsWith("runtime:")
+      ? this.nativeRunRecoveries.get(sessionId)?.runId ?? this.nativeStreamCursors.get(sessionId)?.runId
+      : undefined;
+    const targets = sessionId ? [sessionId] : [...new Set([
+      ...this.pendingRuns.keys(), ...this.streams.keys(), ...this.nativeRunRecoveries.keys(),
+    ])].filter(id => !id.startsWith("runtime:"));
+    await this.http.post("/api/agent/abort", {
+      ...(sessionId ? { sessionId } : {}),
+      ...(expectedRunId ? { expectedRunId } : {}),
+      ...(trigger ? { trigger } : {}),
+    });
+    // A failed stop must leave its stream alive. A successful stop only settles
+    // the targeted turn; its delayed ACK must not close a newer native run.
+    for (const id of targets) {
+      const currentRunId = this.nativeRunRecoveries.get(id)?.runId ?? this.nativeStreamCursors.get(id)?.runId;
+      if (expectedRunId && currentRunId !== expectedRunId) continue;
+      this.settle(id);
+      this.closeStream(id);
     }
   }
 
@@ -635,7 +645,7 @@ export class AgentHttpGateway {
 
   async enqueueSessionMessage(
     id: string,
-    message: { sourceMessageId: string; content: string; images?: string[]; agentIds?: string[]; agentName?: string },
+    message: { sourceMessageId: string; content: string; images?: string[]; agentIds?: string[]; agentName?: string; runOptions?: SessionMessageRunOptions },
   ): Promise<SessionGoalState> {
     await this.openStream(id, this.nativeStreamCursors.get(id));
     const result = await this.http.post<{
@@ -649,6 +659,7 @@ export class AgentHttpGateway {
         images: message.images,
         agentIds: message.agentIds,
         agentName: message.agentName,
+        ...(message.runOptions ? { runOptions: message.runOptions } : {}),
       },
     });
     if (typeof result.started?.snapshotRevision === "number") {
@@ -688,6 +699,14 @@ export class AgentHttpGateway {
       ...(agentType && agentType !== "customer-agent" ? { agentType } : {}),
       ...(cwd ? { cwd } : {}),
     });
+  }
+
+  async createParallelSessions(input: CreateParallelSessionsInput): Promise<ParallelSessionGroup<UnifiedSessionSummary>> {
+    return this.http.post("/api/sessions/parallel", input);
+  }
+
+  async getParallelSessionGroup(sessionId: string): Promise<ParallelSessionGroup<UnifiedSessionSummary> | null> {
+    return this.http.get(`/api/sessions/parallel?sessionId=${encodeURIComponent(sessionId)}`);
   }
 
   async forkSession(id: string, point?: SessionForkPoint): Promise<unknown> {

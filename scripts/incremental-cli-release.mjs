@@ -24,7 +24,7 @@ export function affectedPackages(path) {
   if (path.startsWith("packages/server/native/remote-helper-windows/") || path === "scripts/build-windows-remote-helper.mjs") return [names[1]];
   if (path.startsWith("packages/server/native/remote-helper/") || path === "packages/desktop/native/desktop-input.swift") return [names[0]];
   // Publication orchestration and audits do not enter npm runtime contents.
-  if (["scripts/incremental-cli-release.mjs", "scripts/agentroam-release-lib.mjs", "scripts/publish-agentroam-release.mjs", "scripts/agent-runtime-upgrade-lib.mjs", "scripts/collect-cli-artifacts.mjs", "scripts/verify-cli-install.mjs"].includes(path)
+  if (["scripts/incremental-cli-release.mjs", "scripts/agentroam-release-lib.mjs", "scripts/publish-agentroam-release.mjs", "scripts/agent-runtime-upgrade-lib.mjs", "scripts/collect-cli-artifacts.mjs", "scripts/verify-cli-install.mjs", "scripts/messaging-package-smoke.mjs"].includes(path)
     || /^scripts\/audit-/.test(path)) return [];
   const own = directories.findIndex((directory) => path.startsWith(`${directory}/`));
   if (own >= 0) return [names[own]];
@@ -32,7 +32,7 @@ export function affectedPackages(path) {
   if (path.startsWith("packages/tui/")) return names.slice(4, 6);
   if (["packages/core/", "packages/desktop/", "packages/sdk/"].some((prefix) => path.startsWith(prefix))) return [names[0], names[1], names[4], names[5]];
   if (path.startsWith("packages/computer-use/")) return [names[0], names[1]];
-  if (path.startsWith("packages/native-runtime/")) return [names[0], names[1]];
+  if (path.startsWith("packages/native-runtime/") || path.startsWith("packages/messaging/")) return [names[0], names[1]];
   if (["packages/server/", "packages/webapp/"].some((prefix) => path.startsWith(prefix))) return names.slice(0, 2);
   if (path === "scripts/build-cli-remote-helper.mjs") return [names[0]];
   if (path === "scripts/stage-cli-runtime.mjs") return names.slice(0, 2);
@@ -121,6 +121,7 @@ export function buildCommands(plan) {
     ["bun", ["run", "--cwd", "packages/webapp", "build"]],
     // Workspace packages type-check against built declarations in dependency order.
     ["bun", ["run", "--cwd", "packages/core", "build"]],
+    ["bun", ["run", "--cwd", "packages/messaging", "build"]],
     ["bun", ["run", "--cwd", "packages/computer-use", "build"]],
     ["bun", ["run", "--cwd", "packages/native-runtime", "build"]],
     ["bun", ["run", "--cwd", "packages/server", "build"], { NEXT_STANDALONE: "1" }],

@@ -19,6 +19,7 @@ import {
   type RunTerminalEvent,
   NEW_SESSION_PLACEHOLDER_TITLE,
   normalizeToolPermissionMode,
+  normalizeSessionMessageRunOptions,
   paginateSessionHistory,
   promoteNextSessionQueueItem,
   queuedSessionMessages,
@@ -55,6 +56,7 @@ import {
 } from "./codex-session-disk-catalog.js";
 import { CodexSessionCompatibilityService } from "./codex-session-compatibility.js";
 import { CodexRuntimeAdapter } from "./codex-runtime-adapter.js";
+import { parseCodexAsyncQuestionId } from "./codex-questions.js";
 import { DeepSeekHarnessRuntimeAdapter } from "./deepseek-harness-runtime-adapter.js";
 import { parseHarnessQuestionId } from "./deepseek-harness-interaction-codec.js";
 import { isOpenCodeQuestionId } from "./opencode-questions.js";
@@ -104,6 +106,12 @@ const RELEASE_SETTLE_TIMEOUT_MS = ABORT_FALLBACK_MS + 1_000;
 
 type NativeAgentType = Exclude<AgentType, "customer-agent">;
 export type NativeRuntimeController = "web" | "desktop";
+
+export interface NativeRuntimeAbortOptions {
+  expectedRunId?: string;
+  source?: string;
+  trigger?: "button" | "keyboard" | "api";
+}
 
 export interface BrokerRunEvent {
   runId: string;
@@ -158,6 +166,8 @@ export type NativeRuntimeBrokerRuntimeFactory = (
 export interface NativeRuntimeBrokerOptions {
   directory?: string;
   runtimeFactory?: NativeRuntimeBrokerRuntimeFactory;
+  /** Start an independent host; closing this client must not stop native runs. */
+  startHost?: (directory: string) => Promise<void>;
   now?: () => number;
 }
 
@@ -1625,7 +1635,7 @@ export class NativeRuntimeBrokerHost {
       this.queryIndexCache.getOrCreate(id, projected.messages);
       return query
         ? { ...projected, ...paginateSessionHistory(projected.messages, projected.events, query, {
-            includePendingQuestions: projected.agentType === "deepseek-harness" || projected.agentType === "opencode" || projected.agentType === "copilot",
+            includePendingQuestions: true,
           }) }
         : projected;
     } catch (error) {
@@ -1634,7 +1644,7 @@ export class NativeRuntimeBrokerHost {
       const projected = this.state.applyDetail({ ...pending, messages: [], events: [] });
       return query
         ? { ...projected, ...paginateSessionHistory(projected.messages, projected.events, query, {
-            includePendingQuestions: projected.agentType === "deepseek-harness" || projected.agentType === "opencode" || projected.agentType === "copilot",
+            includePendingQuestions: true,
           }) }
         : projected;
     }
@@ -1708,7 +1718,8 @@ export class NativeRuntimeBrokerHost {
       // where this broker can fork-and-forward the message. Compatibility and
       // genuinely unresumable sessions are still refused here.
       const occupancyAdvisory = decoded.agentType === "codex";
-      if (!occupancyAdvisory && (!detail.canResume || detail.occupancy === "owned-externally")) {
+      const externalGuide = decoded.agentType === "zcode" && detail.externalGuideSupported === true && detail.status === "running" && !detail.readOnly;
+      if (!occupancyAdvisory && !externalGuide && (!detail.canResume || detail.occupancy === "owned-externally")) {
         this.state.recordExplicitExternalOwnership(sessionId);
         throw new RuntimeSessionError("Session is currently owned by another client", "SESSION_OCCUPIED");
       }
@@ -1834,15 +1845,19 @@ export class NativeRuntimeBrokerHost {
     if (!item) {
       return { steered: true, state: this.state.getGoalState(sessionId) };
     }
+    if (native.agentType === "zcode" && item.messagePayload?.images?.length) {
+      throw new RuntimeSessionError("ZCode 暂不支持插入图片消息，原消息已保留在队列中", "OPERATION_NOT_SUPPORTED");
+    }
     const copilot = native.agentType === "copilot";
+    const durableSteering = copilot || native.agentType === "zcode";
     const runId = this.state.activeRun(sessionId)?.runId ?? null;
-    const steered = copilot
+    const steered = durableSteering
       ? await this.runtime.steer(sessionId, item.objective, messageId)
       : await this.runtime.steer(sessionId, item.objective);
     return {
       steered,
       state: steered
-        ? copilot
+        ? durableSteering
           ? this.state.completeSteeredMessage(sessionId, messageId, runId)
           : this.state.cancelMessage(sessionId, messageId)
         : this.state.getGoalState(sessionId),
@@ -1885,6 +1900,12 @@ export class NativeRuntimeBrokerHost {
   }
 
   async answerQuestion(questionId: string, answer: RuntimeQuestionAnswer): Promise<boolean> {
+    // Desktop async questions survive their originating Broker run.
+    if (parseCodexAsyncQuestionId(questionId)) {
+      const resolved = await this.runtime.answerQuestion(questionId, answer);
+      if (resolved) this.handleApprovalResolved(questionId);
+      return resolved;
+    }
     // Harness owns foreground waterfalls and durable continued questions.
     // They may belong to Desktop or a finished turn, with no active Broker run.
     if (parseHarnessQuestionId(questionId)) return this.runtime.answerQuestion(questionId, answer);
@@ -1926,10 +1947,22 @@ export class NativeRuntimeBrokerHost {
     );
   }
 
-  async abort(sessionId?: string): Promise<void> {
+  async abort(sessionId?: string, options: NativeRuntimeAbortOptions = {}): Promise<void> {
     if (!sessionId) return;
-    this.state.recordStopIntent(sessionId);
     const run = this.state.activeRun(sessionId);
+    const currentRunId = run?.runId ?? this.state.getSnapshot(sessionId).runId;
+    if (options.expectedRunId && options.expectedRunId !== currentRunId) {
+      logGlobal("warn", "native-broker", "ignored stop for a different native run", undefined, {
+        sessionId, runId: currentRunId, ...options,
+      });
+      throw new RuntimeSessionError("当前会话已进入新一轮，请确认当前任务后再停止", "STALE_SESSION_ANCHOR");
+    }
+    logGlobal("warn", "native-broker", "native stop requested", undefined, {
+      sessionId, runId: currentRunId, controller: run?.controller, pid: process.pid,
+      source: options.source ?? "broker-client", trigger: options.trigger ?? "api",
+      expectedRunId: options.expectedRunId,
+    });
+    this.state.recordStopIntent(sessionId);
     await this.runtime.abort(sessionId);
     // Codex confirms cancellation through its turn lifecycle. Keeping that run
     // authoritative also keeps immediate follow-ups durably queued while the
@@ -2205,7 +2238,7 @@ export class NativeRuntimeBrokerHost {
           item.id,
           item.messagePayload?.agentIds,
           item.messagePayload?.agentName,
-          undefined,
+          item.messagePayload?.runOptions,
           { deferIfCodexRunning: true },
         );
       } catch (error) {
@@ -2334,7 +2367,7 @@ export class NativeRuntimeBrokerHost {
   private async handleRequest(request: BrokerRequest): Promise<unknown> {
     const sessionId = stringParam(request.params, "sessionId");
     switch (request.method) {
-      case "ping": return { ok: true };
+      case "ping": return { ok: true, pid: process.pid };
       case "health": return this.health();
       case "listWorkspaces": return this.listWorkspaces(
         nativeAgentTypeParam(request.params, "agentType"),
@@ -2434,7 +2467,11 @@ export class NativeRuntimeBrokerHost {
         stringParam(request.params, "questionId") || "",
         { answer: stringParam(request.params, "answer") || "", selectedIndices: arrayOfNumbers(request.params.selectedIndices) },
       );
-      case "abort": return this.abort(sessionId || undefined);
+      case "abort": return this.abort(sessionId || undefined, {
+        expectedRunId: stringParam(request.params, "expectedRunId") || undefined,
+        source: stringParam(request.params, "source") || undefined,
+        trigger: request.params.trigger === "button" || request.params.trigger === "keyboard" ? request.params.trigger : "api",
+      });
       case "release": return this.release(requireSessionId(sessionId));
       case "steer": return this.steer(requireSessionId(sessionId), stringParam(request.params, "input") || "");
       case "setPermissionMode": return this.setPermissionMode(
@@ -2735,8 +2772,8 @@ export class NativeRuntimeBrokerClient {
     return this.request("answer", { questionId, answer: answer.answer, selectedIndices: answer.selectedIndices });
   }
 
-  async abort(id?: string): Promise<void> {
-    await this.request("abort", id ? { sessionId: id } : {});
+  async abort(id?: string, options: NativeRuntimeAbortOptions = {}): Promise<void> {
+    await this.request("abort", { ...(id ? { sessionId: id } : {}), ...options });
   }
 
   async release(id: string): Promise<void> {
@@ -2796,7 +2833,7 @@ export class NativeRuntimeBrokerClient {
         return;
       } catch {
         const factory = this.options.runtimeFactory;
-        if (!factory) throw new RuntimeSessionError("Native runtime broker is unavailable", "RUNTIME_UNAVAILABLE");
+        if (!factory && !this.options.startHost) throw new RuntimeSessionError("Native runtime broker is unavailable", "RUNTIME_UNAVAILABLE");
         const directory = this.directory;
         const socketPath = resolveNativeRuntimeSocketPath(directory);
         if (isFilesystemSocket(socketPath) && existsSync(socketPath)) {
@@ -2809,10 +2846,15 @@ export class NativeRuntimeBrokerClient {
             rmSync(socketPath, { force: true });
           }
         }
+        if (this.options.startHost) {
+          await this.options.startHost(directory);
+          await this.requestRaw("ping", {});
+          return;
+        }
         const hosts = brokerHosts();
         let host = hosts.get(directory);
         if (!host) {
-          host = new NativeRuntimeBrokerHost(directory, factory, this.options.now);
+          host = new NativeRuntimeBrokerHost(directory, factory!, this.options.now);
           try {
             await host.start();
             hosts.set(directory, host);
@@ -3150,6 +3192,8 @@ export function mergeProjectionMessages(
   const eventMessages: Message[] = [];
   let activeAssistantIndex: number | null = null;
   for (const { event } of events) {
+    // Older ZCode runs recorded the raw tool before its dedicated question card.
+    if (run.agentType === "zcode" && event.type === "tool_call" && event.toolCall.name === "AskUserQuestion") continue;
     if (event.type === "reasoning_summary_delta") {
       const name = `__native_reasoning:${run.runId}:${event.itemId}`;
       let index = eventMessages.findIndex((message) => message.name === name);
@@ -3339,7 +3383,8 @@ function applyTurnCompletions(
       if (options.windowed || turn.input !== row.input) return [];
       const textMatches = result?.status && result.status !== "completed"
         ? turn.combinedText === row.final_text || turn.finalText === row.final_text
-        : turn.assistantIndex >= 0 && turn.finalText === row.final_text;
+        // Native runtimes stream commentary and final text into the same run receipt.
+        : turn.assistantIndex >= 0 && (turn.finalText === row.final_text || turn.combinedText === row.final_text);
       return textMatches ? [index] : [];
     });
     return candidateIndexes.length > 0 ? [{ row, result, candidateIndexes }] : [];
@@ -3543,10 +3588,12 @@ function messagePayloadParam(value: unknown): SessionMessagePayload | undefined 
   const images = arrayOfStrings(payload.images);
   const agentIds = arrayOfStrings(payload.agentIds);
   const agentName = typeof payload.agentName === "string" ? payload.agentName : undefined;
+  const runOptions = normalizeSessionMessageRunOptions(payload.runOptions);
   return {
     ...(images?.length ? { images } : {}),
     ...(agentIds?.length ? { agentIds } : {}),
     ...(agentName ? { agentName } : {}),
+    ...(runOptions ? { runOptions } : {}),
   };
 }
 

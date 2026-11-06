@@ -31,6 +31,14 @@ function protocol(sessions: NativeProtocolSession[]) {
 }
 
 describe.each(factories)("$agentType directory discovery", ({ agentType, create }) => {
+  it("keeps external ownership independent of whether the turn is running", async () => {
+    const client = protocol([{ ...session("idle-writer", "/repo/team"), running: false, externallyOwned: true }]);
+    const adapter = create(client);
+    expect((await adapter.discoverSessions())[0]).toMatchObject({ status: "idle", occupancy: "owned-externally", canResume: false });
+    client.list.mockResolvedValue([{ ...session("active-writer", "/repo/team"), running: true }]);
+    expect((await adapter.discoverSessions())[0]).toMatchObject({ status: "running", occupancy: "owned-externally", canResume: false });
+  });
+
   it("keeps native child sessions visible under a parent in a different working directory", async () => {
     const client = protocol([
       session("parent", "/repo/main"),

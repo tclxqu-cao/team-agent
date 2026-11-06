@@ -1,10 +1,32 @@
 export type SessionGoalStatus = "queued" | "active" | "completed" | "failed" | "cancelled";
 export type SessionQueueItemKind = "goal" | "message";
 
+export interface SessionMessageRunOptions {
+  model?: { id: string; providerID?: string };
+  reasoningEffort?: "low" | "medium" | "high" | "xhigh" | "max";
+  profileId?: string;
+}
+
 export interface SessionMessagePayload {
   images?: string[];
   agentIds?: string[];
   agentName?: string;
+  runOptions?: SessionMessageRunOptions;
+}
+
+export function normalizeSessionMessageRunOptions(value: unknown): SessionMessageRunOptions | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const raw = value as Record<string, unknown>;
+  const model = raw.model && typeof raw.model === "object" ? raw.model as Record<string, unknown> : null;
+  const effort = ["low", "medium", "high", "xhigh", "max"].find(item => item === raw.reasoningEffort) as SessionMessageRunOptions["reasoningEffort"];
+  const result: SessionMessageRunOptions = {
+    ...(model && typeof model.id === "string" && model.id.trim() ? {
+      model: { id: model.id, ...(typeof model.providerID === "string" && model.providerID ? { providerID: model.providerID } : {}) },
+    } : {}),
+    ...(effort ? { reasoningEffort: effort } : {}),
+    ...(typeof raw.profileId === "string" && raw.profileId.trim() ? { profileId: raw.profileId } : {}),
+  };
+  return Object.keys(result).length ? result : undefined;
 }
 
 export interface SessionGoal {
@@ -312,9 +334,11 @@ function normalizeItem(item: SessionGoal): SessionGoal {
 
 function normalizeMessagePayload(payload: SessionMessagePayload | undefined): SessionMessagePayload {
   if (!payload) return {};
+  const runOptions = normalizeSessionMessageRunOptions(payload.runOptions);
   return {
     ...(payload.images?.length ? { images: [...payload.images] } : {}),
     ...(payload.agentIds?.length ? { agentIds: [...payload.agentIds] } : {}),
     ...(payload.agentName ? { agentName: payload.agentName } : {}),
+    ...(runOptions ? { runOptions } : {}),
   };
 }

@@ -11,7 +11,7 @@ export class DeepSeekProvider implements IModelProvider {
   readonly modelId: string;
   private readonly apiKey: string;
   private readonly baseUrl: string;
-  private readonly defaultMaxTokens: number;
+  private readonly defaultMaxTokens: number | null;
   private readonly defaultTemperature: number;
   private readonly timeoutMs: number;
 
@@ -19,7 +19,7 @@ export class DeepSeekProvider implements IModelProvider {
     this.apiKey = config.apiKey;
     this.baseUrl = openAIEndpoint(config.baseUrl || DEFAULT_BASE_URL);
     this.modelId = config.modelId;
-    this.defaultMaxTokens = config.maxTokens ?? 16384;
+    this.defaultMaxTokens = config.maxTokens === undefined ? 16384 : config.maxTokens;
     this.defaultTemperature = config.temperature ?? 0.7;
     this.timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   }
@@ -37,11 +37,12 @@ export class DeepSeekProvider implements IModelProvider {
       return;
     }
     const adaptedMessages = messages.map((m) => this.adaptMessage(m));
+    const maxTokens = options?.maxTokens ?? this.defaultMaxTokens;
 
     const body: Record<string, unknown> = {
       model: this.modelId,
       messages: adaptedMessages,
-      max_tokens: options?.maxTokens ?? this.defaultMaxTokens,
+      ...(maxTokens === null ? {} : { max_tokens: maxTokens }),
       temperature: options?.temperature ?? this.defaultTemperature,
       stream: true,
       stream_options: { include_usage: true },

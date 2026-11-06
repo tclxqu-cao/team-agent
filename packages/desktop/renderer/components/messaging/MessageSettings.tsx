@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { AgentType } from "../../../../core/src/domain/agent/agent-type";
-import type { MessageEvent, MessagingSettings, RoutingCandidate } from "../../../../core/src/domain/messaging/types";
+import type { MessageEvent, MessagingSettings, RoutingCandidate } from "@agent/messaging";
 
 interface Props {
   value: MessagingSettings;
@@ -35,7 +35,7 @@ export default function MessageSettings({ value, candidates, sources, busy, onCh
     <label>路由方式<select value={value.routingMode} onChange={event => onChange({ ...value, routingMode: event.target.value as "model" | "rules" })}>
       <option value="model">模型判断（默认）</option><option value="rules">规则判断</option>
     </select></label>
-    <p className="messaging-muted">{value.routingMode === "model" ? "根据消息内容选择已登记的项目和可用 Agent，无需逐群设置。判断不明确时由你确认。" : "每个群固定交给一个项目和 Agent。"}</p>
+    <p className="messaging-muted">{value.routingMode === "model" ? "根据消息内容选择已登记的项目和可用 Agent；私聊闲聊结合知识库回复。判断不明确时由你确认。" : "每个群固定交给一个项目和 Agent；私聊仍由模型判断并结合知识库回复。"}</p>
     {value.routingMode === "rules" && <div className="messaging-rule-list">
       {value.rules.map((rule, index) => <div key={index} className="messaging-rule">
         <input aria-label={"群会话 ID " + (index + 1)} placeholder="群会话 ID（消息详情中可查看）" value={rule.conversationId} onChange={event => updateRule(index, { conversationId: event.target.value })}/>
@@ -51,7 +51,7 @@ export default function MessageSettings({ value, candidates, sources, busy, onCh
     </div>}
     <div className="messaging-settings-section">
       <h3>企业微信</h3>
-      <p>监听正文直接 @我的新消息，自动保存原始数据。</p>
+      <p>监听收到的私聊，以及群聊正文直接 @我的新消息，自动保存原始数据。</p>
       <button type="button" disabled={busy} onClick={onDiscover}>发现本机账号</button>
       {!!sources.length && <select aria-label="企微账号" value={JSON.stringify(value.source)} onChange={event => onChange({ ...value, source: event.target.value ? JSON.parse(event.target.value) : { database: "", accountId: "" } })}>
         <option value="">选择账号</option>{sources.map(source => <option key={source.database} value={JSON.stringify(source)}>账号 {source.accountId}</option>)}

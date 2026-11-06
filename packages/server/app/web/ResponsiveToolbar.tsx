@@ -133,7 +133,7 @@ export default function ResponsiveToolbar({ items, avatar, glass = false, compac
     return () => { document.removeEventListener("pointerdown", dismiss); document.removeEventListener("keydown", escape); };
   }, [overflowOpen]);
 
-  const renderItem = (item: Props["items"][number]) => <div key={item.id} className="toolbar-slot" data-toolbar-item={item.id} ref={element => {
+  const renderItem = (item: Props["items"][number]) => <div key={item.id} className="toolbar-slot" data-toolbar-item={item.id} onClick={item.id === "remote" ? () => setOverflowOpen(false) : undefined} ref={element => {
     if (element) slots.current.set(item.id, element); else slots.current.delete(item.id);
   }}>{item.content}</div>;
 
@@ -176,8 +176,8 @@ export default function ResponsiveToolbar({ items, avatar, glass = false, compac
         <section className="glass-tools-sheet" role="dialog" aria-label="更多功能" data-toolbar-overlay onClick={event => event.stopPropagation()}>
           <header><strong>更多功能</strong><button type="button" aria-label="关闭更多功能" onClick={() => setOverflowOpen(false)}>×</button></header>
           <div className="glass-tools-grid">{glassMobileToolbarActions(items).map(item => <div key={item.id} className="glass-tool-cell" title={labels[item.id] ?? item.id} onClick={event => {
-            if (event.target instanceof Element && event.target.closest("button")) return;
-            event.currentTarget.querySelector<HTMLButtonElement>("button")?.click();
+            if (!(event.target instanceof Element && event.target.closest("button"))) event.currentTarget.querySelector<HTMLButtonElement>("button")?.click();
+            if (item.id === "remote") setOverflowOpen(false);
           }}>{item.content}</div>)}</div>
 
         </section>

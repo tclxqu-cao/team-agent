@@ -12,7 +12,10 @@ export function getCustomerGoalCoordinator(): SharedCustomerQueue {
     async (id, item) => {
       activeQueueRuns.add(id);
       try {
-        await agentHost.startRun(item.objective, id, item.messagePayload?.images, { agentIds: item.messagePayload?.agentIds }).completion;
+        await agentHost.startRun(item.objective, id, item.messagePayload?.images, {
+          agentIds: item.messagePayload?.agentIds,
+          ...(item.messagePayload?.runOptions?.profileId ? { profileId: item.messagePayload.runOptions.profileId } : {}),
+        }).completion;
         return (await agentHost.getSessionStore().get(id))?.status === "completed" ? "completed" : "failed";
       } finally { activeQueueRuns.delete(id); }
     },

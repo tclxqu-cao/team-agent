@@ -1,3 +1,4 @@
+import { isPageActive } from "../../desktop/renderer/lib/page-activity";
 import { installBrowserCompatibility } from "./infrastructure/browser-compatibility";
 import { BrowserLiveHeaderContext } from "@desktop/renderer/components/browser-live-header-context";
 import { SKINS, useUIStore } from "@desktop/renderer/stores/uiStore";
@@ -242,6 +243,7 @@ function startBuildWatchdog(): void {
   const own = ownMatch ? ownMatch[1] : null;
   if (!own) return;
   setInterval(async () => {
+    if (!isPageActive()) return;
     try {
       const res = await fetch("/api/agent/model", {
         credentials: "same-origin",

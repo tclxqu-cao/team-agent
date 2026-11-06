@@ -17,6 +17,8 @@ files:
   - "!node_modules/@agent/computer-use/dist/**/*.js.map"
   - "!node_modules/@agent/native-runtime/dist/**/*.d.ts.map"
   - "!node_modules/@agent/native-runtime/dist/**/*.js.map"
+  - "!node_modules/@agent/messaging/dist/**/*.d.ts.map"
+  - "!node_modules/@agent/messaging/dist/**/*.js.map"
 extraResources:
   - from: assets/runtime
     to: runtime

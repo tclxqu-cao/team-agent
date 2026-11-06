@@ -1,3 +1,4 @@
+import { isPageActive } from "../lib/page-activity";
 import { useEffect, useId, useRef, useState } from "react";
 import { RefreshCw, Square, Terminal, X } from "lucide-react";
 import type { RuntimeBackgroundJob, RuntimeBackgroundJobOutput } from "../global";
@@ -15,7 +16,7 @@ function JobOutput({ sessionId, jobId }: { sessionId: string; jobId: string }) {
     let disposed = false;
     let inFlight = false;
     const poll = async () => {
-      if (disposed || inFlight || document.visibilityState === "hidden") return;
+      if (disposed || inFlight || !isPageActive()) return;
       inFlight = true;
       try {
         const api = window.agentApi;

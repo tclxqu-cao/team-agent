@@ -1,3 +1,4 @@
+import { usePageActive, isPageActive } from "../../lib/page-activity";
 import { useEffect, useRef, useState } from "react";
 import { Bell, X } from "lucide-react";
 import type { SupervisionAlert } from "../../../../core/src/domain/supervision/types";
@@ -7,16 +8,18 @@ import DashboardDecision from "./DashboardDecision";
 import "./session-dashboard.css";
 
 export default function SupervisionNotifier({ onOpen }: { onOpen: () => void }) {
+  const active = usePageActive();
   const [pending, setPending] = useState(0);
   const [notice, setNotice] = useState("");
   const [decision, setDecision] = useState<SupervisionAlert | null>(null);
   const refreshAlerts = useRef<() => Promise<void>>(async () => {});
   const seen = useRef(new Set<string>());
   useEffect(() => {
+    if (!active) return;
     let live = true, loading = false;
     try { seen.current = new Set(JSON.parse(localStorage.getItem("agentroam:supervision-notifications") ?? "[]")); } catch { /* Optional storage. */ }
     const refresh = async () => {
-      if (loading) return;
+      if (loading || !isPageActive()) return;
       loading = true;
       try {
         const alerts = await collaborationRequest<SupervisionAlert[]>({ action: "supervisionAlerts" });
@@ -40,7 +43,7 @@ export default function SupervisionNotifier({ onOpen }: { onOpen: () => void }) 
     void refresh();
     const timer = setInterval(() => { void refresh(); }, 7000);
     return () => { live = false; clearInterval(timer); };
-  }, []);
+  }, [active]);
   useEffect(() => { if (!notice || pending) return; const timer = setTimeout(() => setNotice(""), 10000); return () => clearTimeout(timer); }, [notice, pending]);
   if (!pending && !notice) return null;
   return <aside className={`supervision-notice${decision ? " is-expanded" : ""}`} aria-label="监工提醒" role="status"><div className="supervision-notice-heading"><button onClick={onOpen}><Bell size={16}/><span>{pending ? `监工有 ${pending} 项待你决策` : notice}</span></button><button aria-label={decision ? "收起决策提醒" : "关闭监工提醒"} onClick={() => { setDecision(null); setNotice(""); }}><X size={14}/></button></div>

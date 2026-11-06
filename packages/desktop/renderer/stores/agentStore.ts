@@ -146,10 +146,14 @@ export interface ChatMessage {
   isQueued?: boolean;
   /** Durable broker queue identity; absent for legacy in-memory queues. */
   queueItemId?: string;
+  /** Keeps the queued input while its steering acknowledgement is in flight. */
+  isSteering?: boolean;
   /** True when this user message has been steered into the running loop */
   isSteered?: boolean;
   /** Transient client-side state while the server accepts a newly sent message. */
   sendState?: "pending" | "failed";
+  /** Admission does not confirm that a history snapshot already contains this input. */
+  awaitingHistory?: boolean;
   /** Identifies a goal-mode user message and links it to the durable goal queue. */
   isGoal?: boolean;
   goalId?: string;

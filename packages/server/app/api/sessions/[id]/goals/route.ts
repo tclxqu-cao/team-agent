@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import type { SessionMessagePayload } from "@agent/core";
+import { normalizeSessionMessageRunOptions } from "@agent/core";
 import { getCustomerGoalCoordinator } from "../../../../../lib/customer-goal-service";
 import {
   getNativeRuntimeService,
@@ -130,6 +131,7 @@ export async function DELETE(
 function normalizeMessagePayload(value: unknown): SessionMessagePayload | undefined {
   if (!value || typeof value !== "object") return undefined;
   const payload = value as Record<string, unknown>;
+  const runOptions = normalizeSessionMessageRunOptions(payload.runOptions);
   const images = Array.isArray(payload.images) && payload.images.every((entry) => typeof entry === "string")
     ? payload.images as string[]
     : undefined;
@@ -140,6 +142,7 @@ function normalizeMessagePayload(value: unknown): SessionMessagePayload | undefi
     ...(images?.length ? { images } : {}),
     ...(agentIds?.length ? { agentIds } : {}),
     ...(typeof payload.agentName === "string" && payload.agentName ? { agentName: payload.agentName } : {}),
+    ...(runOptions ? { runOptions } : {}),
   };
 }
 

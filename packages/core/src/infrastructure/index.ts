@@ -4,6 +4,7 @@
 export { SQLiteDatabase, getDatabase } from './SQLiteDatabase.js';
 export { SQLiteSettingsStore } from './SQLiteSettingsStore.js';
 export { SQLiteSessionStore } from './SQLiteSessionStore.js';
+export { SQLiteParallelSessionStore } from './SQLiteParallelSessionStore.js';
 export { SQLiteMemoryStore } from './SQLiteMemoryStore.js';
 export { SQLiteMCPServerStore } from './SQLiteMCPServerStore.js';
 export { SQLiteSkillStore } from './SQLiteSkillStore.js';

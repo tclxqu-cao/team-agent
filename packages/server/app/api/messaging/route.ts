@@ -2,12 +2,11 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { AGENT_TYPES } from "@agent/core";
 import { messagingService } from "../../../lib/messaging/service";
-import { discoverWecom } from "../../../lib/messaging/wecom/collector";
 
 export const dynamic = "force-dynamic";
 const id = z.string().trim().min(1).max(500);
 const schema = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("list"), before: z.string().max(1000).optional(), query: z.string().max(500).optional(), filter: z.enum(["all", "mentioned", "review", "running", "completed", "deliveryFailed"]).optional() }),
+  z.object({ action: z.literal("list"), before: z.string().max(1000).optional(), query: z.string().max(500).optional(), filter: z.enum(["all", "addressed", "mentioned", "review", "running", "completed", "deliveryFailed"]).optional() }),
   z.object({ action: z.literal("detail"), id }),
   z.object({ action: z.literal("settings") }),
   z.object({ action: z.literal("discover") }),
@@ -26,7 +25,7 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const command = schema.parse(await request.json());
-    const { repository, service, worker, runtime } = messagingService();
+    const { repository, service, worker, execution, intake } = messagingService();
     switch (command.action) {
       case "list": return NextResponse.json(repository.list(command));
       case "detail": {
@@ -34,8 +33,8 @@ export async function POST(request: Request) {
         if (!message) return NextResponse.json({ error: "消息不存在" }, { status: 404 });
         return NextResponse.json({ message, deliveries: repository.deliveries(command.id) });
       }
-      case "settings": return NextResponse.json({ settings: repository.settings(), candidates: await runtime.candidates(), worker: repository.worker() });
-      case "discover": return NextResponse.json(await discoverWecom());
+      case "settings": return NextResponse.json({ settings: repository.settings(), candidates: await execution.candidates(), worker: repository.worker() });
+      case "discover": return NextResponse.json(await intake.discover());
       case "saveSettings": {
         const rules = new Set<string>();
         for (const rule of command.settings.rules) { if (rules.has(rule.conversationId)) throw new Error("同一个群只保留一条规则"); rules.add(rule.conversationId); }

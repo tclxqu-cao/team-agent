@@ -1,3 +1,4 @@
+import { usePageActive, isPageActive } from "../lib/page-activity";
 import { AGENT_LABELS } from "../lib/agent-catalog";
 import { completedTurnForkPoint } from "../lib/completed-turn-fork";
 import { HistoryPullGesture, shouldLoadOlderHistoryFromWheel } from "../lib/history-pull-gesture";
@@ -15,6 +16,9 @@ import { ArrowDownToLine, AlarmClock, Check, CircleAlert, Copy, CornerUpRight, F
 import AgentBrandIcon from "./AgentBrandIcon";
 import SessionLoading from "./SessionLoading";
 import ComposerAgentPicker from "./ComposerAgentPicker";
+import ParallelAgentTabs from "./ParallelAgentTabs";
+import ParallelAgentSettings from "./ParallelAgentSettings";
+import { useParallelSessions } from "../lib/use-parallel-sessions";
 import ComposerWorkspacePicker from "./ComposerWorkspacePicker";
 import AppActionNotice from "./AppActionNotice";
 import RunFailureNotice from "./RunFailureNotice";
@@ -70,6 +74,8 @@ import {
   type SessionHistorySeed,
 } from "../lib/session-history";
 import { SinglePageHistoryPrefetch } from "../lib/session-history-prefetch";
+import { startSessionHistoryPolling } from "../lib/session-history-polling";
+import { SessionHistoryRequests } from "../lib/session-history-requests";
 import { presentQuestionAnswers } from "../lib/ask-user-answer-display";
 import { QueryNavigationRail } from "./QueryNavigationRail";
 import type { SessionQueryIndex, SessionQueryIndexEntry } from "../global";
@@ -78,7 +84,7 @@ import {
   loadSessionWithRetry,
 } from "../lib/session-load-recovery";
 import { normalizeComposerImage } from "../lib/browser-image-normalization";
-import { supportsMidTurnSteering, usesNativeSessionPermissions } from "../lib/runtime-capabilities";
+import { canGuideExternalSession, supportsMidTurnSteering, usesNativeSessionPermissions } from "../lib/runtime-capabilities";
 import { copyTextToClipboard } from "../lib/clipboard";
 import {
   createComposerSubmission,
@@ -107,6 +113,7 @@ import {
   reconcileDurableQueuedMessages,
 } from "../lib/queued-message-order";
 import { canSteerQueuedMessage, steerQueuedMessage } from "../lib/queued-message-steering";
+import { composerKeyAction } from "../lib/composer-keyboard";
 import { applyCopilotLiveMessage } from "../lib/copilot-live-message";
 import { isWebShell } from "../web/webLayout";
 import { OPEN_BROWSER_LIVE_EVENT } from "../web/shellEvents";
@@ -424,7 +431,7 @@ import ToolCallCard, { ToolCallGroup } from "./ToolCallCard";
 import AskUserCard from "./AskUserCard";
 import ContextUsageBar from "./ContextUsageBar";
 import HarnessModeControl from "./HarnessModeControl";
-import AgentActivityIndicator from "./AgentActivityIndicator";
+import SessionRunActivity from "./SessionRunActivity";
 import { reconcileCodexUnphasedMessages } from "../lib/codex-execution-trace";
 import { resolveChatSessionId } from "../lib/session-search";
 import ReasoningSummary from "./ReasoningSummary";
@@ -481,6 +488,7 @@ interface ChatViewProps {
   onSubSessionCreated?: (parentSessionId: string) => void | Promise<void>;
   /** Navigate to a specific session (e.g., click a sub-session link) */
   onSelectSession?: (sessionId: string) => void;
+  onParallelSessionSelected?: (session: UnifiedSessionSummary) => void | Promise<void>;
   /** Fired when a sub-agent session starts, completes, or errors — used for toast notifications */
   onSubAgentEvent?: (ev: { type: 'started' | 'completed' | 'failed'; agentName: string; task: string; subSessionId?: string }) => void;
   onRunComplete?: (projectId: string | null, sessionId: string) => void | Promise<void>;
@@ -580,6 +588,7 @@ export default function ChatView({
   onMessageSent,
   onSubSessionCreated,
   onSelectSession,
+  onParallelSessionSelected,
   onSubAgentEvent,
   onRunComplete,
   sessionTitle,
@@ -613,6 +622,7 @@ export default function ChatView({
   onPickWorkspaceFolder,
   focusComposerNonce,
 }: ChatViewProps) {
+  const pageActive = usePageActive();
   const onSessionHistorySettledRef = useRef(onSessionHistorySettled);
   onSessionHistorySettledRef.current = onSessionHistorySettled;
   const [settledSessionHistory, setSettledSessionHistory] = useState<{ sessionId: string; seed?: SessionHistorySeed } | null>(null);
@@ -683,6 +693,27 @@ export default function ChatView({
   viewSessionIdRef.current = viewSessionId;
   /** No session is open yet: the first message creates one with the composer's agent + workspace. */
   const isNewSessionComposer = !selectedSessionId && !viewSessionId;
+  const [newSessionAgents, setNewSessionAgents] = useState<AgentType[]>([activeAgentType]);
+  const [newSessionViewingAgent, setNewSessionViewingAgent] = useState<AgentType>(activeAgentType);
+  useEffect(() => {
+    if (!isNewSessionComposer) return;
+    setNewSessionAgents([activeAgentType]);
+    setNewSessionViewingAgent(activeAgentType);
+  }, [activeAgentType, focusComposerNonce, isNewSessionComposer]);
+  const parallel = useParallelSessions({
+    sessionId: viewSessionId,
+    onSelect: onParallelSessionSelected,
+    profileId: activeProfileId || undefined,
+    onQueueState: (state, id) => applySessionQueueState(state, id),
+  });
+  useEffect(() => {
+    if (!viewSessionId || sessionSummary?.id === viewSessionId || !parallel.group || !onParallelSessionSelected) return;
+    const member = parallel.group.members.find(item => item.id === viewSessionId);
+    // A newly discovered native workspace may not be in this client's sidebar cache yet.
+    // The persisted association still owns a creation receipt for the selected session.
+    if (member) void onParallelSessionSelected(member);
+  }, [viewSessionId, sessionSummary?.id, parallel.group, onParallelSessionSelected]);
+  const isParallelComposer = Boolean(parallel.group) || (isNewSessionComposer && newSessionAgents.length > 1);
   const [occupiedRecoveries, setOccupiedRecoveries] = useState<OccupiedRecoveryRegistry>({});
   const occupiedRecoveriesRef = useRef<OccupiedRecoveryRegistry>({});
   const commitOccupiedRecovery = useCallback((
@@ -719,10 +750,10 @@ export default function ChatView({
 
   const [directCompatibilitySessionId, setDirectCompatibilitySessionId] = useState<string | null>(null);
   const [compatibilityFailure, setCompatibilityFailure] = useState<string | null>(null);
-  const composerRoute = resolveSessionComposerRoute(selectedSessionId, sessionSummary, activeAgentType);
+  const composerRoute = resolveSessionComposerRoute(selectedSessionId, sessionSummary, isNewSessionComposer ? newSessionViewingAgent : activeAgentType);
   const composerAgentType = composerRoute.agentType;
   const isNativeRuntime = composerRoute.ready
-    && isNativeRuntimeSelection(sessionSummary, activeAgentType);
+    && isNativeRuntimeSelection(sessionSummary, composerRoute.agentType);
 
   // ── Native runtime model & reasoning-effort picker ──────────────────────
   // The choice is per agent type, lives in localStorage, and rides along with
@@ -822,9 +853,10 @@ export default function ChatView({
       ? "incompatible"
       : sessionSummary?.compatibility?.status;
   const isCompatibilityReadOnly = compatibilityStatus !== undefined && compatibilityStatus !== "direct";
-  const isReadOnly = isCompatibilityReadOnly || (
+  const isReadOnly = sessionSummary?.readOnly === true || isCompatibilityReadOnly || (
     sessionSummary?.occupancy === "owned-externally"
     && sessionSummary.agentType !== "codex"
+    && !canGuideExternalSession(sessionSummary)
   );
   const isOccupiedRecovery = isOccupiedRecoveryVisible(occupiedRecovery, viewSessionId);
   const showOccupiedRecoveryBanner = isOccupiedRecovery
@@ -851,28 +883,14 @@ export default function ChatView({
   // Local ownership controls actions; externally observed activity remains visible.
   const isLocallyRunning = !!(
     viewSessionId
-    && (runningSessionId === viewSessionId || runningSubIdsRef.current.has(viewSessionId))
+    && (runningSessionId === viewSessionId || runningSubIdsRef.current.has(viewSessionId) || parallel.isRunning(viewSessionId))
   );
   const shouldQueueMessage = shouldQueueMessageForActiveRun(sessionSummary, isLocallyRunning);
-  const isRunning = isLocallyRunning || isObservedNativeRun(sessionSummary);
+  const isRunning = parallel.group ? parallel.isRunning(viewSessionId) : isLocallyRunning || isObservedNativeRun(sessionSummary);
   const runtimeProgress = viewSessionId ? runtimeProgressBySession[viewSessionId] ?? [] : [];
   const nativeSubagents = viewSessionId ? nativeSubagentsBySession[viewSessionId] ?? {} : {};
   const jobRuntimeProgress = runtimeProgress.filter(progress => progress.kind === "background-job");
   const globalRuntimeProgress = latestGlobalRuntimeProgress(runtimeProgress.filter(progress => progress.kind !== "background-job"));
-  const latestRenderedMessage = renderedMessages[renderedMessages.length - 1];
-  const hasStreamingReasoning = Boolean(
-    latestRenderedMessage?.role === "assistant"
-    && agentActivity === "thinking"
-    && latestRenderedMessage.presentation?.reasoning?.some((section) => section.text.trim()),
-  );
-  const hasVisibleRunningTool = agentActivity === "tools" && renderedMessages.some((message) => (
-    message.toolCalls?.length && !areToolCallsComplete(message.toolCalls)
-  ));
-  const showThinkingFallback = isRunning
-    && jobRuntimeProgress.length === 0
-    && !globalRuntimeProgress
-    && !hasStreamingReasoning
-    && !hasVisibleRunningTool;
 
   // Ensure profiles are loaded even if SettingsPanel was never opened
   useEffect(() => { loadFromSystem(); }, []);
@@ -910,7 +928,9 @@ export default function ChatView({
   useEffect(() => {
     if (sessionSummary?.nativeGoalSupported === false) setGoalMode(false);
   }, [sessionSummary?.nativeGoalSupported]);
-  const canSubmitComposer = canCompose || (canComposeNativeGoal && goalMode);
+  const canSubmitComposer = isParallelComposer
+    ? composerRoute.ready && !parallel.submitting
+    : canCompose || (canComposeNativeGoal && goalMode);
   const composerScopeRef = useRef("");
   composerScopeRef.current = JSON.stringify([composerAgentType, selectedProjectId, viewSessionId]);
   const nativePermissionPendingRef = useRef(false);
@@ -924,7 +944,7 @@ export default function ChatView({
       setGoalState(projectSessionGoals(state) as SessionGoalState);
       if (
         state.active?.kind === "message"
-        && (agentActivityRef.current !== "thinking" || thinkingSessionIdRef.current !== targetSessionId)
+        && thinkingSessionIdRef.current !== targetSessionId
       ) {
         beginAgentRunActivity(targetSessionId);
       }
@@ -1029,6 +1049,7 @@ export default function ChatView({
   const isLoadingOlderHistoryRef = useRef(false);
   const prependScrollAnchorRef = useRef<{ scrollHeight: number; scrollTop: number } | null>(null);
   const nextAutoScrollRef = useRef<"instant" | "skip" | null>(null);
+  const historyRequestsRef = useRef(new SessionHistoryRequests());
   const autoFollowRef = useRef(createChatAutoFollowController(JUMP_TO_BOTTOM_THRESHOLD_PX));
   const [isLoadingOlderHistory, setIsLoadingOlderHistory] = useState(false);
   const [olderHistoryError, setOlderHistoryError] = useState<string | null>(null);
@@ -1041,6 +1062,7 @@ export default function ChatView({
   const [isReturningLatestHistory, setIsReturningLatestHistory] = useState(false);
   const [showJumpToBottom, setShowJumpToBottom] = useState(false);
   const [isInitialHistoryLoading, setIsInitialHistoryLoading] = useState(false);
+  const initialHistoryLoadingSessionRef = useRef<string | null>(null);
   const [showInitialHistoryLoading, setShowInitialHistoryLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
@@ -1512,12 +1534,12 @@ export default function ChatView({
   const updateAgentActivity = useCallback((next: "idle" | "thinking" | "tools") => {
     const activitySessionId = selectedSessionIdRef.current || sessionIdRef.current;
     if (
-      next === "thinking"
-      && (agentActivityRef.current !== "thinking" || thinkingSessionIdRef.current !== activitySessionId)
+      next !== "idle"
+      && thinkingSessionIdRef.current !== activitySessionId
     ) {
       thinkingSessionIdRef.current = activitySessionId;
       setThinkingStartedAt(Date.now());
-    } else if (next !== "thinking") {
+    } else if (next === "idle") {
       thinkingSessionIdRef.current = null;
     }
     agentActivityRef.current = next;
@@ -1633,14 +1655,16 @@ export default function ChatView({
 
   const handleComposerKeyDown = (event: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     if (isRecording) { event.preventDefault(); return; }
-    if (event.key === "Escape" && (atQuery !== null || slashQuery !== null)) {
+    const action = composerKeyAction(event, { pickerOpen: atQuery !== null || slashQuery !== null, running: isLocallyRunning });
+    if (!action) return;
+    if (action === "dismiss-picker") {
       event.preventDefault();
       setAtQuery(null);
       setSlashQuery(null);
-    } else if (event.key === "Escape" && isLocallyRunning) {
+    } else if (action === "abort") {
       event.preventDefault();
-      handleAbort();
-    } else if (event.key === "Enter" && !event.shiftKey) {
+      handleAbort("keyboard");
+    } else if (action === "send") {
       event.preventDefault();
       void handleSend();
     }
@@ -1827,9 +1851,11 @@ export default function ChatView({
       setSessionId(targetSid);
       const cachedMessages = getMessagesForSession(targetSid);
       setMessages(cachedMessages, targetSid);
+      initialHistoryLoadingSessionRef.current = targetSid;
       try {
         await loadSessionWithRetry(async () => {
           if (!isCurrentLoad()) throw new DOMException("Session selection changed", "AbortError");
+          const isCurrentSnapshot = historyRequestsRef.current.capture(targetSid);
           const seed = initialSessionHistory?.sessionId === targetSid
             && consumedNavigationHistoryRef.current !== initialSessionHistory
             ? initialSessionHistory : undefined;
@@ -1843,7 +1869,7 @@ export default function ChatView({
                 : SESSION_HISTORY_PAGE_SIZE,
             },
             (detail, phase) => {
-              if (!isCurrentLoad()) return;
+              if (!isCurrentLoad() || !isCurrentSnapshot()) return;
               const permissionDetail = detail as (SessionHistoryDetail & {
                 permissionMode?: unknown;
                 nativePermissions?: UnifiedSessionSummary["nativePermissions"];
@@ -1904,7 +1930,7 @@ export default function ChatView({
               setIsInitialHistoryLoading(false);
               setShowInitialHistoryLoading(false);
             },
-            isCurrentLoad,
+            () => isCurrentLoad() && isCurrentSnapshot(),
             seed ? async () => {
               consumedNavigationHistoryRef.current = seed;
               return seed.detail;
@@ -1920,6 +1946,7 @@ export default function ChatView({
         if (sessionSummary?.compatibility) setCompatibilityFailure(reason);
       } finally {
         if (isCurrentLoad()) {
+          initialHistoryLoadingSessionRef.current = null;
           setIsInitialHistoryLoading(false);
           setShowInitialHistoryLoading(false);
           setSettledSessionHistory({ sessionId: targetSid, seed: initialSessionHistory });
@@ -1931,6 +1958,7 @@ export default function ChatView({
     return () => {
       if (sessionLoadGenerationRef.current === loadGeneration) {
         sessionLoadGenerationRef.current += 1;
+        initialHistoryLoadingSessionRef.current = null;
       }
     };
   }, [activeAgentType, getMessagesForSession, getSessionHistoryWindow, historyAgentType, initialSessionHistory, isWorkspaceWelcome, prefetchOlderHistory, selectedSessionId, sessionReloadGeneration, setContextUsage, setHistoryMode, setMessages, setSessionId, syncToolResultScope, updateAgentActivity]);
@@ -1958,6 +1986,7 @@ export default function ChatView({
   }, []);
 
   const scheduleCodexTraceRefresh = useCallback((targetSid: string) => {
+    if (!isPageActive()) return;
     if (codexTraceRefreshSessionRef.current !== targetSid) {
       if (codexTraceRefreshTimerRef.current !== null) {
         window.clearTimeout(codexTraceRefreshTimerRef.current);
@@ -1974,7 +2003,7 @@ export default function ChatView({
     codexTraceRefreshTimerRef.current = window.setTimeout(() => {
       codexTraceRefreshTimerRef.current = null;
       codexTraceLastRefreshAtRef.current = Date.now();
-      if (selectedSessionIdRef.current === targetSid) {
+      if (isPageActive() && selectedSessionIdRef.current === targetSid) {
         setCodexTraceRefreshSignal((signal) => signal + 1);
       }
     }, delay);
@@ -2004,7 +2033,7 @@ export default function ChatView({
   }, [isInitialHistoryLoading, loadSessionQueryIndex, selectedSessionId, sessionReloadGeneration]);
 
   const refreshLatestHistory = useCallback(async (targetSid: string) => {
-    if (!window.agentApi || document.visibilityState === "hidden") return;
+    if (!window.agentApi || !isPageActive()) return;
     if (shouldDeferLiveHistoryRefresh(historyAgentType(targetSid), targetSid, useAgentStore.getState().runningSessionId)) {
       if (historyAgentType(targetSid) === "codex") scheduleCodexTraceRefresh(targetSid);
       return;
@@ -2029,6 +2058,7 @@ export default function ChatView({
     try {
       do {
         historyRefreshPendingRef.current = false;
+        const isCurrentSnapshot = historyRequestsRef.current.capture(targetSid);
         await loadProgressiveSessionHistoryPage(
           window.agentApi,
           targetSid,
@@ -2039,6 +2069,7 @@ export default function ChatView({
               : SESSION_HISTORY_PAGE_SIZE,
           },
           (detail, phase) => {
+            if (!isCurrentSnapshot()) return;
             if (shouldDeferLiveHistoryRefresh(historyAgentType(targetSid), targetSid, useAgentStore.getState().runningSessionId)) {
               if (historyAgentType(targetSid) === "codex") scheduleCodexTraceRefresh(targetSid);
               return;
@@ -2101,6 +2132,7 @@ export default function ChatView({
             && sessionLoadGenerationRef.current === loadGeneration
             && anchorRequestGenerationRef.current === windowGeneration
             && historyWindowModeRef.current === "latest"
+            && isCurrentSnapshot()
           ),
         );
         if (historyAgentType(targetSid) === "codex") {
@@ -2125,30 +2157,30 @@ export default function ChatView({
       || shouldFollowNativeHistory(sessionSummary, targetSid, runningSessionId)
       || (sessionSummary?.agentType === "customer-agent" && targetSid !== runningSessionId);
     const shouldPollFallback = shouldPollNativeHistoryFallback(sessionSummary);
-    if (!targetSid || !shouldFollow || !window.agentApi) return;
+    if (!pageActive || !targetSid || !shouldFollow || !window.agentApi) return;
 
     let stopObserver: (() => void) | null = null;
-    let pollingTimer: number | null = null;
+    let stopPolling: (() => void) | null = null;
     let disposed = false;
 
     const refresh = () => {
-      if (!disposed && document.visibilityState !== "hidden") {
+      if (!disposed && isPageActive()) {
         void refreshLatestHistory(targetSid);
       }
     };
     const stopTransport = () => {
       stopObserver?.();
       stopObserver = null;
-      if (pollingTimer !== null) window.clearInterval(pollingTimer);
-      pollingTimer = null;
+      stopPolling?.();
+      stopPolling = null;
     };
     const startPolling = () => {
-      if (disposed || pollingTimer !== null || document.visibilityState === "hidden") return;
-      refresh();
-      pollingTimer = window.setInterval(refresh, 2_000);
+      if (disposed || stopPolling !== null || !isPageActive()) return;
+      stopPolling = startSessionHistoryPolling(refresh,
+        () => initialHistoryLoadingSessionRef.current !== targetSid);
     };
     const startTransport = () => {
-      if (disposed || document.visibilityState === "hidden") return;
+      if (disposed || !isPageActive()) return;
       if (prefersNativeHistoryPolling(sessionSummary) || typeof window.agentApi.observeSession !== "function") {
         if (shouldPollFallback) startPolling();
         return;
@@ -2164,7 +2196,7 @@ export default function ChatView({
     };
     const handleVisibilityChange = () => {
       stopTransport();
-      if (document.visibilityState !== "hidden") {
+      if (isPageActive()) {
         refresh();
         startTransport();
       }
@@ -2190,6 +2222,7 @@ export default function ChatView({
       }
     };
   }, [
+    pageActive,
     refreshLatestHistory,
     selectedSessionId,
     runningSessionId,
@@ -3334,6 +3367,7 @@ export default function ChatView({
         agentName: targetRecovery.payload.agentName,
         images: targetRecovery.payload.images,
         sendState: "pending",
+        awaitingHistory: true,
       }, targetSessionId);
     };
 
@@ -3382,11 +3416,11 @@ export default function ChatView({
     }
   };
 
-  const handleAbort = () => {
+  const handleAbort = (trigger: "button" | "keyboard" = "button") => {
     abortRef.current = true;
     sessionLoadGenerationRef.current += 1;
     if (window.agentApi) {
-      void window.agentApi.abort(viewSessionId || undefined).catch((abortError) => {
+      void window.agentApi.abort(viewSessionId || undefined, trigger).catch((abortError) => {
         setError(abortError instanceof Error ? abortError.message : "停止执行失败");
       });
     }
@@ -3410,6 +3444,7 @@ export default function ChatView({
     if (!msg || !canSteerQueuedMessage(msg, hasDurableMessageQueue)) return;
     steeringQueuedMessageIdsRef.current.add(msgId);
     setSteeringQueuedMessageIds(new Set(steeringQueuedMessageIdsRef.current));
+    updateMessage(msgId, (message) => ({ ...message, isSteering: true }), targetSessionId);
     try {
       const state = await steerQueuedMessage(msg, targetSessionId, hasDurableMessageQueue, window.agentApi);
       setMessages(
@@ -3424,6 +3459,9 @@ export default function ChatView({
     } catch (err) {
       setError(err instanceof Error ? err.message : "引导失败");
     } finally {
+      updateMessage(msgId, (message) => message.isSteering
+        ? { ...message, isSteering: undefined }
+        : message, targetSessionId);
       steeringQueuedMessageIdsRef.current.delete(msgId);
       setSteeringQueuedMessageIds(new Set(steeringQueuedMessageIdsRef.current));
     }
@@ -3746,8 +3784,69 @@ export default function ChatView({
       const restoredLatest = await returnToLatestHistory();
       if (!restoredLatest) return;
     }
-
     void interruptSpeech(window.agentApi, stopSpeaking);
+
+    const specialCommand = (submission.applyGoalMode && goalMode) || /^\/(?:loop|goal)(?:\s|$)/i.test(submission.text);
+    const targetsViewedSession = parallel.group && parallel.recipients.length === 1 && parallel.recipients[0] === viewSessionId;
+    if (isParallelComposer && !(specialCommand && targetsViewedSession)) {
+      if (specialCommand) {
+        setError("目标和定时任务请先选择只发送给当前查看的 Agent");
+        return;
+      }
+      creatingSessionRef.current = true;
+      setCreatingSession(!parallel.group);
+      setError(null);
+      const submittedScope = composerScopeRef.current;
+      try {
+        const existing = parallel.group;
+        const group = existing ?? await parallel.create({
+          title: submission.text.slice(0, 60) || "新会话",
+          cwd: workspacePath?.trim() || "",
+          agentTypes: [...newSessionAgents],
+        });
+        const targets = existing ? group.members.filter(member => parallel.recipients.includes(member.id)) : group.members;
+        if (!targets.length) throw new Error("请选择至少一位接收消息的 Agent");
+        if (!existing && composerScopeRef.current === submittedScope) {
+          parallel.activate(group);
+          const first = group.members.find(member => member.agentType === newSessionViewingAgent) ?? group.members[0];
+          createdSessionDraftRef.current = first.id;
+          sessionIdRef.current = first.id;
+          runningSessionRef.current = first.id;
+          setSessionId(first.id);
+          if (onParallelSessionSelected) await onParallelSessionSelected(first);
+          else await onSessionCreated?.(first.id, first);
+        }
+        setCreatingSession(false);
+        const sourceMessageId = crypto.randomUUID();
+        const result = await parallel.submit(targets.map(member => ({ member, message: {
+          sourceMessageId, content: submission.text, images: submission.images,
+          agentIds: submission.agentIds, agentName: submission.agentName,
+        } })));
+        const stillInConversation = composerScopeRef.current === submittedScope || group.members.some(member => member.id === viewSessionIdRef.current);
+        const consumeComposer = submission.clearComposer && inputRef.current?.value.trim() === submission.text.trim();
+        for (const id of result.accepted) {
+          if (id === viewSessionIdRef.current && !consumeComposer) {
+            writeSessionDraft(id, composerDraftRef.current.text);
+            void imageDraftCoordinator.save(id, composerDraftRef.current.images);
+          } else if (submission.clearComposer) {
+            clearSessionDraft(id);
+            void imageDraftCoordinator.clear(id);
+          }
+          void onMessageSent?.(id, submission.text);
+        }
+        for (const failure of result.failed) {
+          writeSessionDraft(failure.member.id, submission.text);
+          void imageDraftCoordinator.save(failure.member.id, submission.images ?? []);
+        }
+        if (stillInConversation && result.accepted.length && consumeComposer) {
+          composerDraftRef.current = { text: "", images: [] };
+          setInput(""); setAttachedFiles([]); setPendingImages([]); setPendingAgents([]);
+        }
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : "发送多 Agent 消息失败");
+      } finally { creatingSessionRef.current = false; setCreatingSession(false); }
+      return;
+    }
 
     if (!cancellationTimeoutSessionId || cancellationTimeoutSessionId !== viewSessionId) setError(null);
 
@@ -4120,15 +4219,21 @@ export default function ChatView({
           // history loading preserves this session's optimistic message.
           runningSessionRef.current = id;
         },
-        showUserMessage: (text, id) => addMessage({
-          id: sourceMessageId,
-          role: "user",
-          content: text,
-          timestamp: Date.now(),
-          agentName: agentNamesLabel,
-          images: imagesToSend,
-          sendState: "pending",
-        }, id),
+        showUserMessage: (text, id) => {
+          historyRequestsRef.current.invalidate(id);
+          nextAutoScrollRef.current = "instant";
+          autoFollowRef.current.requestReturn();
+          addMessage({
+            id: sourceMessageId,
+            role: "user",
+            content: text,
+            timestamp: Date.now(),
+            agentName: agentNamesLabel,
+            images: imagesToSend,
+            sendState: "pending",
+            awaitingHistory: true,
+          }, id);
+        },
         afterUserMessageShown: waitForNextPaint,
         onSessionCreated,
       });
@@ -4308,6 +4413,24 @@ export default function ChatView({
         )}
       </div>
 
+      {isParallelComposer && <ParallelAgentTabs
+        members={parallel.group
+          ? parallel.group.members.map(member => ({ id: member.id, agentType: member.agentType,
+            status: parallel.statuses[member.id] ?? member.status }))
+          : newSessionAgents.map(type => ({ id: type, agentType: type, status: "idle" as const }))}
+        selectedId={parallel.group ? viewSessionId : newSessionViewingAgent}
+        onSelect={id => {
+          if (!parallel.group) { setNewSessionViewingAgent(id as AgentType); return; }
+          const member = parallel.group.members.find(item => item.id === id);
+          if (!member) return;
+          void parallel.select(member, async () => {
+            const draft = composerDraftRef.current;
+            writeSessionDraft(member.id, draft.text);
+            await imageDraftCoordinator.save(member.id, draft.images);
+          });
+        }}
+      />}
+
       <BrowserLivePanel
         open={browserLiveOpen}
         agentSessionId={viewSessionId}
@@ -4380,7 +4503,7 @@ export default function ChatView({
         {!creatingSession && (isWorkspaceWelcome || (visibleMessages.length === 0 && !isRunning && !isInitialHistoryLoading && !error)) && (
           <EmptySessionWelcome
             key={viewSessionId ?? "initial-empty-session"}
-            agentType={sessionSummary?.agentType ?? activeAgentType}
+            agentType={sessionSummary?.agentType ?? composerAgentType}
             ready={canCompose}
             onSelectPrompt={selectStarterPrompt}
           />
@@ -4998,21 +5121,7 @@ export default function ChatView({
           <RuntimeProgressRow key={progress.progressId} progress={progress} />
         ))}
 
-        {isRunning && globalRuntimeProgress && (
-          <RuntimeProgressRow progress={globalRuntimeProgress} startedAt={thinkingStartedAt} />
-        )}
-
-        {/* Keep every otherwise-empty running state visible and consistent. */}
-        {showThinkingFallback && (
-          <div className="chat-message-activity" style={{
-            display: "flex",
-            alignItems: "flex-start",
-            padding: "4px 0 4px",
-            animation: "fadeInUp 0.3s var(--ease-out)",
-          }}>
-            <AgentActivityIndicator startedAt={thinkingStartedAt} />
-          </div>
-        )}
+        <SessionRunActivity running={isRunning} progress={globalRuntimeProgress} startedAt={thinkingStartedAt} />
 
         {displayedError && (
           <RunFailureNotice
@@ -5027,7 +5136,7 @@ export default function ChatView({
               <div style={{ display: "inline-flex", gap: 6, flexShrink: 0 }}>
                 <button
                   type="button"
-                  onClick={handleAbort}
+                  onClick={() => handleAbort("button")}
                   aria-label="再次停止"
                   title="再次停止"
                   className="ui-icon-button"
@@ -5799,7 +5908,24 @@ export default function ChatView({
         {/* Input box */}
         <div ref={pickerAnchorRef} className="composer-anchor" style={{ position: "relative" }}>
 
-        <div className={`composer-shell${isNewSessionComposer ? " composer-shell--new-session" : ""}`} style={{
+        {parallel.error && <div className="parallel-send-notice" role="alert">{parallel.error}</div>}
+        {parallel.failed.map(failure => <div className="parallel-send-notice" role="alert" key={`${failure.member.id}:${failure.message.sourceMessageId}`}>
+          <span>{AGENT_LABELS[failure.member.agentType]}：{failure.error}</span>
+          <button type="button" disabled={parallel.submitting || failure.blocked} onClick={() => {
+            void parallel.retry(failure).then(result => {
+              if (!result.accepted.length) return;
+              if (readSessionDraft(failure.member.id) === failure.message.content) {
+                clearSessionDraft(failure.member.id);
+                void imageDraftCoordinator.clear(failure.member.id);
+              }
+              if (viewSessionId === failure.member.id && inputRef.current?.value === failure.message.content) {
+                setInput(""); setPendingImages([]);
+              }
+            }).catch(cause => setError(cause instanceof Error ? cause.message : "重试发送失败"));
+          }}>重试发送</button>
+        </div>)}
+
+        <div className={`composer-shell${isNewSessionComposer ? " composer-shell--new-session" : ""}${isParallelComposer ? " composer-shell--parallel" : ""}`} style={{
           display: "flex",
           flexDirection: "column",
           gap: 0,
@@ -5810,7 +5936,11 @@ export default function ChatView({
           {isNewSessionComposer && (onSelectAgent || workspaces !== undefined || onSelectWorkspace !== undefined) && (
             <div className="composer-context-row" role="group" aria-label="新会话的 Agent 和目录">
               {onSelectAgent && (
-                <ComposerAgentPicker value={composerAgentType} health={runtimeHealth} onChange={onSelectAgent} />
+                <ComposerAgentPicker value={composerAgentType} health={runtimeHealth} onChange={onSelectAgent}
+                  values={newSessionAgents} onValuesChange={types => {
+                    setNewSessionAgents(types); setNewSessionViewingAgent(types.includes(newSessionViewingAgent) ? newSessionViewingAgent : types[0]);
+                    if (types.length === 1) onSelectAgent(types[0]);
+                  }} />
               )}
               {(workspaces !== undefined || onSelectWorkspace !== undefined) && (
                 <ComposerWorkspacePicker
@@ -5822,6 +5952,13 @@ export default function ChatView({
               )}
             </div>
           )}
+          {!isNewSessionComposer && parallel.group && <div className="composer-context-row" role="group" aria-label="消息发送对象">
+            <ComposerAgentPicker value={composerAgentType} health={runtimeHealth} onChange={() => undefined}
+              purpose="recipients" allowedAgentTypes={parallel.group.members.map(member => member.agentType)}
+              values={parallel.group.members.filter(member => parallel.recipients.includes(member.id)).map(member => member.agentType)}
+              onValuesChange={types => parallel.setRecipients(parallel.group!.members.filter(member => types.includes(member.agentType)).map(member => member.id))} />
+            <span className="parallel-composer-directory" title={parallel.group.cwd}>{parallel.group.cwd.split(/[\\/]/).filter(Boolean).at(-1)}</span>
+          </div>}
           {/* Inner input row */}
           <div className="composer-input-row" style={{
             display: "flex",
@@ -5873,7 +6010,7 @@ export default function ChatView({
             onChange={(event) => handleComposerChange(event.target.value)}
             onBlur={() => setTimeout(() => { setAtQuery(null); setSlashQuery(null); }, 120)}
             onKeyDown={handleComposerKeyDown}
-            placeholder={canComposeNativeGoal && goalMode ? "输入要持续推进的目标" : codexReleaseState === "released" ? "已停止在 AgentRoam 中使用；Codex Desktop 最长约 30 分钟后可用" : isCompatibilityReadOnly ? (compatibilityStatus === "incompatible" ? "Codex 版本不兼容" : "正在验证会话兼容性") : isReadOnly ? "原客户端使用中，当前只读" : runtimeReady ? (goalMode ? "输入要持续推进的目标" : shouldQueueMessage ? "输入下一条排队消息" : isNewSessionComposer ? "描述你想做的事，第一条消息会创建会话" : "提出后续修改要求") : "请先在设置中配置 API Key"}
+            placeholder={isParallelComposer ? "输入消息，选择接收的 Agent" : canComposeNativeGoal && goalMode ? "输入要持续推进的目标" : codexReleaseState === "released" ? "已停止在 AgentRoam 中使用；Codex Desktop 最长约 30 分钟后可用" : isCompatibilityReadOnly ? (compatibilityStatus === "incompatible" ? "Codex 版本不兼容" : "正在验证会话兼容性") : isReadOnly ? "原客户端使用中，当前只读" : canGuideExternalSession(sessionSummary) ? "补充要求会交给桌面端原会话" : runtimeReady ? (goalMode ? "输入要持续推进的目标" : shouldQueueMessage ? "输入下一条排队消息" : isNewSessionComposer ? "描述你想做的事，第一条消息会创建会话" : "提出后续修改要求") : "请先在设置中配置 API Key"}
             disabled={!canSubmitComposer}
             readOnly={isRecording}
           />
@@ -5993,7 +6130,19 @@ export default function ChatView({
                 )}
               </div>
 
-              <label className={`web-native-model-control${isNativeRuntime ? " web-native-model-control--native" : ""}`} title="切换模型">
+              {isParallelComposer ? <ParallelAgentSettings
+                contextWindowK={contextWindow}
+                agentTypes={parallel.group ? parallel.group.members.map(member => member.agentType) : newSessionAgents}
+                sessions={parallel.group?.members}
+                customerProfiles={profiles} customerProfileId={activeProfileId}
+                onCustomerProfileChange={id => { void switchActiveProfile(id); }}
+                customerEffort={{ value: reasoningEffort, options: EFFORT_OPTIONS, onChange: value => { setField("reasoningEffort", value); void saveToSystem(); } }}
+                onChange={() => setNativePref(loadNativeRunPref(composerAgentType))}
+                onOpenSession={member => { void parallel.select(member, async () => {
+                  writeSessionDraft(member.id, composerDraftRef.current.text);
+                  await imageDraftCoordinator.save(member.id, composerDraftRef.current.images);
+                }); }}
+              /> : <label className={`web-native-model-control${isNativeRuntime ? " web-native-model-control--native" : ""}`} title="切换模型">
                 {isNativeRuntime && isNativeAgentType(composerAgentType) ? (
                   <>
                     <span
@@ -6044,10 +6193,10 @@ export default function ChatView({
                     ))}
                   </select>
                 )}
-              </label>
+              </label>}
 
-              {isLocallyRunning ? (
-                <button type="button" onClick={handleAbort} className="web-native-stop-button" aria-label="停止生成" title="停止生成">
+              {isParallelComposer && !isLocallyRunning ? null : isLocallyRunning ? (
+                <button type="button" onClick={() => handleAbort("button")} className="web-native-stop-button" aria-label="停止生成" title="停止生成">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                     <rect x="6" y="6" width="12" height="12" rx="2" />
                   </svg>
@@ -6160,8 +6309,8 @@ export default function ChatView({
                 disabled={creatingSession || !canSubmitComposer || nativeGoal.pending || pendingImageReads > 0 || (!input.trim() && !pendingImages.length)}
                 className="web-native-send-button"
                 aria-busy={creatingSession}
-                aria-label={creatingSession ? "正在创建会话" : shouldQueueMessage ? "排队发送" : "发送"}
-                title={shouldQueueMessage ? "排队发送" : "发送"}
+                aria-label={creatingSession ? "正在创建会话" : !isParallelComposer && shouldQueueMessage ? "排队发送" : "发送"}
+                title={!isParallelComposer && shouldQueueMessage ? "排队发送" : "发送"}
               >
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M12 19V5M5 12l7-7 7 7" />
@@ -6183,7 +6332,7 @@ export default function ChatView({
           letterSpacing: "0.03em",
           opacity: 0.6,
         }}>
-          Enter 发送{goalMode ? "目标" : shouldQueueMessage ? "（排队）" : ""} · @智能体（可多选）· /技能 · Shift+Enter 换行{isFinalizingDictation ? " · 正在完成识别…" : isStartingDictation ? " · 正在连接麦克风…" : isRecording ? " · 🎤 正在聆听，可直接点发送" : ""}
+          Enter 发送{goalMode ? "目标" : !isParallelComposer && shouldQueueMessage ? "（排队）" : ""} · @智能体（可多选）· /技能 · Shift+Enter 换行{isFinalizingDictation ? " · 正在完成识别…" : isStartingDictation ? " · 正在连接麦克风…" : isRecording ? " · 🎤 正在聆听，可直接点发送" : ""}
         </div>
       </div>
 

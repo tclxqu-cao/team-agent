@@ -1,4 +1,9 @@
 import type { SessionActivity } from "@agent/core/domain/session/SessionActivity";
+import type { ChatMessage } from "../stores/agentStore";
+
+export function hasPendingSessionQuestion(messages: readonly Pick<ChatMessage, "askUser">[]): boolean {
+  return messages.some(({ askUser }) => askUser && !askUser.answered && !askUser.cancelled);
+}
 
 export type SidebarSessionVisualState =
   | "needs-input"

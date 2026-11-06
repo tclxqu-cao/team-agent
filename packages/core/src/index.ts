@@ -81,11 +81,6 @@ export { SQLiteSupervisionRepository } from './infrastructure/SQLiteSupervisionR
 
 
 // Infrastructure
-export * from './domain/messaging/types.js';
-export * from './domain/messaging/routing.js';
-export * from './application/messaging/ports.js';
-export * from './application/messaging/MessagingService.js';
-export { SQLiteMessagingRepository } from './infrastructure/SQLiteMessagingRepository.js';
 export * from './infrastructure/index.js';
 
 // Opt-in durable Harness run recovery.

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { RemoteAuthorization } from "./lib/remote-control/remote-authorization.mjs";
-import { parseProducerRemoteVideoSignal, parseViewerRemoteVideoSignal, shouldDropRemoteAudioEvent } from "./lib/remote-control/remote-video-signal.mjs";
+import { parseProducerRemoteVideoSignal, shouldDropRemoteAudioEvent } from "./lib/remote-control/remote-video-signal.mjs";
 import { createDevicePairingGateway } from "./lib/device-pairing-gateway.mjs";
 import { createDesktopDiscovery } from "./lib/desktop-discovery.mjs";
 import { createTunnelControlGateway } from "./lib/tunnel-control.mjs";
@@ -24,6 +24,7 @@ import { createVoiceTtsGateway } from "./lib/voice-tts-gateway.mjs";
 //   AGENT_WEB_ROOTS   ":"-separated dirs the file APIs may touch (default: $HOME)
 
 import { ViewerFrameFlow } from "./lib/browser-live/viewer-frame-flow.mjs";
+import { relayViewerVideoSignal } from "./lib/browser-live/viewer-video-flow.mjs";
 import { createServer } from "node:http";
 import { randomBytes, randomUUID } from "node:crypto";
 import os from "node:os";
@@ -578,7 +579,7 @@ setInterval(() => {
 
 function makeConn(ws) {
   /** Per-connection JPEG relay accounting for post-hoc network analysis. */
-  const browserFrameRelay = { offered: 0, sent: 0, dropped: 0, acked: 0, bytes: 0, lastAckMs: null, maxAckMs: null, sentAt: null };
+  const browserFrameRelay = { offered: 0, sent: 0, dropped: 0, paused: 0, acked: 0, bytes: 0, lastAckMs: null, maxAckMs: null, sentAt: null };
   const browserFrameFlow = new ViewerFrameFlow(
     ({ channelId, sequence, bytes }) => {
       browserFrameRelay.sent += 1;
@@ -640,6 +641,7 @@ function makeConn(ws) {
       // "dropped" = the viewer outran the producer: a newer frame replaced this
       // one before it went out — downstream bandwidth or slow viewer decode.
       if (outcome === "dropped") relay.dropped += 1;
+      if (outcome === "paused") relay.paused += 1;
     },
   };
 }
@@ -859,7 +861,11 @@ const requestHandlers = {
     return liveViewRegistry.unwatch(conn.browserPeer);
   },
   "browser:takeover": async (msg, conn) => ({ session: liveViewRegistry.takeOver(conn.browserPeer, msg.sessionId) }),
-  "browser:return": async (msg, conn) => ({ session: liveViewRegistry.returnControl(conn.browserPeer, msg.sessionId) }),
+  "browser:return": async (msg, conn) => {
+    const session = liveViewRegistry.returnControl(conn.browserPeer, msg.sessionId);
+    conn.browserFrameFlow.setPaused(false);
+    return { session };
+  },
   "browser:input": async (msg, conn) => {
     // Waits (briefly) for the producer's dispatch result — e.g. the desktop
     // helper's hit-test of a tapped element — so the viewer gets it in the
@@ -872,7 +878,7 @@ const requestHandlers = {
   // Latency probe for the live panel's readout.
   "browser:ping": async (msg) => ({ t: typeof msg.t === "number" ? msg.t : 0 }),
   // WebRTC signaling viewer→producer (offer request, answer, ICE, stop)
-  "browser:webrtc": async (msg, conn) => liveViewRegistry.webrtcFromViewer(conn.browserPeer, msg.sessionId, parseViewerRemoteVideoSignal(msg.data)),
+  "browser:webrtc": async (msg, conn) => relayViewerVideoSignal(liveViewRegistry, conn.browserPeer, msg.sessionId, msg.data, conn.browserFrameFlow),
   // WebRTC signaling producer→controller (offer, ICE, state)
   "browser:webrtc-relay": async (msg, conn) => liveViewRegistry.webrtcFromProducer(conn.browserPeer, msg.sessionId, parseProducerRemoteVideoSignal(msg.data)),
   "browser:producer-state": async (msg, conn) => ({ session: liveViewRegistry.producerState(conn.browserPeer, msg.sessionId, msg.state) }),
@@ -1291,6 +1297,10 @@ wss.on("connection", (ws, _req, principal) => {
     id: conn.id,
     userId: principal.userId,
     send: (event) => {
+      if (event.type === "browser:state" && (!event.session?.isController || event.session.state !== "user-controlled")
+        || event.type === "browser:webrtc" && ["connecting", "failed", "closed", "disconnected"].includes(event.data?.state)) {
+        conn.browserFrameFlow.setPaused(false);
+      }
       if (event.type === "browser:frame" && event.data instanceof Uint8Array) {
         conn.sendBrowserFrame(event.sessionId, event.sequence, event.data);
       } else if (shouldDropRemoteAudioEvent(event, ws.bufferedAmount)) {
@@ -1366,7 +1376,7 @@ wss.on("connection", (ws, _req, principal) => {
     if (relay.offered > 0) {
       logGlobal("info", "live-view", "live relay closed for viewer", undefined, {
         connId: conn.id, userId: conn.principal?.userId ?? null,
-        offered: relay.offered, sent: relay.sent, dropped: relay.dropped, acked: relay.acked,
+        offered: relay.offered, sent: relay.sent, dropped: relay.dropped, paused: relay.paused, acked: relay.acked,
         bytes: relay.bytes, lastAckMs: relay.lastAckMs, maxAckMs: relay.maxAckMs,
         unackedOnClose: relay.sentAt ? 1 : 0,
       });

@@ -2,9 +2,12 @@
   "name": "customer-agent",
   "version": "0.1.0",
   "private": true,
-  "engines": { "node": ">=22.22.0" },
+  "engines": {
+    "node": ">=22.22.0"
+  },
   "workspaces": [
     "packages/core",
+    "packages/messaging",
     "packages/computer-use",
     "packages/native-runtime",
     "packages/server",
@@ -30,7 +33,7 @@
     "release:install-manifest": "node scripts/update-install-manifest.mjs",
     "check:install-manifest": "node scripts/update-install-manifest.mjs --check",
     "test:node-runtime-policy": "node --test scripts/runtime-policy.test.mjs scripts/runtime-native-files.test.mjs",
-    "dev": "bunx concurrently --kill-others -n core,server,desktop -c blue,green,yellow 'bun run dev:core' 'bun run dev:server' 'bun run dev:desktop'",
+    "dev": "bunx concurrently --kill-others -n core,messaging,server,desktop -c blue,cyan,green,yellow 'bun run dev:core' 'bun run dev:messaging' 'bun run dev:server' 'bun run dev:desktop'",
     "dev:core": "bun run --cwd packages/core dev",
     "dev:server": "bun run --cwd packages/server dev",
     "dev:desktop": "bun run --cwd packages/desktop dev",
@@ -40,10 +43,10 @@
     "dev:webapp": "bun run --cwd packages/webapp dev",
     "dev:sdk": "bun run --cwd packages/sdk dev",
     "tui": "bun packages/tui/agent-tui.mjs",
-    "build": "bun run --cwd packages/core build && bun run --cwd packages/computer-use build && bun run --cwd packages/server build && bun run --cwd packages/desktop build && bun run --cwd packages/webapp build",
+    "build": "bun run --cwd packages/core build && bun run --cwd packages/messaging build && bun run --cwd packages/computer-use build && bun run --cwd packages/server build && bun run --cwd packages/desktop build && bun run --cwd packages/webapp build",
     "build:sdk": "bun run --cwd packages/sdk build",
     "build:cli": "npm run build:cli:shared",
-    "build:cli:shared": "bun run --cwd packages/webapp build && bun run --cwd packages/core build && bun run --cwd packages/computer-use build && bun run --cwd packages/native-runtime build && bun run build:tui-package && NEXT_STANDALONE=1 bun run --cwd packages/server build && bun run --cwd packages/cli build",
+    "build:cli:shared": "bun run --cwd packages/webapp build && bun run --cwd packages/core build && bun run --cwd packages/messaging build && bun run --cwd packages/computer-use build && bun run --cwd packages/native-runtime build && bun run build:tui-package && NEXT_STANDALONE=1 bun run --cwd packages/server build && bun run --cwd packages/cli build",
     "build:tui-package": "bun scripts/build-tui-package.mjs",
     "stage:runtime:darwin-arm64": "node scripts/stage-cli-runtime.mjs --target darwin-arm64",
     "stage:runtime:windows-amd64": "node scripts/stage-cli-runtime.mjs --target windows-amd64",
@@ -68,7 +71,8 @@
     "test": "bunx vitest run",
     "test:watch": "bunx vitest",
     "lint": "bunx tsc --noEmit",
-    "build:website": "node packages/website/src/build.mjs"
+    "build:website": "node packages/website/src/build.mjs",
+    "dev:messaging": "bun run --cwd packages/messaging dev"
   },
   "resolutions": {
     "sherpa-onnx-darwin-arm64": "1.13.4",

@@ -1,24 +1,20 @@
 import type { CatalogSession, SessionCatalogPage } from "../../../core/src/domain/supervision/types";
 
-/** One catalog snapshot covers all Agents, including directories never opened. */
-export async function loadAllSessions(
+/** Fetch one window only; later cursors are requested by scrolling, never eagerly. */
+export async function readSessionCatalogPage(
   read: (cursor?: string) => Promise<SessionCatalogPage>,
   signal: AbortSignal,
-  onPage: (sessions: CatalogSession[], total: number) => void,
-): Promise<void> {
-  const sessions = new Map<string, CatalogSession>();
-  const cursors = new Set<string>();
-  let cursor: string | undefined;
-  do {
-    signal.throwIfAborted();
-    const page = await read(cursor);
-    signal.throwIfAborted();
-    for (const session of page.data) sessions.set(session.id, session);
-    onPage([...sessions.values()], page.total);
-    cursor = page.nextCursor ?? undefined;
-    if (cursor && cursors.has(cursor)) throw new Error("历史会话分页已失效，请刷新重试");
-    if (cursor) cursors.add(cursor);
-  } while (cursor);
+  cursor?: string,
+): Promise<SessionCatalogPage> {
+  signal.throwIfAborted();
+  const page = await read(cursor);
+  signal.throwIfAborted();
+  if (page.nextCursor && page.nextCursor === cursor) throw new Error("历史会话分页已失效，请刷新重试");
+  return { ...page, data: mergeCatalogSessions([], page.data) };
+}
+
+export function mergeCatalogSessions(existing: readonly CatalogSession[], page: readonly CatalogSession[]): CatalogSession[] {
+  return [...new Map([...existing, ...page].map(session => [session.id, session])).values()];
 }
 
 export function orderAllSessions(

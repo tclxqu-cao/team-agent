@@ -1,6 +1,7 @@
 import { createReadStream } from "node:fs";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
+import { createRequire } from "node:module";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import type { Message } from "@agent/core";
@@ -8,6 +9,9 @@ import { nativeRecord } from "./native-rpc-client.js";
 import type { NativeJsonPacket } from "./native-stdio-channel.js";
 import type { NativeProtocolSession } from "./stdio-native-runtime-adapter.js";
 import { RuntimeSessionError } from "./types.js";
+
+const require = createRequire(import.meta.url);
+const TERMINAL_SESSION_STATUSES = new Set(["completed", "error", "terminated", "archived"]);
 
 export function workBuddyText(value: unknown): string {
   if (typeof value === "string") return value;
@@ -47,11 +51,32 @@ export function decodeWorkBuddyHistory(rows: NativeJsonPacket[]): Message[] {
   return messages;
 }
 
-/** Read-only projection of WorkBuddy-owned JSONL; no mirrored transcript or credential store. */
+/** Read-only projection of WorkBuddy history and activity; no mirrored transcript or credential store. */
 export class WorkBuddySessionCatalog {
   private readonly files = new Map<string, string>();
   private readonly cache = new Map<string, { stamp: string; session: NativeProtocolSession }>();
   constructor(private readonly root = process.env.WORKBUDDY_CONFIG_DIR || process.env.CODEBUDDY_CONFIG_DIR || join(homedir(), ".workbuddy")) {}
+
+  private nativeActivity(): Map<string, boolean> {
+    let database: import("node:sqlite").DatabaseSync | undefined;
+    try {
+      // Load lazily: older native hosts can still enforce writer ownership even
+      // when the built-in SQLite reader or WorkBuddy's database is unavailable.
+      const { DatabaseSync } = require("node:sqlite") as typeof import("node:sqlite");
+      database = new DatabaseSync(join(this.root, "workbuddy.db"), { readOnly: true });
+      database.exec("PRAGMA busy_timeout = 100");
+      const activity = new Map<string, boolean>();
+      for (const row of database.prepare("SELECT id, status FROM sessions").all()) {
+        if (typeof row.id === "string" && typeof row.status === "string") {
+          activity.set(row.id, !TERMINAL_SESSION_STATUSES.has(row.status.toLowerCase()));
+        }
+      }
+      return activity;
+    } catch {
+      // Missing/unknown native state must never release an existing writer lock.
+      return new Map();
+    } finally { database?.close(); }
+  }
 
   private async rows(path: string): Promise<NativeJsonPacket[]> {
     const info = await stat(path);
@@ -107,15 +132,19 @@ export class WorkBuddySessionCatalog {
       }
     }
     for (const id of this.files.keys()) if (!found.has(id)) this.files.delete(id);
+    const activity = this.nativeActivity();
     const writers = await readdir(join(this.root, "sessions")).catch(() => []);
     for (const filename of writers) {
       if (!/^\d+\.json$/.test(filename)) continue;
       let writer: NativeJsonPacket;
       try { writer = nativeRecord(JSON.parse(await readFile(join(this.root, "sessions", filename), "utf8"))); } catch { continue; }
-      if (typeof writer.pid !== "number") continue;
+      if (typeof writer.pid !== "number" || !Number.isSafeInteger(writer.pid) || writer.pid <= 0) continue;
       try { process.kill(writer.pid, 0); } catch (error) { if (nativeRecord(error).code !== "EPERM") continue; }
       const session = sessions.find(row => row.id === writer.sessionId);
-      if (session) session.running = true;
+      if (session) {
+        session.externallyOwned = true;
+        session.running = activity.get(session.id) ?? true;
+      }
     }
     return sessions.sort((a, b) => b.updated.localeCompare(a.updated));
   }

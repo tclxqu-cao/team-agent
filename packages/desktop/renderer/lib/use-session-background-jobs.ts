@@ -1,3 +1,4 @@
+import { isPageActive } from "./page-activity";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { RuntimeBackgroundJob } from "../global";
 
@@ -38,7 +39,7 @@ export function useSessionBackgroundJobs(sessionId: string) {
     setJobs([]); setError(null); setActionError(null); setLoading(true); setStopping(new Set());
     pendingRef.current.clear();
     const poll = async () => {
-      if (disposed || inFlight || document.visibilityState === "hidden") return;
+      if (disposed || inFlight || !isPageActive()) return;
       inFlight = true;
       try { await refresh(); } finally { inFlight = false; }
     };

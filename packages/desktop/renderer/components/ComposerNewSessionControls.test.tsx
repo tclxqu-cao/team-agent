@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import ComposerAgentPicker, { agentPickerItems } from "./ComposerAgentPicker";
 import ComposerWorkspacePicker, { workspacePickerLabel } from "./ComposerWorkspacePicker";
 import type { RuntimeHealth } from "../global";
+import { AGENT_TYPES } from "../../../core/src/domain/agent/agent-type";
 
 const noop = () => {};
 const WORKSPACES = [
@@ -29,7 +30,7 @@ describe("ComposerAgentPicker", () => {
     ];
     const html = renderToStaticMarkup(createElement(ComposerAgentPicker, { value: "claude-code", health, onChange: noop, defaultOpen: true }));
     expect(html).toContain('role="menu"');
-    expect(html.match(/role="menuitemradio"/g)).toHaveLength(8);
+    expect(html.match(/role="menuitemradio"/g)).toHaveLength(AGENT_TYPES.length);
     expect(html).toContain("远程未安装 Codex");
     expect(html).toContain('aria-disabled="true"');
     expect(html).toContain('aria-checked="true"');
@@ -38,10 +39,34 @@ describe("ComposerAgentPicker", () => {
 
   it("derives availability reasons from runtime health", () => {
     const items = agentPickerItems([{ agentType: "opencode", available: false, label: "OpenCode" }, { agentType: "codex", available: true, label: "Codex" }]);
-    expect(items).toHaveLength(8);
+    expect(items).toHaveLength(AGENT_TYPES.length);
     expect(items.find((item) => item.agentType === "opencode")?.unavailableMessage).toBe("远程 OpenCode 暂不可用");
     expect(items.find((item) => item.agentType === "codex")?.unavailableMessage).toBeUndefined();
     expect(agentPickerItems().find((item) => item.agentType === "customer-agent")?.unavailableMessage).toBeUndefined();
+  });
+});
+
+describe("ComposerAgentPicker multiple recipients", () => {
+  it("offers upward multi-selection without changing existing radio callers", () => {
+    const html = renderToStaticMarkup(createElement(ComposerAgentPicker, {
+      value: "codex", values: ["codex", "zcode"], onChange: noop, onValuesChange: noop,
+      health: [{ agentType: "codex", available: true, label: "Codex" }, { agentType: "zcode", available: true, label: "ZCode" }], defaultOpen: true,
+    }));
+    expect(html.match(/role="menuitemcheckbox"/g)).toHaveLength(AGENT_TYPES.length);
+    expect(html).toContain("完成 · 已选 2 个");
+    expect(html).toContain("Agent · 2");
+    expect(html).not.toContain('role="menuitemradio"');
+  });
+
+  it("limits recipient choices to participants and keeps joined Agents selectable during health outages", () => {
+    const html = renderToStaticMarkup(createElement(ComposerAgentPicker, {
+      value: "codex", values: ["zcode"], allowedAgentTypes: ["codex", "zcode"], purpose: "recipients",
+      onChange: noop, onValuesChange: noop, defaultOpen: true,
+    }));
+    expect(html.match(/role="menuitemcheckbox"/g)).toHaveLength(3);
+    expect(html).toContain("全部 Agent");
+    expect(html).not.toContain('aria-disabled="true"');
+    expect(html).not.toContain("Claude Code");
   });
 });
 

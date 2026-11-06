@@ -25,6 +25,12 @@ export interface CodexRolloutUserMessage {
   content: Array<Record<string, unknown>>;
 }
 
+export interface CodexRolloutAsyncMessage {
+  turnId: string;
+  afterUserItemId?: string;
+  item: Record<string, unknown> & { type: string; id: string };
+}
+
 interface CommentaryTurnCache {
   commentary: Map<string, CodexRolloutCommentary>;
   itemOrder: string[];
@@ -48,6 +54,7 @@ interface UserMessageCacheEntry {
   trailingOverflow: boolean;
   turns: Map<string, CodexRolloutUserMessage[]>;
   itemIds: Set<string>;
+  asyncMessages: Map<string, CodexRolloutAsyncMessage>;
   goalKey?: string;
   pendingGoal?: { key: string; objective: string };
 }
@@ -351,6 +358,7 @@ export class CodexRolloutUserMessageReader {
             trailingOverflow: false,
             turns: new Map(),
             itemIds: new Set(),
+            asyncMessages: new Map(),
           };
       await this.readAppended(handle, entry, metadata.size);
       entry.size = metadata.size;
@@ -364,6 +372,11 @@ export class CodexRolloutUserMessageReader {
     } finally {
       await handle?.close().catch(() => undefined);
     }
+  }
+
+  async readAsyncMessages(path: string): Promise<CodexRolloutAsyncMessage[]> {
+    await this.read(path);
+    return [...(this.cache.get(path)?.asyncMessages.values() ?? [])];
   }
 
   private async readAppended(
@@ -442,12 +455,21 @@ export class CodexRolloutUserMessageReader {
       }
       if (record.type !== "event_msg" || payload.type !== "item_completed") return;
       const item = asRecord(payload.item);
-      if (asString(item.type).toLowerCase() !== "usermessage" || !Array.isArray(item.content)) return;
       const turnId = asString(payload.turn_id)
         || asString(item.turn_id)
         || asString(asRecord(item.internal_chat_message_metadata_passthrough).turn_id);
       if (!turnId) return;
       const itemId = asString(item.id);
+      if (asString(item.type).toLowerCase() === "agentmessage" && item.delivery === "async"
+        && itemId && Array.isArray(item.questions)) {
+        entry.asyncMessages.set(itemId, {
+          turnId,
+          afterUserItemId: entry.turns.get(turnId)?.at(-1)?.itemId,
+          item: { ...item, type: "agentMessage", id: itemId },
+        });
+        return;
+      }
+      if (asString(item.type).toLowerCase() !== "usermessage" || !Array.isArray(item.content)) return;
       if (itemId && entry.itemIds.has(itemId)) return;
       if (itemId) entry.itemIds.add(itemId);
       const messages = entry.turns.get(turnId) ?? [];

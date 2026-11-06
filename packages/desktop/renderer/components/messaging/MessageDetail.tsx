@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { ArrowLeft, ExternalLink } from "lucide-react";
 import type { AgentType } from "../../../../core/src/domain/agent/agent-type";
-import type { DeliveryRecord, MessageRecord, RoutingCandidate } from "../../../../core/src/domain/messaging/types";
+import type { DeliveryRecord, MessageRecord, RoutingCandidate } from "@agent/messaging";
+import { canResolveMessageTarget } from "../../../../messaging/src/domain/routing";
 import { DELIVERY_LABELS, EXECUTION_LABELS, timeLabel } from "./client";
 import { postDashboardIntent } from "../../lib/dashboard-navigation-delivery";
 
@@ -16,9 +17,10 @@ export interface MessageDetailProps {
   onRetry: (deliveryId: string) => void;
 }
 export default function MessageDetail({ message, deliveries, candidates, busy, onBack, onOpenSession, onResolve, onRetry }: MessageDetailProps) {
-  const [projectId, setProjectId] = useState("");
-  const [agentType, setAgentType] = useState<AgentType>("codex");
+  const [projectId, setProjectId] = useState(message.execution.status === "failed" ? message.routing.decision?.projectId ?? "" : "");
+  const [agentType, setAgentType] = useState<AgentType>(message.routing.decision?.agentType ?? "codex");
   const decision = message.routing.decision;
+  const knowledge = decision?.knowledge ?? message.routing.initialDecision?.knowledge;
   const project = message.routing.candidates?.find(candidate => candidate.projectId === decision?.projectId);
   const selected = candidates.find(candidate => candidate.projectId === projectId);
   const original = typeof message.source.raw.displayText === "string" ? message.source.raw.displayText : message.source.text;
@@ -30,32 +32,36 @@ export default function MessageDetail({ message, deliveries, candidates, busy, o
     <section>
       <div className="messaging-section-label">收到的消息 <time>{timeLabel(message.source.occurredAt)}</time></div>
       <h2>{message.source.conversationName || message.source.conversationId}</h2>
-      <p className="messaging-muted">发送者 {message.source.senderId} · {message.source.directMention ? "正文直接 @我" : "未直接 @我"}{message.source.ownMessage ? " · 本人消息" : ""}</p>
+      <p className="messaging-muted">发送者 {message.source.senderId} · {message.source.conversationType === "direct" ? "私聊" : message.source.directMention ? "正文直接 @我" : "未直接 @我"}{message.source.ownMessage ? " · 本人消息" : ""}</p>
       <pre className="messaging-original">{original || "非文本或尚未识别的消息，展开原始数据查看"}</pre>
     </section>
     <section>
       <div className="messaging-section-label">路由判断 <span>{message.routing.confirmedByUser ? "用户确认" : message.routing.mode === "model" ? "模型判断" : "规则判断"}</span></div>
       {message.routing.initialDecision && <details><summary>查看最初判断</summary><p>{message.routing.initialDecision.model}</p><p>{message.routing.initialDecision.reason}</p></details>}
       {decision?.model && <p className="messaging-mono messaging-muted">{decision.model}</p>}
-      <p>{decision?.reason || (message.routing.status === "routing" ? "正在判断执行目标…" : "等待判断执行目标")}</p>
-      {!!message.routing.context?.length && <details><summary>判断时参考的近期消息</summary>{message.routing.context.map((item, index) => <pre key={index}>{item.text}{item.projectId ? "\n关联项目：" + item.projectId : ""}</pre>)}</details>}
-      <dl className="messaging-destination">
+      {message.routing.error
+        ? <p role="alert">消息判断失败：{message.routing.error}（尚未派发，未自动回传原聊天）</p>
+        : <p>{decision?.reason || (message.routing.status === "routing" ? "正在判断执行目标…" : "等待判断执行目标")}</p>}
+      {!!message.routing.context?.length && <details><summary>判断时参考的近期消息</summary>{message.routing.context.map((item, index) => <pre key={index}>{item.role === "assistant" ? "我：" : "对方："}{item.text}{item.projectId ? "\n关联项目：" + item.projectId : ""}</pre>)}</details>}
+      {knowledge && <details><summary>判断时参考的知识库</summary><p>{knowledge.status}</p><p>检索：{knowledge.query}</p>{knowledge.sources.map(path => <p key={path} className="messaging-mono">{path}</p>)}</details>}
+      {decision?.action !== "reply" && <dl className="messaging-destination">
         <div><dt>项目</dt><dd>{message.execution.projectName || project?.projectName || decision?.projectId || "尚未确定"}</dd></div>
         <div><dt>Agent</dt><dd>{decision?.agentType || "尚未确定"}</dd></div>
-      </dl>
-      {message.routing.status === "review" && <div className="messaging-resolve">
-        <p>选择目标后继续执行</p>
+      </dl>}
+      {canResolveMessageTarget(message) && <div className="messaging-resolve">
+        <p>{message.execution.status === "failed" ? "创建会话失败，尚未派发。确认目标后可重新派发" : "选择目标后继续执行"}</p>
         <select aria-label="确认项目" value={projectId} onChange={event => {
           setProjectId(event.target.value); setAgentType(candidates.find(item => item.projectId === event.target.value)?.agents[0] ?? "codex");
         }}><option value="">选择项目</option>{candidates.map(item => <option key={item.projectId} value={item.projectId}>{item.projectName}</option>)}</select>
         <select aria-label="确认 Agent" value={agentType} onChange={event => setAgentType(event.target.value as AgentType)}>
           {(selected?.agents ?? []).map(agent => <option key={agent} value={agent}>{agent}</option>)}
         </select>
-        <button type="button" disabled={busy || !selected?.agents.includes(agentType)} onClick={() => onResolve(projectId, agentType)}>确认路由</button>
+        <button type="button" disabled={busy || !selected?.agents.includes(agentType)} onClick={() => onResolve(projectId, agentType)}>{message.execution.status === "failed" ? "重新派发" : "确认路由"}</button>
       </div>}
     </section>
     <section>
-      <div className="messaging-section-label">会话执行 <span data-status={message.execution.status}>{EXECUTION_LABELS[message.execution.status]}</span></div>
+      <div className="messaging-section-label">{decision?.action === "reply" ? "私聊回复" : "会话执行"} <span data-status={message.execution.status}>{EXECUTION_LABELS[message.execution.status]}</span></div>
+      {message.execution.reply && <details><summary>回复参考的知识库</summary><p>{message.execution.reply.model}</p><p>{message.execution.reply.knowledge.status}</p><p>检索：{message.execution.reply.knowledge.query}</p>{message.execution.reply.knowledge.sources.map(path => <p key={path} className="messaging-mono">{path}</p>)}</details>}
       {message.execution.sessionId && <>
         <code className="messaging-session-id">{message.execution.sessionId}</code>
         {onOpenSession ? <button type="button" onClick={() => onOpenSession(message)}><ExternalLink size={14}/>打开会话</button>
@@ -76,7 +82,7 @@ export default function MessageDetail({ message, deliveries, candidates, busy, o
       {!deliveries.length && <p className="messaging-muted">尚未生成需要回传的事件。执行完成与回传送达分别记录。</p>}
       {deliveries.map(delivery => <div key={delivery.id} className="messaging-delivery">
         <div><strong>{delivery.target.kind === "origin" ? "原会话 · " : ""}{delivery.target.label}</strong><span data-status={delivery.status}>{DELIVERY_LABELS[delivery.status]}</span></div>
-        <small>{delivery.event === "completed" ? "完成通知" : delivery.event === "failed" ? "失败通知" : "等待确认通知"} · 已尝试 {delivery.attempts} 次</small>
+        <small>{delivery.purpose === "reply" ? "私聊回复" : delivery.event === "completed" ? "完成通知" : delivery.event === "failed" ? "失败通知" : "等待确认通知"} · 已尝试 {delivery.attempts} 次</small>
         {delivery.error && <p className="messaging-inline-error">{delivery.error}</p>}
         <details><summary>查看回传内容与回执</summary><pre>{delivery.text}</pre><pre>{delivery.receipt || "尚无送达回执"}</pre></details>
         {["failed", "blocked"].includes(delivery.status) && <button type="button" disabled={busy || delivery.attempts >= 5} onClick={() => onRetry(delivery.id)}>重试回传</button>}

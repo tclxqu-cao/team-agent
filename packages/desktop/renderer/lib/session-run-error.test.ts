@@ -35,6 +35,25 @@ describe("restored session run failures", () => {
     } }] })).toBe("运行失败：需要重新登录或检查凭据");
   });
 
+  it("does not carry an interrupted attempt below a newer retry without a projected result", () => {
+    const interrupted = { status: "interrupted" as const, reason: "runtime_interrupted", durationMs: 10, runId: "old" };
+    const detail = { status: "idle" as const, messages: [
+      { role: "user", content: "按推荐来", presentation: { runResult: interrupted } },
+      { role: "user", content: "按推荐来" },
+      { role: "assistant", content: "已建好并实测跑通" },
+    ] };
+    expect(latestSessionRunError(detail)).toBeNull();
+    expect(latestSessionRunError({ ...detail, events: [{ type: "error", runId: "old", result: interrupted }] })).toBeNull();
+  });
+
+  it("keeps a real failure on the current turn even when there is partial assistant output", () => {
+    const failed = { status: "failed" as const, reason: "quota_exceeded", durationMs: 10, runId: "current" };
+    expect(latestSessionRunError({ status: "idle", messages: [
+      { role: "user", content: "request", presentation: { runResult: failed } },
+      { role: "assistant", content: "只有部分输出，尚未完成" },
+    ] })).toBe("运行失败：额度不足");
+  });
+
   it("does not misinterpret tool errors, occupied-session recovery, or older trace pages", () => {
     expect(latestSessionRunError({ status: "idle", events: [
       { type: "tool_result", result: { toolCallId: "t", isError: true, content: "bad tool" } },

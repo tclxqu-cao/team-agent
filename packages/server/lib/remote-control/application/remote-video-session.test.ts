@@ -36,6 +36,46 @@ function fixture({ failHigh = false, failBaselineTransport = false, log = vi.fn(
 }
 
 describe('RemoteVideoSession', () => {
+  it('falls back immediately when the viewer rejects the High video m-line', async () => {
+    const f = fixture();
+    try {
+      await f.session.handle({ kind: 'start', receiverProfiles: ['high', 'baseline'] });
+      f.transports[0].answer.mockRejectedValueOnce(new Error('Viewer rejected H.264 video'));
+      await f.session.handle({ kind: 'answer', sdp: { type: 'answer', sdp: 'rejected video' } });
+      expect(f.transportFactory).toHaveBeenCalledTimes(2);
+      expect(f.transports[1].start).toHaveBeenCalledWith('baseline');
+      expect(f.signal).toHaveBeenCalledWith(expect.objectContaining({
+        kind: 'state', state: 'connecting', fallbackReason: 'Viewer rejected H.264 video',
+      }));
+    } finally { await f.session.stop(); }
+  });
+
+  it('requires actual connected playback before reducing fallback capture work', async () => {
+    const f = fixture();
+    try {
+      await f.session.handle({ kind: 'viewer-trace', event: 'playback-ready' });
+      expect(f.session.playbackHealthy).toBe(false);
+      await f.session.handle({ kind: 'start', receiverProfiles: ['baseline'] });
+      f.transports[0].connected = true;
+      await f.state('connected');
+      expect(f.session.playbackHealthy).toBe(false);
+      await f.session.handle({ kind: 'viewer-trace', event: 'playback-ready' });
+      expect(f.session.playbackHealthy).toBe(true);
+      await f.session.handle({ kind: 'viewer-trace', event: 'jpeg-fallback' });
+      expect(f.session.playbackHealthy).toBe(false);
+      await f.session.handle({ kind: 'viewer-trace', event: 'playback-ready' });
+      f.session.pause();
+      expect(f.session.playbackHealthy).toBe(false);
+      await f.session.handle({ kind: 'viewer-trace', event: 'playback-ready' });
+      expect(f.session.playbackHealthy).toBe(false);
+      await f.session.resume();
+      await f.session.handle({ kind: 'viewer-trace', event: 'playback-ready' });
+      expect(f.session.playbackHealthy).toBe(true);
+      await f.session.stop();
+      expect(f.session.playbackHealthy).toBe(false);
+    } finally { await f.session.stop(); }
+  });
+
   it('counts feedback once per sampling interval, then expires it', async () => {
     vi.useFakeTimers();
     const f = fixture();

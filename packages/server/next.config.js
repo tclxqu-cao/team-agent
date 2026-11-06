@@ -13,7 +13,7 @@ const nextConfig = {
   ...(allowedDevOrigins.length ? { allowedDevOrigins } : {}),
   experimental: {
     externalDir: true,
-    serverComponentsExternalPackages: ["@anthropic-ai/claude-agent-sdk", "@agent/core", "@agent/computer-use", "@agent/native-runtime"],
+    serverComponentsExternalPackages: ["@anthropic-ai/claude-agent-sdk", "@agent/core", "@agent/computer-use", "@agent/native-runtime", "@agent/messaging"],
   },
   webpack: (config, { isServer }) => {
     config.resolve.extensionAlias = {
@@ -27,7 +27,7 @@ const nextConfig = {
     config.externals.push({ "@anthropic-ai/claude-agent-sdk": "commonjs @anthropic-ai/claude-agent-sdk" });
     // These ESM packages are shipped beside the server. Bundling their
     // createRequire(import.meta.url) embeds the build host's absolute path.
-    if (isServer) for (const name of ["@agent/core", "@agent/computer-use", "@agent/native-runtime"]) {
+    if (isServer) for (const name of ["@agent/core", "@agent/computer-use", "@agent/native-runtime", "@agent/messaging"]) {
       config.externals.push({ [name]: `commonjs ${name}` });
     }
     return config;

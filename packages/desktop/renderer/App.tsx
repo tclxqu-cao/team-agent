@@ -1,3 +1,4 @@
+import { isPageActive } from "./lib/page-activity";
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { createPortal } from "react-dom";
 import { History, Inbox, LoaderCircle, Plus, Search } from "lucide-react";
@@ -15,7 +16,7 @@ import { openShellMessaging } from "./lib/messaging-navigation";
 import { MESSAGING_OPEN_QUERY } from "../../core/src/domain/web-console/MessagingBridge";
 import SupervisionNotifier from "./components/collaboration/SupervisionNotifier";
 import { collaborationRequest } from "./components/collaboration/client";
-import { resolveDashboardSession } from "./lib/dashboard-session-navigation";
+import { getCachedDashboardSession, resolveDashboardSession } from "./lib/dashboard-session-navigation";
 import { postDashboardIntent } from "./lib/dashboard-navigation-delivery";
 import type { SessionHistorySeed } from "./lib/session-history";
 import type { AgentRailSessions } from "./lib/agent-rail-sessions";
@@ -31,6 +32,7 @@ import DesktopLiveControlBanner from "./components/DesktopLiveControlBanner";
 import { renewVoiceConversation } from "./lib/voice-command";
 import {
   getSidebarSessionVisualState,
+  hasPendingSessionQuestion,
   SIDEBAR_SESSION_STATUS_LABELS,
 } from "./lib/sidebar-session-status";
 import {
@@ -294,7 +296,9 @@ export default function App() {
   const projectSessionRequestIds = useRef(new Map<string, number>());
   const workspaceRequestIds = useRef(new Map<AgentType, number>());
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(initialPartition.selectedWorkspaceId);
-  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(initialPartition.selectedSessionId);
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(() =>
+    useUIStore.getState().navigationLayout === "all-sessions" ? null : initialPartition.selectedSessionId,
+  );
   const [createdSessionReceipt, setCreatedSessionReceipt] = useState<Session | null>(null);
   const selectedProjectIdRef = useRef(selectedProjectId);
   const selectedSessionIdRef = useRef(selectedSessionId);
@@ -415,7 +419,7 @@ export default function App() {
   const runningSessionId = useAgentStore((s) => s.runningSessionId);
   const sessionsNeedingInput = useAgentStore(useShallow((s) =>
     Object.entries(s.messagesBySession)
-      .filter(([, messages]) => messages.some((message) => message.askUser && !message.askUser.answered))
+      .filter(([, messages]) => hasPendingSessionQuestion(messages))
       .map(([sessionId]) => sessionId),
   ));
 
@@ -914,7 +918,7 @@ export default function App() {
     window.requestAnimationFrame(() => {
       if (sidebarScrollRef.current) sidebarScrollRef.current.scrollTop = partition.sidebarScrollTop;
     });
-    if (!allSessionsLayout || currentAgent !== agentType) {
+    if (!allSessionsLayout) {
       void loadProjects(agentType, {
         refresh: partition.workspaces.length > 0,
         since: partition.watermark,
@@ -1043,6 +1047,16 @@ export default function App() {
       }
       const cached = workspaceCacheRef.current.agents[intent.session.agentType];
       const snapshot = cached ? { workspaces: cached.workspaces, sessions: Object.values(cached.sessions).flatMap(entry => entry.data) } : undefined;
+      const retained = selectedSessionIdRef.current !== intent.session.id
+        && useAgentStore.getState().getMessagesForSession(intent.session.id).length > 0
+        ? getCachedDashboardSession(intent.session, snapshot) : undefined;
+      if (retained) {
+        setInitialSessionHistory(undefined);
+        navigationHistory.current = { controller, sessionId: retained.session.id };
+        openAgentSession(retained.session, retained.snapshot, true);
+        setPendingSessionNavigation(null);
+        return;
+      }
       const result = await resolveDashboardSession(window.agentApi, intent.session, controller.signal, snapshot);
       if (!controller.signal.aborted) {
         setInitialSessionHistory(result.initialHistory);
@@ -1171,6 +1185,8 @@ export default function App() {
         Object.entries(prev).filter(([projectId]) => projectIds.has(projectId)),
       ));
 
+      // The combined list does not render workspace validity or directory rows.
+      if (allSessionsLayout) return;
       const invalid = new Set<string>();
       await Promise.all(list.map(async (project) => {
         if (project.description && !(await window.agentApi!.checkProjectPath(project.description))) {
@@ -1371,7 +1387,7 @@ export default function App() {
   useEffect(() => {
     if (allSessionsLayout) return;
     const timer = window.setInterval(() => {
-      if (document.visibilityState !== "visible" || workspaceLoading) return;
+      if (!isPageActive() || workspaceLoading) return;
       void loadProjects(activeAgent, {
         refresh: true,
         since: workspaceWatermark,
@@ -1387,7 +1403,7 @@ export default function App() {
     if (!window.agentApi || allSessionsLayout) return;
     let cancelled = false;
     const refresh = () => {
-      if (cancelled || document.visibilityState !== "visible") return;
+      if (cancelled || !isPageActive()) return;
       const visibleProjectIds = visibleWorkspaceIds(selectedProjectId, expandedProjects);
       const refreshProjectIds = refreshableWorkspaceIds(
         visibleProjectIds,
@@ -1402,7 +1418,7 @@ export default function App() {
       }
     };
     const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible") refresh();
+      if (isPageActive()) refresh();
     };
     // The phone keeps the iframe mounted while its drawer is closed. Read
     // native recency when opening it instead of waiting for the next poll.
@@ -2551,6 +2567,20 @@ export default function App() {
             }}
             onSelectSession={(sessionId) => {
               setSelectedSessionId(sessionId);
+            }}
+            onParallelSessionSelected={session => {
+              navigationRequest.current?.abort();
+              navigationRequest.current = null;
+              navigationHistory.current = null;
+              setPendingSessionNavigation(null);
+              setInitialSessionHistory(undefined);
+              if (activeAgentRef.current !== session.agentType) handleAgentChange(session.agentType);
+              setCreatedSessionReceipt(session);
+              const projectId = session.projectId && projectsRef.current.some(project => project.id === session.projectId)
+                ? session.projectId : null;
+              applySidebarSelection({ projectId, sessionId: session.id });
+              useAgentStore.getState().setSessionId(session.id);
+              setAllSessionsRevision(revision => revision + 1);
             }}
             onSubAgentEvent={(ev) => {
               if (ev.type === 'started') {

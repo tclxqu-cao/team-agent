@@ -79,6 +79,8 @@ export interface UnifiedSessionSummary {
   sourceLabel: string;
   /** Intrinsic native restriction, independent of transient runtime ownership. */
   readOnly?: boolean;
+  /** Verified text-only route to the external desktop owner; occupancy stays external. */
+  externalGuideSupported?: boolean;
   canResume: boolean;
   canDelete: boolean;
   permissionMode?: ToolPermissionMode;

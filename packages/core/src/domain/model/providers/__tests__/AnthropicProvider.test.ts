@@ -15,6 +15,23 @@ const streamResponse = (...events: unknown[]) => new Response([
 describe("AnthropicProvider reported usage", () => {
   const createProvider = () => new AnthropicProvider({ apiKey: "test", modelId: "claude-test", baseUrl: "https://example.com" });
 
+  it.each([23_456, 65_537])("uses the model metadata's actual max_tokens=%i when native capacity is selected", async nativeLimit => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(Response.json({ id: "resolved-model", max_tokens: nativeLimit }))
+      .mockResolvedValueOnce(streamResponse({ type: "message_stop" }));
+    vi.stubGlobal("fetch", fetchMock);
+    await collectEvents(new AnthropicProvider({ apiKey: "test", modelId: "dynamic/alias", baseUrl: "https://example.com", maxTokens: null }));
+    expect(fetchMock.mock.calls[0][0]).toBe("https://example.com/v1/models/dynamic%2Falias");
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body).max_tokens).toBe(nativeLimit);
+  });
+
+  it("does not invent an output limit when the model metadata is missing", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(Response.json({ id: "model", max_tokens: null }));
+    vi.stubGlobal("fetch", fetchMock);
+    expect(await collectEvents(new AnthropicProvider({ apiKey: "test", modelId: "model", baseUrl: "https://example.com", maxTokens: null })))
+      .toEqual([{ type: "error", code: "model_capabilities_unavailable", message: "模型服务未返回有效的原生输出上限" }]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("merges start input/cache with final output once across byte-sliced SSE frames", async () => {
     const fetchMock = vi.fn().mockResolvedValue(fixtureResponse([
       ": heartbeat", "event: message_start", "data: {malformed", ...anthropicUsageFrames,

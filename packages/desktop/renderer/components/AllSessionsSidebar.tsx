@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Search } from "lucide-react";
 import type { CatalogSession, SessionCatalogPage } from "../../../core/src/domain/supervision/types";
-import { loadAllSessions, orderAllSessions } from "../lib/all-sessions";
+import { readSessionCatalogPage, mergeCatalogSessions, orderAllSessions } from "../lib/all-sessions";
+import { usePageActive, isPageActive } from "../lib/page-activity";
 import { getSidebarSessionVisualState, SIDEBAR_SESSION_STATUS_LABELS } from "../lib/sidebar-session-status";
 import { collaborationRequest } from "./collaboration/client";
-import { AGENT_LABELS } from "../lib/agent-catalog";
 import SidebarSessionRow, { type SidebarDeleteAnchor } from "./SidebarSessionRow";
 import SidebarRefreshButton from "./SidebarRefreshButton";
 import "../styles/all-sessions.css";
@@ -21,84 +21,96 @@ interface Props {
 }
 
 export default function AllSessionsSidebar(props: Props) {
+  const active = usePageActive();
   const [sessions, setSessions] = useState<CatalogSession[]>([]);
   const [total, setTotal] = useState(0);
   const [query, setQuery] = useState("");
-  const [limit, setLimit] = useState(50);
+  const [search, setSearch] = useState("");
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const request = useRef<AbortController | null>(null);
-  const hasSnapshot = useRef(false);
-  const refresh = useCallback(async () => {
-    request.current?.abort();
+  const requestQuery = useRef("");
+  const refreshedRevision = useRef(`${props.revision}:${props.runningSessionId}`);
+  const snapshot = useRef({ query: "", rows: [] as CatalogSession[], cursor: null as string | null });
+  const scroll = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSearch(query.trim()), 250);
+    return () => window.clearTimeout(timer);
+  }, [query]);
+
+  const load = useCallback(async (reset: boolean) => {
+    if (!isPageActive() || (!reset && (request.current || !snapshot.current.cursor))) return;
+    if (request.current && !request.current.signal.aborted && requestQuery.current === search) return;
+    if (reset) request.current?.abort();
     const controller = new AbortController();
     request.current = controller;
-    setLoading(true);
-    setError(null);
-    const showProgress = !hasSnapshot.current;
-    let snapshot: { rows: CatalogSession[]; total: number } | undefined;
+    requestQuery.current = search;
+    const previous = snapshot.current;
+    setLoading(true); setError(null);
     try {
-      await loadAllSessions(
-        cursor => collaborationRequest<SessionCatalogPage>({ action: "sessionCatalog", limit: 100, cursor }),
-        controller.signal,
-        (rows, count) => {
-          snapshot = { rows, total: count };
-          if (showProgress) { setSessions(rows); setTotal(count); hasSnapshot.current = true; }
-        },
+      const page = await readSessionCatalogPage(
+        cursor => collaborationRequest<SessionCatalogPage>({ action: "sessionCatalog", query: search, limit: 20, cursor }),
+        controller.signal, reset ? undefined : previous.cursor ?? undefined,
       );
-      // Keep the current scroll height while refreshing later history pages.
-      if (snapshot) { setSessions(snapshot.rows); setTotal(snapshot.total); hasSnapshot.current = true; }
+      const rows = reset ? page.data : mergeCatalogSessions(previous.rows, page.data);
+      snapshot.current = { query: search, rows, cursor: page.nextCursor };
+      setSessions(rows); setTotal(page.total); setNextCursor(page.nextCursor);
+      if (reset && previous.query !== search && scroll.current) scroll.current.scrollTop = 0;
     } catch (err) {
       if (!controller.signal.aborted) setError(err instanceof Error ? err.message : "会话加载失败");
     } finally {
-      if (!controller.signal.aborted) { request.current = null; setLoading(false); }
+      if (request.current === controller) { request.current = null; setLoading(false); }
     }
-  }, []);
+  }, [search]);
 
   useEffect(() => {
-    void refresh();
+    if (!active) return;
+    const revision = `${props.revision}:${props.runningSessionId}`;
+    const invalidated = refreshedRevision.current !== revision;
+    refreshedRevision.current = revision;
+    // Refresh only the first page. An expanded history keeps its snapshot and scroll position.
+    if (invalidated || snapshot.current.query !== search || snapshot.current.rows.length <= 20) void load(true);
     const refreshIfIdle = () => {
-      if (document.visibilityState === "visible" && !request.current) void refresh();
+      if (isPageActive() && !request.current && snapshot.current.rows.length <= 20) void load(true);
     };
     const timer = window.setInterval(refreshIfIdle, 15_000);
     window.addEventListener("focus", refreshIfIdle);
-    document.addEventListener("visibilitychange", refreshIfIdle);
     return () => {
       request.current?.abort();
       window.clearInterval(timer);
       window.removeEventListener("focus", refreshIfIdle);
-      document.removeEventListener("visibilitychange", refreshIfIdle);
     };
-  }, [refresh, props.revision, props.runningSessionId]);
+  }, [active, load, search, props.revision, props.runningSessionId]);
 
   const activeIds = [...props.needsInput, ...(props.runningSessionId ? [props.runningSessionId] : [])];
   const ordered = orderAllSessions(sessions, props.pinnedIds, activeIds);
   const normalized = query.trim().toLocaleLowerCase();
-  const visible = ordered.filter(session => !normalized
-    || `${session.title} ${session.cwd} ${AGENT_LABELS[session.agentType]}`.toLocaleLowerCase().includes(normalized));
+  const visible = ordered;
   const pinned = useMemo(() => new Set(props.pinnedIds), [props.pinnedIds]);
 
   return <>
     <label className="sidebar-search-field all-sessions-search">
       <Search size={15} aria-hidden="true" />
       <input aria-label="搜索所有 Agent 的会话" placeholder="搜索会话或目录" value={query}
-        onChange={event => { setQuery(event.target.value); setLimit(50); }} />
+        onChange={event => { setQuery(event.target.value); }} />
     </label>
     <div className="sidebar-project-toolbar">
-      <div className="sidebar-project-heading"><span className="sidebar-project-title">所有会话</span><span className="sidebar-project-count">{normalized ? visible.length : total}</span></div>
+      <div className="sidebar-project-heading"><span className="sidebar-project-title">所有会话</span><span className="sidebar-project-count">{total}</span></div>
       <div className="sidebar-project-actions"><span className="all-sessions-sort-label">进行中优先</span>
-        <SidebarRefreshButton loading={loading} error={error} subject="所有会话" onRefresh={() => void refresh()} />
+        <SidebarRefreshButton loading={loading} error={error} subject="所有会话" onRefresh={() => void load(true)} />
       </div>
     </div>
-    <div className="app-sidebar-scroll all-sessions-list" aria-label="所有 Agent 会话" aria-busy={loading}
+    <div ref={scroll} className="app-sidebar-scroll all-sessions-list" aria-label="所有 Agent 会话" aria-busy={loading}
       onScroll={event => {
         const node = event.currentTarget;
-        if (node.scrollHeight - node.scrollTop - node.clientHeight < 120) setLimit(current => Math.min(current + 50, visible.length));
+        if (node.scrollTop > 0 && node.scrollHeight - node.scrollTop - node.clientHeight < 120) void load(false);
       }}>
-      {error && <div role="alert" className="sidebar-load-error"><span>{error}</span><button onClick={() => void refresh()}>重试</button></div>}
+      {error && <div role="alert" className="sidebar-load-error"><span>{error}</span><button onClick={() => void load(true)}>重试</button></div>}
       {loading && !sessions.length && <p className="all-sessions-empty" role="status">正在加载所有会话…</p>}
       {!loading && !error && !visible.length && <p className="all-sessions-empty">{normalized ? "没有匹配的会话" : "暂无会话，开始一个新任务吧"}</p>}
-      {visible.slice(0, limit).map(session => {
+      {visible.map(session => {
         const activity = props.needsInput.includes(session.id) ? "needs-input"
           : props.runningSessionId === session.id ? "running" : session.status === "failed" ? "error" : session.status;
         const visualState = getSidebarSessionVisualState(activity);
@@ -111,7 +123,7 @@ export default function AllSessionsSidebar(props: Props) {
         }} onSelect={() => props.onSelect(session)} onPin={() => props.onPin(session.id)}
           onDelete={anchor => props.onDelete(session, anchor)} />;
       })}
-      {visible.length > limit && <button className="all-sessions-more" onClick={() => setLimit(current => current + 50)}>加载更早的会话</button>}
+      {nextCursor && <button className="all-sessions-more" disabled={loading} onClick={() => void load(false)}>{loading ? "正在加载…" : "加载更早的会话"}</button>}
     </div>
   </>;
 }

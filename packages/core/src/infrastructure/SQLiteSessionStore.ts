@@ -105,6 +105,21 @@ export class SQLiteSessionStore implements ISessionStore {
     return rows.map((r) => this.rowToSession(r));
   }
 
+  async listSummaries(projectId?: string) {
+    const db = getDatabase(this.baseDir);
+    const columns = "id, project_id, parent_id, title, status, created, updated, metadata";
+    const rows = (projectId
+      ? db.db.prepare(`SELECT ${columns} FROM sessions WHERE project_id = ? ORDER BY updated DESC`).all(projectId)
+      : db.db.prepare(`SELECT ${columns} FROM sessions ORDER BY updated DESC`).all()) as Array<Record<string, unknown>>;
+    return rows.map(row => ({
+      id: row.id as string, projectId: (row.project_id as string | null) ?? "",
+      parentSessionId: (row.parent_id as string | null) ?? undefined,
+      title: row.title as string, status: row.status as Session["status"],
+      created: row.created as string, updated: row.updated as string,
+      metadata: JSON.parse(row.metadata as string) as Record<string, unknown>,
+    }));
+  }
+
   async listChildren(parentId: string): Promise<Session[]> {
     const db = getDatabase(this.baseDir);
     const rows = db.db.prepare("SELECT * FROM sessions WHERE parent_id = ? ORDER BY updated DESC").all(parentId) as Array<Record<string, unknown>>;

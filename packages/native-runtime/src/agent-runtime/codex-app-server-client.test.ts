@@ -469,7 +469,8 @@ describe("CodexAppServerClient", () => {
     await client.dispose();
   });
 
-  it("probes shared mode again after a standalone connection restarts", async () => {
+  it("probes shared mode again after the failed startup cooldown expires", async () => {
+    let now = 0;
     const firstDaemon = fakeProcess(5001);
     const standalone = fakeProcess(5002);
     const secondDaemon = fakeProcess(5003);
@@ -492,10 +493,12 @@ describe("CodexAppServerClient", () => {
       spawnProcess: spawnProcess as never,
       resolveDesktopEndpoint: async () => null,
       requestTimeoutMs: 1000,
+      now: () => now,
     });
 
     await expect(client.request("thread/list", {})).resolves.toEqual({ data: ["standalone"], nextCursor: null });
     expect(client.mode).toBe("standalone");
+    now = 5 * 60_000;
     await client.restart();
 
     expect(calls).toEqual([
@@ -507,6 +510,56 @@ describe("CodexAppServerClient", () => {
     expect(client.pid).toBe(5004);
     expect(client.mode).toBe("shared");
     await client.dispose();
+  });
+
+  it("skips failed startup paths across repeated discovery restarts", async () => {
+    const desktop = vi.fn().mockRejectedValue(new Error("Desktop endpoint unavailable"));
+    const shared = vi.fn().mockRejectedValue(new Error("daemon start timed out"));
+    const standalone = vi.fn(async () => {
+      const child = fakeProcess();
+      handleJsonRpc(child, { responses: { "thread/list": { data: ["available"] } } });
+      return child as never;
+    });
+    const client = new CodexAppServerClient({ launcher: { attempts: () => [
+      { mode: "desktop", launch: desktop },
+      { mode: "shared", launch: shared },
+      { mode: "standalone", launch: standalone },
+    ] } });
+    try {
+      await client.request("thread/list", {});
+      for (let refresh = 0; refresh < 2; refresh += 1) {
+        await client.restart();
+        await expect(client.request("thread/list", {})).resolves.toEqual({ data: ["available"] });
+      }
+      expect(desktop).toHaveBeenCalledTimes(1);
+      expect(shared).toHaveBeenCalledTimes(1);
+      expect(standalone).toHaveBeenCalledTimes(3);
+    } finally {
+      await client.dispose();
+    }
+  });
+
+  it("tries a cooling transport immediately if the working fallback stops starting", async () => {
+    const standaloneChild = fakeProcess(5101);
+    const sharedChild = fakeProcess(5102);
+    handleJsonRpc(standaloneChild, { responses: { "thread/list": { data: ["standalone"] } } });
+    handleWebSocketJsonRpc(sharedChild, { responses: { "thread/list": { data: ["recovered"] } } });
+    const shared = vi.fn().mockRejectedValueOnce(new Error("daemon unavailable")).mockResolvedValue(sharedChild);
+    const standalone = vi.fn().mockResolvedValueOnce(standaloneChild).mockRejectedValueOnce(new Error("spawn failed"));
+    const client = new CodexAppServerClient({ launcher: { attempts: () => [
+      { mode: "shared", launch: shared as never },
+      { mode: "standalone", launch: standalone as never },
+    ] } });
+    try {
+      await client.request("thread/list", {});
+      await client.restart();
+      await expect(client.request("thread/list", {})).resolves.toEqual({ data: ["recovered"] });
+      expect(shared).toHaveBeenCalledTimes(2);
+      expect(standalone).toHaveBeenCalledTimes(2);
+      expect(client.mode).toBe("shared");
+    } finally {
+      await client.dispose();
+    }
   });
 
   it("rejects when both shared and standalone startup fail", async () => {

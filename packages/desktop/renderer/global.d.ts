@@ -1,10 +1,12 @@
 import type { SessionForkPoint } from "@agent/core";
+import type { CreateParallelSessionsInput, ParallelSessionGroup, SessionMessageRunOptions } from "@agent/core";
+export type { CreateParallelSessionsInput, SessionMessageRunOptions } from "@agent/core";
 import type { AgentType } from "../../core/src/domain/agent/agent-type";
 export type { AgentType } from "../../core/src/domain/agent/agent-type";
 import type { RuntimeBackgroundJob, RuntimeBackgroundJobOutput, RuntimeBackgroundJobStopResult } from "../../native-runtime/src/agent-runtime/background-jobs";
 export type { RuntimeBackgroundJob, RuntimeBackgroundJobOutput, RuntimeBackgroundJobStopResult } from "../../native-runtime/src/agent-runtime/background-jobs";
 import type { CollaborationCommand } from "@agent/core/domain/collaboration/types";
-import type { MessagingCommand } from "@agent/core/domain/messaging/types";
+import type { MessagingCommand } from "@agent/messaging";
 export type { NativeGoalMutation, NativeGoalRef, NativeSessionGoal } from "../../native-runtime/src/agent-runtime/native-session-goal";
 import type { NativeGoalMutation, NativeSessionGoal } from "../../native-runtime/src/agent-runtime/native-session-goal";
 import type { BrowserLiveSessionView } from "../../core/src/domain/browser-live/index";
@@ -229,6 +231,8 @@ export interface UnifiedSessionSummary {
   status: "idle" | "running" | "completed" | "failed";
   occupancy: "available" | "owned-by-customer-agent" | "owned-externally";
   sourceLabel: string;
+  readOnly?: boolean;
+  externalGuideSupported?: boolean;
   canResume: boolean;
   canDelete: boolean;
   permissionMode?: ToolPermissionMode;
@@ -254,6 +258,8 @@ export interface RuntimeHealth {
   version?: string;
   error?: string;
 }
+
+export type ParallelConversation = ParallelSessionGroup<UnifiedSessionSummary>;
 
 export interface AgentApi {
   getUpdateStatus(): Promise<UpdateStatus>;
@@ -297,7 +303,7 @@ export interface AgentApi {
   collaboration(command: CollaborationCommand): Promise<unknown>;
   messaging(command: MessagingCommand): Promise<unknown>;
   steer(input: string, sessionId: string, agentName?: string): Promise<boolean>;
-  abort(sessionId?: string): Promise<void>;
+  abort(sessionId?: string, trigger?: "button" | "keyboard"): Promise<void>;
   answerQuestion(questionId: string, answer: string, selectedIndices?: number[]): Promise<boolean>;
   subscribe(): Promise<void>;
   onEvent(callback: (event: unknown) => void): () => void;
@@ -386,7 +392,7 @@ export interface AgentApi {
   cancelSessionGoal(id: string, goalId: string): Promise<SessionGoalState>;
   enqueueSessionMessage(
     id: string,
-    message: { sourceMessageId: string; content: string; images?: string[]; agentIds?: string[]; agentName?: string },
+    message: { sourceMessageId: string; content: string; images?: string[]; agentIds?: string[]; agentName?: string; runOptions?: SessionMessageRunOptions },
   ): Promise<SessionGoalState>;
   updateSessionMessage(id: string, messageId: string, content: string): Promise<SessionGoalState>;
   reorderSessionMessages(id: string, orderedIds: string[]): Promise<SessionGoalState>;
@@ -399,6 +405,8 @@ export interface AgentApi {
   handoffSession?(id: string): Promise<unknown>;
   releaseCodexSession?(id: string): Promise<void>;
   createSession(title: string, projectId?: string, agentType?: AgentType, cwd?: string): Promise<UnifiedSessionSummary>;
+  createParallelSessions(input: CreateParallelSessionsInput): Promise<ParallelConversation>;
+  getParallelSessionGroup(sessionId: string): Promise<ParallelConversation | null>;
   forkSession(id: string, point?: SessionForkPoint): Promise<UnifiedSessionSummary>;
   deleteSession(id: string): Promise<void>;
   refreshSessions(projectId?: string): Promise<UnifiedSessionSummary[]>;

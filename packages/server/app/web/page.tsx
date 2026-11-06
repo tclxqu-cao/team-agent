@@ -29,6 +29,7 @@ import { readWebShellOpenBrowserLive } from "../../../core/src/domain/web-consol
 import { readLiveFramePacket, LIVE_FRAME_PACKET_TYPE } from "../../../core/src/infrastructure/live-view/frame-packet";
 import type { FileTreeRevealRequest } from "./fileTreeReveal";
 import { useGateway } from "./useGateway";
+import { useFrameActivity } from "./useFrameActivity";
 import AuthGate, { type WebAuthController } from "./AuthGate";
 import HistoryPanel from "./HistoryPanel";
 import ThemePicker from "./ThemePicker";
@@ -90,6 +91,7 @@ function AuthenticatedConsole({
   onWorkspaceReady: () => void;
 }) {
   const [selectedPage, setSelectedPage] = useState<ComputerPage | null>(null);
+  const activityTrackRef = useRef<HTMLDivElement>(null);
   const [pageReloadKey, setPageReloadKey] = useState(0);
   const selectComputerPage = useCallback((page: ComputerPage | null) => {
     if (page?.openMode === "new-tab") { window.open(page.url, "_blank", "noopener,noreferrer"); return; }
@@ -140,6 +142,7 @@ function AuthenticatedConsole({
   const tabsRef = useRef(tabs);
   tabsRef.current = tabs;
   const [activeTerminalId, setActiveTerminalId] = useState<string | null>(WEBAPP_TAB.id);
+  useFrameActivity(activityTrackRef, activeTerminalId, !selectedPage);
   const [cwdByTerminal, setCwdByTerminal] = useState<Record<string, string>>({});
   const tabsHydrated = useRef(false);
   const [workspaceRestored, setWorkspaceRestored] = useState(false);
@@ -778,9 +781,9 @@ function AuthenticatedConsole({
           onPointerUpCapture={(event)=>{const start=swipeStart.current;if(!start||event.pointerId!==start.pointerId)return;const dx=event.clientX-start.x;if(start.axis==="horizontal"&&Math.abs(dx)>=64)handleTabSwipeEnd(dx);else resetSwipe();}}
           onPointerCancelCapture={resetSwipe}
         >
-          <div className="terminal-track" style={{transform:`translate3d(calc(${-activeIndex*100}% + ${swipeDelta}px),0,0)`,transition:swiping?"none":"transform 260ms cubic-bezier(.22,.8,.32,1)"}}>
+          <div ref={activityTrackRef} className="terminal-track" style={{transform:`translate3d(calc(${-activeIndex*100}% + ${swipeDelta}px),0,0)`,transition:swiping?"none":"transform 260ms cubic-bezier(.22,.8,.32,1)"}}>
           {tabs.map((tab) => (
-            <div className="terminal-slide" key={tab.id} style={{ position: "relative" }}>
+            <div className="terminal-slide" data-console-tab={tab.id} key={tab.id} style={{ position: "relative" }}>
               {tab.kind === "webapp" ? (
                 <iframe ref={webappFrameRef} className="webapp-frame" src={consoleFrameUrl("/app/")} title={tab.title} onLoad={postAppearanceToWebapp} />
               ) : tab.kind === "messaging" ? (

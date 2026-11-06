@@ -603,6 +603,44 @@
   background: var(--bg-elevated);
   box-shadow: var(--shadow-md);
 }
+
+.composer-agent-picker-heading { padding: 6px 10px; font-size: 12px; color: var(--text-muted); }
+.composer-agent-picker-menu > .composer-agent-picker-done {
+  justify-content: center; margin-top: 4px; background: var(--control-active); font-size: 13px;
+}
+.composer-agent-picker-done:disabled { opacity: .45; cursor: default; }
+.parallel-agent-tabs { display: flex; align-items: center; gap: 6px; padding: 4px 12px 6px; flex-shrink: 0; overflow-x: auto; }
+.parallel-agent-tab {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  min-width: 52px; min-height: 34px; padding: 5px 9px; flex-shrink: 0;
+  border: 1px solid var(--border-subtle); border-radius: 9px;
+  color: var(--text-primary); background: transparent; cursor: pointer; -webkit-app-region: no-drag;
+}
+.parallel-agent-tab[aria-selected="true"] { background: var(--control-active); border-color: var(--accent); }
+.parallel-agent-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.parallel-agent-status { width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); flex-shrink: 0; }
+.parallel-agent-status.is-running { background: var(--accent); }
+.parallel-agent-status.is-completed { background: var(--success, #298359); }
+.parallel-agent-status.is-needs-input { background: var(--warning, #bd862b); }
+.parallel-agent-status.is-failed { background: var(--danger); }
+.parallel-composer-directory { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--text-muted); }
+.parallel-send-notice { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px; color: var(--danger); font-size: 12px; }
+.parallel-send-notice button { flex-shrink: 0; border: 1px solid var(--border-subtle); background: var(--bg-surface); color: var(--text-primary); border-radius: 6px; padding: 5px 8px; cursor: pointer; }
+.composer-shell--parallel .web-native-model-agent { display: none; }
+.parallel-composer-directory { flex: 1 1 0; }
+.parallel-agent-settings { position: relative; }
+.parallel-agent-settings-trigger { display: inline-flex; align-items: center; gap: 4px; min-height: 34px; max-width: 100%; padding: 0 5px; border: 0; background: transparent; color: var(--text-primary); font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer; }
+.parallel-agent-settings-menu { position: fixed; z-index: 1300; box-sizing: border-box; width: min(320px, calc(100vw - 32px)); overflow-x: hidden; overflow-y: auto; border: 1px solid var(--border-default); border-radius: 12px; padding: 4px 12px; background: var(--bg-elevated); box-shadow: var(--shadow-md); }
+.parallel-agent-settings-row { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; gap: 8px; padding: 12px 0; border-bottom: 1px solid var(--border-subtle); font-size: 12px; }
+.parallel-agent-settings-row:last-child { border-bottom: 0; }
+.parallel-agent-settings-heading { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; }
+.parallel-agent-settings-row label { display: grid; grid-template-columns: 64px minmax(0, 1fr); min-width: 0; align-items: center; gap: 8px; }
+.parallel-agent-settings-row select { box-sizing: border-box; width: 100%; max-width: 100%; min-width: 0; min-height: 32px; color: var(--text-primary); background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: 5px; padding: 4px 8px; font: inherit; text-overflow: ellipsis; }
+.parallel-settings-open { justify-self: start; border: 0; padding: 4px 0; background: none; color: var(--accent); font: inherit; cursor: pointer; text-align: left; }
+.parallel-settings-error { color: var(--danger); }
+.parallel-settings-error button { margin-left: 6px; color: var(--text-primary); background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: 4px; cursor: pointer; }
+@media (max-width: 380px) { .composer-shell--parallel .web-native-context-control { display: none; } }
+@media (pointer: coarse) { .parallel-agent-tab { min-height: 44px; min-width: 56px; } }
 .composer-workspace-picker-menu {
   right: 0;
   left: auto;

@@ -20,6 +20,17 @@ describe('OpenAI compatible endpoints', () => {
     describe(`${Provider.name} reported usage`, () => {
       const createProvider = () => new Provider({ baseUrl: 'https://example.com/v1', apiKey: 'test', modelId: 'model' });
 
+      it('leaves the output limit to the model service when native capacity is selected', async () => {
+        const fetchMock = vi.fn().mockImplementation(done);
+        vi.stubGlobal('fetch', fetchMock);
+        const provider = new Provider({ baseUrl: 'https://example.com/v1', apiKey: 'test', modelId: 'dynamic/model', maxTokens: null });
+        await collectEvents(provider);
+        const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+        expect(body).not.toHaveProperty('max_tokens');
+        expect(body).not.toHaveProperty('max_completion_tokens');
+        expect(body.model).toBe('dynamic/model');
+      });
+
       it('requests usage and emits only the final snapshot from byte-sliced usage-only frames', async () => {
         const fetchMock = vi.fn().mockResolvedValue(fixtureResponse([
           ': heartbeat', 'event: message', 'data: {malformed', ...openAIUsageFrames,

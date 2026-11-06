@@ -60,6 +60,78 @@ describe("AgentHttpGateway", () => {
     ObservableEventSource.instances = [];
   });
 
+  it("stops only the requested native session and keeps another run streaming", async () => {
+    vi.useFakeTimers();
+    globalThis.EventSource = ObservableEventSource as unknown as typeof EventSource;
+    const a = "runtime:zcode:c2Vzc19h";
+    const b = "runtime:zcode:c2Vzc19i";
+    const http = { post: vi.fn(async (path: string, body: { sessionId: string }) =>
+      path === "/api/agent/run" ? { runId: `run-${body.sessionId}` } : {}) };
+    const gateway = new AgentHttpGateway(http as never, {} as never);
+    let bSettled = false;
+    const first = gateway.run("first", a);
+    const second = gateway.run("second", b).then(() => { bSettled = true; });
+    await vi.waitFor(() => expect(ObservableEventSource.instances).toHaveLength(2));
+    const [aStream, bStream] = ObservableEventSource.instances;
+
+    await gateway.abort(a, "keyboard");
+    await first;
+    expect(http.post).toHaveBeenLastCalledWith("/api/agent/abort", {
+      sessionId: a, expectedRunId: `run-${a}`, trigger: "keyboard",
+    });
+    expect(aStream.close).toHaveBeenCalledTimes(1);
+    expect(bStream.close).not.toHaveBeenCalled();
+    expect(bSettled).toBe(false);
+    emit(bStream, { type: "done", finalText: "completed", _nativeRunId: `run-${b}`, _nativeSequence: 1 });
+    await second;
+    expect(bSettled).toBe(true);
+  });
+
+  it("preserves the active stream when stopping is rejected", async () => {
+    vi.useFakeTimers();
+    globalThis.EventSource = ObservableEventSource as unknown as typeof EventSource;
+    const id = "runtime:zcode:c2Vzc19h";
+    const http = { post: vi.fn(async (path: string) => {
+      if (path === "/api/agent/abort") throw new Error("stop rejected");
+      return { runId: "run-active" };
+    }) };
+    const gateway = new AgentHttpGateway(http as never, {} as never);
+    let settled = false;
+    const run = gateway.run("keep working", id).then(() => { settled = true; });
+    await vi.waitFor(() => expect(ObservableEventSource.instances).toHaveLength(1));
+    const source = ObservableEventSource.instances[0];
+    await expect(gateway.abort(id)).rejects.toThrow("stop rejected");
+    expect(source.close).not.toHaveBeenCalled();
+    expect(settled).toBe(false);
+    emit(source, { type: "done", finalText: "completed", _nativeRunId: "run-active", _nativeSequence: 1 });
+    await run;
+  });
+
+  it("does not close a newer turn when the old stop acknowledgement arrives late", async () => {
+    vi.useFakeTimers();
+    globalThis.EventSource = ObservableEventSource as unknown as typeof EventSource;
+    const id = "runtime:zcode:c2Vzc19h";
+    let acknowledgeStop!: (result: unknown) => void;
+    let runNumber = 0;
+    const http = { post: vi.fn((path: string) => path === "/api/agent/abort"
+      ? new Promise(resolve => { acknowledgeStop = resolve; })
+      : Promise.resolve({ runId: `run-${++runNumber}` })) };
+    const gateway = new AgentHttpGateway(http as never, {} as never);
+    const first = gateway.run("first", id);
+    await vi.waitFor(() => expect(ObservableEventSource.instances).toHaveLength(1));
+    const stopping = gateway.abort(id);
+    emit(ObservableEventSource.instances[0], { type: "done", finalText: "first", _nativeRunId: "run-1", _nativeSequence: 1 });
+    await first;
+    const second = gateway.run("second", id);
+    await vi.waitFor(() => expect(ObservableEventSource.instances).toHaveLength(2));
+    const nextStream = ObservableEventSource.instances[1];
+    acknowledgeStop({});
+    await stopping;
+    expect(nextStream.close).not.toHaveBeenCalled();
+    emit(nextStream, { type: "done", finalText: "second", _nativeRunId: "run-2", _nativeSequence: 1 });
+    await second;
+  });
+
   it("sends collaboration commands through the authenticated HTTP port without opening agent streams", async () => {
     const http = { post: vi.fn().mockResolvedValue([{id: "group"}]) };
     const gateway = new AgentHttpGateway(http as never, {} as never);

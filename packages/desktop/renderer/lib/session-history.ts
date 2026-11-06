@@ -228,7 +228,7 @@ function mergeCoreSessionHistory(
     return [...currentHistory, ...refreshed.slice(refreshedTurnStart), ...queued];
   }
 
-  const confirmsSend = currentHistory[currentTurnStart].sendState
+  const confirmsSend = (currentHistory[currentTurnStart].sendState || currentHistory[currentTurnStart].awaitingHistory)
     && refreshedHistoryConfirmsOptimisticUser(
       currentHistory,
       refreshed,
@@ -272,6 +272,7 @@ function mergeCoreSessionHistory(
         ? refreshedUser.id
         : merged[currentTurnStart].id,
       sendState: undefined,
+      awaitingHistory: undefined,
     };
   }
   const refreshedTrace = refreshed
@@ -527,7 +528,7 @@ export function mergeRefreshedSessionHistory(
   const optimisticTurnStart = current.findLastIndex((message, index) => (
     index >= replacementStart
     && message.role === "user"
-    && (message.sendState === "pending" || message.sendState === "failed")
+    && (message.awaitingHistory || message.sendState === "pending" || message.sendState === "failed")
     && !message.isQueued
     && !refreshedHistoryConfirmsOptimisticUser(
       current,

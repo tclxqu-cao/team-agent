@@ -4,6 +4,21 @@ import { RTCPeerConnection, RTCRtpCodecParameters } from 'werift';
 import { packetizeH264, WeriftVideoTransport } from './werift-video-transport.mjs';
 
 describe('WeriftVideoTransport', () => {
+  it.each([
+    ['video', 0, 'recvonly'],
+    ['video', 9, 'inactive'],
+    ['video', 9, 'sendonly'],
+    ['audio', 9, 'recvonly'],
+  ])('rejects a %s answer on port %s with direction %s before waiting for ICE', async (kind, port, direction) => {
+    const transport = new WeriftVideoTransport({ signal: vi.fn(), iceConfig: { iceServers: [] } });
+    const setRemoteDescription = vi.fn();
+    transport.peer = { setRemoteDescription } as any;
+    const sdp = ['v=0', 'o=- 0 0 IN IP4 127.0.0.1', 's=-', 't=0 0',
+      `m=${kind} ${port} UDP/TLS/RTP/SAVPF 96`, 'a=rtpmap:96 H264/90000', `a=${direction}`, ''].join('\r\n');
+    await expect(transport.answer({ type: 'answer', sdp })).rejects.toThrow('Viewer rejected H.264 video');
+    expect(setRemoteDescription).not.toHaveBeenCalled();
+  });
+
   it('ignores bandwidth feedback and coalesces PLI/FIR keyframe requests', () => {
     const onKeyframe = vi.fn();
     const transport = new WeriftVideoTransport({ signal: vi.fn(), iceConfig: { iceServers: [] }, onKeyframe });

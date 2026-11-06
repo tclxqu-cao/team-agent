@@ -1,18 +1,27 @@
 import type { SessionHistoryDetail } from "./session-history";
-import { isRunResult, latestRunTerminalEvent, terminalRunError } from "./run-result";
+import { eventRunId, isRunResult, latestRunTerminalEvent, terminalRunError } from "./run-result";
 
 /** Restore the last terminal failure, not a tool error or an earlier failed turn. */
 export function latestSessionRunError(detail: SessionHistoryDetail | null): string | null {
   if (!detail || detail.status === "running" || detail.status === "active"
     || detail.history?.newerCursor || detail.history?.delivery === "trace") return null;
-  const terminal = latestRunTerminalEvent(detail.events ?? []);
-  if (terminal) return terminalRunError(terminal);
   const messages = detail.messages ?? [];
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
+  const latestTurnStart = Math.max(0, messages.findLastIndex(message => message.role === "user"
+    && message.name !== "__compaction_checkpoint__" && message.name !== "__native_steering_pending"
+    && !message.name?.startsWith("__native_steered:")));
+  const terminal = latestRunTerminalEvent(detail.events ?? []);
+  if (terminal) {
+    const runId = eventRunId(terminal);
+    const owner = runId ? messages.findLastIndex(message => message.presentation?.runResult?.runId === runId
+      || message.name === `__native_run:${runId}`) : -1;
+    if (owner < 0 || owner >= latestTurnStart) return terminalRunError(terminal);
+  }
+  // An older failed turn cannot describe a newer turn whose result is not projected yet.
+  for (let index = messages.length - 1; index >= latestTurnStart; index -= 1) {
     const projected = messages[index].presentation?.runResult;
     if (isRunResult(projected)) return terminalRunError({ type: "done", result: projected });
   }
-  if (!terminal && detail.status === "failed") return "运行失败，但未记录具体错误";
+  if (detail.status === "failed") return "运行失败，但未记录具体错误";
   return null;
 }
 

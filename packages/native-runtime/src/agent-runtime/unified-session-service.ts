@@ -393,7 +393,9 @@ export class UnifiedSessionService {
     // block an attempted takeover. Other runtimes cannot report a reliable
     // conflict and keep the upfront refusal.
     const occupancyAdvisory = adapter.agentType === "codex";
-    if (!occupancyAdvisory && (!detail.canResume || detail.occupancy === "owned-externally")) {
+    const externalGuide = adapter.agentType === "zcode" && detail.externalGuideSupported === true
+      && detail.status === "running" && !detail.readOnly;
+    if (!occupancyAdvisory && !externalGuide && (!detail.canResume || detail.occupancy === "owned-externally")) {
       throw new RuntimeSessionError("Session is currently owned by another client", "SESSION_OCCUPIED");
     }
     if (this.activeSessionIds.has(id)) {
@@ -443,7 +445,11 @@ export class UnifiedSessionService {
         "OPERATION_NOT_SUPPORTED",
       );
     }
-    if (!this.activeSessionIds.has(id) && adapter.agentType !== "copilot") return false;
+    if (!this.activeSessionIds.has(id) && adapter.agentType !== "copilot") {
+      if (adapter.agentType !== "zcode") return false;
+      const summary = adapter.getSessionSummary ? await adapter.getSessionSummary(nativeSessionId) : await adapter.getSession(nativeSessionId);
+      if (!summary.externalGuideSupported || summary.readOnly || summary.status !== "running") return false;
+    }
     return messageId === undefined
       ? adapter.steer(nativeSessionId, input)
       : adapter.steer(nativeSessionId, input, messageId);

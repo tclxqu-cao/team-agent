@@ -1,3 +1,4 @@
+import { isPageActive } from "./page-activity";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { NativeGoalMutation, NativeSessionGoal } from "../global";
 
@@ -28,7 +29,7 @@ export function useNativeSessionGoal(sessionId: string | null, enabled: boolean)
     let disposed = false;
     let inFlight = false;
     const poll = async () => {
-      if (disposed || inFlight || mutationRef.current || document.visibilityState === "hidden") return;
+      if (disposed || inFlight || mutationRef.current || !isPageActive()) return;
       inFlight = true;
       try { await refresh(sessionId); }
       catch (failure) {

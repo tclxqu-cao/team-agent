@@ -31,12 +31,19 @@ export interface CodexAppServerClientOptions {
   launcher?: CodexAppServerLauncher;
   startupTimeoutMs?: number;
   resolveDesktopEndpoint?: CodexDesktopEndpointResolver;
+  launchFailureRetryMs?: number;
+  now?: () => number;
 }
+
+const LAUNCH_FAILURE_RETRY_MS = 5 * 60_000;
 
 export class CodexAppServerClient {
   private readonly requestTimeoutMs: number;
   private readonly proxyWebSocketHandshakeTimeoutMs: number;
   private readonly launcher: CodexAppServerLauncher;
+  private readonly launchFailureRetryMs: number;
+  private readonly now: () => number;
+  private readonly launchRetryAt = new Map<CodexAppServerLaunchMode, number>();
   private process: ChildProcessWithoutNullStreams | null = null;
   private webSocket: WebSocket | null = null;
   private activeEndpoint: string | null = null;
@@ -55,6 +62,8 @@ export class CodexAppServerClient {
   constructor(options: CodexAppServerClientOptions = {}) {
     this.requestTimeoutMs = options.requestTimeoutMs ?? 120_000;
     this.proxyWebSocketHandshakeTimeoutMs = options.startupTimeoutMs ?? 10_000;
+    this.launchFailureRetryMs = Math.max(0, options.launchFailureRetryMs ?? LAUNCH_FAILURE_RETRY_MS);
+    this.now = options.now ?? Date.now;
     const launchOptions = {
       executable: options.executable ?? "codex",
       environment: normalizeCodexEnvironment(options.environment ?? process.env),
@@ -133,7 +142,14 @@ export class CodexAppServerClient {
   private async start(): Promise<void> {
     const generation = this.startGeneration;
     const failures: Array<{ mode: CodexAppServerLaunchMode; error: Error }> = [];
-    for (const attempt of this.launcher.attempts()) {
+    const attempts = this.launcher.attempts();
+    const now = this.now();
+    const ready = attempts.filter(attempt => (this.launchRetryAt.get(attempt.mode) ?? 0) <= now);
+    const deferred = attempts.filter(attempt => (this.launchRetryAt.get(attempt.mode) ?? 0) > now);
+    // Discovery deliberately reconnects to refresh external sessions. Do not
+    // pay a known failed daemon's timeout on every refresh; retain it as an
+    // emergency fallback if the currently working transport also fails.
+    for (const attempt of [...ready, ...deferred]) {
       try {
         console.log(`[codex-app-server-client] starting ${attempt.mode} transport`);
         this.assertStartCurrent(generation);
@@ -163,6 +179,7 @@ export class CodexAppServerClient {
           this.assertStartCurrent(generation);
         }
         this.processReady = true;
+        this.launchRetryAt.delete(attempt.mode);
         this.activeMode = attempt.mode;
         this.activeEndpoint = "webSocketUrl" in connection ? connection.webSocketUrl : null;
         console.log(
@@ -175,6 +192,7 @@ export class CodexAppServerClient {
         console.warn(`[codex-app-server-client] ${attempt.mode} startup failed: ${failure.message}`);
         await this.stopTransport();
         this.assertStartCurrent(generation);
+        this.launchRetryAt.set(attempt.mode, this.now() + this.launchFailureRetryMs);
       }
     }
 

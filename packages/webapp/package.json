@@ -17,7 +17,8 @@
     "core-js": "3.50.0",
     "eventsource": "3.0.7",
     "lucide-react": "^0.468.0",
-    "capacitor-secure-storage-plugin": "0.12.0"
+    "capacitor-secure-storage-plugin": "0.12.0",
+    "@agent/messaging": "*"
   },
   "devDependencies": {
     "@types/react": "^18.3.0",

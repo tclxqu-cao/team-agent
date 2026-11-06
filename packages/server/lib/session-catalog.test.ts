@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { UnifiedSessionSummary } from "@agent/native-runtime";
-const mocks = vi.hoisted(() => ({ list: vi.fn(), refresh: vi.fn(), ca: vi.fn(), projects: vi.fn() }));
-vi.mock("../app/api/agent-host", () => ({ agentHost: { getSessionStore: () => ({ list: mocks.ca }), getProjectStore: () => ({ list: mocks.projects }), isSessionRunning: () => false } }));
+const mocks = vi.hoisted(() => ({ list: vi.fn(), refresh: vi.fn(), ca: vi.fn(), summaries: vi.fn(), projects: vi.fn() }));
+vi.mock("../app/api/agent-host", () => ({ agentHost: { getSessionStore: () => ({ list: mocks.ca, listSummaries: mocks.summaries }), getProjectStore: () => ({ list: mocks.projects }), isSessionRunning: () => false } }));
 vi.mock("./native-runtime-service", () => ({ getNativeRuntimeService: () => ({ list: mocks.list, refresh: mocks.refresh }), runtimeErrorStatus: () => 500 }));
 vi.mock("./collaboration/visibility", () => ({ collaborationSessionIds: () => new Set(["internal"]) }));
 import { querySessionCatalog } from "./session-catalog";
@@ -13,12 +13,21 @@ function session(index: number): UnifiedSessionSummary {
 beforeEach(() => {
   vi.resetAllMocks();
   delete (globalThis as typeof globalThis & { __liveNativeSessionCatalog?: unknown }).__liveNativeSessionCatalog;
-  mocks.ca.mockResolvedValue([]); mocks.projects.mockResolvedValue([]);
+  mocks.ca.mockResolvedValue([]); mocks.summaries.mockResolvedValue([]); mocks.projects.mockResolvedValue([]);
   const sessions = Array.from({ length: 45 }, (_, index) => session(index));
   mocks.list.mockResolvedValue(sessions); mocks.refresh.mockResolvedValue(sessions);
 });
 afterEach(() => vi.useRealTimers());
 describe("shared session catalog", () => {
+  it("uses summary storage without loading session messages or events", async () => {
+    mocks.summaries.mockResolvedValue([{ id: "summary", title: "Summary", projectId: "", status: "idle",
+      created: "2026-11-04", updated: "2026-11-04", metadata: {} }]);
+    const page = await querySessionCatalog({ query: "Summary" });
+    expect(page.data.map(row => row.id)).toEqual(["summary"]);
+    expect(mocks.ca).not.toHaveBeenCalled();
+    expect(page.data[0]).not.toHaveProperty("messages");
+    expect(page.data[0]).not.toHaveProperty("events");
+  });
   it("returns the first 20 running-first sessions, stable pages without omissions, and full-catalog search", async () => {
     const first = await querySessionCatalog({});
     expect(first.data).toHaveLength(20); expect(first.total).toBe(45);
@@ -46,12 +55,24 @@ describe("shared session catalog", () => {
     const first = await querySessionCatalog({});
     expect(first.data.filter(session => session.status === "running")).toHaveLength(2);
     mocks.refresh.mockResolvedValue(stale.map(session => session.id === "codex:2" ? { ...session, status: "running", updated: "2026-10-28T05:47:02Z" } : session));
-    await vi.advanceTimersByTimeAsync(2001);
+    await vi.advanceTimersByTimeAsync(15_001);
     const next = await querySessionCatalog({});
     expect(next.data.filter(session => session.status === "running")).toHaveLength(3);
     expect(mocks.list).not.toHaveBeenCalled();
     expect(mocks.refresh).toHaveBeenCalledTimes(2);
     expect(first.data.find(session => session.id === "codex:2")?.status).toBe("idle");
+  });
+  it("reuses discovery across nearby list and search requests until the next visible poll", async () => {
+    vi.useFakeTimers();
+    await querySessionCatalog({});
+    await vi.advanceTimersByTimeAsync(2001);
+    await querySessionCatalog({ query: "任务" });
+    await vi.advanceTimersByTimeAsync(12_998);
+    await querySessionCatalog({});
+    expect(mocks.refresh).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    await querySessionCatalog({});
+    expect(mocks.refresh).toHaveBeenCalledTimes(2);
   });
   it("coalesces simultaneous live discovery requests and retries a failed discovery", async () => {
     let release!: (sessions: UnifiedSessionSummary[]) => void;

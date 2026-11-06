@@ -38,6 +38,7 @@ import {
 import type { CodexAppServerLaunchMode } from "./codex-app-server-launcher.js";
 import { CodexDesktopTools } from "./codex-desktop-tools.js";
 import { CodexDesktopContinuation } from "./codex-desktop-continuation.js";
+import { codexAsyncQuestionId, codexQuestionHistory, codexQuestionReply, parseCodexAsyncQuestionId } from "./codex-questions.js";
 import {
   CodexRolloutActivityReader,
   CodexRolloutCommentaryReader,
@@ -200,7 +201,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
   private readonly imageStorageRoot: string;
   private readonly rolloutActivityReader: Pick<CodexRolloutActivityReader, "readMany">;
   private readonly rolloutCommentaryReader: Pick<CodexRolloutCommentaryReader, "read">;
-  private readonly rolloutUserMessageReader: Pick<CodexRolloutUserMessageReader, "read">;
+  private readonly rolloutUserMessageReader: Pick<CodexRolloutUserMessageReader, "read"> & Partial<Pick<CodexRolloutUserMessageReader, "readAsyncMessages">>;
   private readonly agentMessagePhases = new Map<string, "commentary" | "final_answer">();
   /** Flipped off permanently only when the app-server lacks the paginated turn protocol. */
   private nativePagingSupported = true;
@@ -233,6 +234,8 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
   private readonly ownedThreads = new Set<string>();
   private readonly pendingApprovals = new Map<string, PendingApproval>();
   private readonly asyncInputItems = new Set<string>();
+  private readonly answeringAsyncInputs = new Set<string>();
+  private readonly submittedAsyncInputs = new Set<string>();
   private readonly pendingAsyncInputs = new Map<string, {
     threadId: string;
     turnId: string;
@@ -249,7 +252,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     imageStorageRoot?: string;
     rolloutActivityReader?: Pick<CodexRolloutActivityReader, "readMany">;
     rolloutCommentaryReader?: Pick<CodexRolloutCommentaryReader, "read">;
-    rolloutUserMessageReader?: Pick<CodexRolloutUserMessageReader, "read">;
+    rolloutUserMessageReader?: Pick<CodexRolloutUserMessageReader, "read"> & Partial<Pick<CodexRolloutUserMessageReader, "readAsyncMessages">>;
     codexExecutable?: string;
     environment?: NodeJS.ProcessEnv;
     homeDir?: string;
@@ -523,7 +526,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     );
     return {
       ...this.toSummary(response.thread, openFiles, rolloutActivities),
-      messages: await codexTurnsToMessages(response.thread.turns),
+      messages: await codexTurnsToMessages(response.thread.turns, { nativeSessionId }),
       events: [],
     };
   }
@@ -581,17 +584,20 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     }
     // The skeleton: every visible user/agent item in rollout order. This is
     // the entire ordinal space — cheap (tens of KB) and hydration-independent.
+    const questionHistory = codexQuestionHistory(ascTurns, nativeSessionId);
     const skeleton: Array<{ turnId: string; role: "user" | "assistant" }> = [];
     for (const turn of ascTurns) {
       const legacyFinalAgentMessage = codexLegacyFinalAgentMessage(turn);
       for (const item of turn.items ?? []) {
         if (item.type === "userMessage") skeleton.push({ turnId: turn.id, role: "user" });
-        else if (isCodexCoreAgentMessage(item, turn.status, legacyFinalAgentMessage)) {
+        else if (item.id && questionHistory.has(item.id)) {
+          skeleton.push(...questionHistory.get(item.id)!.map(() => ({ turnId: turn.id, role: "assistant" as const })));
+        } else if (isCodexCoreAgentMessage(item, turn.status, legacyFinalAgentMessage)) {
           skeleton.push({ turnId: turn.id, role: "assistant" });
         }
       }
     }
-    const skeletonMessages = codexSummaryTurnsToMessages(ascTurns);
+    const skeletonMessages = codexSummaryTurnsToMessages(ascTurns, undefined, nativeSessionId, questionHistory);
     const revision = computeSessionHistoryRevision(skeletonMessages);
 
     if (query.view === "trace" && query.turnId) {
@@ -616,6 +622,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
         items: hydratedItems,
       };
       const messages = (await codexTurnsToMessages([hydratedTurn], {
+        nativeSessionId,
         toolResultMode: "lazy",
         revision,
         reasoningMaxBytes: 4 * 1024,
@@ -648,7 +655,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
 
     if (query.view === "core") {
       const imageAttachments = await this.loadCoreImageAttachments(selectedSummaryTurns);
-      const messages = codexSummaryTurnsToMessages(selectedSummaryTurns, imageAttachments);
+      const messages = codexSummaryTurnsToMessages(selectedSummaryTurns, imageAttachments, nativeSessionId, questionHistory);
       this.assignNativeHistoryIds(messages, skeleton, start, end);
       return {
         ...summary,
@@ -685,12 +692,15 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
         ?.filter((item) => item.type === "userMessage" && item.id?.startsWith("codex-goal:")) ?? [];
       return goals.length ? { ...turn, items: [...goals, ...(turn.items ?? [])] } : turn;
     });
-    const messages = await codexTurnsToMessages(turnsWithGoals, query.view === "trace" ? {
-      toolResultMode: "lazy",
-      revision,
-      reasoningMaxBytes: 4 * 1024,
-      toolArgumentsMaxBytes: 2 * 1024,
-    } : undefined);
+    const messages = await codexTurnsToMessages(turnsWithGoals, {
+      nativeSessionId, questionHistory,
+      ...(query.view === "trace" ? {
+        toolResultMode: "lazy",
+        revision,
+        reasoningMaxBytes: 4 * 1024,
+        toolArgumentsMaxBytes: 2 * 1024,
+      } : {}),
+    });
     this.assignNativeHistoryIds(messages, skeleton, start, end);
 
     return {
@@ -719,7 +729,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       throw this.normalizePagedError(error);
     }
     ascTurns = this.reconcileFinalizingAnswer(nativeSessionId, ascTurns).turns;
-    const revision = computeSessionHistoryRevision(codexSummaryTurnsToMessages(ascTurns));
+    const revision = computeSessionHistoryRevision(codexSummaryTurnsToMessages(ascTurns, undefined, nativeSessionId));
     if (revision !== ref.revision) {
       throw new RuntimeSessionError("Session history changed; reload the tool result", "STALE_SESSION_ANCHOR");
     }
@@ -755,7 +765,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       throw this.normalizePagedError(error);
     }
     ascTurns = this.reconcileFinalizingAnswer(nativeSessionId, ascTurns).turns;
-    const skeletonMessages = codexSummaryTurnsToMessages(ascTurns);
+    const skeletonMessages = codexSummaryTurnsToMessages(ascTurns, undefined, nativeSessionId);
     return buildSessionQueryIndex(
       encodeUnifiedSessionId(this.agentType, nativeSessionId),
       skeletonMessages,
@@ -801,7 +811,23 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     }
     if (!rolloutPath) return turns;
     const userMessages = await this.rolloutUserMessageReader.read(rolloutPath);
-    return mergeCodexSummaryUserMessages(turns, userMessages);
+    const merged = mergeCodexSummaryUserMessages(turns, userMessages);
+    const asyncMessages = await this.rolloutUserMessageReader.readAsyncMessages?.(rolloutPath) ?? [];
+    for (const message of [...asyncMessages].reverse()) {
+      const turn = merged.find(candidate => candidate.id === message.turnId);
+      if (!turn) continue;
+      const existing = turn.items.findIndex(item => item.id === message.item.id);
+      const item = existing >= 0 ? { ...turn.items[existing], ...message.item } : message.item;
+      if (existing >= 0) {
+        // Merging durable inputs groups user items first. Restore the question's
+        // rollout position even when the native summary already contains it.
+        turn.items.splice(existing, 1);
+      }
+      const userIndex = turn.items.findIndex(item => item.type === "userMessage" && item.id === message.afterUserItemId);
+      const lastUserIndex = turn.items.reduce((found, item, index) => item.type === "userMessage" ? index : found, -1);
+      turn.items.splice((userIndex >= 0 ? userIndex : lastUserIndex) + 1, 0, item);
+    }
+    return merged;
   }
 
   /**
@@ -1393,10 +1419,12 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
   async answerQuestion(questionId: string, answer: RuntimeQuestionAnswer): Promise<boolean> {
     const asyncInput = this.pendingAsyncInputs.get(questionId);
     if (asyncInput) {
+      if (this.answeringAsyncInputs.has(questionId) || this.submittedAsyncInputs.has(questionId)) return false;
       const value = answer.answer.trim();
       if (!value || this.activeTurnIds.get(asyncInput.threadId) !== asyncInput.turnId) {
         throw new RuntimeSessionError("问题已结束或回答为空，请刷新会话后重试。", "QUESTION_ANSWER_FAILED");
       }
+      this.answeringAsyncInputs.add(questionId);
       try {
         await this.client.request("turn/steer", {
           threadId: asyncInput.threadId,
@@ -1410,11 +1438,15 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
           error instanceof Error ? error.message : "回答发送失败，请重试。",
           "QUESTION_ANSWER_FAILED",
         );
+      } finally {
+        this.answeringAsyncInputs.delete(questionId);
       }
+      this.submittedAsyncInputs.add(questionId);
       this.pendingAsyncInputs.delete(questionId);
       this.onApprovalResolved?.(questionId);
       return true;
     }
+    if (parseCodexAsyncQuestionId(questionId)) return this.answerHistoryQuestion(questionId, answer);
     const pending = this.pendingApprovals.get(questionId);
     if (!pending) return false;
     this.pendingApprovals.delete(questionId);
@@ -1432,6 +1464,39 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
 
     this.client.respond(pending.requestId, codexApprovalResponse(pending, value));
     return true;
+  }
+
+  private async answerHistoryQuestion(questionId: string, answer: RuntimeQuestionAnswer): Promise<boolean> {
+    const identity = parseCodexAsyncQuestionId(questionId)!;
+    const value = answer.answer.trim();
+    if (!value || this.answeringAsyncInputs.has(questionId) || this.submittedAsyncInputs.has(questionId)) return false;
+    this.answeringAsyncInputs.add(questionId);
+    try {
+      // Re-read before writing: Desktop may have answered since the phone loaded.
+      const { thread } = await this.client.request<{ thread: CodexThread }>("thread/read", {
+        threadId: identity.threadId, includeTurns: true,
+      });
+      if (thread.id !== identity.threadId) return false;
+      const card = codexQuestionHistory(thread.turns, identity.threadId).get(identity.itemId)
+        ?.find(message => message.presentation?.question?.questionId === questionId)?.presentation?.question;
+      if (!card || card.status !== "pending") return false;
+      const input = [{ type: "text", text: codexQuestionReply(questionId, card.question, value), text_elements: [] }];
+      const activeTurn = [...thread.turns].reverse().find(turn => turn.status === "inProgress");
+      if (activeTurn) {
+        await this.client.request("turn/steer", { threadId: identity.threadId, expectedTurnId: activeTurn.id, input });
+      } else {
+        if (thread.status.type === "active") throw new Error("会话状态正在同步，请刷新后重试。");
+        await this.client.request("thread/resume", { threadId: identity.threadId, excludeTurns: true });
+        await this.client.request("turn/start", { threadId: identity.threadId, input });
+      }
+      this.submittedAsyncInputs.add(questionId);
+      this.onApprovalResolved?.(questionId);
+      return true;
+    } catch (error) {
+      throw new RuntimeSessionError(error instanceof Error ? error.message : "回答发送失败，请重试。", "QUESTION_ANSWER_FAILED");
+    } finally {
+      this.answeringAsyncInputs.delete(questionId);
+    }
   }
 
   async dispose(): Promise<void> {
@@ -1662,7 +1727,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
         questions.forEach((value, index) => {
           const question = asRecord(value);
           if (typeof question.title !== "string" || !question.title.trim()) return;
-          const questionId = `native:${this.activeBrokerRunIds.get(threadId) ?? threadId}:async:${notificationItem.id}:${index}`;
+          const questionId = codexAsyncQuestionId(threadId, notificationItem.id!, index);
           if (this.pendingAsyncInputs.has(questionId)) return;
           this.pendingAsyncInputs.set(questionId, { threadId, turnId: eventTurnId, question: question.title });
           queue.push({
@@ -2344,6 +2409,8 @@ function decodeNativeHistoryCursor(cursor: string | undefined, fallback: number)
 }
 
 interface CodexMessageConversionOptions {
+  nativeSessionId?: string;
+  questionHistory?: ReadonlyMap<string, Message[]>;
   toolResultMode?: "full" | "lazy";
   revision?: string;
   reasoningMaxBytes?: number;
@@ -2391,6 +2458,8 @@ function mergeCodexSummaryUserMessages(
 function codexSummaryTurnsToMessages(
   turns: CodexTurn[],
   imageAttachments?: ReadonlyMap<string, MessageAttachment>,
+  nativeSessionId?: string,
+  questionHistory = codexQuestionHistory(turns, nativeSessionId),
 ): Message[] {
   const messages: Message[] = [];
   for (const turn of turns) {
@@ -2421,6 +2490,8 @@ function codexSummaryTurnsToMessages(
           },
         });
         segmentIndex += 1;
+      } else if (item.id && questionHistory.has(item.id)) {
+        messages.push(...questionHistory.get(item.id)!);
       } else if (
         isCodexCoreAgentMessage(item, turn.status, legacyFinalAgentMessage)
         && typeof item.text === "string"
@@ -2503,6 +2574,7 @@ export async function codexTurnsToMessages(
   options: CodexMessageConversionOptions = {},
 ): Promise<Message[]> {
   const messages: Message[] = [];
+  const questionHistory = options.questionHistory ?? codexQuestionHistory(turns, options.nativeSessionId);
   for (const turn of turns) {
     let segmentIndex = -1;
     for (const item of turn.items ?? []) {
@@ -2534,9 +2606,11 @@ export async function codexTurnsToMessages(
             ...(presentation ? { presentation } : {}),
           });
         }
+      } else if (item.id && questionHistory.has(item.id)) {
+        messages.push(...questionHistory.get(item.id)!);
       } else if (item.type === "agentMessage" && typeof item.text === "string" && item.text.trim()) {
-        // Pending async questions are replayed as broker ask_user events.
-        // Keep their text only in completed history, without a duplicate live card.
+        // Older runtimes can omit the structured questions. Keep their fallback
+        // text out of an in-progress final answer.
         if (item.delivery === "async" && turn.status === "inProgress") continue;
         const nativePresentation = codexAgentMessagePresentation(item);
         const presentation = nativePresentation?.agentMessagePhase === "commentary" && options.toolResultMode

@@ -9,11 +9,15 @@ export interface NativeProtocolSession {
   id: string;
   title: string;
   cwd: string;
+  workspaceIdentity?: string;
   created: string;
   updated: string;
   running?: boolean;
+  /** A native client can retain ownership while its current turn is idle. */
+  externallyOwned?: boolean;
   parentSessionId?: string;
   readOnly?: boolean;
+  externalGuideSupported?: boolean;
   nativePermissions?: NativeSessionPermissions;
 }
 
@@ -23,6 +27,7 @@ export interface NativeSessionProtocol {
   read(id: string): Promise<{ session: NativeProtocolSession; messages: Message[]; events?: AgentEvent[] }>;
   create(options: CreateRuntimeSessionOptions): Promise<NativeProtocolSession>;
   run(id: string, input: string, images?: string[], options?: RuntimeRunOptions): AsyncIterable<AgentEvent>;
+  steer?(id: string, input: string, messageId?: string): Promise<boolean>;
   abort(id: string): Promise<void>;
   answerQuestion(id: string, answer: RuntimeQuestionAnswer): Promise<boolean>;
   listModels(): Promise<RuntimeModelInfo[]>;
@@ -44,11 +49,12 @@ export class StdioNativeRuntimeAdapter implements AgentRuntimeAdapter {
 
   protected summary(session: NativeProtocolSession): UnifiedSessionSummary {
     const owned = this.running.has(session.id);
-    const external = session.running && !owned;
+    const external = (session.externallyOwned ?? session.running) && !owned;
     return { id: encodeUnifiedSessionId(this.agentType, session.id), agentType: this.agentType, nativeSessionId: session.id,
       title: session.title || this.label, cwd: session.cwd, created: session.created, updated: session.updated,
       status: owned || session.running ? "running" : "idle", occupancy: owned ? "owned-by-customer-agent" : external ? "owned-externally" : "available",
       sourceLabel: this.label, canResume: !session.readOnly && !external, canDelete: false, nativePermissions: session.nativePermissions,
+      ...(external && session.externalGuideSupported ? { externalGuideSupported: true, nativeModelSelectionSupported: false } : {}),
       ...(session.readOnly ? { readOnly: true } : {}),
       ...(session.parentSessionId ? { parentSessionId: encodeUnifiedSessionId(this.agentType, session.parentSessionId) } : {}) };
   }

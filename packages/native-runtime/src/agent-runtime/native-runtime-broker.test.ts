@@ -26,6 +26,7 @@ import { RuntimeSessionError } from "./types";
 import { UnifiedSessionService } from "./unified-session-service";
 import { harnessQuestionId } from "./deepseek-harness-interaction-codec";
 import { openCodeQuestionId, type OpenCodeQuestionRequest } from "./opencode-questions";
+import { codexAsyncQuestionId } from "./codex-questions";
 
 const sessionId = encodeUnifiedSessionId("codex", "thread-1");
 
@@ -263,6 +264,52 @@ describe("resolveNativeRuntimeSocketPath", () => {
 });
 
 describe("NativeRuntimeBrokerHost", () => {
+  it("admits verified ZCode desktop guidance while retaining guards for other external sessions", async () => {
+    const runtime = new FakeNativeRuntime(); runtime.immediateTerminal = true;
+    const externalId = encodeUnifiedSessionId("zcode", "desktop-main");
+    let supported = false;
+    runtime.getRunSummary = async () => ({ ...summary("owned-externally", "running"), id: externalId,
+      agentType: "zcode", nativeSessionId: "desktop-main", externalGuideSupported: supported });
+    const host = new NativeRuntimeBrokerHost(await directory(), runtime as unknown as UnifiedSessionService);
+    try {
+      await expect(host.startRun(externalId, "must remain readonly")).rejects.toMatchObject({ code: "SESSION_OCCUPIED" });
+      expect(runtime.runInputs).toHaveLength(0);
+      supported = true;
+      const started = await host.startRun(externalId, "guide the desktop owner");
+      expect(started.runId).toBeTruthy();
+      await waitFor(() => expect(host.snapshot(externalId).controller).toBeNull());
+      expect(runtime.runInputs).toHaveLength(1);
+      expect(runtime.runOptions[0].brokerRunId).toBe(started.runId);
+    } finally { await host.stop(); }
+  });
+
+  it("starts an external host once and reuses it without building an inline runtime", async () => {
+    const path = await directory();
+    const host = new NativeRuntimeBrokerHost(path, new FakeNativeRuntime() as unknown as UnifiedSessionService);
+    const startHost = vi.fn(async () => host.start());
+    const runtimeFactory = vi.fn(() => { throw new Error("must not own native processes"); });
+    const client = new NativeRuntimeBrokerClient({ directory: path, startHost, runtimeFactory });
+    try {
+      await Promise.all([client.health(), client.health()]);
+      await new NativeRuntimeBrokerClient({ directory: path, startHost, runtimeFactory }).health();
+      expect(startHost).toHaveBeenCalledTimes(1);
+      expect(runtimeFactory).not.toHaveBeenCalled();
+    } finally {
+      await host.stop();
+    }
+  });
+
+  it("reports independent host startup failure instead of silently using the Web process", async () => {
+    const runtimeFactory = vi.fn(() => { throw new Error("must not own native processes"); });
+    const client = new NativeRuntimeBrokerClient({
+      directory: await directory(),
+      startHost: async () => { throw new Error("host unavailable"); },
+      runtimeFactory,
+    });
+    await expect(client.health()).rejects.toThrow("host unavailable");
+    expect(runtimeFactory).not.toHaveBeenCalled();
+  });
+
   it("does not redispatch the same source while terminal cleanup is still settling", async () => {
     const runtime = new FakeNativeRuntime(); runtime.immediateTerminal = true;
     let release!: () => void;
@@ -321,6 +368,27 @@ describe("NativeRuntimeBrokerHost", () => {
       await replacement.startRun(sessionId, "用户明确继续");
       expect(replacement.snapshot(sessionId).manuallyStopped).toBe(false);
     } finally { await replacement.stop(); }
+  });
+
+  it("rejects an old turn's stop through the broker client without interrupting the current turn", async () => {
+    const path = await directory();
+    const runtime = new FakeNativeRuntime();
+    const abort = vi.spyOn(runtime, "abort");
+    const host = new NativeRuntimeBrokerHost(path, runtime as unknown as UnifiedSessionService);
+    await host.start();
+    const client = new NativeRuntimeBrokerClient({ directory: path });
+    try {
+      const current = await host.startRun(sessionId, "current task");
+      await waitFor(() => expect(host.snapshot(sessionId).events.length).toBeGreaterThan(0));
+      await expect(client.abort(sessionId, { expectedRunId: "old-run", source: "web", trigger: "keyboard" }))
+        .rejects.toMatchObject({ code: "STALE_SESSION_ANCHOR" });
+      expect(abort).not.toHaveBeenCalled();
+      expect(host.snapshot(sessionId).manuallyStopped).toBe(false);
+      expect(host.snapshot(sessionId).controller).toBe("web");
+      await client.abort(sessionId, { expectedRunId: current.runId, source: "web", trigger: "button" });
+      expect(abort).toHaveBeenCalledOnce();
+      expect(host.snapshot(sessionId).manuallyStopped).toBe(true);
+    } finally { await host.stop(); }
   });
   it("admits a run from fresh summary metadata without downloading its transcript", async () => {
     const runtime = new FakeNativeRuntime();
@@ -664,6 +732,33 @@ describe("NativeRuntimeBrokerHost", () => {
     } finally {
       await host.stop();
     }
+  });
+
+  it("keeps an interrupted attempt on its own turn and restores a later successful retry with commentary", async () => {
+    const path = await directory();
+    const runtime = new FakeNativeRuntime();
+    runtime.messages = [
+      { role: "user", content: "按推荐来" },
+      { role: "assistant", content: "正在准备", toolCalls: [{ id: "old-tool", name: "Bash", arguments: {} }] },
+      { role: "user", content: "按推荐来" },
+      { role: "assistant", content: "正在实现", toolCalls: [{ id: "new-tool", name: "Write", arguments: {} }] },
+      { role: "assistant", content: "已建好并实测跑通" },
+    ];
+    const host = new NativeRuntimeBrokerHost(path, runtime as unknown as UnifiedSessionService);
+    const database = new SQLiteDatabase(path);
+    const interrupted = { status: "interrupted", reason: "runtime_interrupted", durationMs: 10, runId: "old-attempt" };
+    const completed = { status: "completed", reason: "completed", durationMs: 20, runId: "successful-retry" };
+    const insert = database.db.prepare("INSERT INTO native_runtime_turn_completion(run_id,session_id,input,final_text,duration_ms,completed_at,result) VALUES(?,?,?,?,?,?,?)");
+    insert.run(interrupted.runId, sessionId, "按推荐来", "正在准备", 10, 100, JSON.stringify(interrupted));
+    insert.run(completed.runId, sessionId, "按推荐来", "正在实现已建好并实测跑通", 20, 200, JSON.stringify(completed));
+    database.close();
+    try {
+      const detail = await host.get(sessionId, { limit: 50 });
+      expect(detail.messages).toHaveLength(5);
+      expect(detail.messages[0].presentation?.runResult).toEqual(interrupted);
+      expect(detail.messages[4].presentation).toMatchObject({ runResult: completed, completionDurationMs: 20 });
+      expect(detail.messages[2].presentation?.runResult).toBeUndefined();
+    } finally { await host.stop(); }
   });
 
   it("persists the Codex compatibility catalog in broker-owned SQLite", async () => {
@@ -1438,6 +1533,44 @@ describe("NativeRuntimeBrokerHost", () => {
     } finally {
       await host.stop();
     }
+  });
+
+  it("passes the ZCode queue identity through and completes the receipt only after native admission", async () => {
+    const id = encodeUnifiedSessionId("zcode", "sess-guide");
+    const runtime = new FakeNativeRuntime();
+    const originalGet = runtime.get;
+    runtime.get = async () => ({ ...await originalGet(), id, agentType: "zcode", nativeSessionId: "sess-guide" });
+    const host = new NativeRuntimeBrokerHost(await directory(), runtime as unknown as UnifiedSessionService);
+    try {
+      await host.startRun(id, "current");
+      await waitFor(() => expect(host.snapshot(id).events).toHaveLength(1));
+      const queued = await host.enqueueMessage(id, { sourceMessageId: "zcode-source", content: "guide this" });
+      const messageId = queued.state.queued[0].id;
+      let accept!: (value: boolean) => void;
+      const steer = vi.spyOn(runtime, "steer").mockImplementation(() => new Promise(resolve => { accept = resolve; }));
+      const operation = host.steerMessage(id, messageId);
+      await waitFor(() => expect(steer).toHaveBeenCalledWith(id, "guide this", messageId));
+      expect((await host.getGoals(id)).queued).toHaveLength(1);
+      accept(true);
+      await expect(operation).resolves.toMatchObject({ steered: true, state: { queued: [], history: [expect.objectContaining({ id: messageId, status: "completed", lastReason: "steered" })] } });
+      await expect(host.steerMessage(id, messageId)).resolves.toMatchObject({ steered: true });
+      expect(steer).toHaveBeenCalledTimes(1);
+    } finally { await host.stop(); }
+  });
+
+  it("keeps ZCode image messages intact instead of silently steering only their text", async () => {
+    const id = encodeUnifiedSessionId("zcode", "sess-guide");
+    const runtime = new FakeNativeRuntime();
+    const host = new NativeRuntimeBrokerHost(await directory(), runtime as unknown as UnifiedSessionService);
+    try {
+      await host.startRun(id, "current");
+      await waitFor(() => expect(host.snapshot(id).events).toHaveLength(1));
+      const queued = await host.enqueueMessage(id, { sourceMessageId: "zcode-image", content: "see image", messagePayload: { images: ["data:image/png;base64,AAAA"] } });
+      const messageId = queued.state.queued[0].id;
+      await expect(host.steerMessage(id, messageId)).rejects.toMatchObject({ code: "OPERATION_NOT_SUPPORTED" });
+      expect((await host.getGoals(id)).queued).toEqual([expect.objectContaining({ id: messageId, messagePayload: { images: ["data:image/png;base64,AAAA"] } })]);
+      expect(runtime.steeredInputs).toEqual([]);
+    } finally { await host.stop(); }
   });
 
   it("preserves queued steering on a transport failure and consumes it after retry succeeds", async () => {
@@ -2426,6 +2559,18 @@ describe("NativeRuntimeBrokerHost", () => {
     } finally { await host.stop(); }
   });
 
+  it("routes restored Codex question answers without requiring a retained Broker approval", async () => {
+    const runtime = new FakeNativeRuntime();
+    const host = new NativeRuntimeBrokerHost(await directory(), runtime as unknown as UnifiedSessionService);
+    const questionId = codexAsyncQuestionId("thread-1", "desktop-question", 0);
+    try {
+      await expect(host.answerQuestion(questionId, { answer: "B" })).resolves.toBe(true);
+      expect(runtime.answers).toEqual([{ questionId, answer: { answer: "B" } }]);
+      expect(runtime.runInputs).toEqual([]);
+      expect(runtime.forkCalls).toBe(0);
+    } finally { await host.stop(); }
+  });
+
   it("keeps native pending Harness questions in history even without a retained Broker run", async () => {
     const id = encodeUnifiedSessionId("deepseek-harness", "desktop-native");
     const questionId = harnessQuestionId({ sessionId: "desktop-native", kind: "question", requestId: "call", itemId: "item" });
@@ -2724,6 +2869,19 @@ describe("NativeRuntimeBrokerHost", () => {
 });
 
 describe("NativeRuntimeBrokerHost run overrides", () => {
+  it("retains each durable message's model and effort when queue admission starts a run", async () => {
+    const runtime = new FakeNativeRuntime();
+    const host = new NativeRuntimeBrokerHost(await directory(), runtime as unknown as UnifiedSessionService);
+    try {
+      await host.enqueueMessage(sessionId, { sourceMessageId: "parallel-source", content: "same question", messagePayload: {
+        runOptions: { model: { id: "per-recipient-model", providerID: "own-provider" }, reasoningEffort: "high" },
+      } });
+      await waitFor(() => expect(runtime.runOptions).toHaveLength(1));
+      expect(runtime.runOptions[0]).toMatchObject({ model: { id: "per-recipient-model", providerID: "own-provider" }, reasoningEffort: "high" });
+      expect(runtime.runOptions[0].goal).toBeUndefined();
+    } finally { await host.stop(); }
+  });
+
   it("passes composer model/effort choices through to the adapter run options", async () => {
     const path = await directory();
     const runtime = new FakeNativeRuntime();
@@ -2762,6 +2920,33 @@ describe("NativeRuntimeBrokerHost native paged get", () => {
   const pagedSummary = () => ({
     ...summary("available", "idle"),
     history: { nextCursor: null, hasMore: false, pageSize: 2, totalItems: 2, olderCursor: null, newerCursor: null as string | null, kind: "latest" as const },
+  });
+
+  it.each(["zcode", "qoder", "workbuddy"] as const)("restores %s questions before advancing the paged stream cursor", async agentType => {
+    const runtime = new FakeNativeRuntime();
+    const id = encodeUnifiedSessionId(agentType, "native-session");
+    runtime.messages = [{ role: "user", content: "old input" }, { role: "assistant", content: "old answer" }, { role: "user", content: "run-input" }];
+    const originalGet = runtime.get;
+    runtime.get = async () => ({ ...await originalGet(), id, agentType, nativeSessionId: "native-session" });
+    if (agentType === "zcode") runtime.eventsBeforeApproval = [{ type: "tool_call", toolCall: { id: "old-question-tool", name: "AskUserQuestion", arguments: { questions: [{ question: "Continue?" }] } } }];
+    const host = new NativeRuntimeBrokerHost(await directory(), runtime as unknown as UnifiedSessionService);
+    try {
+      await host.startRun(id, "run-input");
+      await waitFor(() => expect(host.snapshot(id).events.some(({ event }) => event.type === "ask_user")).toBe(true));
+      const latest = await host.get(id, { limit: 1 });
+      const question = latest.events.find(event => event.type === "ask_user");
+      expect(question).toMatchObject({ question: "Approve this native operation?" });
+      expect(latest.snapshotRevision).toBeGreaterThan(0);
+      expect((await host.get(id, { limit: 1 })).events).toContainEqual(question);
+      expect((await host.get(id, { before: "history.v1.2", limit: 1 })).events.some(event => event.type === "ask_user")).toBe(false);
+      expect(latest.messages.some(message => message.toolCalls?.some(tool => tool.name === "AskUserQuestion"))).toBe(false);
+      if (question?.type !== "ask_user") throw new Error("Expected pending question");
+      await host.answerQuestion(question.questionId, { answer: "允许一次" });
+      await waitFor(() => expect(host.snapshot(id).controller).toBeNull());
+      expect((await host.get(id, { limit: 1 })).events.some(event => event.type === "ask_user")).toBe(false);
+    } finally {
+      await host.stop();
+    }
   });
 
   it("omits an occupied rejection from a retained native tail page", async () => {

@@ -1,6 +1,6 @@
 import { expect, it, vi } from "vitest";
 import type { AgentApi } from "../global";
-import { resolveDashboardSession } from "./dashboard-session-navigation";
+import { getCachedDashboardSession, resolveDashboardSession } from "./dashboard-session-navigation";
 import { loadProgressiveSessionHistoryPage } from "./session-history";
 
 it("uses the existing workspace catalog IDs when opening an original or hidden member session", async () => {
@@ -29,6 +29,30 @@ function fixture() {
   };
   return { api: methods as unknown as AgentApi, ...methods };
 }
+
+it("reopens cached metadata synchronously and preserves native ownership and permissions", () => {
+  const { api, getSession } = fixture();
+  const known = { ...target, projectId: "project", occupancy: "owned-externally", canResume: false,
+    permissionMode: "request-approval", nativePermissions: { currentValue: "plan", options: [] } };
+  const cached = { workspaces: [workspace], sessions: [known, { ...known, id: "sibling" }] } as Parameters<typeof getCachedDashboardSession>[1];
+  const before = JSON.stringify(cached);
+  const result = getCachedDashboardSession({ ...target, title: "最新标题" }, cached);
+  expect(result).not.toBeInstanceOf(Promise);
+  expect(result?.session).toMatchObject({ ...known, title: "最新标题" });
+  expect(result?.snapshot.sessions.map(session => session.id)).toEqual(["sibling", target.id]);
+  expect(JSON.stringify(cached)).toBe(before);
+  expect(getSession).not.toHaveBeenCalled();
+  expect(api.listAgentWorkspaces).not.toHaveBeenCalled();
+});
+
+it("requires an exact cached identity and workspace before taking the fast path", () => {
+  const known = { ...target, projectId: "project" };
+  const cached = { workspaces: [workspace], sessions: [known] } as Parameters<typeof getCachedDashboardSession>[1];
+  expect(getCachedDashboardSession(target)).toBeUndefined();
+  expect(getCachedDashboardSession({ ...target, id: "other" }, cached)).toBeUndefined();
+  expect(getCachedDashboardSession({ ...target, agentType: "zcode" }, cached)).toBeUndefined();
+  expect(getCachedDashboardSession(target, { ...cached!, workspaces: [] })).toBeUndefined();
+});
 
 it("opens a cached workspace with one exact detail request and preserves cached sibling sessions", async () => {
   const { api, getSession, listAgentWorkspaces, listAgentWorkspaceSessions } = fixture();

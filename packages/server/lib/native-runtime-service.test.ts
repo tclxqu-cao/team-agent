@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { encodeUnifiedSessionId, type AgentType, type AgentWorkspace, type RuntimeHealth, type UnifiedSessionSummary, type WorkspacePage } from "@agent/native-runtime";
+import { encodeUnifiedSessionId, type AgentType, type AgentWorkspace, type CreateRuntimeSessionOptions, type RuntimeHealth, type UnifiedSessionSummary, type WorkspacePage } from "@agent/native-runtime";
 import type { NativeRuntimePort } from "./native-runtime-service";
 import { NativeRuntimeService, normalizeProjectPath } from "./native-runtime-service";
 
@@ -34,6 +34,7 @@ class FakeRuntime implements NativeRuntimePort {
   deletedIds: string[] = [];
   releasedIds: string[] = [];
   workspaceSessions: UnifiedSessionSummary[] = [];
+  createCalls: Array<CreateRuntimeSessionOptions & { agentType: AgentType }> = [];
 
   health = async (): Promise<RuntimeHealth[]> => [];
   listModels = async () => [];
@@ -59,7 +60,8 @@ class FakeRuntime implements NativeRuntimePort {
       ? this.discovered
       : this.discovered.filter((session) => session.projectId === projectId);
   };
-  create = async (): Promise<UnifiedSessionSummary> => {
+  create = async (options: CreateRuntimeSessionOptions & { agentType: AgentType }): Promise<UnifiedSessionSummary> => {
+    this.createCalls.push(options);
     if (!this.createResult) throw new Error("no create result configured");
     return this.createResult;
   };
@@ -89,6 +91,26 @@ class FakeRuntime implements NativeRuntimePort {
 }
 
 describe("NativeRuntimeService", () => {
+  it("creates a Codex session by cwd while retaining the selected local project's association", async () => {
+    const projectId = "747702c4-acaf-44ea-ac57-73dc77eb79ee";
+    const cwd = "/Users/caoqu/refund";
+    const runtime = new FakeRuntime();
+    runtime.createResult = summary("message-session", undefined, cwd);
+    const service = new NativeRuntimeService(runtime, async () => [{ id: projectId, name: "refund", description: cwd }]);
+    const created = await service.create({ agentType: "codex", projectId, cwd, title: "[消息] 兼容性和风险都看" });
+    expect(runtime.createCalls).toEqual([{ agentType: "codex", cwd, title: "[消息] 兼容性和风险都看" }]);
+    expect(created.projectId).toBe(projectId);
+    expect((await service.list(projectId)).map(session => session.id)).toContain(created.id);
+  });
+
+  it("preserves actual native project IDs when they do not identify a local project", async () => {
+    const runtime = new FakeRuntime();
+    runtime.createResult = summary("native-project-session");
+    const service = new NativeRuntimeService(runtime);
+    await service.create({ agentType: "codex", projectId: "native-project", cwd: "/tmp", title: "native" });
+    expect(runtime.createCalls[0].projectId).toBe("native-project");
+  });
+
   it("forwards an explicit Codex release to the native broker", async () => {
     const runtime = new FakeRuntime();
     const service = new NativeRuntimeService(runtime);

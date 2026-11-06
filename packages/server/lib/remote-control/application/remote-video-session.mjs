@@ -19,6 +19,7 @@ export class RemoteVideoSession {
     this.lastTuningKey = null;
     this.generation = 0;
     this.paused = false;
+    this.playbackHealthy = false;
     this.tuningChain = Promise.resolve();
     this.lastMediaLogKey = '';
   }
@@ -129,6 +130,8 @@ export class RemoteVideoSession {
     if (data.kind === 'quality') { this.log('info', 'viewer quality change', { quality: data.quality }); return this.setQuality(data.quality); }
     if (data.kind === 'stats') return this.connected ? this.applyStats(data) : undefined;
     if (data.kind === 'viewer-trace') {
+      if (data.event === 'playback-ready' && this.connected && !this.paused) this.playbackHealthy = true;
+      if (data.event === 'jpeg-fallback') this.playbackHealthy = false;
       this.log('info', `viewer event: ${String(data.event ?? 'unknown')}`, { ...data });
       return undefined;
     }
@@ -142,7 +145,15 @@ export class RemoteVideoSession {
       const profile = this.policy.selectCodec?.(receiverProfiles) ?? 'baseline';
       return this.startAttempt(profile, generation);
     }
-    if (data.kind === 'answer') return this.transport?.answer(data.sdp);
+    if (data.kind === 'answer') {
+      const transport = this.transport;
+      const generation = this.generation;
+      try { return await transport?.answer(data.sdp); }
+      catch (error) {
+        if (this.transport === transport) await this.failAttempt(error, generation);
+      }
+      return;
+    }
     if (data.kind === 'ice') return this.transport?.addIceCandidate(data.candidate);
   }
 
@@ -287,7 +298,7 @@ export class RemoteVideoSession {
     this.frameTimer.unref?.();
   }
 
-  pause() { this.paused = true; clearTimeout(this.frameTimer); clearInterval(this.statsTimer); }
+  pause() { this.paused = true; this.playbackHealthy = false; clearTimeout(this.frameTimer); clearInterval(this.statsTimer); }
   async resume() {
     this.paused = false;
     if (this.connected && this.peer) {
@@ -299,6 +310,7 @@ export class RemoteVideoSession {
     }
   }
   async stopAttempt() {
+    this.playbackHealthy = false;
     this.receiverObservation = null;
     const hadAttempt = Boolean(this.transport || this.unsubscribe || this.encoderActive);
     clearTimeout(this.connectTimer); clearTimeout(this.firstFrameTimer); clearTimeout(this.frameTimer); clearInterval(this.statsTimer);

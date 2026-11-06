@@ -107,8 +107,10 @@ export class RemoteAuthorization {
     if (this.enabled) this.publishDormant();
     this.timer = setInterval(() => {
       const interactive = Date.now() - (this.lastInteractionAt || 0) < 4000;
+      const videoOnly = this.viewerCount === 1 && this.video.connected && this.video.playbackHealthy;
+      const previewInterval = videoOnly ? 2000 : interactive ? this.intervalMs : 200;
       if (this.enabled && this.captureActive && this.viewerCount > 0
-        && (interactive || Date.now() - (this.lastPreview || 0) >= 200)) void this.tick();
+        && Date.now() - (this.lastPreview || 0) >= previewInterval) void this.tick();
     }, this.intervalMs); this.timer.unref();
   }
   async status(local = true) {
@@ -256,7 +258,8 @@ export class RemoteAuthorization {
         this.publishUnavailable(this.error, this.locked === true);
         return;
       }
-      if (this.video.connected && Date.now() - (this.lastPreview || 0) < 2000) return;
+      if (this.viewerCount === 1 && this.video.connected && this.video.playbackHealthy
+        && Date.now() - (this.lastPreview || 0) < 2000) return;
       const interactive = Date.now() - (this.lastInteractionAt || 0) < 4000;
       const frame = await this.helper.request({
         op: 'capture', maxEdge: interactive ? 960 : 1280, maxBytes: interactive ? 64 * 1024 : 128 * 1024,
@@ -499,7 +502,11 @@ export class RemoteAuthorization {
       }
       // Viewer cleanup fires stop on every unwatch/reload; tearing down in the
       // background keeps the queue free (a full werift close takes seconds).
-      if (event.data.kind === 'stop') { void this.mediaChain.then(() => this.video.stop()).catch(() => {}); return; }
+      if (event.data.kind === 'stop') {
+        this.video.playbackHealthy = false;
+        void this.mediaChain.then(() => this.video.stop()).catch(() => {});
+        return;
+      }
       // answer/ice handlers block inside werift until the offer's ICE gathering
       // settles (a slow STUN round trip can take ~10s) — they must share the
       // media chain with start instead of stalling the serialized event queue.
@@ -514,6 +521,7 @@ export class RemoteAuthorization {
       this.controlState = 'user-controlled';
     }
     else if (event.type === 'browser:return-requested') {
+      this.video.playbackHealthy = false;
       this.audioSession.dispatch({ type: 'set-controller', controller: false });
       if (this.platform === 'win32') void this.helper.request({ op: 'keep-display', on: false }).catch(() => {});
       // Media teardown (helper round trip + werift close) takes seconds; the

@@ -8,6 +8,7 @@ export { OpenCodeServerClient } from "./opencode-server-client.js";
 export { QoderRuntimeAdapter } from "./qoder-runtime-adapter.js";
 export { ZCodeRuntimeAdapter } from "./zcode-runtime-adapter.js";
 export { WorkBuddyRuntimeAdapter } from "./workbuddy-runtime-adapter.js";
+export { startDetachedNativeRuntimeHost, type DetachedNativeRuntimeHostOptions } from "./detached-native-runtime-host.js";
 export {
   BrokerRuntimeAdapter,
   NativeRuntimeBrokerClient,
@@ -19,6 +20,7 @@ export {
   type BrokerRunStart,
   type NativeRuntimeBrokerSnapshot,
   type NativeRuntimeController,
+  type NativeRuntimeAbortOptions,
   type NativeRuntimeBrokerCallbacks,
   type NativeRuntimeBrokerRuntimeFactory,
 } from "./native-runtime-broker.js";

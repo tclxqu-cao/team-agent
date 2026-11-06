@@ -11,6 +11,7 @@ interface LiveNativeCatalog {
   expiresAt: number;
 }
 const liveHost = globalThis as typeof globalThis & { __liveNativeSessionCatalog?: LiveNativeCatalog };
+const LIVE_NATIVE_CATALOG_TTL_MS = 15_000;
 
 /** Runtime list() is explicitly cached until invalidated. Live views must refresh
  * discovery; coalesce viewers and searches without turning every poll into a scan. */
@@ -20,7 +21,9 @@ function liveNativeSessions(): Promise<UnifiedSessionSummary[]> {
   const entry: LiveNativeCatalog = { promise: Promise.resolve([]), pending: true, expiresAt: 0 };
   entry.promise = getNativeRuntimeService().refresh().then(sessions => {
     entry.pending = false;
-    entry.expiresAt = Date.now() + 2000;
+    // Match the visible list's polling interval so nearby viewers, searches
+    // and run-state updates reuse discovery instead of repeatedly scanning it.
+    entry.expiresAt = Date.now() + LIVE_NATIVE_CATALOG_TTL_MS;
     return sessions;
   }, error => {
     if (liveHost.__liveNativeSessionCatalog === entry) delete liveHost.__liveNativeSessionCatalog;
@@ -33,8 +36,11 @@ function liveNativeSessions(): Promise<UnifiedSessionSummary[]> {
 /** Shared source for existing chat lists, the selector, and the running Dashboard. */
 export async function discoverSessions(projectId?: string, refresh = false, options: { includeInternal?: boolean; live?: boolean } = {}) {
   const hidden = options.includeInternal ? new Set<string>() : collaborationSessionIds();
-  const sessions = (await agentHost.getSessionStore().list(projectId)).filter(session => !hidden.has(session.id));
-  const tagged = sessions.map(({ messages: _messages, events: _events, ...session }) => ({
+  const store = agentHost.getSessionStore();
+  const summaries = store.listSummaries ? await store.listSummaries(projectId)
+    : (await store.list(projectId)).map(({ messages: _messages, events: _events, ...summary }) => summary);
+  const sessions = summaries.filter(session => !hidden.has(session.id));
+  const tagged = sessions.map(session => ({
     ...session,
     agentType: "customer-agent" as const,
     messageQueueVersion: 1 as const,

@@ -3,6 +3,20 @@ import type { AgentApi, UnifiedSessionSummary } from "../global";
 import type { AgentRailSessions } from "./agent-rail-sessions";
 import { SESSION_HISTORY_PAGE_SIZE, type SessionHistoryDetail, type SessionHistorySeed } from "./session-history";
 
+/** Reopen verified cached metadata while ChatView refreshes its retained messages. */
+export function getCachedDashboardSession(target: MonitoredSession, cached?: AgentRailSessions): { session: UnifiedSessionSummary; snapshot: AgentRailSessions } | undefined {
+  const known = cached?.sessions.find(session => session.id === target.id && session.agentType === target.agentType);
+  if (!known || !cached) return;
+  const workspace = cached.workspaces.find(workspace => workspace.agentType === target.agentType
+    && (workspace.workspaceId === known.projectId || workspace.roots.includes(known.cwd)));
+  if (!workspace) return;
+  const session = { ...known, title: target.title || known.title, projectId: workspace.workspaceId };
+  return { session, snapshot: {
+    workspaces: cached.workspaces.filter(workspace => workspace.agentType === target.agentType),
+    sessions: [...cached.sessions.filter(session => session.agentType === target.agentType && session.id !== target.id), session],
+  } };
+}
+
 /** Open the exact target without scanning every workspace's session history. */
 export async function resolveDashboardSession(api: AgentApi, target: MonitoredSession, signal: AbortSignal, cached?: AgentRailSessions): Promise<{ session: UnifiedSessionSummary; snapshot: AgentRailSessions; initialHistory: SessionHistorySeed }> {
   signal.throwIfAborted();

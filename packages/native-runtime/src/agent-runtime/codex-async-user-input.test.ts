@@ -140,12 +140,11 @@ describe("Codex asynchronous questions", () => {
     await expect(run.adapter.answerQuestion(id, { answer: "too late" })).resolves.toBe(false);
   });
 
-  it("keeps async question text as historical progress without labeling it a final answer", async () => {
+  it("keeps async questions as structured cards in active and completed history", async () => {
     const active = await codexTurnsToMessages([{ id: "turn", status: "inProgress", items: [question] }]);
-    expect(active).toEqual([]);
+    expect(active.map(message => message.presentation?.question?.status)).toEqual(["pending", "pending"]);
     const history = await codexTurnsToMessages([{ id: "turn", status: "completed", items: [question] }]);
-    expect(history).toEqual([expect.objectContaining({
-      content: question.text, presentation: expect.objectContaining({ agentMessagePhase: "commentary" }),
-    })]);
+    expect(history).toEqual(active);
+    expect(history.every(message => !message.presentation?.agentMessagePhase)).toBe(true);
   });
 });

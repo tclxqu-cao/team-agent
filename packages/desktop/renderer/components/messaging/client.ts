@@ -1,4 +1,4 @@
-import type { MessagingCommand } from "../../../../core/src/domain/messaging/types";
+import type { MessagingCommand } from "@agent/messaging";
 
 export async function messagingRequest<T>(command: MessagingCommand): Promise<T> {
   if (!window.agentApi?.messaging) throw new Error("当前服务尚未提供消息接入，请连接更新后的服务");

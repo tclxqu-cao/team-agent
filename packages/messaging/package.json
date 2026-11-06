@@ -1,0 +1,16 @@
+{
+  "name": "@agent/messaging",
+  "version": "0.1.0",
+  "private": true,
+  "engines": { "node": ">=22.22.0" },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "build": "node build.mjs && bunx tsc --emitDeclarationOnly",
+    "dev": "node build.mjs && bun build ./src/index.ts --outdir ./dist --target node --format esm --sourcemap=external --external @agent/core --watch",
+    "test": "bunx vitest run src"
+  },
+  "dependencies": { "@agent/core": "*" }
+}

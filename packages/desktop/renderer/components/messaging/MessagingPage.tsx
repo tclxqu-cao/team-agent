@@ -1,6 +1,7 @@
+import { usePageActive, isPageActive } from "../../lib/page-activity";
 import { useCallback, useEffect, useState } from "react";
 import { Inbox, Search, Settings2, Play, Pause, RefreshCw, X } from "lucide-react";
-import type { DeliveryRecord, MessageRecord, MessagingList, MessagingSettings, RoutingCandidate } from "../../../../core/src/domain/messaging/types";
+import type { DeliveryRecord, MessageRecord, MessagingList, MessagingSettings, RoutingCandidate } from "@agent/messaging";
 import { messagingRequest, DELIVERY_LABELS, EXECUTION_LABELS, timeLabel } from "./client";
 import MessageDetail from "./MessageDetail";
 import MessageSettings from "./MessageSettings";
@@ -17,13 +18,14 @@ export function MessageTable({ messages, selected, onSelect }: { messages: Messa
       <td><time>{timeLabel(message.receivedAt)}</time><strong>{message.source.conversationName || message.source.conversationId}</strong></td>
       <td><button type="button" className="messaging-message-button" onClick={() => onSelect(message.id)}><span>{message.source.text || "非文本消息"}</span><small>{message.routing.decision?.reason || "等待判断"}</small></button></td>
       <td><span className="messaging-method">{message.routing.confirmedByUser ? "用户确认" : message.routing.mode === "model" ? "模型" : "规则"}</span></td>
-      <td><strong>{message.execution.projectName || message.routing.decision?.projectId || "—"}</strong><small>{message.routing.decision?.agentType}</small></td>
+      <td><strong>{message.routing.decision?.action === "reply" ? "私聊回复" : message.execution.projectName || message.routing.decision?.projectId || "—"}</strong><small>{message.routing.decision?.agentType}</small></td>
       <td><span className="messaging-status" data-status={message.routing.status === "review" ? "review" : message.execution.status}>{message.routing.status === "ignored" ? "未触发" : message.routing.status === "review" ? "待确认路由" : message.routing.status === "routing" ? "正在判断" : message.routing.status === "pending" ? "等待判断" : EXECUTION_LABELS[message.execution.status]}</span></td>
       <td><span className="messaging-status" data-status={message.deliveryStatus}>{DELIVERY_LABELS[message.deliveryStatus]}</span></td>
     </tr>)}</tbody>
   </table>;
 }
 export default function MessagingPage({ onClose, onOpenSession }: { onClose?: () => void; onOpenSession?: (message: MessageRecord) => void }) {
+  const active = usePageActive();
   const skin = useUIStore(state => state.skin);
   useEffect(() => { document.documentElement.setAttribute("data-skin", skin); }, [skin]);
   const [snapshot, setSnapshot] = useState<MessagingList | null>(null);
@@ -32,7 +34,7 @@ export default function MessagingPage({ onClose, onOpenSession }: { onClose?: ()
   const [settings, setSettings] = useState<MessagingSettings | null>(null);
   const [candidates, setCandidates] = useState<RoutingCandidate[]>([]);
   const [sources, setSources] = useState<Array<{ database: string; accountId: string }>>([]);
-  const [query, setQuery] = useState(""); const [filter, setFilter] = useState("mentioned");
+  const [query, setQuery] = useState(""); const [filter, setFilter] = useState("addressed");
   const [cursors, setCursors] = useState<Array<string | undefined>>([undefined]);
   const [settingsOpen, setSettingsOpen] = useState(false); const [busy, setBusy] = useState(false);
   const { notice, report, recover, dismiss } = useErrorNotice();
@@ -47,6 +49,7 @@ export default function MessagingPage({ onClose, onOpenSession }: { onClose?: ()
     if (window.parent !== window) window.parent.postMessage({ type: MESSAGING_READY }, window.location.origin);
   }, []);
   useEffect(() => {
+    if (!active) return;
     let disposed = false;
     void messagingRequest<{ settings: MessagingSettings; candidates: RoutingCandidate[] }>({ action: "settings" }).then(value => {
       if (!disposed) { setSettings(value.settings); setCandidates(value.candidates); recover("settings"); }
@@ -54,11 +57,12 @@ export default function MessagingPage({ onClose, onOpenSession }: { onClose?: ()
       if (!disposed) report({ source: "settings", title: "接入设置加载失败", message: error instanceof Error ? error.message : "无法加载接入设置", onRetry: () => setSettingsRevision(value => value + 1) }, settingsRevision > 0);
     });
     return () => { disposed = true; };
-  }, [settingsRevision, report, recover]);
+  }, [active, settingsRevision, report, recover]);
   useEffect(() => {
+    if (!active) return;
     let disposed = false; let running = false;
     const poll = async () => {
-      if (running) return; running = true;
+      if (running || !isPageActive()) return; running = true;
       try {
         const value = await messagingRequest<MessagingList>({ action: "list", query, filter, before: cursor });
         if (!disposed) {
@@ -74,19 +78,20 @@ export default function MessagingPage({ onClose, onOpenSession }: { onClose?: ()
     const start = setTimeout(() => void poll(), 180);
     const timer = setInterval(() => void poll(), 5000);
     return () => { disposed = true; clearTimeout(start); clearInterval(timer); };
-  }, [query, filter, cursor, revision, report, recover, refresh]);
+  }, [active, query, filter, cursor, revision, report, recover, refresh]);
   useEffect(() => {
     if (!selected) { setDetail(null); return; }
+    if (!active) return;
     let disposed = false; let running = false;
     const poll = async () => {
-      if (running) return; running = true;
+      if (running || !isPageActive()) return; running = true;
       try { const value = await messagingRequest<{ message: MessageRecord; deliveries: DeliveryRecord[] }>({ action: "detail", id: selected }); if (!disposed) { setDetail(value); recover("detail"); } }
       catch (error) { if (!disposed) report({ source: "detail", title: "消息详情加载失败", message: error instanceof Error ? error.message : "无法加载消息详情", onRetry: refresh }); }
       finally { running = false; }
     };
     setDetail(null); void poll(); const timer = setInterval(() => void poll(), 5000);
     return () => { disposed = true; clearInterval(timer); };
-  }, [selected, revision, report, recover, refresh]);
+  }, [active, selected, revision, report, recover, refresh]);
   const perform = async (action: () => Promise<void>, title = "操作失败") => {
     setBusy(true); recover("action");
     try { await action(); setRevision(value => value + 1); }
@@ -120,13 +125,13 @@ export default function MessagingPage({ onClose, onOpenSession }: { onClose?: ()
     <div className="messaging-workspace">
       <div className="messaging-inbox">
         <div className="messaging-filters">
-          <label className="messaging-search"><Search size={15}/><input type="search" aria-label="搜索监听消息" placeholder="搜索群名或消息内容" value={query} onChange={event => { setQuery(event.target.value); setCursors([undefined]); }}/></label>
+          <label className="messaging-search"><Search size={15}/><input type="search" aria-label="搜索监听消息" placeholder="搜索会话名或消息内容" value={query} onChange={event => { setQuery(event.target.value); setCursors([undefined]); }}/></label>
           <select aria-label="消息筛选" value={filter} onChange={event => { setFilter(event.target.value); setCursors([undefined]); }}>
-            <option value="mentioned">直接 @我</option><option value="all">全部监听消息</option><option value="review">待确认路由</option><option value="running">执行中 / 待核对</option><option value="completed">执行完成</option><option value="deliveryFailed">回传待处理</option>
+            <option value="addressed">私聊 / 直接 @我</option><option value="mentioned">直接 @我</option><option value="all">全部监听消息</option><option value="review">待确认路由</option><option value="running">执行中 / 待核对</option><option value="completed">执行完成</option><option value="deliveryFailed">回传待处理</option>
           </select>
         </div>
         <div className="messaging-table-scroll">{snapshot?.messages.length ? <MessageTable messages={snapshot.messages} selected={selected} onSelect={setSelected}/>
-          : <div className="messaging-empty"><Inbox size={34}/><h2>{snapshot ? "还没有符合条件的消息" : "正在加载消息…"}</h2><p>{snapshot ? "开启监听后，新的正文直接 @我消息会出现在这里。也可以切换到“全部监听消息”查看接收原文。" : "正在读取已保存的消息记录。"}</p></div>}</div>
+          : <div className="messaging-empty"><Inbox size={34}/><h2>{snapshot ? "还没有符合条件的消息" : "正在加载消息…"}</h2><p>{snapshot ? "开启监听后，收到的私聊和群聊直接 @我消息会出现在这里。也可以切换到“全部监听消息”查看接收原文。" : "正在读取已保存的消息记录。"}</p></div>}</div>
         <footer className="messaging-pagination"><span>第 {cursors.length} 页 · 每页最多 50 条</span><button type="button" disabled={cursors.length === 1} onClick={() => setCursors(value => value.slice(0, -1))}>上一页</button><button type="button" disabled={!snapshot?.nextCursor} onClick={() => snapshot?.nextCursor && setCursors(value => [...value, snapshot.nextCursor!])}>下一页</button></footer>
       </div>
       {selected && (detail ? <MessageDetail key={selected} {...detail} candidates={candidates} busy={busy} onBack={() => setSelected(null)} onOpenSession={onOpenSession}

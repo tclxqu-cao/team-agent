@@ -173,6 +173,24 @@ describe("markDurableMessageSteered", () => {
 });
 
 describe("reconcileDurableQueuedMessages", () => {
+  it("retains an in-flight steer across repeated consumed-queue snapshots without retaining deleted messages", () => {
+    const input = { id: "steering", role: "user", content: "guide now", timestamp: 2, isQueued: true, queueItemId: "queue", isSteering: true };
+    const deleted = { ...input, id: "deleted", queueItemId: "deleted-queue", isSteering: false };
+    const empty = { active: null, queued: [], history: [] };
+    const first = reconcileDurableQueuedMessages([input, deleted], empty);
+    expect(first).toEqual([input]);
+    expect(reconcileDurableQueuedMessages(first, empty)).toEqual([input]);
+    expect(reconcileDurableQueuedMessages([{ ...input, isSteering: false }], empty)).toEqual([]);
+  });
+
+  it("does not duplicate an in-flight steer still present in the authoritative queue", () => {
+    const input = { id: "steering", role: "user", content: "guide now", timestamp: 2, isQueued: true, queueItemId: "queue", isSteering: true };
+    const state = { active: null, queued: [{ id: "queue", sourceMessageId: input.id, objective: input.content, createdAt: 2, kind: "message" as const }], history: [] };
+    const result = reconcileDurableQueuedMessages([input], state);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ id: input.id, isQueued: true, isSteering: true, queueItemId: "queue" });
+  });
+
   it("retains an optimistic queued input across a snapshot taken before enqueue acknowledgement", () => {
     const input = { id: "saving", role: "user", content: "next", timestamp: 2, isQueued: true };
     expect(reconcileDurableQueuedMessages([input], { active: null, queued: [], history: [] })).toEqual([input]);

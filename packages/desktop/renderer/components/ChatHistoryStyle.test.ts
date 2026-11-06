@@ -11,8 +11,8 @@ const toolCallCard = readFileSync(new URL("./ToolCallCard.tsx", import.meta.url)
 const globalCss = readFileSync(new URL("../styles/global.css", import.meta.url), "utf8");
 const webCss = readFileSync(new URL("../../../webapp/src/presentation/web.css", import.meta.url), "utf8");
 const pendingIndicator = chatView.slice(
-  chatView.indexOf("{/* Keep every otherwise-empty running state visible and consistent. */}"),
-  chatView.indexOf("{(sessionLoadError || error) && ("),
+  chatView.indexOf("<SessionRunActivity"),
+  chatView.indexOf("{displayedError && ("),
 );
 const selectedSessionLoad = chatView.slice(
   chatView.indexOf("const loadGeneration = ++sessionLoadGenerationRef.current;"),
@@ -20,7 +20,7 @@ const selectedSessionLoad = chatView.slice(
 );
 const selectedSessionLoadDependencies = selectedSessionLoad.slice(selectedSessionLoad.lastIndexOf("}, ["));
 const abortHandler = chatView.slice(
-  chatView.indexOf("const handleAbort = () => {"),
+  chatView.indexOf("const handleAbort = ("),
   chatView.indexOf("const handleSteer = async"),
 );
 const startRun = chatView.slice(
@@ -43,19 +43,16 @@ const runtimeErrorHandler = chatView.slice(
 describe("shared Codex-style message history", () => {
   it("applies one presentation path to every runtime", () => {
     expect(chatView).toContain('className="chat-view chat-view--codex-history"');
-    expect(chatView).toContain('className="chat-message-activity"');
+    expect(chatView).toContain("<SessionRunActivity");
     expect(chatView).not.toContain('className={webShell ? "chat-view');
     expect(chatView).not.toContain('className={isNativeRuntime ? "chat-view');
   });
 
-  it("uses the shared brain indicator for every otherwise-empty running state", () => {
-    expect(pendingIndicator).toContain("<AgentActivityIndicator");
-    expect(pendingIndicator).toContain("{showThinkingFallback && (");
+  it("keeps one run activity component independent of tool rows and streaming reasoning", () => {
+    expect(pendingIndicator).toContain("<SessionRunActivity running={isRunning}");
     expect(pendingIndicator).not.toContain("chat-message-avatar");
-    expect(pendingIndicator).not.toContain("Robot avatar");
-    expect(chatView).toContain("const showThinkingFallback = isRunning");
-    expect(chatView).toContain("&& !hasStreamingReasoning");
-    expect(chatView).toContain("&& !hasVisibleRunningTool;");
+    expect(chatView).not.toContain("hasStreamingReasoning");
+    expect(chatView).not.toContain("hasVisibleRunningTool");
     expect(chatView).toContain("visibleMessages.length === 0 && !isRunning");
   });
 
@@ -83,15 +80,12 @@ describe("shared Codex-style message history", () => {
   });
 
   it("keeps tool execution status inside the tool row", () => {
-    expect(chatView).toContain("!areToolCallsComplete(message.toolCalls)");
     expect(toolCallCard).toContain("const actionLabel = toolActivityLabel(first.name) ?? phrase.done");
     expect(toolCallCard).toContain("!isDone && <StatusIcon");
   });
 
   it("shows one left-aligned thinking status when native progress is available", () => {
-    expect(chatView).toContain("&& !globalRuntimeProgress");
-    expect(chatView).toContain("{isRunning && globalRuntimeProgress && (");
-    expect(chatView).toContain("<RuntimeProgressRow progress={globalRuntimeProgress} startedAt={thinkingStartedAt} />");
+    expect(pendingIndicator).toContain("progress={globalRuntimeProgress} startedAt={thinkingStartedAt}");
     expect(globalCss).toContain(".chat-view--codex-history .runtime-progress-row:not(.runtime-progress-row--compact)");
     expect(globalCss).toMatch(/\.chat-view--codex-history \.runtime-progress-row:not\(\.runtime-progress-row--compact\)\s*\{[^}]*width: 100%;[^}]*max-width: none;/s);
     expect(globalCss).toContain("margin-left: auto");
@@ -273,7 +267,6 @@ describe("shared Codex-style message history", () => {
     expect(chatView).toContain("const shouldPollFallback = shouldPollNativeHistoryFallback(sessionSummary)");
     expect(chatView).toContain('prefersNativeHistoryPolling(sessionSummary) || typeof window.agentApi.observeSession !== "function"');
     expect(chatView).toContain("if (shouldPollFallback) startPolling()");
-    expect(chatView).toContain("window.setInterval(refresh, 2_000)");
   });
 
   it("keeps Codex follow-ups queued until abort reaches a terminal event", () => {
@@ -283,7 +276,7 @@ describe("shared Codex-style message history", () => {
     expect(abortHandler).toContain('if (composerAgentType !== "codex")');
     expect(abortHandler.indexOf('if (composerAgentType !== "codex")'))
       .toBeLessThan(abortHandler.indexOf("setRunningSession(null);"));
-    expect(abortHandler).toContain("window.agentApi.abort(viewSessionId || undefined).catch");
+    expect(abortHandler).toContain("window.agentApi.abort(viewSessionId || undefined, trigger).catch");
   });
 
   it("does not restore or fail a sent message when Codex stop confirmation times out", () => {

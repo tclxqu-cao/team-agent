@@ -42,6 +42,33 @@ async function fixture(options: Record<string, unknown> = {}) {
 }
 
 describe('CLI remote desktop', () => {
+  it('keeps fast JPEG capture for fallback and other viewers while a video transport remains connected', async () => {
+    vi.useFakeTimers();
+    const f = await fixture({ intervalMs: 50 });
+    const captures = () => f.helper.request.mock.calls.filter(([command]: any[]) => command.op === 'capture').length;
+    try {
+      f.grant(); await f.service.action('enable'); await f.watch();
+      f.service.video.connected = true;
+      f.service.video.playbackHealthy = true;
+      const before = captures();
+      await vi.advanceTimersByTimeAsync(1500);
+      expect(captures()).toBe(before);
+      await vi.advanceTimersByTimeAsync(550);
+      expect(captures()).toBeGreaterThan(before);
+      const second = { id: 'observer', userId: 'owner', producerSessionIds: new Set<string>(), watchedSessionId: null, send: vi.fn() };
+      f.registry.connect(second); await f.watch(second);
+      const withObserver = captures();
+      await vi.advanceTimersByTimeAsync(300);
+      expect(captures()).toBeGreaterThan(withObserver);
+      f.registry.unwatch(second); await f.service.inputQueue;
+      await f.service.video.handle({ kind: 'viewer-trace', event: 'jpeg-fallback' });
+      f.service.lastInteractionAt = Date.now();
+      const fallback = captures();
+      await vi.advanceTimersByTimeAsync(100);
+      expect(captures()).toBeGreaterThan(fallback);
+    } finally { await f.close(); vi.useRealTimers(); }
+  });
+
   it.each(['darwin', 'win32'])('shows %s component identity only in local authorization responses', async (platform) => {
     const f = await fixture({ platform });
     const path = platform === 'win32' ? 'C:\\Users\\test\\AppData\\Local\\AgentRoam\\RemoteDesktop\\agentroam-remote-desktop.exe' : '/Users/test/Library/Application Support/AgentRoamRemoteDesktop/Services.noindex/AgentRoam Remote Desktop.app';

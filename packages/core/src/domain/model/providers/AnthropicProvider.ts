@@ -10,7 +10,8 @@ export class AnthropicProvider implements IModelProvider {
   readonly modelId: string;
   private readonly apiKey: string;
   private readonly baseUrl: string;
-  private readonly defaultMaxTokens: number;
+  private readonly defaultMaxTokens: number | null;
+  private modelMaxTokens?: Promise<number>;
   private readonly defaultTemperature: number;
   private readonly timeoutMs: number;
 
@@ -18,7 +19,7 @@ export class AnthropicProvider implements IModelProvider {
     this.apiKey = config.apiKey;
     this.baseUrl = config.baseUrl ?? DEFAULT_BASE_URL;
     this.modelId = config.modelId;
-    this.defaultMaxTokens = config.maxTokens ?? 16384;
+    this.defaultMaxTokens = config.maxTokens === undefined ? 16384 : config.maxTokens;
     this.defaultTemperature = config.temperature ?? 0.7;
     this.timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   }
@@ -30,10 +31,19 @@ export class AnthropicProvider implements IModelProvider {
     const systemMessages = messages.filter((m) => m.role === "system");
     const nonSystem = messages.filter((m) => m.role !== "system");
     const systemPrompt = systemMessages.map((m) => m.content).join("\n\n");
+    let maxTokens: number;
+    try {
+      // Messages requires max_tokens; the Models API owns the model-specific maximum.
+      maxTokens = options?.maxTokens ?? this.defaultMaxTokens ?? await this.getModelMaxTokens();
+    } catch (error) {
+      yield { type: "error", code: "model_capabilities_unavailable",
+        message: error instanceof Error ? error.message : "无法读取模型原生输出上限" };
+      return;
+    }
 
     const body: Record<string, unknown> = {
       model: this.modelId,
-      max_tokens: options?.maxTokens ?? this.defaultMaxTokens,
+      max_tokens: maxTokens,
       temperature: options?.temperature ?? this.defaultTemperature,
       messages: nonSystem.map((m) => this.adaptMessage(m)),
       stream: true,
@@ -230,6 +240,26 @@ export class AnthropicProvider implements IModelProvider {
     } finally {
       reader.releaseLock();
     }
+  }
+
+  private getModelMaxTokens(): Promise<number> {
+    return this.modelMaxTokens ??= this.readModelMaxTokens().catch(error => {
+      this.modelMaxTokens = undefined;
+      throw error;
+    });
+  }
+
+  private async readModelMaxTokens(): Promise<number> {
+    const response = await fetch(`${this.baseUrl.replace(/\/+$/, "")}/v1/models/${encodeURIComponent(this.modelId)}`, {
+      headers: { "x-api-key": this.apiKey, "anthropic-version": "2023-06-01" },
+      signal: AbortSignal.timeout(this.timeoutMs),
+    });
+    if (!response.ok) throw new Error(`读取模型原生输出上限失败（HTTP ${response.status}）`);
+    const model = await response.json() as { max_tokens?: unknown };
+    if (typeof model.max_tokens !== "number" || !Number.isSafeInteger(model.max_tokens) || model.max_tokens <= 0) {
+      throw new Error("模型服务未返回有效的原生输出上限");
+    }
+    return model.max_tokens;
   }
 
   async countTokens(messages: Message[]): Promise<number> {

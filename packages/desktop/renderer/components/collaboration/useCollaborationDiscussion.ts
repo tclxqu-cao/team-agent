@@ -1,3 +1,4 @@
+import { usePageActive, isPageActive } from "../../lib/page-activity";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   CollaborationDiscussionMode,
@@ -8,6 +9,7 @@ import type {
 import { collaborationRequest } from "./client";
 
 export function useCollaborationDiscussion(groupId: string, initialDiscussionId?: string) {
+  const active = usePageActive();
   const [group, setGroup] = useState<CollaborationGroup | null>(null);
   const [history, setHistory] = useState<CollaborationDiscussionSummary[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
@@ -84,11 +86,11 @@ export function useCollaborationDiscussion(groupId: string, initialDiscussionId?
     };
   }, [groupId, refreshHistory, select, initialDiscussionId]);
   useEffect(() => {
-    if (!selected) return;
+    if (!active || !selected) return;
     let live = true;
     let inFlight = false;
     const poll = async () => {
-      if (inFlight) return;
+      if (inFlight || !isPageActive()) return;
       inFlight = true;
       try {
         const snapshot = await collaborationRequest<
@@ -130,7 +132,7 @@ export function useCollaborationDiscussion(groupId: string, initialDiscussionId?
       live = false;
       clearInterval(timer);
     };
-  }, [selected, refreshHistory]);
+  }, [active, selected, refreshHistory]);
   const create = (): Promise<CollaborationDiscussionState | null> => {
     if (creating.current) return creating.current;
     begin();
@@ -152,7 +154,7 @@ export function useCollaborationDiscussion(groupId: string, initialDiscussionId?
     return creating.current;
   };
   const act = async (action: "stop" | "resume") => {
-    if (!selected) return;
+    if (!active || !selected) return;
     begin();
     try {
       const snapshot = await collaborationRequest<CollaborationDiscussionState>(

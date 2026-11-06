@@ -828,7 +828,7 @@ export default function BrowserLivePanel({ open, active = true, agentSessionId, 
   }, [api, mergeSession, open, selectedId]);
 
   // Real-time WebRTC video runs while this viewer controls the desktop source;
-  // the JPEG stream keeps flowing as fallback and reconnect preview.
+  // JPEG delivery resumes whenever video playback fails or control ends.
   useEffect(() => {
     if (!open || !api || !hasControl || !isDesktop || !selectedId) {
       videoStalledRef.current = false;
@@ -883,10 +883,23 @@ export default function BrowserLivePanel({ open, active = true, agentSessionId, 
     const usesFrameCallback = typeof video?.requestVideoFrameCallback === "function";
     let frameCallback: number | undefined;
     let latestSample: RemoteVideoStatsSample | null = null;
+    let reportedPlayback = false;
+    let lastPlaybackReportAt = 0;
     videoStallRef.current.begin(performance.now());
     const observePlayback = (frames: number | undefined) => {
       if (!alive || document.visibilityState === "hidden") return;
-      if (videoStallRef.current.observe(frames, performance.now()) && videoStalledRef.current) {
+      const now = performance.now();
+      const progressed = videoStallRef.current.observe(frames, now);
+      // Reconfirm after capture reconfiguration, even when the receiver keeps
+      // the same track and this effect does not restart.
+      if (progressed && (!reportedPlayback || now - lastPlaybackReportAt >= 2000)) {
+        reportedPlayback = true;
+        lastPlaybackReportAt = now;
+        void api.request("browser:webrtc", {
+          sessionId: selectedId, data: { kind: "viewer-trace", event: "playback-ready" },
+        }).catch(() => undefined);
+      }
+      if (progressed && videoStalledRef.current) {
         videoStalledRef.current = false;
         setVideoStallError(null);
         void api.request("browser:webrtc", {
@@ -961,6 +974,9 @@ export default function BrowserLivePanel({ open, active = true, agentSessionId, 
     const timer = window.setInterval(() => void tick(), 1000);
     return () => {
       alive = false;
+      if (reportedPlayback) void api.request("browser:webrtc", {
+        sessionId: selectedId, data: { kind: "viewer-trace", event: "jpeg-fallback" },
+      }).catch(() => undefined);
       window.clearInterval(timer);
       if (frameCallback !== undefined) video?.cancelVideoFrameCallback(frameCallback);
       document.removeEventListener("visibilitychange", onVisibilityChange);
@@ -1028,12 +1044,23 @@ export default function BrowserLivePanel({ open, active = true, agentSessionId, 
     }
   }, [api, selectedId, unlockPassword]);
 
-  const sendInput = useCallback((input: Record<string, unknown>) => {
-    if (!api || pendingDisplayId || pendingQuality || !selected?.isController || selected.state !== "user-controlled") return;
-    void api.request("browser:input", { sessionId: selected.id, input: { ...input, mobile: window.matchMedia("(pointer: coarse)").matches } }).catch((requestError) => {
-      setError(requestError instanceof Error ? requestError.message : "浏览器输入失败");
-    });
+  /** Sends input and resolves with the desktop hit-test reply (null otherwise). */
+  const dispatchInputForResult = useCallback((input: Record<string, unknown>): Promise<Record<string, unknown> | null> => {
+    if (!api || pendingDisplayId || pendingQuality || !selected?.isController || selected.state !== "user-controlled") return Promise.resolve(null);
+    return api.request<(Record<string, unknown> & { input?: { error?: string } }) | null>("browser:input", { sessionId: selected.id, input: { ...input, mobile: window.matchMedia("(pointer: coarse)").matches } })
+      .then((result) => {
+        if (result?.input?.error) throw new Error(result.input.error);
+        return result;
+      })
+      .catch((requestError) => {
+        setError(requestError instanceof Error ? requestError.message : "浏览器输入失败");
+        return null;
+      });
   }, [api, selected, pendingDisplayId, pendingQuality]);
+
+  const sendInput = useCallback((input: Record<string, unknown>) => {
+    void dispatchInputForResult(input);
+  }, [dispatchInputForResult]);
 
   /** Sends a bare key press to the remote (down+up). */
   const sendKey = useCallback((key: string, code: string, modifiers: string[] = []) => {
@@ -1055,14 +1082,6 @@ export default function BrowserLivePanel({ open, active = true, agentSessionId, 
       input: { kind: "key", action: "down", text, key: "", code: "", modifiers: [], mobile: window.matchMedia("(pointer: coarse)").matches },
     });
     if (result.input?.error) throw new Error(result.input.error);
-  }, [api, selected, pendingDisplayId, pendingQuality]);
-
-  /** Sends input and resolves with the desktop hit-test reply (null otherwise). */
-  const dispatchInputForResult = useCallback((input: Record<string, unknown>): Promise<Record<string, unknown> | null> => {
-    if (!api || pendingDisplayId || pendingQuality || !selected?.isController || selected.state !== "user-controlled") return Promise.resolve(null);
-    return api.request<Record<string, unknown> | null>("browser:input", { sessionId: selected.id, input: { ...input, mobile: window.matchMedia("(pointer: coarse)").matches } })
-      .then((result) => (result && typeof result === "object" ? result : null))
-      .catch(() => null);
   }, [api, selected, pendingDisplayId, pendingQuality]);
 
   const sendTapUp = useCallback((point: { x: number; y: number }, click?: number, requestIme = false) => {

@@ -20,7 +20,7 @@ import {
 import {
   RuntimeSessionError,
   createNativeRuntimeBrokerClient,
-  createNativeRuntimeBrokerHostRuntime,
+  startDetachedNativeRuntimeHost,
   decodeUnifiedSessionId,
   type AgentType,
   type AgentWorkspace,
@@ -33,6 +33,7 @@ import {
   type NativeSessionGoal,
   type NativeRuntimeBrokerSnapshot,
   type NativeRuntimeController,
+  type NativeRuntimeAbortOptions,
   type RuntimeHealth,
   type RuntimeModelInfo,
   type RuntimeModelSelection,
@@ -106,7 +107,7 @@ export interface NativeRuntimePort {
   getSessionWatchPath(id: string): Promise<string | null>;
   run(id: string, input: string, images?: string[], agentIds?: string[], agentName?: string): AsyncIterable<AgentEvent>;
   steer(id: string, input: string): Promise<boolean>;
-  abort(id?: string): Promise<void>;
+  abort(id?: string, options?: NativeRuntimeAbortOptions): Promise<void>;
   release?(id: string): Promise<void>;
   answerQuestion(questionId: string, answer: RuntimeQuestionAnswer): Promise<boolean>;
   startRun?(
@@ -254,9 +255,15 @@ export class NativeRuntimeService implements NativeRuntimePort {
   }
 
   async create(options: CreateRuntimeSessionOptions & { agentType: AgentType }): Promise<UnifiedSessionSummary> {
+    const projects = await this.listProjects();
+    const localProject = projects.find(project => project.id === options.projectId);
+    // Local project IDs are UI associations, not Codex project registry IDs.
+    // Native workspace IDs still pass through when no local project owns them.
+    const { projectId: _localProjectId, ...withoutProjectId } = options;
+    const nativeOptions = options.agentType === "codex" && localProject ? withoutProjectId : options;
     const associated = associateLocalProject(
-      await this.runtime.create(options),
-      await this.listProjects(),
+      await this.runtime.create(nativeOptions),
+      projects,
       this.platform,
     );
     const created = options.projectId ? { ...associated, projectId: options.projectId } : associated;
@@ -328,8 +335,8 @@ export class NativeRuntimeService implements NativeRuntimePort {
     return this.runtime.steer(id, input);
   }
 
-  abort(id?: string): Promise<void> {
-    return this.runtime.abort(id);
+  abort(id?: string, options?: NativeRuntimeAbortOptions): Promise<void> {
+    return options ? this.runtime.abort(id, options) : this.runtime.abort(id);
   }
 
   async release(id: string): Promise<void> {
@@ -570,10 +577,9 @@ export function getNativeRuntimeService(): NativeRuntimeService {
     const projectStore = new SQLiteProjectStore(getServerBaseDir());
     globalWithService.__nativeRuntimeService = new NativeRuntimeService(
       createNativeRuntimeBrokerClient({
-        // Only the process that wins the broker host race builds the real
-        // runtime, so CLIs are resolved here — against this process' own
-        // environment — rather than trusting whatever the supervisor injected.
-        runtimeFactory: (callbacks) => {
+        // Resolve binaries against this gateway's effective environment, then
+        // let an independent process own the broker and native connections.
+        startHost: async (directory) => {
           const codex = resolveExternalCli({
             name: "codex",
             environmentVariable: "AGENT_CODEX_BIN",
@@ -583,22 +589,22 @@ export function getNativeRuntimeService(): NativeRuntimeService {
             name: "opencode",
             environmentVariable: "AGENT_OPENCODE_BIN",
           });
-          hostDiagnostics = { pid: process.pid, codex, opencode };
           applyRuntimeError("AGENT_CODEX_RUNTIME_ERROR", codex);
           applyRuntimeError("AGENT_OPENCODE_RUNTIME_ERROR", opencode);
+          const pid = await startDetachedNativeRuntimeHost({
+            directory,
+            codexExecutable: codex.executable ?? "codex",
+            opencodeExecutable: opencode.executable ?? "opencode",
+          });
+          hostDiagnostics = { pid, codex, opencode };
           serverLogger().info("native runtime host elected", {
-            pid: process.pid,
+            pid,
             codex: codex.executable ?? null,
             codexSource: codex.source ?? null,
             codexDetail: codex.detail,
             opencode: opencode.executable ?? null,
             opencodeDetail: opencode.detail,
           });
-          return createNativeRuntimeBrokerHostRuntime(
-            codex.executable ?? "codex",
-            callbacks,
-            opencode.executable ?? "opencode",
-          );
         },
       }),
       () => projectStore.list(),

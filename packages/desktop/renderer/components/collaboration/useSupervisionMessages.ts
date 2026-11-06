@@ -1,3 +1,4 @@
+import { usePageActive, isPageActive } from "../../lib/page-activity";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { SupervisionMessage, SupervisionMessagePage } from "../../../../core/src/domain/supervision/types";
 import { collaborationRequest } from "./client";
@@ -5,6 +6,7 @@ import { mergeSupervisionMessages } from "./supervision-timeline";
 
 /** Independent of discussion selection: an otherwise empty group still has a journal. */
 export function useSupervisionMessages(groupId: string) {
+  const active = usePageActive();
   const [messages, setMessages] = useState<SupervisionMessage[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -16,9 +18,14 @@ export function useSupervisionMessages(groupId: string) {
     const state = { groupId, generation: current.current.generation + 1, latest: 0, before: null as number | null, loaded: false, older: false };
     current.current = state;
     setMessages([]); setError(""); setBefore(null); setLoading(true); setLoadingOlder(false);
+  }, [groupId]);
+
+  useEffect(() => {
+    if (!active) return;
+    const state = current.current;
     let live = true, inFlight = false;
     const poll = async () => {
-      if (inFlight || !groupId) return;
+      if (inFlight || !groupId || !isPageActive()) return;
       inFlight = true;
       try {
         const page = await collaborationRequest<SupervisionMessagePage>({ action: "supervisionMessages", groupId, limit: 100, ...(state.loaded ? { afterSequence: state.latest } : {}) });
@@ -37,7 +44,7 @@ export function useSupervisionMessages(groupId: string) {
     void poll();
     const timer = setInterval(() => { void poll(); }, 2000);
     return () => { live = false; clearInterval(timer); };
-  }, [groupId]);
+  }, [active, groupId]);
 
   const loadOlder = useCallback(async () => {
     const state = current.current;

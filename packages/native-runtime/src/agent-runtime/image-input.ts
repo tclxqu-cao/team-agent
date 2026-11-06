@@ -1,6 +1,6 @@
 import { RuntimeSessionError } from "./types.js";
 
-const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
+export const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 const MAX_BASE64_LENGTH = Math.ceil(MAX_IMAGE_BYTES / 3) * 4;
 
 export type SupportedImageMimeType =

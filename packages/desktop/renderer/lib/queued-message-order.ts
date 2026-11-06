@@ -29,6 +29,7 @@ export interface DurableQueuedMessageLike extends UserMessageLike {
   agentName?: string;
   images?: string[];
   queueItemId?: string;
+  isSteering?: boolean;
   isSteered?: boolean;
   presentation?: Pick<MessagePresentation, "executionTrace" | "forkPoint">;
 }
@@ -72,6 +73,7 @@ export function markDurableMessageSteered<T extends DurableQueuedMessageLike>(
     ...message,
     timestamp: steeredAt,
     isQueued: false,
+    isSteering: undefined,
     isSteered: true,
     queueItemId: undefined,
     sendState: undefined,
@@ -203,8 +205,11 @@ export function reconcileDurableQueuedMessages<T extends DurableQueuedMessageLik
     });
   const confirmedIds = new Set([state.active, ...state.queued, ...state.history]
     .flatMap(item => item ? [item.id, item.sourceMessageId].filter(Boolean) : []));
-  const unconfirmed = messages.filter(message => message.isQueued && !message.queueItemId
-    && !confirmedIds.has(message.id) && !history.some(candidate => candidate.id === message.id));
+  // Steering consumes the broker queue before its HTTP acknowledgement reaches
+  // the renderer. Keep that input until the steering request settles locally.
+  const unconfirmed = messages.filter(message => message.isQueued && (!message.queueItemId || message.isSteering)
+    && !confirmedIds.has(message.id) && !confirmedIds.has(message.queueItemId)
+    && !history.some(candidate => candidate.id === message.id));
   return [...history, ...queued, ...unconfirmed];
 }
 

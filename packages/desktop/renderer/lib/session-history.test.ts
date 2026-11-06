@@ -14,6 +14,20 @@ import {
 } from "./session-history";
 
 describe("native live/history ownership", () => {
+  it("confirms an already admitted input on a Codex core page", () => {
+    const current = [
+      { ...message("local-input", "continue"), awaitingHistory: true },
+      assistant("live-reply", "Already streaming"),
+    ];
+    const merged = mergeProgressiveSessionHistoryPage(current, [
+      message("history-message.v1.0.user", "continue"),
+      assistant("history-message.v1.1.reply", "Already streaming"),
+    ], "core", { delivery: "core", revision: "confirmed" });
+    expect(merged.filter(entry => entry.role === "user")).toHaveLength(1);
+    expect(merged[0].id).toBe("history-message.v1.0.user");
+    expect(merged[0].awaitingHistory).toBeUndefined();
+  });
+
   it("defers snapshots only while the same Harness or Codex session owns a live run", () => {
     expect(shouldDeferLiveHistoryRefresh("deepseek-harness", "one", "one")).toBe(true);
     expect(shouldDeferLiveHistoryRefresh("deepseek-harness", "one", null)).toBe(false);
@@ -533,6 +547,32 @@ function assistant(id: string, content: string, toolCalls?: ChatMessage["toolCal
 }
 
 describe("mergeRefreshedSessionHistory", () => {
+  it("keeps an admitted input and its live reply when an older ZCode snapshot arrives", () => {
+    const old = [message("old-user", "previous"), assistant("old-answer", "previous answer")];
+    const admitted = { ...message("local-input", "remember my cleanup preference"), awaitingHistory: true, images: ["data:image/png;base64,input"] };
+    const liveReply = assistant("live-reply", "Checking the wiki");
+    const stale = mergeRefreshedSessionHistory([...old, admitted, liveReply], old);
+    expect(stale.slice(-2)).toEqual([admitted, liveReply]);
+
+    const confirmed = mergeRefreshedSessionHistory(stale, [
+      ...old,
+      message("history-message.v1.2.input", admitted.content),
+      assistant("history-message.v1.3.reply", liveReply.content),
+    ]);
+    const inputs = confirmed.filter(entry => entry.role === "user" && entry.content === admitted.content);
+    expect(inputs).toHaveLength(1);
+    expect(inputs[0]).toMatchObject({ id: "history-message.v1.2.input", images: admitted.images });
+    expect(inputs[0].awaitingHistory).toBeUndefined();
+  });
+
+  it("does not let an earlier equal input confirm a later admitted input", () => {
+    const first = message("history-message.v1.0.input", "continue");
+    const answer = assistant("history-message.v1.1.answer", "first answer");
+    const later = { ...message("local-input", "continue"), awaitingHistory: true };
+    const merged = mergeRefreshedSessionHistory([first, answer, later], [first, answer]);
+    expect(merged.filter(entry => entry.role === "user")).toEqual([first, later]);
+  });
+
   it("preserves loaded older pages and replaces the overlapping latest tail", () => {
     const current = ["old-1", "old-2", "tail-1", "tail-2"].map((content) => message(content, content));
     const refreshed = [message("new-tail-1", "tail-1"), message("new-tail-2", "tail-2 updated")];

@@ -1,6 +1,6 @@
 import { networkInterfaces } from 'node:os';
 import { randomBytes } from 'node:crypto';
-import { RTCPeerConnection, MediaStream, RTCRtpCodecParameters, MediaStreamTrack, RtpHeader, RtpPacket } from 'werift';
+import { RTCPeerConnection, MediaStream, RTCRtpCodecParameters, MediaStreamTrack, RtpHeader, RtpPacket, SessionDescription } from 'werift';
 
 const H264_FMTP = Object.freeze({
   high: 'packetization-mode=1;profile-level-id=640034;level-asymmetry-allowed=1',
@@ -87,7 +87,13 @@ export class WeriftVideoTransport {
   }
 
   async answer(sdp) {
-    if (this.peer) await this.peer.setRemoteDescription(sdp);
+    if (!this.peer) return;
+    const description = SessionDescription.parse(sdp.sdp);
+    const receivingVideo = description.media.some(media => media.kind === 'video'
+      && media.port !== 0 && !['inactive', 'sendonly'].includes(media.direction)
+      && media.rtp.codecs.some(codec => codec.mimeType.toLowerCase() === 'video/h264'));
+    if (!receivingVideo) throw new Error('Viewer rejected H.264 video');
+    await this.peer.setRemoteDescription(sdp);
   }
 
   handleFeedback(packet, now = performance.now()) {

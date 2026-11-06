@@ -26,6 +26,7 @@ test("shared Web change builds both runtimes and launcher but no TUI or cloudfla
 
 test("installation verification does not invalidate shipped platform packages", () => {
   assert.equal(plan(["scripts/verify-cli-install.mjs"]).noop, true);
+  assert.equal(plan(["scripts/messaging-package-smoke.mjs"]).noop, true);
   assert.deepEqual(changed(plan(["scripts/verify-cli-install.mjs", "packages/server/next.config.js"])), [names[0], names[1], "agentroam"]);
 });
 
@@ -63,6 +64,14 @@ test("native-runtime invalidates both platform runtimes but not TUI or cloudflar
   assert.ok(index("run --cwd packages/native-runtime build") < index("run --cwd packages/server build"));
 });
 
+test("messaging invalidates both runtimes and builds after core and before server", () => {
+  const result = plan(["packages/messaging/src/routing/model-router.ts"]);
+  assert.deepEqual(changed(result), [names[0], names[1], "agentroam"]);
+  const order = buildCommands(result).map(([, args]) => args.join(" "));
+  assert.ok(order.indexOf("run --cwd packages/core build") < order.indexOf("run --cwd packages/messaging build"));
+  assert.ok(order.indexOf("run --cwd packages/messaging build") < order.indexOf("run --cwd packages/server build"));
+  assert.deepEqual(changed(plan(["packages/messaging/assets/wecom/native_sender.py"])), [names[0], names[1], "agentroam"]);
+});
 test("computer-use invalidates both platform runtimes and builds before server", () => {
   const result = plan(["packages/computer-use/src/interface/computer-tool.ts"]);
   assert.deepEqual(changed(result), ["agentroam-runtime-darwin-arm64", "agentroam-runtime-win32-x64", "agentroam"]);

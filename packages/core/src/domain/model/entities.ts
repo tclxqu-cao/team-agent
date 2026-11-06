@@ -62,13 +62,13 @@ export interface MessagePresentation {
   completionDurationMs?: number;
   runResult?: import('../agent/run-result.js').RunResult;
   forkPoint?: SessionForkPoint;
-  /** A settled native question; pending questions come from ask_user events. */
+  /** A native question restored from history, including external pending input. */
   question?: {
     questionId: string;
     question: string;
     options: Array<{ label: string; description: string }>;
     multiSelect: boolean;
-    status: "answered" | "cancelled";
+    status: "pending" | "answered" | "cancelled";
     answer?: string;
   };
 }
@@ -153,7 +153,8 @@ export interface ModelProviderConfig {
   apiKey: string;
   baseUrl?: string;
   modelId: string;
-  maxTokens?: number;
+  /** null uses the model service's native output limit; undefined retains provider defaults. */
+  maxTokens?: number | null;
   temperature?: number;
   /** aihub 专用：与桌面 AI Hub 收发消息的传输实现；缺省走 ai-hub-relay.sock */
   transport?: import('../ai-hub/transport.js').AiHubTransport;

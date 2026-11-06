@@ -1,6 +1,7 @@
 export {
   type SessionStatus,
   type Session,
+  type SessionSummary,
   type SessionHistoryQuery,
   type SessionHistoryView,
   type SessionHistoryWindow,
@@ -26,3 +27,4 @@ export * from './SessionGoalCoordinator.js';
 export * from './SessionPermission.js';
 export * from './SessionActivity.js';
 export * from './QuestionReply.js';
+export * from './ParallelSessions.js';

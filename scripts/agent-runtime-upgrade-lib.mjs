@@ -47,7 +47,7 @@ const AGENT_TEXT_FILES = {
     ["packages/cli/src/runtime-manager.test.ts", 1],
     ["packages/cli/src/service/service-command.test.ts", 1],
     ["packages/native-runtime/src/agent-runtime/codex-session-compatibility.test.ts", 6],
-    ["packages/native-runtime/src/agent-runtime/codex-session-disk-catalog.test.ts", 13],
+    ["packages/native-runtime/src/agent-runtime/codex-session-disk-catalog.test.ts", 15],
     ["packages/native-runtime/src/agent-runtime/codex-session-disk-catalog.bench.test.ts", 1],
     ["packages/native-runtime/src/agent-runtime/agent-workspace-index.test.ts", 2],
     ["packages/native-runtime/src/agent-runtime/native-runtime-broker.ts", 1],

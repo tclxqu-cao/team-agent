@@ -2,6 +2,25 @@ import { describe, expect, it, vi } from "vitest";
 import { ViewerFrameFlow } from "./viewer-frame-flow.mjs";
 const frame = (sequence: number) => ({ channelId: 1, sequence, bytes: new Uint8Array(32) });
 describe("viewer frame flow", () => {
+  it("retains one fresh fallback during video playback and resumes within the ACK limit", () => {
+    const send = vi.fn();
+    const flow = new ViewerFrameFlow(send);
+    flow.reset(true);
+    flow.offer(frame(1));
+    flow.setPaused(true);
+    for (let n = 2; n <= 100; n++) expect(flow.offer(frame(n))).toBe("paused");
+    expect(send.mock.calls.map(([f]) => f.sequence)).toEqual([1]);
+    flow.setPaused(false);
+    expect(send).toHaveBeenCalledTimes(1);
+    flow.ack(1, 1);
+    expect(send.mock.calls.map(([f]) => f.sequence)).toEqual([1, 100]);
+    flow.setPaused(true);
+    flow.offer(frame(101));
+    flow.reset(true);
+    flow.offer(frame(102));
+    expect(send.mock.calls.at(-1)?.[0].sequence).toBe(102);
+  });
+
   it("pipelines ACK-delayed frames within both frame and byte limits", () => {
     const send = vi.fn();
     const flow = new ViewerFrameFlow(send, () => true, { maxFrames: 3, maxBytes: 64 });

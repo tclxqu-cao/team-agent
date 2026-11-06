@@ -1,9 +1,8 @@
 /**
  * Viewer-side watchdog for a real-time video stream whose transport stays
  * connected while frames silently stop arriving (stalled RTP, dead decoder,
- * locked producer). The JPEG fallback keeps flowing underneath the video
- * surface, so the decision only needs to say when that fallback must be
- * revealed instead of a black picture.
+ * locked producer). A stalled decision resumes the JPEG fallback instead of
+ * keeping redundant JPEG delivery active throughout healthy video playback.
  *
  * This is a domain policy: no WebRTC, browser, or transport types.
  */
