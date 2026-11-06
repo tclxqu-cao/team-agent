@@ -1,0 +1,792 @@
+packages/core/src/infrastructure/index.ts
+  s_90d6adba542290::t_d2d51cfbaf26ef 7
+packages/server/lib/parallel-sessions.ts
+  s_90d6adba542290::t_d2d51cfbaf26ef 1-38
+packages/messaging/assets/wecom/native_sender.py
+  s_e5ed765a6d36c8::t_e294b540d39444 1-337
+packages/native-runtime/src/agent-runtime/workbuddy-client.ts
+  s_9f0eedd53dd52b::t_e98f6ea1ebad73 129
+packages/core/src/infrastructure/SQLiteParallelSessionStore.ts
+  s_90d6adba542290::t_d2d51cfbaf26ef 1-36
+packages/native-runtime/src/agent-runtime/codex-runtime-adapter.ts
+  s_3f480634bb85e0::t_8bf4d6e3687056 594,698-701,821,825,2612-2613
+  s_8a4ed85cb72599::t_bd1ba10a2208a2 820,822-824,828
+  s_3f480634bb85e0::t_a4f4044e8209ec 41,204,237-238,255,529,587,593,595,600,625,658,695-697,702-703,732,768,814-819,826,829-830,1449,1469-1478,1480-1483,1485-1501,1730,2412-2413,2461-2462,2493-2494,2577,2609-2610
+  s_3f480634bb85e0::t_ce0ec565b42ef3 1422,1427,1441-1442,1444
+  s_3f480634bb85e0::t_2d553b255720d6 827,1479,1484
+scripts/audit-runtime-tarball.mjs
+  s_21be884c942d21::t_591a252786b31b 86-87
+  s_e5ed765a6d36c8::t_219ebb07197026 73-77
+packages/messaging/src/recognition/model-recognizer.ts
+  s_e5ed765a6d36c8::t_3efc8d915beef0 1-22
+packages/desktop/renderer/lib/session-history-polling.ts
+  s_90d6adba542290::t_3713e19451cd1e 1-7
+packages/desktop/renderer/components/SessionBackgroundJobs.tsx
+  s_5a08c897a5a358::t_299ffeab5b6394 1,19
+packages/messaging/src/infrastructure/SQLiteMessagingRepository.ts
+  s_e5ed765a6d36c8::t_c44d818a2187e3 4-5,57,106-107,110-116,129
+  s_48c3fad091e13e::t_180c3d461d6097 88-105,108-109
+  s_e5ed765a6d36c8::t_3f65c5341429f8 2-3,38-41,54,58,60
+packages/server/app/api/agent/abort/route.test.ts
+  s_90d6adba542290::t_cb88966aa96af3 1-48
+packages/messaging/src/application/MessagingService.ts
+  s_e5ed765a6d36c8::t_c44d818a2187e3 1,54-56,62,64,81-82,84-92,146-147,150,154
+  s_48c3fad091e13e::t_a83a714c0ec2e4 2,14,24-27
+  s_e5ed765a6d36c8::t_3f65c5341429f8 3,7,15,61,83,99,106,114,167
+  s_e5ed765a6d36c8::t_e294b540d39444 44,47-53,57-58
+  s_48c3fad091e13e::t_ef1f449a8ac7d1 20,45,70-71,73,138
+packages/core/src/domain/session/index.ts
+  s_5a08c897a5a358::t_bb1f3352fa4555 4
+  s_90d6adba542290::t_d2d51cfbaf26ef 30
+packages/desktop/renderer/lib/runtime-capabilities.ts
+  s_61bb0ee2462d98::t_80f55988d6ff0a 1-7
+  s_35c56e6593263c::t_4fa14ccd8c2e8e 11
+packages/messaging/src/listening/MessagingWorker.ts
+  s_e5ed765a6d36c8::t_07bd7f5857ee84 16,28,60-63
+  s_e5ed765a6d36c8::t_c2a49a4f4de055 1-15,17-27,29-59,64-67
+packages/desktop/renderer/lib/page-activity.test.ts
+  s_5a08c897a5a358::t_bb1f3352fa4555 1-56
+packages/desktop/renderer/lib/parallel-run-options.ts
+  s_90d6adba542290::t_4163745b5cdc9e 1-22
+packages/messaging/src/routing/model-router.test.ts
+  s_e5ed765a6d36c8::t_c44d818a2187e3 2,18,22,28,37,43,52,57
+  s_e5ed765a6d36c8::t_f3660e0aad77c2 58-63
+  s_48c3fad091e13e::t_487536216208fe 30,38,40
+  s_e5ed765a6d36c8::t_d6b794a180c3ca 1,3-17,19-21,23-27,29,31-36,39,41-42,44-51,53-56
+packages/messaging/src/application/MessagingService.test.ts
+  s_48c3fad091e13e::t_40eba13a87b9f3 138
+  s_e5ed765a6d36c8::t_d6b794a180c3ca 8,19,21-22,26-28,90
+  s_e5ed765a6d36c8::t_c44d818a2187e3 5,7,10,61-71,166,175-227
+  s_48c3fad091e13e::t_a83a714c0ec2e4 125-137,139
+  s_e5ed765a6d36c8::t_e294b540d39444 228-237
+  s_48c3fad091e13e::t_487536216208fe 122,140-165
+  s_e5ed765a6d36c8::t_14f276ca2c2216 6
+packages/desktop/renderer/lib/sidebar-session-status.test.ts
+  s_35c56e6593263c::t_b91637175f1376 2,5-11
+packages/server/lib/session-catalog.ts
+  s_48c3fad091e13e::t_3e5a9b7d07912a 14,24-26
+  s_5a08c897a5a358::t_facb6b65baed4a 39-43
+packages/desktop/renderer/lib/session-history.ts
+  s_29b3c3c2c9b4fe::t_72d2688f114b64 231,275,531
+packages/native-runtime/src/agent-runtime/zcode-desktop-bridge.test.ts
+  s_61bb0ee2462d98::t_23c926a120b765 75-82
+  s_61bb0ee2462d98::t_aa7eaa296b164a 1-74,83-93
+packages/desktop/renderer/components/ParallelAgentTabs.test.tsx
+  s_90d6adba542290::t_05ee18cdccb02a 1-18
+packages/server/lib/browser-live/viewer-frame-flow.mjs
+  s_ac547109ecbab9::t_47c08c6533da91 15,18-23,28,41
+  s_ac547109ecbab9::t_9975d92c635ed0 24
+packages/desktop/renderer/components/messaging/client.ts
+  s_e5ed765a6d36c8::t_14f276ca2c2216 1
+packages/desktop/renderer/lib/parallel-message-dispatch.test.ts
+  s_90d6adba542290::t_05ee18cdccb02a 1-21,24-34
+  s_90d6adba542290::t_d0369b3b81c6ee 22-23
+packages/core/src/domain/model/providers/OpenAIProvider.ts
+  s_48c3fad091e13e::t_180c3d461d6097 16,25,36,41
+packages/server/app/web/ResponsiveToolbar.tsx
+  s_ac547109ecbab9::t_fbb73969630197 136,179-180
+packages/native-runtime/src/agent-runtime/types.ts
+  s_61bb0ee2462d98::t_8764a46d72c0e0 82-83
+packages/desktop/renderer/components/collaboration/useSupervisionMessages.ts
+  s_5a08c897a5a358::t_299ffeab5b6394 1,9,21-25,28,47
+package.json
+  s_e5ed765a6d36c8::t_14f276ca2c2216 5-7,10,36,46,49,74-75
+packages/native-runtime/src/agent-runtime/index.ts
+  s_90d6adba542290::t_f673943203bd53 23
+  s_29b3c3c2c9b4fe::t_e400db062ae45b 11
+packages/desktop/renderer/lib/queued-message-steering.test.ts
+  s_009c30f34b86ce::t_c12c0ce8c83e87 82,84-110
+  s_009c30f34b86ce::t_fe5aa410a8a9d6 3-5,45-80
+  s_009c30f34b86ce::t_497e676895f9e7 81
+  s_009c30f34b86ce::t_ebbab2e63a366d 83
+packages/webapp/package.json
+  s_e5ed765a6d36c8::t_14f276ca2c2216 20-21
+packages/core/src/domain/model/providers/DeepSeekProvider.ts
+  s_48c3fad091e13e::t_180c3d461d6097 14,22,40,45
+packages/messaging/package.json
+  s_e5ed765a6d36c8::t_3efc8d915beef0 1-16
+scripts/build-wecom-send-helper.mjs
+  s_21be884c942d21::t_1bb4d467c86dd5 1-9,11-12,14-31,34-45
+  s_e5ed765a6d36c8::t_14f276ca2c2216 10
+  s_21be884c942d21::t_91232144811618 13,32-33
+packages/messaging/src/testing/fixtures.ts
+  s_e5ed765a6d36c8::t_c44d818a2187e3 1,4
+packages/messaging/src/intake/MessageIntake.ts
+  s_e5ed765a6d36c8::t_3efc8d915beef0 1-13
+packages/native-runtime/src/agent-runtime/detached-native-runtime-host.test.ts
+  s_29b3c3c2c9b4fe::t_25cac39f79a82a 1-31,41-82,101-149
+  s_29b3c3c2c9b4fe::t_1f0341b14c70be 32-40
+  s_29b3c3c2c9b4fe::t_0021381b7a8fb9 83-84,87-89,99-100
+  s_29b3c3c2c9b4fe::t_1b361dcbdf5a9f 85-86,90-98
+packages/core/src/infrastructure/SQLiteParallelSessionStore.test.ts
+  s_90d6adba542290::t_05ee18cdccb02a 1-25
+packages/server/next.config.js
+  s_e5ed765a6d36c8::t_14f276ca2c2216 16,30
+packages/core/src/domain/session/SessionGoals.ts
+  s_90d6adba542290::t_52f52005998abe 4-9,14-29,337,342
+packages/webapp/src/infrastructure/http/agent-http-gateway.test.ts
+  s_90d6adba542290::t_965cada26c2fd9 63-134
+packages/desktop/renderer/lib/queued-message-order.ts
+  s_009c30f34b86ce::t_f61f01082fca33 32,76,208-210
+  s_009c30f34b86ce::t_c12c0ce8c83e87 211-212
+packages/messaging/src/routing/model-router.ts
+  s_e5ed765a6d36c8::t_c44d818a2187e3 6,20,38-39
+  s_e5ed765a6d36c8::t_3f65c5341429f8 1-2,5,7-19,21-31
+  s_e5ed765a6d36c8::t_f3660e0aad77c2 3,33
+  s_48c3fad091e13e::t_ef1f449a8ac7d1 4,32,34-37
+packages/native-runtime/src/agent-runtime/codex-async-user-input.test.ts
+  s_3f480634bb85e0::t_b40719b2668bdf 143,145,147-148
+packages/desktop/tsconfig.json
+  s_e5ed765a6d36c8::t_b9e1729c512f20 13-14
+packages/core/src/infrastructure/SQLiteSessionStore.ts
+  s_5a08c897a5a358::t_facb6b65baed4a 108-122
+packages/desktop/renderer/components/collaboration/useSessionDashboard.ts
+  s_37266833b4fcce::t_3c752db4291caf 12,16-17,20,26-32,38-39,44-51
+  s_5a08c897a5a358::t_299ffeab5b6394 1,8,15,36,41
+packages/native-runtime/src/agent-runtime/zcode-runtime-adapter.ts
+  s_61bb0ee2462d98::t_ab15bc8e324528 7-11
+  s_35c56e6593263c::t_fbfcabf64235a3 5-6,12-14
+packages/desktop/renderer/components/ChatView.tsx
+  s_90d6adba542290::t_6a71d64b9e9af1 6134
+  s_90d6adba542290::t_aa64523300eb06 6137-6139
+  s_5a08c897a5a358::t_299ffeab5b6394 1,625,1989,2006,2036,2160,2167,2183,2199,2225
+  s_90d6adba542290::t_efe9bb4dda43eb 1065,1854,1949,1961
+  s_61bb0ee2462d98::t_6bc810e1df0689 856,6013
+  s_90d6adba542290::t_b6784d9102a230 6312-6313,6335
+  s_90d6adba542290::t_dff6aefb9bbcdc 20,6133,6135-6136,6140-6145,6196,6198
+  s_90d6adba542290::t_3713e19451cd1e 77,2163,2174-2175,2178-2180
+  s_90d6adba542290::t_05ee18cdccb02a 5915-5925
+  s_90d6adba542290::t_69d0c806318444 3799,3809,5914
+  s_90d6adba542290::t_831ec0d19eaaff 19,21,491,591,696-708,716,753,756,886,889,931-933,3789-3796,3798,3800-3808,3811-3818,3820-3824,3827,3835-3840,3842-3849,4416-4432,5911-5913,5926-5928,5939-5943,5955-5961
+  s_90d6adba542290::t_a8f3289cb111f9 709-715
+  s_90d6adba542290::t_6919f22fe2e575 116,1658-1660,1664,1666-1667,3419,3423,5139,6199
+  s_009c30f34b86ce::t_f61f01082fca33 3447,3462-3464
+  s_90d6adba542290::t_3ed503a535833d 3810
+  s_8a4ed85cb72599::t_bd1ba10a2208a2 434,1537-1538,1542,5124
+  s_8a4ed85cb72599::t_9f6eceea8708b9 947
+  s_61bb0ee2462d98::t_80f55988d6ff0a 87,859
+  s_90d6adba542290::t_80078f76c9d025 3825-3826,3828-3834,3841
+  s_90d6adba542290::t_5d652f3791743d 4506
+  s_29b3c3c2c9b4fe::t_72d2688f114b64 78,1052,1858,1872,1933,2061,2072,2135,3370,4222-4236
+  s_90d6adba542290::t_964f00c164005a 3797,3819
+  s_90d6adba542290::t_ebab112f02e38b 3850
+  s_90d6adba542290::t_3c4bc0458bfa33 4433
+packages/messaging/src/reply/model-reply.ts
+  s_e5ed765a6d36c8::t_c44d818a2187e3 1,4-5,30-31
+  s_e5ed765a6d36c8::t_3f65c5341429f8 2-3,6-8
+  s_48c3fad091e13e::t_ef1f449a8ac7d1 24
+  s_e5ed765a6d36c8::t_aba58521f1673c 9-23,25-29
+packages/messaging/src/index.ts
+  s_e5ed765a6d36c8::t_3efc8d915beef0 1-17
+scripts/incremental-cli-release.mjs
+  s_e5ed765a6d36c8::t_f0033051b124d6 27,35,124
+packages/desktop/renderer/lib/use-session-background-jobs.ts
+  s_5a08c897a5a358::t_299ffeab5b6394 1,42
+packages/desktop/renderer/lib/all-sessions.ts
+  s_5a08c897a5a358::t_a4814b4f21a47d 3-4,7-17
+packages/server/lib/messaging/model.ts
+  s_e5ed765a6d36c8::t_14f276ca2c2216 1,6
+  s_48c3fad091e13e::t_180c3d461d6097 13
+  s_6af8f7277fcf2b::t_6416ab37cd6037 11,15
+packages/native-runtime/src/agent-runtime/zcode-steering.ts
+  s_35c56e6593263c::t_4fa14ccd8c2e8e 1-11,14-22,24-25,27-28,34-65,68-102
+  s_35c56e6593263c::t_e3e70fa0305334 12-13,26,29-33,66-67
+  s_35c56e6593263c::t_fbfcabf64235a3 23
+packages/server/lib/native-runtime-service.test.ts
+  s_48c3fad091e13e::t_a83a714c0ec2e4 99
+  s_48c3fad091e13e::t_487536216208fe 2,37,63-64,94-98,100-113
+packages/native-runtime/src/agent-runtime/native-runtime-broker.ts
+  s_35c56e6593263c::t_4fa14ccd8c2e8e 1852,1854,1860
+  s_29b3c3c2c9b4fe::t_e400db062ae45b 169-170,2370,2836,2849-2853,2857
+  s_61bb0ee2462d98::t_8764a46d72c0e0 1722
+  s_35c56e6593263c::t_4221b9512b5d22 3386-3387
+  s_35c56e6593263c::t_d379b4b999a715 1848-1850
+  s_3f480634bb85e0::t_a4f4044e8209ec 59,1903-1908
+  s_35c56e6593263c::t_679dd4e4472f76 1638,1647,3195-3196
+  s_90d6adba542290::t_52f52005998abe 22,2241,3591,3596
+  s_90d6adba542290::t_f673943203bd53 110-115,1950,1953-1965,2470-2474,2775-2776
+  s_61bb0ee2462d98::t_ab15bc8e324528 1721
+packages/server/app/web/useFrameActivity.ts
+  s_5a08c897a5a358::t_facb6b65baed4a 1-27
+packages/server/lib/messaging/execution.ts
+  s_e5ed765a6d36c8::t_2bbc6f41b152b3 3
+  s_e5ed765a6d36c8::t_14f276ca2c2216 2,8
+packages/desktop/renderer/lib/page-activity.ts
+  s_5a08c897a5a358::t_bb1f3352fa4555 46-48
+  s_5a08c897a5a358::t_facb6b65baed4a 1-45,49-50
+packages/native-runtime/src/agent-runtime/zcode-image-attachments.ts
+  s_9e2c838105d4e9::t_849bf12d2e9b1c 6-67
+  s_9e2c838105d4e9::t_3573c792043c11 3-5
+  s_9e2c838105d4e9::t_e46f56706af306 1-2
+packages/messaging/src/application/ports.ts
+  s_e5ed765a6d36c8::t_3efc8d915beef0 1,27-34,39-69
+packages/server/package.json
+  s_e5ed765a6d36c8::t_14f276ca2c2216 36-37
+packages/server/lib/browser-live/viewer-video-flow.mjs
+  s_ac547109ecbab9::t_47c08c6533da91 1-11
+packages/native-runtime/src/agent-runtime/workbuddy-session-catalog.test.ts
+  s_9f0eedd53dd52b::t_e98f6ea1ebad73 4,9-10
+  s_9f0eedd53dd52b::t_40e4be54342f78 54
+  s_9f0eedd53dd52b::t_255b0d092755db 1-3,5-8,11-53,55-90
+packages/core/src/domain/session/ParallelSessions.ts
+  s_90d6adba542290::t_d2d51cfbaf26ef 1-59
+scripts/incremental-cli-release.test.mjs
+  s_e5ed765a6d36c8::t_f0033051b124d6 29
+  s_e5ed765a6d36c8::t_f04237eebe3d5c 67-74
+packages/desktop/renderer/global.d.ts
+  s_61bb0ee2462d98::t_8764a46d72c0e0 234-235
+  s_90d6adba542290::t_4163745b5cdc9e 395
+  s_90d6adba542290::t_6919f22fe2e575 306
+  s_90d6adba542290::t_52f52005998abe 2-3,262-263,408-409
+  s_e5ed765a6d36c8::t_14f276ca2c2216 9
+packages/server/lib/native-runtime-service.ts
+  s_48c3fad091e13e::t_ef1f449a8ac7d1 258-263,265-266
+  s_29b3c3c2c9b4fe::t_e400db062ae45b 23,580-582,594-599,601
+  s_90d6adba542290::t_f673943203bd53 36,110,338-339
+packages/messaging/src/listening/MessagingWorker.test.ts
+  s_e5ed765a6d36c8::t_f04237eebe3d5c 1-99
+packages/messaging/src/model.test.ts
+  s_48c3fad091e13e::t_487536216208fe 1-21
+packages/desktop/tsconfig.build.json
+  s_e5ed765a6d36c8::t_b9e1729c512f20 9
+packages/server/lib/remote-control/application/remote-video-session.mjs
+  s_ac547109ecbab9::t_47c08c6533da91 22,134,148-156,301,313
+  s_ac547109ecbab9::t_c973d7802989e7 133
+packages/server/app/api/messaging/route.ts
+  s_6af8f7277fcf2b::t_26cfecebc3719a 9
+  s_e5ed765a6d36c8::t_f27fc6a23a1609 28,36-37
+packages/desktop/renderer/components/ComposerAgentPicker.tsx
+  s_90d6adba542290::t_4163745b5cdc9e 30-33,38,40-41,62,70-75,83-85,87-88,92-99,101-102,107,115-118,132-133
+packages/native-runtime/src/agent-runtime/codex-app-server-desktop.test.ts
+  s_48c3fad091e13e::t_973741b610bfb3 222-223,227,230
+packages/desktop/renderer/components/ComposerNewSessionControls.test.tsx
+  s_90d6adba542290::t_82a7d89edaba47 8,33,42,49-70
+  s_6ae60f8fe2b3a6::t_49cf7248fc0ed3 71-72
+packages/core/src/domain/session/entities.ts
+  s_5a08c897a5a358::t_facb6b65baed4a 22-24,89
+packages/desktop/renderer/lib/session-history-requests.test.ts
+  s_29b3c3c2c9b4fe::t_72d2688f114b64 1-23
+packages/desktop/renderer/lib/session-run-error.test.ts
+  s_35c56e6593263c::t_b91637175f1376 38-56
+packages/core/src/domain/model/providers/__tests__/OpenAIProvider.test.ts
+  s_48c3fad091e13e::t_a83a714c0ec2e4 23-33
+packages/server/app/api/sessions/[id]/goals/route.ts
+  s_90d6adba542290::t_52f52005998abe 3,134,145
+packages/server/ws-server.mjs
+  s_ac547109ecbab9::t_47c08c6533da91 27,582,644,864-868,881,1300-1303
+  s_ac547109ecbab9::t_353da3e302bea3 3
+  s_ac547109ecbab9::t_9975d92c635ed0 1379
+packages/desktop/renderer/App.tsx
+  s_5a08c897a5a358::t_a0a0f075b09967 299-301
+  s_90d6adba542290::t_831ec0d19eaaff 2571-2584
+  s_90d6adba542290::t_efe9bb4dda43eb 19,921,1050-1059,1188-1189
+  s_5a08c897a5a358::t_299ffeab5b6394 1,1390,1406,1421
+  s_35c56e6593263c::t_4221b9512b5d22 35,422
+packages/desktop/package.json
+  s_e5ed765a6d36c8::t_14f276ca2c2216 35-36
+packages/native-runtime/src/agent-runtime/codex-question-history.test.ts
+  s_3f480634bb85e0::t_b40719b2668bdf 1-16,22-26,28-43,45-57,89-157
+  s_8a4ed85cb72599::t_9f6eceea8708b9 17-21,27,58-84,88
+  s_8a4ed85cb72599::t_70faa657366d43 85
+  s_3f480634bb85e0::t_2d553b255720d6 44
+  s_8a4ed85cb72599::t_f7055943b1ec84 86-87
+packages/core/src/domain/live-view/remote-video-stall.ts
+  s_ac547109ecbab9::t_353da3e302bea3 4-5
+packages/core/src/domain/model/providers/AnthropicProvider.ts
+  s_48c3fad091e13e::t_180c3d461d6097 13-14,22,34-42,46,245-263
+  s_48c3fad091e13e::t_a97ebf796c548c 264
+packages/native-runtime/src/agent-runtime/codex-questions.ts
+  s_3f480634bb85e0::t_2d553b255720d6 30,52
+  s_3f480634bb85e0::t_92ed15fef90e4c 1-29,31-51,53-70
+packages/desktop/renderer/components/messaging/MessageSettings.tsx
+  s_6af8f7277fcf2b::t_26cfecebc3719a 38,54
+  s_e5ed765a6d36c8::t_14f276ca2c2216 3
+packages/messaging/src/domain/routing.test.ts
+  s_48c3fad091e13e::t_a83a714c0ec2e4 2-3,5-15
+  s_e5ed765a6d36c8::t_c44d818a2187e3 4,27-37
+packages/server/lib/parallel-sessions.test.ts
+  s_90d6adba542290::t_a676c00f3dd111 1-47,49,52-53
+  s_90d6adba542290::t_1ed89dbf72e580 48,50-51
+packages/desktop/renderer/lib/use-native-session-goal.ts
+  s_5a08c897a5a358::t_299ffeab5b6394 1,32
+packages/desktop/renderer/lib/session-history-requests.ts
+  s_29b3c3c2c9b4fe::t_72d2688f114b64 1-13
+packages/messaging/src/knowledge/WikiKnowledge.test.ts
+  s_e5ed765a6d36c8::t_c44d818a2187e3 1-42
+packages/messaging/src/knowledge/WikiKnowledge.ts
+  s_e5ed765a6d36c8::t_c44d818a2187e3 1-104
+packages/core/src/domain/web-console/PageActivityBridge.ts
+  s_5a08c897a5a358::t_facb6b65baed4a 1-12
+packages/desktop/renderer/lib/all-sessions.test.ts
+  s_5a08c897a5a358::t_bb1f3352fa4555 3,18-26,28-35,40-41,47-55
+packages/desktop/renderer/lib/dashboard-session-navigation.ts
+  s_90d6adba542290::t_efe9bb4dda43eb 6-19
+packages/desktop/renderer/lib/composer-keyboard.test.ts
+  s_90d6adba542290::t_6919f22fe2e575 1-24
+packages/desktop/renderer/components/AllSessionsSidebar.tsx
+  s_5a08c897a5a358::t_a4814b4f21a47d 4-5,24,28-29,35-44,46,50-51,53-55,57-60,64,66,69,73,76,85,90,97,100,102,105,108,110,113,126
+  s_5a08c897a5a358::t_a2298268ccfea0 34,70-72,74
+  s_5a08c897a5a358::t_d9e2f097b0274b 33,45,49
+packages/desktop/renderer/lib/parallel-run-options.test.ts
+  s_90d6adba542290::t_d0369b3b81c6ee 1-10,16-36
+  s_90d6adba542290::t_aa64523300eb06 11-15
+packages/core/src/domain/model/entities.ts
+  s_3f480634bb85e0::t_92ed15fef90e4c 65,71
+  s_48c3fad091e13e::t_180c3d461d6097 156-157
+packages/server/lib/remote-control/application/remote-video-session.test.ts
+  s_ac547109ecbab9::t_11e977d0386f32 39-69,74-78
+  s_ac547109ecbab9::t_c973d7802989e7 70-73
+packages/native-runtime/src/agent-runtime/workbuddy-session-catalog.ts
+  s_9f0eedd53dd52b::t_e98f6ea1ebad73 4,13-15,60-80,135,141,144-147
+  s_9f0eedd53dd52b::t_7c73d4a1cfdc83 54
+packages/native-runtime/src/agent-runtime/native-runtime-broker.test.ts
+  s_35c56e6593263c::t_43d589c2e329e8 1538-1560
+  s_35c56e6593263c::t_b91637175f1376 737-763
+  s_61bb0ee2462d98::t_25e0354a50b4cf 267-285
+  s_35c56e6593263c::t_8b55f72fc64318 1568
+  s_90d6adba542290::t_d0369b3b81c6ee 2571,2872-2884
+  s_90d6adba542290::t_965cada26c2fd9 372-392
+  s_35c56e6593263c::t_d379b4b999a715 1561-1567,1569-1575
+  s_35c56e6593263c::t_e1b4ad1fc00fa0 2572,2925-2951
+  s_3f480634bb85e0::t_c6e93b04190a1b 29,2562-2570
+  s_29b3c3c2c9b4fe::t_25cac39f79a82a 286-312
+  s_35c56e6593263c::t_4bc9946414d68a 2573
+packages/desktop/renderer/components/SessionRunActivity.test.tsx
+  s_8a4ed85cb72599::t_9f6eceea8708b9 1-44
+packages/server/lib/messaging/execution.test.ts
+  s_e5ed765a6d36c8::t_c44d818a2187e3 3
+  s_e5ed765a6d36c8::t_14f276ca2c2216 4,21,32-33
+  s_e5ed765a6d36c8::t_2bbc6f41b152b3 2
+packages/server/lib/customer-goal-service.ts
+  s_90d6adba542290::t_52f52005998abe 15-18
+packages/desktop/renderer/components/messaging/MessagingPage.test.tsx
+  s_e5ed765a6d36c8::t_14f276ca2c2216 7-8
+  s_6af8f7277fcf2b::t_10166a48bb436e 69-78
+  s_48c3fad091e13e::t_64eb383686ae03 21-37
+  s_e5ed765a6d36c8::t_ad7ec2d1634cbd 54-68
+scripts/stage-agent-packages-for-packaging.mjs
+  s_e5ed765a6d36c8::t_ef685bd6873e29 11-14,18,35,40,46
+  s_e5ed765a6d36c8::t_14f276ca2c2216 16
+packages/desktop/renderer/lib/parallel-failed-messages.ts
+  s_90d6adba542290::t_1ed89dbf72e580 23
+  s_90d6adba542290::t_69d0c806318444 1-22,24-47
+packages/desktop/renderer/lib/zcode-question-cards.test.tsx
+  s_35c56e6593263c::t_8fbd5da925da98 1-7,9-24,26-39,41-48
+  s_35c56e6593263c::t_b91637175f1376 8,25,40
+packages/messaging/src/channels/wecom/native-delivery.test.ts
+  s_e5ed765a6d36c8::t_c44d818a2187e3 1-62
+packages/native-runtime/src/agent-runtime/zcode-desktop-bridge.ts
+  s_61bb0ee2462d98::t_8764a46d72c0e0 1-8,10-11,13-22,24-55,59-74,79-81,92-96,98-114
+  s_61bb0ee2462d98::t_80f55988d6ff0a 12,82-83,87,91
+  s_61bb0ee2462d98::t_23c926a120b765 23,75-78,84-86,88-90,97
+  s_61bb0ee2462d98::t_ab15bc8e324528 9,56-58
+packages/desktop/renderer/lib/parallel-message-dispatch.ts
+  s_90d6adba542290::t_69d0c806318444 11
+  s_90d6adba542290::t_bfdd8bf84afe77 18,22-24,31
+  s_90d6adba542290::t_4163745b5cdc9e 1-10,12-17,19-21,25-30,32-34
+packages/desktop/renderer/components/collaboration/useCollaborationDiscussion.ts
+  s_5a08c897a5a358::t_299ffeab5b6394 1,12,89,93,135,157
+packages/native-runtime/src/agent-runtime/zcode-questions.test.ts
+  s_35c56e6593263c::t_b441819f5ad2e8 1-34,36-75
+  s_35c56e6593263c::t_e1b4ad1fc00fa0 35
+packages/desktop/renderer/lib/use-parallel-sessions.ts
+  s_90d6adba542290::t_69d0c806318444 9-10,26-28,33,55-60,129,154,156,179-184
+  s_90d6adba542290::t_bfdd8bf84afe77 1-8,11-25,34-38,40-44,54,61-83,85-94,96-111,113,115-128,130-153,157,159-178,185-191,200-203
+  s_90d6adba542290::t_0ca01cf40069ec 29-32,95,155,158
+  s_90d6adba542290::t_964f00c164005a 45-53,192-199
+  s_90d6adba542290::t_05ee18cdccb02a 39,84,112,114
+packages/desktop/renderer/lib/queued-message-order.test.ts
+  s_009c30f34b86ce::t_fe5aa410a8a9d6 176-193
+scripts/stage-cli-runtime.mjs
+  s_e5ed765a6d36c8::t_ef685bd6873e29 14,23-24,152,185,194,204-205
+  s_21be884c942d21::t_423f689fe20576 44-46
+  s_e5ed765a6d36c8::t_cb4fed3527ee1c 206-207
+packages/server/app/api/sessions/parallel/route.ts
+  s_90d6adba542290::t_d2d51cfbaf26ef 1-22
+packages/desktop/renderer/styles/composer.css
+  s_90d6adba542290::t_831ec0d19eaaff 606-629,643
+  s_90d6adba542290::t_dff6aefb9bbcdc 630-632,635-636,639-642
+  s_48c3fad091e13e::t_d9d1fecaef8a9a 633-634,637-638
+packages/server/lib/messaging/model.test.ts
+  s_48c3fad091e13e::t_a83a714c0ec2e4 1-14
+packages/server/lib/remote-control/infrastructure/werift-video-transport.mjs
+  s_ac547109ecbab9::t_47c08c6533da91 3,90-96
+packages/server/tsconfig.json
+  s_29b3c3c2c9b4fe::t_937ad93357499b 15
+  s_e5ed765a6d36c8::t_14f276ca2c2216 14
+packages/server/lib/remote-control/remote-authorization.mjs
+  s_ac547109ecbab9::t_353da3e302bea3 111,261-262
+  s_ac547109ecbab9::t_9975d92c635ed0 505-509,524
+  s_ac547109ecbab9::t_47c08c6533da91 110,113
+packages/desktop/renderer/lib/session-history.test.ts
+  s_29b3c3c2c9b4fe::t_72d2688f114b64 550-575
+  s_29b3c3c2c9b4fe::t_b3ce471ce53e3f 17-30
+packages/messaging/src/intake/MessageIntake.test.ts
+  s_e5ed765a6d36c8::t_f04237eebe3d5c 1-24
+packages/server/lib/browser-live/viewer-video-flow.test.ts
+  s_ac547109ecbab9::t_11e977d0386f32 1-50
+packages/webapp/src/main.tsx
+  s_5a08c897a5a358::t_157e369e86ff6e 1
+  s_5a08c897a5a358::t_a2298268ccfea0 246
+packages/native-runtime/src/agent-runtime/codex-app-server-client.ts
+  s_48c3fad091e13e::t_3e5a9b7d07912a 34-35,38-39,44-46,65-66,145-152,182,195
+packages/messaging/src/domain/routing.ts
+  s_48c3fad091e13e::t_a83a714c0ec2e4 1-8
+  s_e5ed765a6d36c8::t_c44d818a2187e3 11,13-20,24
+packages/core/src/domain/model/providers/__tests__/AnthropicProvider.test.ts
+  s_48c3fad091e13e::t_a83a714c0ec2e4 18-34
+packages/messaging/src/domain/types.ts
+  s_e5ed765a6d36c8::t_3efc8d915beef0 1,35-40
+  s_48c3fad091e13e::t_ef1f449a8ac7d1 52
+  s_e5ed765a6d36c8::t_c44d818a2187e3 12-13,26,31-34,41-45,53,61
+  s_e5ed765a6d36c8::t_c2a49a4f4de055 79
+packages/desktop/renderer/lib/parallel-failed-messages.test.ts
+  s_90d6adba542290::t_3ed503a535833d 1-30
+packages/desktop/renderer/lib/session-run-error.ts
+  s_35c56e6593263c::t_4221b9512b5d22 2,9-20,24
+packages/server/lib/browser-live/viewer-frame-flow.test.ts
+  s_ac547109ecbab9::t_11e977d0386f32 5-23
+packages/server/lib/remote-control/remote-authorization.test.ts
+  s_ac547109ecbab9::t_11e977d0386f32 45-71
+packages/desktop/renderer/stores/agentStore.ts
+  s_29b3c3c2c9b4fe::t_72d2688f114b64 155-156
+  s_009c30f34b86ce::t_f61f01082fca33 149-150
+packages/server/lib/remote-control/infrastructure/werift-video-transport.test.ts
+  s_ac547109ecbab9::t_11e977d0386f32 7-21
+packages/server/app/web/compact-toolbar.test.tsx
+  s_ac547109ecbab9::t_d792c974f7054c 67
+packages/native-runtime/src/agent-runtime/unified-session-service.ts
+  s_61bb0ee2462d98::t_8764a46d72c0e0 448,452
+  s_61bb0ee2462d98::t_ab15bc8e324528 396-398,449-451
+packages/desktop/renderer/components/ChatHistoryStyle.test.ts
+  s_8a4ed85cb72599::t_f7055943b1ec84 46
+  s_90d6adba542290::t_03279752c7e0b5 23
+  s_90d6adba542290::t_6919f22fe2e575 279
+  s_8a4ed85cb72599::t_9f6eceea8708b9 14-15,51-52,54-55,88
+packages/native-runtime/src/agent-runtime/zcode-runtime-adapter.test.ts
+  s_9e2c838105d4e9::t_849bf12d2e9b1c 1-5,15-26,770,774-808,812-832,836
+  s_35c56e6593263c::t_e1b4ad1fc00fa0 597-643,699-717
+  s_35c56e6593263c::t_b91637175f1376 644-698
+  s_90d6adba542290::t_3831a3495060a1 258,262,270,272,278,287,296,305,318,324,334,344-346,362,365,370,375,379
+  s_61bb0ee2462d98::t_6fc3ef88da0708 14,126-166
+  s_35c56e6593263c::t_43d589c2e329e8 39,42,167-202
+  s_9e2c838105d4e9::t_df1041092cefe5 65-124,841
+  s_9e2c838105d4e9::t_5fe3d22bcf9a78 809-811
+  s_9e2c838105d4e9::t_3cf01fa1cabba2 833-835
+  s_9e2c838105d4e9::t_ef546a4a394ff5 837-840
+  s_9e2c838105d4e9::t_f615f2ded0dce5 842-844
+  s_9e2c838105d4e9::t_57ae45048edce8 845-847
+packages/desktop/renderer/lib/runtime-capabilities.test.ts
+  s_35c56e6593263c::t_4fa14ccd8c2e8e 21-23
+  s_61bb0ee2462d98::t_6fc3ef88da0708 2,5-13
+packages/messaging/src/channels/wecom/collector.ts
+  s_e5ed765a6d36c8::t_c44d818a2187e3 4,53
+  s_e5ed765a6d36c8::t_2e63070921265f 3,5-6,8,10,23,25,28,32,43-44,48-52
+packages/native-runtime/src/agent-runtime/zcode-steering.test.ts
+  s_35c56e6593263c::t_43d589c2e329e8 1-94,108-128
+  s_35c56e6593263c::t_e3e70fa0305334 95-107
+scripts/runtime-native-files.mjs
+  s_21be884c942d21::t_8eb880cdee68ba 9
+packages/messaging/src/channels/wecom/assets.ts
+  s_e5ed765a6d36c8::t_8bcef002629037 10
+  s_e5ed765a6d36c8::t_c2a49a4f4de055 1-9,11-18
+packages/server/lib/messaging/service.ts
+  s_e5ed765a6d36c8::t_2bbc6f41b152b3 1-6,9-14,16-19,21-33
+packages/messaging/src/delivery/ChannelDelivery.test.ts
+  s_e5ed765a6d36c8::t_c44d818a2187e3 2-4,38-75
+packages/core/src/domain/session/SessionMessageOptions.test.ts
+  s_90d6adba542290::t_d0369b3b81c6ee 1-19
+packages/webapp/src/infrastructure/http/agent-http-gateway.ts
+  s_90d6adba542290::t_52f52005998abe 1,648,662,704-710
+  s_90d6adba542290::t_6919f22fe2e575 336-337,339-350,353-354
+  s_e5ed765a6d36c8::t_14f276ca2c2216 3
+  s_90d6adba542290::t_03279752c7e0b5 338,351-352
+  s_6ae60f8fe2b3a6::t_ee8906607c544a 711
+packages/messaging/tsconfig.json
+  s_e5ed765a6d36c8::t_3efc8d915beef0 1-14
+scripts/agent-runtime-upgrade-lib.mjs
+  s_e5ed765a6d36c8::t_f0033051b124d6 50
+packages/desktop/renderer/lib/session-history-polling.test.ts
+  s_90d6adba542290::t_3713e19451cd1e 1-41
+packages/native-runtime/src/agent-runtime/detached-native-runtime-host.ts
+  s_29b3c3c2c9b4fe::t_1b361dcbdf5a9f 20-21,23-50,57,63-65,69,73-74
+  s_29b3c3c2c9b4fe::t_25cac39f79a82a 70-72
+  s_29b3c3c2c9b4fe::t_0021381b7a8fb9 110,116-117,119,131,139-149
+  s_29b3c3c2c9b4fe::t_e400db062ae45b 1-19,22,51-56,58-62,66-68,75-109,111-115,118,120-130,132-138,150-156
+packages/server/app/api/agent/abort/route.ts
+  s_90d6adba542290::t_cb88966aa96af3 16-19
+  s_90d6adba542290::t_f673943203bd53 6,9,13-14,20-24,29-33,36,40
+packages/server/app/web/page.tsx
+  s_5a08c897a5a358::t_facb6b65baed4a 32,784,786
+  s_5a08c897a5a358::t_d0b6550209e4a5 94
+  s_5a08c897a5a358::t_299ffeab5b6394 145
+packages/desktop/renderer/components/messaging/MessagingPage.tsx
+  s_6af8f7277fcf2b::t_26cfecebc3719a 21,37,128,130,134
+  s_e5ed765a6d36c8::t_14f276ca2c2216 4
+  s_5a08c897a5a358::t_299ffeab5b6394 1,28,52,60,62,65,81,84,87,94
+packages/messaging/src/recognition/model-recognizer.test.ts
+  s_e5ed765a6d36c8::t_d6b794a180c3ca 1-19,21-31
+  s_48c3fad091e13e::t_487536216208fe 20
+packages/messaging/src/channels/wecom/native-delivery.ts
+  s_e5ed765a6d36c8::t_2e63070921265f 3-4,19,54
+  s_e5ed765a6d36c8::t_c44d818a2187e3 1-2,5-18,20-53,55-72
+packages/desktop/renderer/lib/composer-keyboard.ts
+  s_90d6adba542290::t_6919f22fe2e575 1-20
+packages/messaging/build.mjs
+  s_e5ed765a6d36c8::t_3efc8d915beef0 1-11
+packages/messaging/src/recognition/admission.ts
+  s_e5ed765a6d36c8::t_3efc8d915beef0 1-8
+packages/desktop/renderer/lib/sidebar-session-status.ts
+  s_35c56e6593263c::t_4221b9512b5d22 2-6
+packages/messaging/src/infrastructure/SQLiteMessagingRepository.test.ts
+  s_e5ed765a6d36c8::t_14f276ca2c2216 6
+  s_e5ed765a6d36c8::t_c44d818a2187e3 7
+  s_48c3fad091e13e::t_487536216208fe 55-71
+packages/desktop/renderer/lib/dashboard-session-navigation.test.ts
+  s_90d6adba542290::t_efe9bb4dda43eb 3,33-55
+  s_90d6adba542290::t_65d9958e9ee782 56
+packages/messaging/src/model.ts
+  s_48c3fad091e13e::t_ef1f449a8ac7d1 6-10,12-23
+  s_e5ed765a6d36c8::t_3efc8d915beef0 1-5,11,24-25
+packages/core/src/infrastructure/SQLiteSessionStore.test.ts
+  s_5a08c897a5a358::t_bb1f3352fa4555 9-29
+packages/native-runtime/src/agent-runtime/stdio-native-runtime-adapter.ts
+  s_61bb0ee2462d98::t_ab15bc8e324528 12
+  s_9f0eedd53dd52b::t_e98f6ea1ebad73 16-17,52
+  s_61bb0ee2462d98::t_8764a46d72c0e0 20,57
+  s_35c56e6593263c::t_4fa14ccd8c2e8e 30
+packages/desktop/renderer/components/SessionRunActivity.tsx
+  s_8a4ed85cb72599::t_bd1ba10a2208a2 1-31
+packages/messaging/src/reply/model-reply.test.ts
+  s_e5ed765a6d36c8::t_d6b794a180c3ca 5,7-9,20,31,33,35
+  s_48c3fad091e13e::t_487536216208fe 27
+  s_e5ed765a6d36c8::t_aba58521f1673c 10
+  s_e5ed765a6d36c8::t_c44d818a2187e3 1-4,6,11-19,21-26,28-30,32,34,36
+scripts/messaging-package-smoke.mjs
+  s_e5ed765a6d36c8::t_57e1e17dab69a6 2,9
+  s_e5ed765a6d36c8::t_03e30178496a04 18
+  s_e5ed765a6d36c8::t_f04237eebe3d5c 1,3-8,10-17,19-27
+packages/messaging/src/delivery/ChannelDelivery.ts
+  s_e5ed765a6d36c8::t_c44d818a2187e3 3,14-16,25,28-31,34-35,37,39-64,72,75,78,85,100-104,106-108
+packages/desktop/renderer/lib/codex-question-cards.test.tsx
+  s_3f480634bb85e0::t_c6e93b04190a1b 1-33
+packages/desktop/renderer/components/messaging/MessageDetail.tsx
+  s_e5ed765a6d36c8::t_fa86b517a8e2ed 23,46
+  s_e5ed765a6d36c8::t_14f276ca2c2216 4
+  s_6af8f7277fcf2b::t_26cfecebc3719a 35,45,47,50,63-64,85
+  s_48c3fad091e13e::t_ef1f449a8ac7d1 42-44
+  s_48c3fad091e13e::t_a83a714c0ec2e4 5,20-21,51-52,59
+packages/native-runtime/src/agent-runtime/codex-rollout-activity.ts
+  s_3f480634bb85e0::t_92ed15fef90e4c 28-33,57,361,377-381,463-472
+packages/native-runtime/src/agent-runtime/stdio-native-runtime-adapter.test.ts
+  s_9f0eedd53dd52b::t_40e4be54342f78 34-41
+packages/native-runtime/src/agent-runtime/zcode-questions.ts
+  s_35c56e6593263c::t_55379a708c2df0 23-24,27,35-36
+  s_35c56e6593263c::t_679dd4e4472f76 1-22,25-26,28-34,37-59
+packages/desktop/renderer/components/ParallelAgentTabs.tsx
+  s_90d6adba542290::t_4163745b5cdc9e 1-17,19-37
+  s_90d6adba542290::t_d0369b3b81c6ee 18
+packages/messaging/assets/wecom/native_sender_test.py
+  s_e5ed765a6d36c8::t_e294b540d39444 1-244
+packages/desktop/renderer/components/BrowserLivePanel.tsx
+  s_ac547109ecbab9::t_c973d7802989e7 887,891-895,897
+  s_ac547109ecbab9::t_47c08c6533da91 831,886,896,898-902,977-979
+  s_ac547109ecbab9::t_fbb73969630197 1047-1058,1061-1063
+  s_ac547109ecbab9::t_13a28ba694444e 1064
+packages/desktop/renderer/components/ParallelAgentSettings.tsx
+  s_48c3fad091e13e::t_d9d1fecaef8a9a 1,60,62,71,74,76-88,93-97,102,105
+  s_90d6adba542290::t_86bb84f2fdda7e 2,61,66,72-73,75,99-100,104,129
+  s_90d6adba542290::t_1ed89dbf72e580 125
+  s_48c3fad091e13e::t_39b8874eea7419 89-92,98
+  s_90d6adba542290::t_aa64523300eb06 47,52-55,110-120,122
+  s_90d6adba542290::t_6a71d64b9e9af1 56,124
+  s_90d6adba542290::t_dff6aefb9bbcdc 3-46,48-51,57-59,63-65,67-70,101,103,106-109,121,123,126-128,130-131
+packages/server/lib/session-catalog.test.ts
+  s_48c3fad091e13e::t_7f6ebe36b254b3 58,65-75
+  s_5a08c897a5a358::t_bb1f3352fa4555 3-4,16,22-30,76
+tsconfig.json
+  s_e5ed765a6d36c8::t_b9e1729c512f20 23
+packages/native-runtime/src/agent-runtime/zcode-client.ts
+  s_35c56e6593263c::t_679dd4e4472f76 12,20,46,48-51,53-55,66,78,286-287,289,313-314,318-319,339,345-348,380-381,399-406,437
+  s_35c56e6593263c::t_4fa14ccd8c2e8e 13,83,89,288,425,432-434,436
+  s_90d6adba542290::t_146a6e10010f39 199,205-206
+  s_35c56e6593263c::t_4221b9512b5d22 341-344,349-378
+  s_9e2c838105d4e9::t_849bf12d2e9b1c 2-3,6,87-88,250,259,272,278
+  s_61bb0ee2462d98::t_8764a46d72c0e0 14,86,176-181,257-258,260-265,426-427,430-431
+  s_61bb0ee2462d98::t_80f55988d6ff0a 214-217,219-220
+  s_35c56e6593263c::t_b441819f5ad2e8 47,52,56
+  s_61bb0ee2462d98::t_ab15bc8e324528 106,424,428-429
+  s_9e2c838105d4e9::t_df1041092cefe5 151-158
+  s_61bb0ee2462d98::t_23c926a120b765 213
+  s_9e2c838105d4e9::t_528fe36b7a7846 7
+  s_35c56e6593263c::t_5377612dfb3fca 57
+  s_61bb0ee2462d98::t_8dc8f154e91726 218
+  s_9e2c838105d4e9::t_9e611aead7cf54 31,40-44,225
+packages/desktop/electron-builder.yml
+  s_e5ed765a6d36c8::t_14f276ca2c2216 20-21
+packages/native-runtime/src/agent-runtime/codex-app-server-client.test.ts
+  s_48c3fad091e13e::t_7f6ebe36b254b3 472-473,496,501,515-563
+  s_6ae60f8fe2b3a6::t_f0200aedc05ab1 564
+packages/webapp/src/infrastructure/http/parallel-sessions.test.ts
+  s_90d6adba542290::t_d0369b3b81c6ee 1-14
+packages/core/src/domain/session/ParallelSessions.test.ts
+  s_90d6adba542290::t_d9065887188265 30
+  s_90d6adba542290::t_05ee18cdccb02a 1-18,21-29,31-33
+  s_90d6adba542290::t_d0369b3b81c6ee 19-20
+packages/desktop/renderer/components/collaboration/SupervisionNotifier.tsx
+  s_5a08c897a5a358::t_299ffeab5b6394 1,11,18,22,46
+bun.lock
+  s_e5ed765a6d36c8::t_cc8064f700aaf3 74,100-106,162,239,277-278
+packages/messaging/assets/wecom/NativeAXBridge.swift
+  s_e5ed765a6d36c8::t_7bd6398a4d7a68 1-240
+packages/messaging/assets/wecom/reader.py
+  s_e5ed765a6d36c8::t_ac4261778cfb04 10,272-274,277-279,284,289
+packages/messaging/assets/wecom/reader_test.py
+  s_e5ed765a6d36c8::t_984d6d3a25c340 98-99,119,125-147,188
+packages/native-runtime/src/agent-runtime/image-input.ts
+  s_9e2c838105d4e9::t_4e6d8b98488f29 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "01675d546e6f3a191559e591624e103502dbc298",
+  "prompts": {},
+  "sessions": {
+    "s_009c30f34b86ce": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1a710-5ee5-7c33-8ec4-9c238dd12db6",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_21be884c942d21": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1a66c-664f-7071-beea-b3588823729f",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_29b3c3c2c9b4fe": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1a9e0-6b36-7a61-bc69-9da2ffb327b6",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_35c56e6593263c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1a721-d5df-7311-9161-ea0b6723282d",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_37266833b4fcce": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1a9dd-4a39-74b3-9d45-f369838896e3",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_3f480634bb85e0": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1ab61-0185-73a0-9693-c0b72aba01a7",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_48c3fad091e13e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1ab65-9928-7902-97ce-a41a72e93069",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_5a08c897a5a358": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1a715-b57c-7aa1-89e0-1efc55779678",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_61bb0ee2462d98": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1abee-c3a8-7903-ba2b-671a0b611b7e",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_6ae60f8fe2b3a6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1a9c9-88c9-7442-91b3-691d857c3837",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_6af8f7277fcf2b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1a675-1f86-7f70-8c54-c2e239cfbe76",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_8a4ed85cb72599": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1abf7-aaee-7d41-925a-0a7eea291be9",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_90d6adba542290": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1a908-dfc6-7651-bfd7-88bff0f6dfbe",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_9e2c838105d4e9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1ac44-2030-7113-af5d-3fd38f84d690",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_9f0eedd53dd52b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1ab3a-72c7-70b1-9fcc-22b33c00f2aa",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_ac547109ecbab9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1a6e8-0566-7af0-a793-2844cd6bf19b",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_e5ed765a6d36c8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1a96d-6838-71c2-abbb-73e1e98eba2b",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
