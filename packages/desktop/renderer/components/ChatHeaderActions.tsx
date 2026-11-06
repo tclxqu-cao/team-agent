@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useContext, useEffect, useState } from "react";
+import { WebAppHeaderActionsContext } from "./browser-live-header-context";
 import { Check, FolderOpen, LayoutDashboard, LayoutGrid, LoaderCircle, Monitor, PanelsTopLeft, Unplug, UsersRound } from "lucide-react";
 import { navigationLayoutSwitchTitle, nextNavigationLayout } from "../../../core/src/domain/web-console/navigation-layout";
 import { useUIStore } from "../stores/uiStore";
@@ -81,6 +82,7 @@ export default function ChatHeaderActions({
   onOpenSettings,
 }: ChatHeaderActionsProps) {
   const desktopLivePending = useDesktopLiveSetupPending(Boolean(onOpenDesktopLive));
+  const webAppActions = useContext(WebAppHeaderActionsContext);
   const navigationLayout = useUIStore((state) => state.navigationLayout);
   const setNavigationLayout = useUIStore((state) => state.setNavigationLayout);
   const releaseTitle = codexReleaseState === "releasing"
@@ -91,6 +93,7 @@ export default function ChatHeaderActions({
   const actions = (
     <div className="chat-header-actions" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
       {appActions}
+      {webAppActions}
       {typeof window !== "undefined" && window.sharedServiceApi?.mobilePairing && <MobilePairingButton />}
       {onOpenSessionDashboard && <button type="button" onClick={onOpenSessionDashboard} title="Dashboard · 会话总览" aria-label="打开会话 Dashboard" className="ui-icon-button chat-header-action"><LayoutDashboard size={17} aria-hidden="true"/></button>}
       {onOpenCollaborationDashboard && <button

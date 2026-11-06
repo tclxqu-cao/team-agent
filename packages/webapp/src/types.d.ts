@@ -34,6 +34,7 @@ declare module "@desktop/renderer/stores/uiStore" {
 }
 
 declare module "@desktop/renderer/components/browser-live-header-context" {
+  export const WebAppHeaderActionsContext: import("react").Context<import("react").ReactNode>;
   export const BrowserLiveHeaderContext: import("react").Context<import("react").ReactNode>;
 }
 
