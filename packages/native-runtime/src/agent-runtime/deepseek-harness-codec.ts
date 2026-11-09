@@ -2,6 +2,17 @@ import type { AgentEvent, Message, ToolCall } from "@agent/core";
 import { harnessRecord, type HarnessRecord } from "./deepseek-harness-client.js";
 
 const text = (value: unknown) => typeof value === "string" ? value : "";
+const HARNESS_CONTEXT_PREFIX = "__native_harness_context:";
+const HARNESS_STEERED_PREFIX = "__native_steered:harness:";
+
+export function isHarnessContextMessage(message: Message): boolean {
+  return message.name?.startsWith(HARNESS_CONTEXT_PREFIX) === true;
+}
+
+export function isHarnessSteeredMessage(message: Message): boolean {
+  return message.name?.startsWith(HARNESS_STEERED_PREFIX) === true;
+}
+
 export function harnessContent(value: unknown, type = "text"): string {
   return Array.isArray(value) ? value.map(block => { const item = harnessRecord(block); return item.type === type ? text(item.text) : ""; }).join("") : text(value);
 }
@@ -16,9 +27,13 @@ export function harnessMessage(event: HarnessRecord): Message | null {
   const data = harnessRecord(event.data);
   const raw = event.type === "user/message" ? data : data.message ? harnessRecord(data.message) : null;
   if (!raw || !["user", "assistant", "tool"].includes(text(raw.role))) return null;
-  const reasoning = harnessContent(raw.content, "reasoning");
+  const reasoning = raw.role === "assistant" && Array.isArray(raw.content)
+    ? harnessContent(raw.content, "reasoning") : "";
+  const sourceKind = raw.source && typeof raw.source === "object" ? text(harnessRecord(raw.source).kind) : "";
   return {
     role: raw.role as Message["role"], content: harnessContent(raw.content), historyId: `dsh:${event.seq}`,
+    // Harness also sends injected model context as user/message.
+    ...(raw.role === "user" && sourceKind && sourceKind !== "user" ? { name: `${HARNESS_CONTEXT_PREFIX}${sourceKind}` } : {}),
     ...(typeof raw.toolCallId === "string" ? { toolCallId: raw.toolCallId, isError: raw.isError === true } : {}),
     ...(reasoning ? { presentation: { reasoning: [{ itemId: `dsh:${event.seq}`, sectionIndex: 0, text: reasoning }] } } : {}),
   };
@@ -28,8 +43,15 @@ export function harnessMessage(event: HarnessRecord): Message | null {
 export function decodeHarnessHistory(records: HarnessRecord[]): { messages: Message[]; events: AgentEvent[] } {
   const surface: Array<{ event: HarnessRecord; message: Message }> = [];
   const events: AgentEvent[] = [];
+  let activeTurn: number | null = null;
+  let hasTurnInput = false;
   for (const record of records) {
     const event = harnessRecord(record.event);
+    const data = harnessRecord(event.data);
+    if (event.type === "turn/start" || event.type === "turn/end") {
+      activeTurn = event.type === "turn/start" && Number.isSafeInteger(data.turn) ? Number(data.turn) : null;
+      hasTurnInput = false;
+    }
     if (event.surfaceOp && typeof event.surfaceOp === "object") {
       const op = harnessRecord(event.surfaceOp);
       if (op.op === "replace") {
@@ -39,8 +61,13 @@ export function decodeHarnessHistory(records: HarnessRecord[]): { messages: Mess
       }
     }
     const message = harnessMessage(event);
+    if (message?.role === "user" && !isHarnessContextMessage(message) && activeTurn !== null) {
+      // User clarifications spliced into an open Harness turn remain visible,
+      // but do not cut off reconciliation of that turn's streamed answer.
+      if (hasTurnInput) message.name = `${HARNESS_STEERED_PREFIX}${activeTurn}:${event.seq}`;
+      hasTurnInput = true;
+    }
     if (message) surface.push({ event, message });
-    const data = harnessRecord(event.data);
     if (event.type === "tool/call") {
       const toolCall = harnessToolCall(data);
       const owner = [...surface].reverse().find(item => item.message.role === "assistant" && harnessRecord(item.event.data).step === data.step && harnessRecord(item.event.data).turn === data.turn);
@@ -48,7 +75,9 @@ export function decodeHarnessHistory(records: HarnessRecord[]): { messages: Mess
       events.push({ type: "tool_call", toolCall });
     } else if (event.type === "tool/result" && message) events.push({ type: "tool_result", result: { toolCallId: message.toolCallId || "", content: message.content, isError: message.isError } });
   }
-  return { messages: surface.map(item => item.message), events };
+  // Keep injected records in the replay surface so replacements and tool
+  // ownership retain their native sequence, but do not show them as user input.
+  return { messages: surface.map(item => item.message).filter(message => !isHarnessContextMessage(message)), events };
 }
 
 export function harnessChunkEvent(frame: HarnessRecord): AgentEvent | null {

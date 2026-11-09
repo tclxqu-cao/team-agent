@@ -47,13 +47,17 @@ describe("ComposerAgentPicker", () => {
 });
 
 describe("ComposerAgentPicker multiple recipients", () => {
-  it("offers upward multi-selection without changing existing radio callers", () => {
+  it("offers separate single and multiple selection actions without a confirmation button", () => {
     const html = renderToStaticMarkup(createElement(ComposerAgentPicker, {
       value: "codex", values: ["codex", "zcode"], onChange: noop, onValuesChange: noop,
       health: [{ agentType: "codex", available: true, label: "Codex" }, { agentType: "zcode", available: true, label: "ZCode" }], defaultOpen: true,
     }));
     expect(html.match(/role="menuitemcheckbox"/g)).toHaveLength(AGENT_TYPES.length);
-    expect(html).toContain("完成 · 已选 2 个");
+    expect(html.match(/role="menuitem"/g)).toHaveLength(AGENT_TYPES.length);
+    expect(html).toContain('aria-label="仅使用 Codex"');
+    expect(html).toContain('aria-label="取消选择 ZCode"');
+    expect(html).toContain("点名称单选，勾选框多选 · 立即生效");
+    expect(html).not.toContain("composer-agent-picker-done");
     expect(html).toContain("Agent · 2");
     expect(html).not.toContain('role="menuitemradio"');
   });
@@ -63,9 +67,11 @@ describe("ComposerAgentPicker multiple recipients", () => {
       value: "codex", values: ["zcode"], allowedAgentTypes: ["codex", "zcode"], purpose: "recipients",
       onChange: noop, onValuesChange: noop, defaultOpen: true,
     }));
-    expect(html.match(/role="menuitemcheckbox"/g)).toHaveLength(3);
+    expect(html.match(/role="menuitemcheckbox"/g)).toHaveLength(2);
     expect(html).toContain("全部 Agent");
-    expect(html).not.toContain('aria-disabled="true"');
+    expect(html).toMatch(/data-agent-type="codex" aria-label="仅使用 Codex" title=/);
+    expect(html).toMatch(/data-agent-type="zcode" aria-label="仅使用 ZCode" title=/);
+    expect(html).toContain('title="至少保留一个 Agent"');
     expect(html).not.toContain("Claude Code");
   });
 });

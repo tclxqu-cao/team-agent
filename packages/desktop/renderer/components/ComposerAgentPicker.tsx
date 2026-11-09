@@ -37,7 +37,6 @@ interface ComposerAgentPickerProps {
 
 export default function ComposerAgentPicker({ value, health = [], onChange, values, onValuesChange, allowedAgentTypes, purpose = "participants", defaultOpen = false }: ComposerAgentPickerProps) {
   const [open, setOpen] = useState(defaultOpen);
-  const [draft, setDraft] = useState<AgentType[]>(() => [...(values ?? [value])]);
   const multiple = values !== undefined && onValuesChange !== undefined;
   const wrapRef = useRef<HTMLDivElement>(null);
   const maxHeight = useComposerPickerHeight(open, wrapRef);
@@ -82,7 +81,7 @@ export default function ComposerAgentPicker({ value, health = [], onChange, valu
         aria-expanded={open}
         aria-label={multiple ? `${purpose === "recipients" ? "发送对象" : "参与 Agent"}：${label}` : `Agent：${AGENT_LABELS[value]}，点击切换`}
         title={multiple ? `${menuLabel}：${committed.map(type => AGENT_LABELS[type]).join("、")}` : `Agent：${AGENT_LABELS[value]}（点击切换）`}
-        onClick={() => { if (!open) setDraft([...committed]); setOpen((next) => !next); }}
+        onClick={() => setOpen((next) => !next)}
       >
         <AgentBrandIcon agentType={committed[0] ?? value} size={16} />
         <span className="composer-picker-label">{label}</span>
@@ -90,47 +89,65 @@ export default function ComposerAgentPicker({ value, health = [], onChange, valu
       </button>
       {open && (
         <div className="composer-agent-picker-menu" role="menu" aria-label={menuLabel} style={{ maxHeight }} onKeyDown={handleMenuKeyDown}>
-          {multiple && <div className="composer-agent-picker-heading">{menuLabel}</div>}
-          {multiple && purpose === "recipients" && <button type="button" role="menuitemcheckbox"
-            aria-checked={draft.length === items.length}
-            onClick={() => setDraft(draft.length === items.length ? [] : items.map(item => item.agentType))}>
-            <span className="composer-picker-check" aria-hidden="true">{draft.length === items.length ? "✓" : ""}</span>
+          {multiple && <div className="composer-agent-picker-heading">
+            <span>{menuLabel}</span><small>点名称单选，勾选框多选 · 立即生效</small>
+          </div>}
+          {multiple && purpose === "recipients" && <button type="button" role="menuitem"
+            onClick={() => onValuesChange(items.map(item => item.agentType))}>
+            <span className="composer-picker-check" aria-hidden="true">{committed.length === items.length ? "✓" : ""}</span>
             <span className="composer-picker-copy"><strong>全部 Agent</strong></span>
           </button>}
           {items.map((item) => {
             const blocked = purpose !== "recipients" && item.unavailableMessage !== undefined;
-            const selected = multiple ? draft.includes(item.agentType) : item.agentType === value;
+            const selected = multiple ? committed.includes(item.agentType) : item.agentType === value;
+            const className = [selected ? "is-active" : "", blocked ? "is-unavailable" : ""].filter(Boolean).join(" ") || undefined;
+            const copy = <><AgentBrandIcon agentType={item.agentType} size={18} />
+              <span className="composer-picker-copy">
+                <strong>{item.label}</strong>
+                {blocked && <small>{item.unavailableMessage}</small>}
+              </span></>;
+            if (multiple) {
+              const lastSelected = selected && committed.length === 1;
+              return <div key={item.agentType} role="none" className={`composer-agent-option${className ? ` ${className}` : ""}`}>
+                <button type="button" role="menuitem" className="composer-agent-option-main"
+                  data-agent-type={item.agentType} aria-label={`仅使用 ${item.label}`} aria-disabled={blocked || undefined}
+                  title={blocked ? item.unavailableMessage : `仅使用 ${item.label}`}
+                  onClick={() => {
+                    if (blocked) return;
+                    onValuesChange([item.agentType]);
+                    setOpen(false);
+                  }}>{copy}</button>
+                <button type="button" role="menuitemcheckbox" className="composer-agent-option-toggle"
+                  aria-label={`${selected ? "取消选择" : "添加"} ${item.label}`} aria-checked={selected}
+                  aria-disabled={blocked || lastSelected || undefined}
+                  title={blocked ? item.unavailableMessage : lastSelected ? "至少保留一个 Agent" : `${selected ? "取消选择" : "添加"} ${item.label}`}
+                  onClick={() => {
+                    if (blocked || lastSelected) return;
+                    onValuesChange(selected ? committed.filter(type => type !== item.agentType) : [...committed, item.agentType]);
+                  }}><span className="composer-agent-checkbox" aria-hidden="true">{selected ? "✓" : ""}</span></button>
+              </div>;
+            }
             return (
               <button
                 key={item.agentType}
                 type="button"
-                role={multiple ? "menuitemcheckbox" : "menuitemradio"}
+                role="menuitemradio"
                 aria-checked={selected}
                 aria-disabled={blocked || undefined}
                 data-agent-type={item.agentType}
                 title={blocked ? item.unavailableMessage : item.label}
-                className={[selected ? "is-active" : "", blocked ? "is-unavailable" : ""].filter(Boolean).join(" ") || undefined}
+                className={className}
                 onClick={() => {
                   if (blocked) return;
-                  if (multiple) {
-                    setDraft(previous => selected ? previous.filter(type => type !== item.agentType) : [...previous, item.agentType]);
-                    return;
-                  }
                   onChange(item.agentType);
                   setOpen(false);
                 }}
               >
                 <span className="composer-picker-check" aria-hidden="true">{selected ? "✓" : ""}</span>
-                <AgentBrandIcon agentType={item.agentType} size={18} />
-                <span className="composer-picker-copy">
-                  <strong>{item.label}</strong>
-                  {blocked && <small>{item.unavailableMessage}</small>}
-                </span>
+                {copy}
               </button>
             );
           })}
-          {multiple && <button type="button" className="composer-agent-picker-done" disabled={!draft.length}
-            onClick={() => { onValuesChange?.(draft); setOpen(false); }}>完成 · 已选 {draft.length} 个</button>}
         </div>
       )}
     </div>

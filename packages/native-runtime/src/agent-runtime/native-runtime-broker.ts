@@ -27,6 +27,7 @@ import {
   reorderQueuedSessionGoals,
   reorderQueuedSessionMessages,
   sessionQueueItemKind,
+  sessionHistoryMessageId,
   SQLiteDatabase,
   SessionQueryIndexCache,
   StaleSessionAnchorError,
@@ -58,6 +59,7 @@ import { CodexSessionCompatibilityService } from "./codex-session-compatibility.
 import { CodexRuntimeAdapter } from "./codex-runtime-adapter.js";
 import { parseCodexAsyncQuestionId } from "./codex-questions.js";
 import { DeepSeekHarnessRuntimeAdapter } from "./deepseek-harness-runtime-adapter.js";
+import { isHarnessContextMessage, isHarnessSteeredMessage } from "./deepseek-harness-codec.js";
 import { parseHarnessQuestionId } from "./deepseek-harness-interaction-codec.js";
 import { isOpenCodeQuestionId } from "./opencode-questions.js";
 import { OpenCodeRuntimeAdapter } from "./opencode-runtime-adapter.js";
@@ -1269,8 +1271,16 @@ class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, Code
       }
     }
     const completedMessages = applyTurnCompletions(completionMessages, completionRows, { windowed });
+    const harnessInputReceipt = detail.agentType === "deepseek-harness" && mergeProjection && projection.run?.goalId
+      ? this.database.db.prepare(`
+        SELECT source_message_id FROM native_runtime_message_receipt
+        WHERE session_id = ? AND queue_item_id = ? AND run_id = ?
+      `).get(detail.id, projection.run.goalId, projection.run.runId) as { source_message_id: string } | undefined
+      : undefined;
     const messages = detail.agentType === "copilot"
       ? this.restoreSteeredMessages(detail.id, completedMessages)
+      : detail.agentType === "deepseek-harness" && mergeProjection
+      ? restoreHarnessRunInputIdentity(completedMessages, projection.run, harnessInputReceipt?.source_message_id)
       : completedMessages;
     return {
       ...detail,
@@ -1633,20 +1643,20 @@ export class NativeRuntimeBrokerHost {
       const detail = await this.runtime.getUnpaginated(id, shouldReuseSessionDetailCache(query));
       const projected = this.state.applyDetail(detail);
       this.queryIndexCache.getOrCreate(id, projected.messages);
-      return query
+      return restoreHarnessPagedInputIdentity(query
         ? { ...projected, ...paginateSessionHistory(projected.messages, projected.events, query, {
             includePendingQuestions: true,
           }) }
-        : projected;
+        : projected);
     } catch (error) {
       const pending = this.pendingCreations.get(id);
       if (!pending) throw error;
       const projected = this.state.applyDetail({ ...pending, messages: [], events: [] });
-      return query
+      return restoreHarnessPagedInputIdentity(query
         ? { ...projected, ...paginateSessionHistory(projected.messages, projected.events, query, {
             includePendingQuestions: true,
           }) }
-        : projected;
+        : projected);
     }
   }
 
@@ -1659,12 +1669,14 @@ export class NativeRuntimeBrokerHost {
     try {
       const detail = await this.runtime.getUnpaginated(id, true);
       const projected = this.state.applyDetail(detail);
-      return this.queryIndexCache.getOrCreate(id, projected.messages);
+      const index = this.queryIndexCache.getOrCreate(id, projected.messages);
+      return projected.agentType === "deepseek-harness" ? restoreHarnessInputQueryIdentity(index, projected.messages) : index;
     } catch (error) {
       const pending = this.pendingCreations.get(id);
       if (!pending) throw error;
       const projected = this.state.applyDetail({ ...pending, messages: [], events: [] });
-      return this.queryIndexCache.getOrCreate(id, projected.messages);
+      const index = this.queryIndexCache.getOrCreate(id, projected.messages);
+      return projected.agentType === "deepseek-harness" ? restoreHarnessInputQueryIdentity(index, projected.messages) : index;
     }
   }
 
@@ -3137,6 +3149,58 @@ function toImportedWorkspace(row: StoredImportedWorkspaceRow): ImportedAgentWork
   };
 }
 
+/** Link the accepted Harness input to its durable queue receipt, including across reloads. */
+export function restoreHarnessRunInputIdentity(
+  messages: Message[],
+  run: BrokerRunRecord | null,
+  sourceMessageId: string | undefined,
+): Message[] {
+  if (run?.agentType !== "deepseek-harness" || !run.goalId || !sourceMessageId) return messages;
+  // Same-turn clarifications may repeat the original words. Only the initial
+  // input owns the queue receipt; those later messages retain native identities.
+  let inputIndex = -1;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message.role !== "user" || isHarnessContextMessage(message) || isHarnessSteeredMessage(message)) continue;
+    if (message.content === run.input) inputIndex = index;
+    break;
+  }
+  const name = `__native_harness_input:${sourceMessageId}`;
+  if (inputIndex < 0 || (messages[inputIndex].historyId === sourceMessageId && messages[inputIndex].name === name)) return messages;
+  return messages.map((message, index) => index === inputIndex ? { ...message, historyId: sourceMessageId, name } : message);
+}
+
+function harnessInputSourceId(message: Message): string | undefined {
+  const prefix = "__native_harness_input:";
+  return message.role === "user" && message.name?.startsWith(prefix) ? message.name.slice(prefix.length) : undefined;
+}
+
+/** Generic history paging assigns ordinal IDs; retain the accepted Harness input's receipt. */
+export function restoreHarnessPagedInputIdentity(detail: UnifiedSessionDetail): UnifiedSessionDetail {
+  if (detail.agentType !== "deepseek-harness") return detail;
+  return { ...detail, messages: detail.messages.map(message => {
+    const sourceId = harnessInputSourceId(message);
+    return sourceId && message.historyId !== sourceId ? { ...message, historyId: sourceId } : message;
+  }) };
+}
+
+/** Query navigation and the returned page must target the same message ID. */
+export function restoreHarnessInputQueryIdentity(index: SessionQueryIndex, messages: Message[]): SessionQueryIndex {
+  const aliases = new Map<string, string>();
+  let visibleIndex = 0;
+  for (const message of messages) {
+    if (message.role !== "user" && message.role !== "assistant") continue;
+    const sourceId = harnessInputSourceId(message);
+    if (sourceId) aliases.set(sessionHistoryMessageId(visibleIndex, message), sourceId);
+    visibleIndex += 1;
+  }
+  if (!aliases.size) return index;
+  return { ...index, entries: index.entries.map(entry => {
+    const sourceId = aliases.get(entry.messageId);
+    return sourceId ? { ...entry, messageId: sourceId } : entry;
+  }) };
+}
+
 export function mergeProjectionMessages(
   messages: Message[],
   run: BrokerRunRecord | null,
@@ -3154,19 +3218,22 @@ export function mergeProjectionMessages(
   ) {
     return messages;
   }
-  const preserveNativeOrder = run.agentType === "qoder" || run.agentType === "zcode" || run.agentType === "workbuddy" || run.agentType === "copilot";
+  const isHarness = run.agentType === "deepseek-harness";
+  const preserveNativeOrder = isHarness || run.agentType === "qoder" || run.agentType === "zcode" || run.agentType === "workbuddy" || run.agentType === "copilot";
+  const isRunUser = (message: Message) => message.role === "user"
+    && (!isHarness || (!isHarnessContextMessage(message) && !isHarnessSteeredMessage(message)));
   const projected = [...messages];
   let runUserIndex = -1;
   for (let index = projected.length - 1; index >= 0; index -= 1) {
     const message = projected[index];
-    if (message.role !== "user" || message.content !== run.input) continue;
+    if (!isRunUser(message) || message.content !== run.input) continue;
     runUserIndex = index;
     break;
   }
   const hasPersistedRunInput = runUserIndex >= 0;
   let nextUserIndex = projected.length;
   for (let index = runUserIndex + 1; hasPersistedRunInput && index < projected.length; index += 1) {
-    if (projected[index].role !== "user") continue;
+    if (!isRunUser(projected[index])) continue;
     nextUserIndex = index;
     break;
   }
@@ -3192,6 +3259,11 @@ export function mergeProjectionMessages(
   const eventMessages: Message[] = [];
   let activeAssistantIndex: number | null = null;
   for (const { event } of events) {
+    // Harness commits each model step before its tools; later text belongs after their results.
+    if (isHarness && (event.type === "text_done" || event.type === "tool_result")) {
+      activeAssistantIndex = null;
+      continue;
+    }
     // Older ZCode runs recorded the raw tool before its dedicated question card.
     if (run.agentType === "zcode" && event.type === "tool_call" && event.toolCall.name === "AskUserQuestion") continue;
     if (event.type === "reasoning_summary_delta") {

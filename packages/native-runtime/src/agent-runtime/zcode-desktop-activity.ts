@@ -9,6 +9,7 @@ export interface ZCodeActivityReader {
 }
 
 interface Turn { id: string; timestamp: number; running: boolean }
+interface DeliveredTurn extends Turn { pid: number }
 interface Owner { pid: number; timestamp: number }
 interface Cursor {
   identity: string;
@@ -23,6 +24,7 @@ interface Options { home?: string; isProcessAlive?: (pid: number) => boolean }
 const CHUNK_BYTES = 64 * 1024;
 const MAX_LINE_BYTES = 128 * 1024;
 const PROCESS_STARTED = "ZCode agent process started ";
+const DELIVERY_ACKNOWLEDGED = "event delivery acknowledged ";
 const TURN_EVENTS = new Set(["turn.started", "turn.completed", "turn.failed"]);
 
 function processAlive(pid: number): boolean {
@@ -31,12 +33,13 @@ function processAlive(pid: number): boolean {
 }
 
 /** Legacy session/list omits live projections. Read native turn boundaries and
- * their desktop workspace owner without materializing or sending to a session. */
+ * their desktop host or workspace owner without materializing or sending to a session. */
 export class ZCodeDesktopActivityReader implements ZCodeActivityReader {
   private readonly root: string;
   private readonly alive: (pid: number) => boolean;
   private readonly cursors = new Map<string, Cursor>();
   private readonly turns = new Map<string, Turn>();
+  private readonly deliveredTurns = new Map<string, DeliveredTurn>();
   private readonly owners = new Map<string, Map<number, Owner>>();
   private pending: Promise<void> | undefined;
 
@@ -52,18 +55,29 @@ export class ZCodeDesktopActivityReader implements ZCodeActivityReader {
       try { await refresh; }
       finally { if (this.pending === refresh) this.pending = undefined; }
       const processes = new Map<number, boolean>();
+      const isAlive = (pid: number) => {
+        if (!processes.has(pid)) processes.set(pid, this.alive(pid));
+        return processes.get(pid) === true;
+      };
       const result = new Map<string, boolean>();
       for (const session of sessions) {
         const turn = this.turns.get(session.id);
         if (!turn) continue;
         if (!turn.running) { result.set(session.id, false); continue; }
+        const delivered = this.deliveredTurns.get(session.id);
+        // Current desktop hosts acknowledge an exact session/turn rather than
+        // logging a workspace-owned agent process. Bind its inner host PID,
+        // never the outer Electron PID or an unrelated live workspace.
+        if (delivered?.id === turn.id) {
+          result.set(session.id, delivered.running && isAlive(delivered.pid));
+          continue;
+        }
         const owners = this.owners.get(normalizeAgentWorkspacePath(session.cwd));
         if (!owners?.size) continue;
         // A replacement workspace process cannot own a turn started by its predecessor.
         result.set(session.id, [...owners.values()].some(owner => {
           if (owner.timestamp > turn.timestamp) return false;
-          if (!processes.has(owner.pid)) processes.set(owner.pid, this.alive(owner.pid));
-          return processes.get(owner.pid) === true;
+          return isAlive(owner.pid);
         }));
       }
       return result;
@@ -73,7 +87,7 @@ export class ZCodeDesktopActivityReader implements ZCodeActivityReader {
     }
   }
 
-  private reset(): void { this.cursors.clear(); this.turns.clear(); this.owners.clear(); }
+  private reset(): void { this.cursors.clear(); this.turns.clear(); this.deliveredTurns.clear(); this.owners.clear(); }
 
   private async files(directory: string, kind: LogFile["kind"], pattern: RegExp): Promise<LogFile[]> {
     let names: string[];
@@ -142,6 +156,8 @@ export class ZCodeDesktopActivityReader implements ZCodeActivityReader {
   private line(line: string, kind: LogFile["kind"]): void {
     try {
       if (kind === "desktop") {
+        const deliveryIndex = line.indexOf(DELIVERY_ACKNOWLEDGED);
+        if (deliveryIndex >= 0) { this.delivery(line, deliveryIndex); return; }
         const index = line.indexOf(PROCESS_STARTED);
         if (index < 0) return;
         const record = JSON.parse(line.slice(index + PROCESS_STARTED.length)) as { cwd?: unknown; pid?: unknown };
@@ -168,5 +184,21 @@ export class ZCodeDesktopActivityReader implements ZCodeActivityReader {
       if (record.event !== "turn.started" && previous && previous.id !== record.turnId) return;
       this.turns.set(record.sessionId, { id: record.turnId, timestamp, running: record.event === "turn.started" });
     } catch { /* Incomplete or unrelated native log records do not change lifecycle state. */ }
+  }
+
+  private delivery(line: string, index: number): void {
+    const host = /\[host\] \[([^\]]+)\] \[pid:(\d+)\] \[cua-pip-session\]/.exec(line.slice(0, index));
+    if (!host) return;
+    const record = JSON.parse(line.slice(index + DELIVERY_ACKNOWLEDGED.length)) as {
+      applied?: unknown; kind?: unknown; sessionId?: unknown; turnId?: unknown;
+    };
+    const pid = Number(host[2]);
+    const timestamp = Date.parse(host[1].replace(" ", "T"));
+    if (record.applied !== true || (record.kind !== "turn-started" && record.kind !== "turn-ended")
+      || typeof record.sessionId !== "string" || !record.sessionId || typeof record.turnId !== "string" || !record.turnId
+      || !Number.isSafeInteger(pid) || pid < 1 || !Number.isFinite(timestamp)) return;
+    const previous = this.deliveredTurns.get(record.sessionId);
+    if (previous && (timestamp < previous.timestamp || (record.kind === "turn-ended" && previous.id !== record.turnId))) return;
+    this.deliveredTurns.set(record.sessionId, { id: record.turnId, timestamp, pid, running: record.kind === "turn-started" });
   }
 }

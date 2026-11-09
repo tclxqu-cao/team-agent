@@ -1,9 +1,10 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const state = vi.hoisted(() => ({ navigationLayout: "classic", setNavigationLayout: vi.fn() }));
+const state = vi.hoisted(() => ({ navigationLayout: "classic", webShell: false, setNavigationLayout: vi.fn() }));
 vi.mock("../stores/uiStore", () => ({ useUIStore: (selector: (value: typeof state) => unknown) => selector(state) }));
+vi.mock("../web/webLayout", () => ({ isWebShell: () => state.webShell }));
 import ChatHeaderActions from "./ChatHeaderActions";
 import DesktopAppActions from "./DesktopAppActions";
 
@@ -16,6 +17,8 @@ const render = (showSettings: boolean) => renderToStaticMarkup(createElement(Cha
 }));
 
 describe("chat header action layout", () => {
+  beforeEach(() => { state.navigationLayout = "classic"; state.webShell = false; });
+
   it("keeps the classic inline toolbar", () => {
     state.navigationLayout = "classic";
     const html = render(true);
@@ -37,6 +40,17 @@ describe("chat header action layout", () => {
     expect(html).not.toContain("lucide-panel-left");
     expect(html).not.toContain("lucide-panel-right");
     expect(html.indexOf("chat-header-action--appearance")).toBeLessThan(html.indexOf("chat-header-action--navigation-layout"));
+  });
+
+  it.each(["classic", "agent-rail"])("shows web conversation actions directly with %s navigation", navigationLayout => {
+    state.navigationLayout = navigationLayout;
+    state.webShell = true;
+    const html = render(true);
+    expect(html).not.toContain("header-action-menu-trigger");
+    expect(html).not.toContain('role="dialog"');
+    for (const label of ["我的文件", "打开 AI Hub", "停止在 AgentRoam 中使用（Codex Desktop 最长约 30 分钟后可用）", "设置"]) {
+      expect(html).toContain(`aria-label="${label}"`);
+    }
   });
 
   it("does not expose CA settings for native Agents inside the menu", () => {

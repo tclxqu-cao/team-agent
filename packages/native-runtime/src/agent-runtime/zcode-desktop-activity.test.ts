@@ -15,6 +15,11 @@ const event = (name: string, turn = "turn-1", timestamp = start, id = session.id
   JSON.stringify({ timestamp: new Date(timestamp).toISOString(), event: name, sessionId: id, turnId: turn }) + "\n";
 const owner = (pid = 412, cwd = session.cwd, time = "2026-10-29 11:10:27.775") =>
   `[${time}] [info] [host-log] [zcode-agent] ZCode agent process started ${JSON.stringify({ workspaceKey: cwd, cwd, pid })}\n`;
+const delivery = (options: { pid?: number; sessionId?: string; turnId?: string; kind?: string; applied?: boolean; time?: string } = {}) =>
+  `[${options.time ?? "2026-10-29 11:51:20.100"}] [info] [pid:910] [main] [host-log] (local-1) [host] `
+  + `[${options.time ?? "2026-10-29 11:51:20.100"}] [pid:${options.pid ?? 512}] [cua-pip-session] [cua-pip-session] event delivery acknowledged `
+  + JSON.stringify({ kind: options.kind ?? "turn-started", sessionId: options.sessionId ?? session.id,
+    turnId: options.turnId ?? "turn-1", applied: options.applied ?? true, reason: "applied" }) + "\n";
 
 async function fixture() {
   const home = await mkdtemp(join(tmpdir(), "zcode-desktop-activity-")); homes.push(home);
@@ -31,6 +36,55 @@ describe("ZCode desktop turn discovery", () => {
   it("recognizes the desktop turn independently of legacy idle session summaries", async () => {
     const { reader } = await fixture();
     expect((await reader.readMany([session])).get(session.id)).toBe(true);
+  });
+
+  it("recognizes the reported host-owned turn without the legacy workspace process log", async () => {
+    const { reader, host, alive } = await fixture();
+    await writeFile(host, delivery());
+    alive.clear(); alive.add(512);
+    expect((await reader.readMany([session])).get(session.id)).toBe(true);
+    alive.clear(); alive.add(910);
+    expect((await reader.readMany([session])).get(session.id)).toBe(false);
+  });
+
+  it.each([
+    { applied: false }, { sessionId: "unrelated-session" }, { turnId: "unrelated-turn" },
+  ])("does not infer ownership from an unrelated or rejected delivery (%j)", async options => {
+    const { reader, host, alive } = await fixture();
+    await writeFile(host, delivery(options)); alive.add(512);
+    expect((await reader.readMany([session])).has(session.id)).toBe(false);
+  });
+
+  it("clears host delivery ownership on the exact native terminal event", async () => {
+    const { reader, host, log, alive } = await fixture();
+    await writeFile(host, delivery()); alive.add(512);
+    expect((await reader.readMany([session])).get(session.id)).toBe(true);
+    await appendFile(log, event("turn.completed", "turn-1", start + 200));
+    expect((await reader.readMany([session])).get(session.id)).toBe(false);
+  });
+
+  it("observes an acknowledged turn end before the CLI terminal log catches up", async () => {
+    const { reader, host, alive } = await fixture();
+    await writeFile(host, delivery()); alive.add(512);
+    expect((await reader.readMany([session])).get(session.id)).toBe(true);
+    await appendFile(host, delivery({ kind: "turn-ended", time: "2026-10-29 11:51:20.200" }));
+    expect((await reader.readMany([session])).get(session.id)).toBe(false);
+  });
+
+  it("does not treat the live Electron PID as a host delivery owner", async () => {
+    const { reader, host, alive } = await fixture();
+    await writeFile(host, delivery().replace(/\[host\] \[[^\]]+\] \[pid:512\] /, ""));
+    alive.add(910);
+    expect((await reader.readMany([session])).has(session.id)).toBe(false);
+  });
+
+  it("does not use an old delivery to revive a new turn after the host exits", async () => {
+    const { reader, host, log, alive } = await fixture();
+    await writeFile(host, delivery()); alive.add(512);
+    expect((await reader.readMany([session])).get(session.id)).toBe(true);
+    await appendFile(log, event("turn.started", "turn-2", start + 200));
+    await appendFile(host, delivery({ turnId: "turn-2", pid: 513, time: "2026-10-29 11:51:20.300" }));
+    expect((await reader.readMany([session])).get(session.id)).toBe(false);
   });
 
   it.each(["turn.completed", "turn.failed"])("clears running on %s without waiting for timestamps to expire", async terminal => {
@@ -132,8 +186,9 @@ describe("ZCode desktop turn discovery", () => {
     expect((await reader.readMany([session])).size).toBe(0);
   });
 
-  it("projects the reported desktop execution and its completion through the real client and adapter", async () => {
-    const { reader, log } = await fixture();
+  it.each(["legacy", "host"])("projects desktop execution and completion through the client and adapter (%s)", async kind => {
+    const { reader, log, host, alive } = await fixture();
+    if (kind === "host") { await writeFile(host, delivery()); alive.clear(); alive.add(512); }
     const row = { sessionId: session.id, title: "VPN 工具聚合免费隧道与界面方案", status: "idle",
       workspace: { workspacePath: session.cwd }, createdAt: start - 1000, updatedAt: start };
     const request = vi.fn<NativeRpcConnection["request"]>(async method => {

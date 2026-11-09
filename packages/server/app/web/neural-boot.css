@@ -431,7 +431,7 @@
   [data-web-theme="glass"] .terminal-tab::before { display: none; }
   [data-web-theme="glass"] .terminal-add { width: 36px; height: 36px; padding: 0; margin: 0; border: 0; border-radius: 12px; background: rgba(255, 255, 255, 0.5); }
   [data-web-theme="glass"] .terminal-connection { flex: 0 0 auto; min-width: 0; margin-left: auto; padding: 0; background: transparent; }
-  [data-web-theme="glass"] .glass-desktop-toolbar { flex: 0 0 auto; min-width: 0; gap: 8px; }
+  [data-web-theme="glass"] .glass-desktop-toolbar { flex: 0 0 auto; min-width: 0; gap: var(--toolbar-avatar-gap); }
   [data-web-theme="glass"] .glass-desktop-actions { display: flex; align-items: center; gap: 4px; padding-left: 8px; border-left: 1px solid rgba(57, 92, 107, 0.14); }
   [data-web-theme="glass"] .glass-desktop-toolbar > .toolbar-avatar { margin-left: 0; padding: 0 8px; }
   [data-web-theme="glass"] :is(.glass-desktop-actions, .glass-desktop-menu) .file-drawer-toggle { width: 36px; height: 36px; border-radius: 12px; }

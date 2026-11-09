@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import type { BrowserLiveSession } from "../global";
 import { BrowserLiveTouch } from "./browser-live-touch";
-import { decodePcm16Base64, encodePcm16Base64, isStaleControlReply, prepareVoiceAudio, remoteFieldContains, selectBrowserLiveSessionId, touchScrollDelta } from "./BrowserLivePanel";
+import { decodePcm16Base64, encodePcm16Base64, isStaleControlReply, prepareVoiceAudio, remoteFieldContains, selectBrowserLiveSessionId, shouldOfferVisualTakeover, touchScrollDelta } from "./BrowserLivePanel";
 
 function session(id: string, agentSessionId: string): BrowserLiveSession {
   return {
@@ -84,6 +84,23 @@ describe("browser live session selection", () => {
     expect(source).toContain('{isWindowsDesktop && (');
     expect(source).toContain('onClick={() => void sendSystem("wake")}');
     expect(source).toContain('<LockOpen size={14} aria-hidden="true" />远程解锁');
+  });
+});
+
+describe("read-only visual takeover", () => {
+  it("offers control for a ready screen owned by the Agent", () => {
+    expect(shouldOfferVisualTakeover(session("desktop", ""))).toBe(true);
+    expect(shouldOfferVisualTakeover({ ...session("desktop", ""), state: "handoff-requested" })).toBe(true);
+  });
+
+  it("does not cover an active controller or another device", () => {
+    expect(shouldOfferVisualTakeover({ ...session("desktop", ""), isController: true, state: "user-controlled" })).toBe(false);
+    expect(shouldOfferVisualTakeover({ ...session("desktop", ""), controlledByAnotherViewer: true, state: "user-controlled" })).toBe(false);
+  });
+
+  it("waits for a usable frame before asking for input control", () => {
+    expect(shouldOfferVisualTakeover({ ...session("desktop", ""), availability: "starting" })).toBe(false);
+    expect(shouldOfferVisualTakeover(null)).toBe(false);
   });
 });
 

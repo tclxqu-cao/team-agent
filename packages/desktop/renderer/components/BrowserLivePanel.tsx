@@ -67,6 +67,17 @@ export function selectBrowserLiveSessionId(
     ?? null;
 }
 
+/** A ready screen that is read-only because control still belongs to the Agent. */
+export function shouldOfferVisualTakeover(session: BrowserLiveSession | null): boolean {
+  return Boolean(
+    session
+    && session.availability === "ready"
+    && !session.isController
+    && !session.controlledByAnotherViewer
+    && (session.state === "agent-controlled" || session.state === "handoff-requested"),
+  );
+}
+
 function modifierNames(event: React.KeyboardEvent): string[] {
   return [
     event.altKey ? "Alt" : "",
@@ -356,6 +367,8 @@ export default function BrowserLivePanel({ open, active = true, agentSessionId, 
     && audioCapabilities.microphonePlayback
     && audioCapabilities.selfPlaybackExclusion);
   const canAdjustCapture = Boolean(selected?.online && selected.availability === "ready" && !selected.controlledByAnotherViewer);
+  const showTakeoverPrompt = shouldOfferVisualTakeover(selected);
+  const takeoverPending = controlPending || selected?.state === "handoff-requested";
   // Rough network latency readout while a stream is open.
   useEffect(() => {
     if (!open || !api || !selectedId) { setPingMs(null); return; }
@@ -1414,7 +1427,11 @@ export default function BrowserLivePanel({ open, active = true, agentSessionId, 
             </div>
           )}
           {!(hasControl && !panMode && quickKeysOpen) && (
-            <div className="browser-live-touch-hint">滑动滚动 · 轻点点击 · 双击打开 · 长按拖动 · 按住1秒右键 · 双指缩放</div>
+            <div className="browser-live-touch-hint">
+              {showTakeoverPrompt
+                ? "画面当前为只读 · 点击画面开始控制"
+                : "滑动滚动 · 轻点点击 · 双击打开 · 长按拖动 · 按住1秒右键 · 双指缩放"}
+            </div>
           )}
           <div ref={viewportRef} className="browser-live-viewport" onMouseDown={(event) => {
             // A keyboard resize can move the picture before compatibility
@@ -1657,6 +1674,29 @@ export default function BrowserLivePanel({ open, active = true, agentSessionId, 
                 )}
               </div>
             )}
+            {showTakeoverPrompt && (
+              <button
+                type="button"
+                className="browser-live-takeover-prompt"
+                aria-label={takeoverPending ? "正在开始控制远程桌面" : "点击画面开始控制远程桌面"}
+                disabled={takeoverPending || !controllable || selected?.state !== "agent-controlled"}
+                onClick={() => void requestControl()}
+              >
+                <span className="browser-live-takeover-card" aria-live="polite">
+                  <span className="browser-live-takeover-icon" aria-hidden="true">
+                    {takeoverPending ? <LoaderCircle size={20} className="spin" /> : <MousePointer2 size={20} />}
+                  </span>
+                  <span>
+                    <strong>{takeoverPending ? "正在开始控制" : "点击画面开始控制"}</strong>
+                    <small>
+                      {takeoverPending
+                        ? "正在把鼠标和键盘切换到你的设备"
+                        : `当前画面只读，点击不会发送到${isDesktop ? " Mac" : "浏览器"}`}
+                    </small>
+                  </span>
+                </span>
+              </button>
+            )}
           </div>
           {fullscreen && (
             <button type="button" className="browser-live-exit-fullscreen" onClick={() => void toggleFullscreen()}>
@@ -1676,7 +1716,11 @@ export default function BrowserLivePanel({ open, active = true, agentSessionId, 
             <span className={`browser-live-status-dot is-${selected?.state ?? "idle"}`} aria-hidden="true" />
             <div>
               <strong>{statusLabel}</strong>
-              <span title={selected?.url}>{selected?.capabilityError || (isDesktop ? "本机屏幕" : selected?.url) || error || "等待可观看的直播会话"}</span>
+              <span title={selected?.url}>{selected?.capabilityError || (isDesktop
+                ? showTakeoverPrompt
+                  ? "点击画面开始控制后，单击和拖拽才会发送到本机"
+                  : "本机屏幕"
+                : selected?.url) || error || "等待可观看的直播会话"}</span>
             </div>
             {selected?.url && !isDesktop && <ExternalLink size={13} aria-hidden="true" />}
           </div>

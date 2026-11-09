@@ -244,6 +244,9 @@ func activateAppUnder(x: CGFloat, y: CGFloat) {
     var pid: pid_t = 0
     AXUIElementGetPid(element, &pid)
     guard pid != 0, let app = NSRunningApplication(processIdentifier: pid) else { return }
+    // Only ordinary window apps need this focus workaround. Dock items and
+    // system overlays handle their own activation.
+    guard app.activationPolicy == .regular else { return }
     guard !app.isActive else { return }
     app.activate(options: [.activateIgnoringOtherApps])
     var windowRef: CFTypeRef?

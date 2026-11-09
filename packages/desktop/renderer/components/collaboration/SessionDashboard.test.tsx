@@ -3,13 +3,22 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, expect, it, vi } from "vitest";
 import { groupFixture } from "../../../../core/src/domain/collaboration/__tests__/fixtures";
 import type { DashboardGroup, SessionDashboardSnapshot } from "../../../../core/src/domain/supervision/types";
-const fixture = vi.hoisted(() => ({ snapshot: null as SessionDashboardSnapshot | null, ui: { skin: "pearl", dashboardSessionsMerged: false, setDashboardSessionsMerged: vi.fn() } }));
-vi.mock("./useSessionDashboard", () => ({ useSessionDashboard: () => ({ snapshot: fixture.snapshot, loading: false, notice: null, dismissError: vi.fn(), refresh: vi.fn() }) }));
+const fixture = vi.hoisted(() => ({ snapshot: null as SessionDashboardSnapshot | null, loading: false, ui: { skin: "pearl", dashboardSessionsMerged: false, setDashboardSessionsMerged: vi.fn() } }));
+vi.mock("./useSessionDashboard", () => ({ useSessionDashboard: () => ({ snapshot: fixture.snapshot, loading: fixture.loading, notice: null, dismissError: vi.fn(), refresh: vi.fn() }) }));
 vi.mock("../../stores/uiStore", () => ({ useUIStore: (selector: (state: typeof fixture.ui) => unknown) => selector(fixture.ui) }));
 import SessionDashboard from "./SessionDashboard";
 import MonitoredSessionPicker, { mergeCatalogPage } from "./MonitoredSessionPicker";
 
-beforeEach(() => { fixture.snapshot = null; fixture.ui.dashboardSessionsMerged = false; });
+beforeEach(() => { fixture.snapshot = null; fixture.loading = false; fixture.ui.dashboardSessionsMerged = false; });
+
+it("uses one breathing skeleton group without a separate loader section", () => {
+  fixture.loading = true;
+  const html = renderToStaticMarkup(createElement(SessionDashboard));
+  expect(html).toContain('class="session-dashboard-loading" role="status"');
+  expect(html.match(/class="session-dashboard-loading-card"/g)).toHaveLength(3);
+  expect(html).not.toContain("session-loading");
+  expect(html).not.toContain("正在加载会话总览…");
+});
 
 it("keeps Dashboard, group management, Agent navigation and source-linked group decisions separate", () => {
   const group: DashboardGroup = { group: groupFixture(), status: "waiting", updated: "2026-10-28", progress: "等待业务选择", runningCount: 1, decisionCount: 1, discussionId: "older-active", questions: [{ discussionId: "older-active", questionId: "q", text: "是否选择方案 A", options: [{ label: "A", description: "成本低" }] }], sessions: [{ id: "codex:internal", agentType: "codex", cwd: "/project", title: "群内会话" }] };

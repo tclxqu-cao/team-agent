@@ -264,6 +264,44 @@ describe("resolveNativeRuntimeSocketPath", () => {
 });
 
 describe("NativeRuntimeBrokerHost", () => {
+  it.each(["deepseek-harness", "codex", "zcode"] as const)(
+    "links the accepted queue input to its source only for Harness (%s)", async agentType => {
+      const id = encodeUnifiedSessionId(agentType, "queued-input");
+      const native = { ...summary(), id, agentType, nativeSessionId: "queued-input" };
+      const runtime = new FakeNativeRuntime();
+      runtime.get = async () => ({ ...native, messages: [
+        { role: "user", content: "Question", historyId: "older-input" },
+        { role: "assistant", content: "Earlier answer" },
+        { role: "user", content: "Question", historyId: "current-input" },
+        { role: "user", content: "Question", historyId: "clarification", name: "__native_steered:harness:24:1741" },
+      ], events: [] });
+      const host = new NativeRuntimeBrokerHost(await directory(), runtime as unknown as UnifiedSessionService);
+      try {
+        await host.enqueueMessage(id, { sourceMessageId: "accepted-input", content: "Question" });
+        await waitFor(() => expect(runtime.runInputs).toHaveLength(1));
+        const detail = await host.get(id);
+        expect(detail.messages.filter(message => message.role === "user").map(message => message.historyId)).toEqual([
+          "older-input", agentType === "deepseek-harness" ? "accepted-input" : "current-input", "clarification",
+        ]);
+        const page = await host.get(id, { limit: 100 });
+        expect(page.messages.some(message => message.historyId === "accepted-input")).toBe(agentType === "deepseek-harness");
+        const index = await host.getQueryIndex(id);
+        for (const entry of index.entries) {
+          expect(page.messages.some(message => message.historyId === entry.messageId)).toBe(true);
+        }
+        const older = await host.get(id, { before: "history.v1.2", limit: 1 });
+        expect(older.messages.some(message => message.historyId === "accepted-input")).toBe(false);
+        expect(runtime.runInputs).toHaveLength(1);
+        await host.abort(id);
+        await waitFor(() => expect(host.snapshot(id).controller).toBeNull());
+        expect((await host.get(id)).messages.find(message => message.historyId === "accepted-input") !== undefined)
+          .toBe(agentType === "deepseek-harness");
+        expect((await host.get(id, { limit: 100 })).messages.some(message => message.historyId === "accepted-input"))
+          .toBe(agentType === "deepseek-harness");
+      } finally { await host.stop(); }
+    },
+  );
+
   it("admits verified ZCode desktop guidance while retaining guards for other external sessions", async () => {
     const runtime = new FakeNativeRuntime(); runtime.immediateTerminal = true;
     const externalId = encodeUnifiedSessionId("zcode", "desktop-main");

@@ -10,6 +10,7 @@ import ActionErrorDialog from "../ActionErrorDialog";
 import { AGENT_NAMES, DISCUSSION_STATUS, collaborationRequest } from "./client";
 import DashboardDecision from "./DashboardDecision";
 import { useSessionDashboard } from "./useSessionDashboard";
+import SessionDashboardLoading from "./SessionDashboardLoading";
 import "./collaboration.css";
 import "./session-dashboard.css";
 
@@ -108,7 +109,9 @@ export default function SessionDashboard(props: DashboardProps) {
   const sessionsMerged = useUIStore(state => state.dashboardSessionsMerged);
   const setSessionsMerged = useUIStore(state => state.setDashboardSessionsMerged);
   useEffect(() => { document.documentElement.setAttribute("data-skin", skin); }, [skin]);
-  useEffect(() => { if (!loading && window.parent !== window) window.parent.postMessage({ type: SESSION_DASHBOARD_READY }, window.location.origin); }, [loading]);
+  // The page is ready once mounted; its data waits until this tab is active.
+  // Waiting for data here makes an inactive frame hit the Shell's boot timeout.
+  useEffect(() => { if (window.parent !== window) window.parent.postMessage({ type: SESSION_DASHBOARD_READY }, window.location.origin); }, []);
   const openGroup = props.onOpenGroup ?? ((item: DashboardGroup) => postDashboardIntent({ kind: "group", groupId: item.group.id, title: item.group.name, discussionId: item.discussionId }));
   const openSession = props.onOpenSession ?? ((session: MonitoredSession) => postDashboardIntent({ kind: "session", session }));
   const viewGroups = props.onViewGroups ?? (() => postDashboardIntent({ kind: "groups" }));
@@ -120,7 +123,7 @@ export default function SessionDashboard(props: DashboardProps) {
     <header className="session-dashboard-heading"><div><span className="collab-eyebrow">会话总览</span><h1>Dashboard <span className="session-dashboard-live"><i/>实时</span></h1><p>在一个地方查看运行、交接与需要你决定的事。</p></div><div className="session-dashboard-toolbar"><button onClick={() => setSessionsMerged(!sessionsMerged)} aria-pressed={sessionsMerged} title={sessionsMerged ? "恢复按 Agent 分组" : "合并显示群聊和所有 Agent 的运行会话"}>{sessionsMerged ? <Layers size={16}/> : <List size={16}/>}<span>{sessionsMerged ? "按 Agent 分组" : "合并会话"}</span></button><button onClick={() => void refresh()} aria-label="刷新会话看板"><RefreshCw size={16}/></button><button onClick={viewGroups}><Users size={16}/>群聊列表</button><button className="session-dashboard-new-session" onClick={newSession}><Plus size={16}/>创建会话</button>{props.onClose && <button onClick={props.onClose} aria-label="关闭会话看板"><X size={17}/></button>}</div></header>
     <div className="session-dashboard-stats"><span><Activity size={16}/><strong>{running}</strong>运行中的原始会话</span><span className={decisions ? "needs-attention" : ""}><strong>{decisions}</strong>待你决策</span><span><strong>{snapshot?.groupTotal ?? 0}</strong>协作群</span><small>无变化时监工保持安静</small></div>
     {notice && <ActionErrorDialog {...notice} onClose={dismissError}/>}
-    {loading && !snapshot && <p role="status">正在加载会话总览…</p>}
+    {loading && !snapshot && <SessionDashboardLoading/>}
     {snapshot && !sessionsMerged && (snapshot.groups.length ? <section aria-label="群聊运行总览"><div className="session-dashboard-section-title"><h2><Users size={18}/>群聊 <small>Top 10 · 运行中和待决策优先</small></h2><button onClick={viewGroups}>查看全部 {snapshot.groupTotal} <ArrowRight size={14}/></button></div>
       <div className="session-dashboard-group-grid">{snapshot.groups.map(item => <GroupCard key={item.group.id} item={item} onOpenGroup={openGroup} onOpenSession={openSession} refresh={refresh}/>)}</div>
     </section> : <div className="session-dashboard-group-create"><button onClick={viewGroups}><Users size={16}/>创建群聊，配置监工</button></div>)}

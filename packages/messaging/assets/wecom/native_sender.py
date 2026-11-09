@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import socket
 import sqlite3
 import subprocess
 import sys
@@ -48,6 +49,79 @@ class NativeBridge:
             # LaunchServices' child may outlive a timed-out `open`. Keep its request/response private and valid.
             if completed:
                 shutil.rmtree(root)
+
+
+# ---------------------------------------------------------------------------
+# 非 GUI 发送后端：通过 Unix socket 连到注入版企微里的 WeWorkInject.dylib。
+# dylib 在进程内复用 WEWInputViewController 触发企微自己的发送，不走 AX/辅助功能。
+# 保留与 NativeBridge 相同的 call() 接口，process() 无需区分后端。
+# ---------------------------------------------------------------------------
+INJECT_SOCKET = (os.environ.get("AGENT_WECOM_INJECT_SOCKET")
+                 or str(Path.home() / "Library/Containers/com.tencent.WeWorkMac/Data/tmp/wework-inject.sock"))
+
+
+class InjectBridge:
+    """通过本地 socket 让注入 dylib 在企微进程内发送（零 GUI、零辅助功能权限）。"""
+
+    def __init__(self, socket_path=INJECT_SOCKET, timeout=25.0):
+        self.socket_path = socket_path
+        self.timeout = timeout
+
+    def _request(self, payload):
+        if not os.path.exists(self.socket_path):
+            raise Blocked("注入版企业微信未运行（socket 不存在）：" + self.socket_path)
+        try:
+            client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            client.settimeout(self.timeout)
+            client.connect(self.socket_path)
+            client.sendall((json.dumps(payload, ensure_ascii=False) + "\n").encode("utf-8"))
+            buf = b""
+            while b"\n" not in buf:
+                chunk = client.recv(4096)
+                if not chunk:
+                    break
+                buf += chunk
+            client.close()
+            if not buf.strip():
+                raise Blocked("注入发送桥未返回结果（企微可能已重启）")
+            return json.loads(buf.split(b"\n", 1)[0].decode("utf-8", "replace"))
+        except (OSError, json.JSONDecodeError) as error:
+            raise Blocked("注入发送桥通信失败：" + str(error))
+
+    def call(self, operation, pid=None, **arguments):
+        # operation 在注入后端里只有 "send" / "verify" 两种语义
+        if operation == "send":
+            request = {
+                "cmd": "send",
+                "conv_name": arguments.get("chatTitle") or arguments.get("target", {}).get("name", ""),
+                "text": arguments.get("text", ""),
+                "dry_run": 0,
+                # 会话校验由 process() 里的镜库 verify_target 完成，
+                # dylib 侧 conv_name 只做尽力校验（strict=0，见 dylib 实现）。
+                "strict": 0,
+            }
+            # 先让 dylib 在进程内选中目标会话（非 GUI），再发送；
+            # 会话一致性由上游 verify_target（镜库）保证。
+            conv_name = request.get("conv_name") or ""
+            if conv_name:
+                opened = self._request({"cmd": "open_conv", "conv_name": conv_name})
+                if not opened.get("ok"):
+                    raise Blocked("目标会话未打开，请先在企微窗口点开一次会话：" +
+                                  str(opened.get("detail") or opened.get("error") or ""))
+            result = self._request(request)
+            if not result.get("ok"):
+                raise Blocked("注入发送失败：" + str(result.get("detail") or result.get("error") or "未知原因"))
+            # 契约对齐：submitted 表示已提交企微，等待接收侧核验本人发送记录
+            return {"status": "submitted"}
+        if operation == "verify":
+            # 回执靠本地库（receipt()），这里只探活
+            try:
+                self._request({"cmd": "status"})
+                return {"status": "ready"}
+            except Blocked:
+                return {"status": "blocked", "error": "注入发送桥不可用"}
+        # inspect / selectConversation / paste / submit 在注入后端都不需要
+        return {"status": "ready"}
 
 
 def private_json(path, value):
@@ -244,6 +318,20 @@ def resolve_request(request):
 
 
 def process(request, operation="send", bridge=None, pid=None):
+    def inject_available():
+        try:
+            probe = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            probe.settimeout(1.0)
+            probe.connect(INJECT_SOCKET)
+            probe.close()
+            return True
+        except OSError:
+            return False
+
+    prefer_inject = os.environ.get("AGENT_WECOM_SENDER") == "inject" or (
+        os.environ.get("AGENT_WECOM_SENDER") != "gui" and inject_available())
+    if prefer_inject and bridge is None:
+        bridge = InjectBridge()
     bridge = bridge or NativeBridge(request.get("app", DEFAULT_APP))
     delivery_id, body = request.get("deliveryId"), request.get("text")
     if not isinstance(delivery_id, str) or not delivery_id or len(delivery_id) > 200 \
@@ -284,36 +372,56 @@ def process(request, operation="send", bridge=None, pid=None):
         if operation == "verify":
             return {"status": "blocked", "error": "没有已提交的本地发送记录"}
         baseline = verify_target(request)
-        pid = pid or request.get("pid") or client_pid(bridge)
-        verify_client_database(pid, request.get("clientDatabase"))
-        window = main_window(bridge.call("inspect", pid, compact=True))
-        if editor(window)["value"]:
-            raise Blocked("企微当前会话已有草稿，未覆盖或切换会话")
-        accepted(bridge.call("selectConversation", pid, window=window["index"], windowTitle=window["title"], chatTitle=request["target"]["name"]))
-        window = main_window(bridge.call("inspect", pid, compact=True))
-        target, header = chat_controls(window, request["target"]["name"])
-        if target["value"]:
-            raise Blocked("目标会话已有草稿，未覆盖")
+        use_inject = isinstance(bridge, InjectBridge)
         ledger = {"deliveryId": delivery_id, "fingerprint": fingerprint, "status": "preparing", "baselineLid": baseline,
                   "createdAt": datetime.datetime.now(datetime.timezone.utc).isoformat(), "conversationId": request["target"]["conversationId"]}
         private_json(path, ledger)
-        try:
-            accepted(bridge.call("paste", pid, **control_args(window, target), text=body, chatTitle=request["target"]["name"], headerPath=header["path"]))
+        window = None
+        target = None
+        header = None
+        if not use_inject:
+            # 草稿/会话校验必须在 try 之外抛 Blocked，保持与原有 GUI 流程一致的语义
+            pid = pid or request.get("pid") or client_pid(bridge)
+            verify_client_database(pid, request.get("clientDatabase"))
+            window = main_window(bridge.call("inspect", pid, compact=True))
+            if editor(window)["value"]:
+                raise Blocked("企微当前会话已有草稿，未覆盖或切换会话")
+            accepted(bridge.call("selectConversation", pid, window=window["index"], windowTitle=window["title"], chatTitle=request["target"]["name"]))
             window = main_window(bridge.call("inspect", pid, compact=True))
             target, header = chat_controls(window, request["target"]["name"])
-            if target["value"] != body:
-                raise Blocked("准备后的正文与请求不一致，未提交")
-            ledger.update(status="submitting", submittedAt=time.time())
-            private_json(path, ledger)
-            result = bridge.call("submit", pid, **control_args(window, target), text=body, chatTitle=request["target"]["name"], headerPath=header["path"])
-            if result.get("status") == "blocked":
-                ledger.update(status="blocked", error=str(result.get("error") or "提交前检查未通过"))
-                ledger.pop("submittedAt", None)
+            if target["value"]:
+                raise Blocked("目标会话已有草稿，未覆盖")
+        try:
+            if use_inject:
+                # 非 GUI 路径：一次 socket 调用让注入 dylib 在企微进程内发送。
+                # 目标会话/原消息/账号均已由 verify_target + native-delivery.ts 校验。
+                inject_bridge = bridge if isinstance(bridge, InjectBridge) else InjectBridge()
+                ledger.update(status="submitting", submittedAt=time.time())
                 private_json(path, ledger)
-                return {"status": "blocked", "error": ledger["error"]}
+                result = inject_bridge.call("send", text=body,
+                                           chatTitle=request["target"]["name"], target=request["target"])
+                if result.get("status") == "blocked":
+                    ledger.update(status="blocked", error=str(result.get("error") or "注入发送被拒绝"))
+                    ledger.pop("submittedAt", None)
+                    private_json(path, ledger)
+                    return {"status": "blocked", "error": ledger["error"]}
+            else:
+                accepted(bridge.call("paste", pid, **control_args(window, target), text=body, chatTitle=request["target"]["name"], headerPath=header["path"]))
+                window = main_window(bridge.call("inspect", pid, compact=True))
+                target, header = chat_controls(window, request["target"]["name"])
+                if target["value"] != body:
+                    raise Blocked("准备后的正文与请求不一致，未提交")
+                ledger.update(status="submitting", submittedAt=time.time())
+                private_json(path, ledger)
+                result = bridge.call("submit", pid, **control_args(window, target), text=body, chatTitle=request["target"]["name"], headerPath=header["path"])
+                if result.get("status") == "blocked":
+                    ledger.update(status="blocked", error=str(result.get("error") or "提交前检查未通过"))
+                    ledger.pop("submittedAt", None)
+                    private_json(path, ledger)
+                    return {"status": "blocked", "error": ledger["error"]}
             ledger["status"] = "submitted" if result.get("status") == "submitted" else "unknown"
             private_json(path, ledger)
-            return {"status": "unknown", "submitted": True, "error": "已提交原版企微，等待接收侧核验本人发送记录"}
+            return {"status": "unknown", "submitted": True, "error": "已提交企微，等待接收侧核验本人发送记录"}
         except Exception as error:
             ledger.update(status="unknown" if ledger.get("submittedAt") else "blocked", error=str(error))
             private_json(path, ledger)

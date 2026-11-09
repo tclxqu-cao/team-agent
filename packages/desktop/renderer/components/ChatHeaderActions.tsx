@@ -3,6 +3,7 @@ import { Check, FolderOpen, LayoutDashboard, LayoutGrid, LoaderCircle, Monitor, 
 import { navigationLayoutSwitchTitle, nextNavigationLayout } from "../../../core/src/domain/web-console/navigation-layout";
 import { useUIStore } from "../stores/uiStore";
 import { isDesktopLiveSetupPending } from "../lib/desktop-live-setup";
+import { isWebShell } from "../web/webLayout";
 import type { DesktopLiveStatus } from "../global";
 import MobilePairingButton from "./MobilePairingButton";
 import HeaderActionMenu from "./HeaderActionMenu";
@@ -217,5 +218,5 @@ export default function ChatHeaderActions({
       </button>}
     </div>
   );
-  return navigationLayout !== "classic" ? <HeaderActionMenu>{actions}</HeaderActionMenu> : actions;
+  return navigationLayout !== "classic" && !isWebShell() ? <HeaderActionMenu>{actions}</HeaderActionMenu> : actions;
 }

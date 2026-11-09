@@ -25,7 +25,8 @@ export const CONSOLE_CSS = `
   .theme-avatar-status { position:absolute; right:-2px; bottom:-2px; z-index:7; width:6px; height:6px; box-sizing:border-box; border:1px solid var(--ui-connection-bg, #12141b); border-radius:50%; background:var(--ui-error); pointer-events:none; }
   .theme-avatar-status[data-connected="true"] { background:var(--ui-success); }
   .theme-picker { position:relative; display:flex; align-items:center; flex-shrink:0; }
-  .responsive-toolbar { position:relative; display:flex; align-items:center; flex-shrink:0; gap:0; z-index:6; }
+  .responsive-toolbar { --toolbar-avatar-gap:clamp(0.75rem, 2vi, 2rem); position:relative; display:flex; align-items:center; flex-shrink:0; gap:0; z-index:6; }
+  .compact-toolbar, .glass-mobile-toolbar { column-gap:var(--toolbar-avatar-gap); }
   .compact-toolbar .compact-toolbar-trigger { border-radius:12px; }
   .compact-tools-backdrop[hidden], .compact-tools-overlay[hidden] { display:none; }
   .compact-tools-panel { z-index:200; box-sizing:border-box; width:max-content; max-width:calc(100vw - 16px); max-height:calc(100dvh - 60px); overflow-y:auto; padding:10px; border:1px solid var(--ui-tabbar-border); border-radius:18px; background:color-mix(in srgb, var(--ui-tab-active-bg) 88%, transparent); color:var(--ui-text); backdrop-filter:blur(22px) saturate(1.2); -webkit-backdrop-filter:blur(22px) saturate(1.2); box-shadow:0 8px 28px #29434e26; }
