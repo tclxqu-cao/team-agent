@@ -1,0 +1,19 @@
+.github/workflows/cli-registry-install-verify.yml
+  s_40a044c6acf2d3::t_f99035d0b41b6f 49-64
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2c8e2750d1fde5a2c8aebdec70215cbd62776949",
+  "prompts": {},
+  "sessions": {
+    "s_40a044c6acf2d3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1c52e-2f48-7b92-93fa-9415096d3477",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
