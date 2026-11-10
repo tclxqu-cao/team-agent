@@ -46,5 +46,21 @@ jobs:
           execFileSync(process.execPath, [npmCli, 'pack', ...specs, '--registry=https://registry.npmjs.org',
             '--ignore-scripts', '--loglevel=error', '--pack-destination', destination], { stdio: 'inherit' });
           NODE
+      - name: Verify downloaded packages against the release manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+          import { execFileSync } from 'node:child_process';
+          const { version } = JSON.parse(readFileSync('packages/cli/package.json', 'utf8'));
+          execFileSync('gh', ['release', 'download', `v${version}`, '--repo', process.env.GITHUB_REPOSITORY,
+            '--pattern', 'release-manifest.json', '--pattern', 'SHA256SUMS', '--dir', 'dist/cli-release'], { stdio: 'inherit' });
+          NODE
+          node scripts/publish-agentroam-release.mjs preflight --manifest dist/cli-release/release-manifest.json
+      - name: Verify all registry tarballs and preview tags
+        if: runner.os == 'macOS'
+        run: node scripts/publish-agentroam-release.mjs verify-preview --manifest dist/cli-release/release-manifest.json
       - name: Verify native components, pairing and private Node installation
         run: node scripts/verify-cli-install.mjs --artifacts dist/cli-release --bootstrap-script
