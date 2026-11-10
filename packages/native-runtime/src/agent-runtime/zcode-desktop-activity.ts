@@ -11,6 +11,7 @@ export interface ZCodeActivityReader {
 interface Turn { id: string; timestamp: number; running: boolean }
 interface DeliveredTurn extends Turn { pid: number }
 interface Owner { pid: number; timestamp: number }
+interface RuntimeHost extends Owner { cwd: string }
 interface Cursor {
   identity: string;
   offset: number;
@@ -25,6 +26,7 @@ const CHUNK_BYTES = 64 * 1024;
 const MAX_LINE_BYTES = 128 * 1024;
 const PROCESS_STARTED = "ZCode agent process started ";
 const DELIVERY_ACKNOWLEDGED = "event delivery acknowledged ";
+const RUNTIME_HEADERS_REQUESTED = "收到 ZCode provider runtime headers 请求 ";
 const TURN_EVENTS = new Set(["turn.started", "turn.completed", "turn.failed"]);
 
 function processAlive(pid: number): boolean {
@@ -40,6 +42,7 @@ export class ZCodeDesktopActivityReader implements ZCodeActivityReader {
   private readonly cursors = new Map<string, Cursor>();
   private readonly turns = new Map<string, Turn>();
   private readonly deliveredTurns = new Map<string, DeliveredTurn>();
+  private readonly runtimeHosts = new Map<string, Map<string, RuntimeHost>>();
   private readonly owners = new Map<string, Map<number, Owner>>();
   private pending: Promise<void> | undefined;
 
@@ -72,7 +75,15 @@ export class ZCodeDesktopActivityReader implements ZCodeActivityReader {
           result.set(session.id, delivered.running && isAlive(delivered.pid));
           continue;
         }
-        const owners = this.owners.get(normalizeAgentWorkspacePath(session.cwd));
+        const cwd = normalizeAgentWorkspacePath(session.cwd);
+        const requested = this.runtimeHosts.get(session.id)?.get(turn.id);
+        // Local model requests identify the execution host even when optional
+        // event delivery is disabled or lacks credentials. Never borrow another turn.
+        if (requested && requested.cwd === cwd && requested.timestamp >= turn.timestamp) {
+          result.set(session.id, isAlive(requested.pid));
+          continue;
+        }
+        const owners = this.owners.get(cwd);
         if (!owners?.size) continue;
         // A replacement workspace process cannot own a turn started by its predecessor.
         result.set(session.id, [...owners.values()].some(owner => {
@@ -87,7 +98,9 @@ export class ZCodeDesktopActivityReader implements ZCodeActivityReader {
     }
   }
 
-  private reset(): void { this.cursors.clear(); this.turns.clear(); this.deliveredTurns.clear(); this.owners.clear(); }
+  private reset(): void {
+    this.cursors.clear(); this.turns.clear(); this.deliveredTurns.clear(); this.runtimeHosts.clear(); this.owners.clear();
+  }
 
   private async files(directory: string, kind: LogFile["kind"], pattern: RegExp): Promise<LogFile[]> {
     let names: string[];
@@ -114,6 +127,13 @@ export class ZCodeDesktopActivityReader implements ZCodeActivityReader {
         || (cursor.offset === file.size && cursor.modified !== file.modified));
     })) this.reset();
     for (const file of files) await this.read(file);
+    for (const [sessionId, hosts] of this.runtimeHosts) {
+      const turn = this.turns.get(sessionId);
+      for (const [id, host] of hosts) {
+        if (turn && id !== turn.id && host.timestamp < turn.timestamp) hosts.delete(id);
+      }
+      if (!hosts.size) this.runtimeHosts.delete(sessionId);
+    }
   }
 
   private async read(file: LogFile): Promise<void> {
@@ -158,6 +178,8 @@ export class ZCodeDesktopActivityReader implements ZCodeActivityReader {
       if (kind === "desktop") {
         const deliveryIndex = line.indexOf(DELIVERY_ACKNOWLEDGED);
         if (deliveryIndex >= 0) { this.delivery(line, deliveryIndex); return; }
+        const requestIndex = line.indexOf(RUNTIME_HEADERS_REQUESTED);
+        if (requestIndex >= 0) { this.runtimeRequest(line, requestIndex); return; }
         const index = line.indexOf(PROCESS_STARTED);
         if (index < 0) return;
         const record = JSON.parse(line.slice(index + PROCESS_STARTED.length)) as { cwd?: unknown; pid?: unknown };
@@ -184,6 +206,25 @@ export class ZCodeDesktopActivityReader implements ZCodeActivityReader {
       if (record.event !== "turn.started" && previous && previous.id !== record.turnId) return;
       this.turns.set(record.sessionId, { id: record.turnId, timestamp, running: record.event === "turn.started" });
     } catch { /* Incomplete or unrelated native log records do not change lifecycle state. */ }
+  }
+
+  private runtimeRequest(line: string, index: number): void {
+    const host = /\[host\] \[([^\]]+)\] \[pid:(\d+)\] \[zcode-agent-service\](?:\[trace:[^\]]+\])?\s+$/.exec(line.slice(0, index));
+    if (!host) return;
+    const record = JSON.parse(line.slice(index + RUNTIME_HEADERS_REQUESTED.length)) as {
+      sessionId?: unknown; turnId?: unknown; workspacePath?: unknown;
+    };
+    const pid = Number(host[2]);
+    const timestamp = Date.parse(host[1].replace(" ", "T"));
+    if (typeof record.sessionId !== "string" || !record.sessionId || typeof record.turnId !== "string" || !record.turnId
+      || typeof record.workspacePath !== "string" || !record.workspacePath.trim()
+      || !Number.isSafeInteger(pid) || pid < 1 || !Number.isFinite(timestamp)) return;
+    const hosts = this.runtimeHosts.get(record.sessionId) ?? new Map<string, RuntimeHost>();
+    const previous = hosts.get(record.turnId);
+    if (!previous || timestamp >= previous.timestamp) {
+      hosts.set(record.turnId, { pid, timestamp, cwd: normalizeAgentWorkspacePath(record.workspacePath) });
+    }
+    this.runtimeHosts.set(record.sessionId, hosts);
   }
 
   private delivery(line: string, index: number): void {

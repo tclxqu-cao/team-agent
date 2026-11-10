@@ -6,6 +6,7 @@ import { Readable } from 'node:stream';
 import { LiveViewRegistry } from '../../../core/src/domain/live-view/live-view-registry';
 // @ts-expect-error gateway ESM
 import { RemoteAuthorization, isLocalAuthorizationRequest, remoteAudioCapabilities } from './remote-authorization.mjs';
+vi.mock('@agent/core', async original => ({ ...await original<Record<string, unknown>>(), ...await import('../../../core/src/domain/live-view/index.js'), ...await import('../../../core/src/domain/live-view/remote-video-encode-admission.js') }));
 
 function request(address = '127.0.0.1', headers = {}) { return { socket: { remoteAddress: address }, headers: { host: '127.0.0.1:3009', ...headers } }; }
 describe('remote authorization local boundary', () => {
@@ -16,6 +17,42 @@ describe('remote authorization local boundary', () => {
     expect(isLocalAuthorizationRequest(request('127.0.0.1', {host:'tunnel.example'}))).toBe(false);
     for (const header of ['x-forwarded-for', 'forwarded', 'cf-connecting-ip', 'x-real-ip']) expect(isLocalAuthorizationRequest(request('127.0.0.1', {[header]:'127.0.0.1'}))).toBe(false);
   });
+});
+
+it('coalesces queued hover moves but preserves drag/down/up ordering', async () => {
+  const f = await fixture();
+  try {
+    f.grant(); await f.service.action('enable'); const session = await f.watch();
+    f.registry.takeOver(f.viewer, session.id); await f.service.inputQueue; f.helper.request.mockClear();
+    for (let i = 1; i <= 20; i++) f.registry.input(f.viewer, session.id, { kind: 'pointer', action: 'move', x: i / 20, y: 0.5, button: 'left' });
+    await f.service.inputQueue;
+    expect(f.helper.request.mock.calls.filter(([cmd]: any[]) => cmd.op === 'move')).toHaveLength(1);
+    f.helper.request.mockClear();
+    for (const [action, x] of [['down', 0.1], ['move', 0.2], ['move', 0.3], ['up', 0.4]] as const)
+      f.registry.input(f.viewer, session.id, { kind: 'pointer', action, x, y: 0.5, button: 'left' });
+    await f.service.inputQueue;
+    expect(f.helper.request.mock.calls.map(([cmd]: any[]) => cmd.op).filter(op => ['down', 'drag', 'up'].includes(op))).toEqual(['down', 'drag', 'drag', 'up']);
+  } finally { await f.close(); }
+});
+
+it('routes direct hover through existing native dispatch and drops queued moves after controller revocation', async () => {
+  const f = await fixture();
+  try {
+    f.grant(); await f.service.action('enable'); const session = await f.watch();
+    f.registry.takeOver(f.viewer, session.id); await f.service.inputQueue;
+    const context = { controllerId: f.viewer.id, epoch: 1, stream: 'input-stream-1234567890' };
+    expect(f.registry.enableDirectInput(f.service.peer, session.id, context)).toBe(true);
+    f.helper.request.mockClear();
+    expect(f.service.video.onInput({ stream: context.stream, sequence: 1, barrier: 0, x: .5, y: .5 }, context)).toBe('accepted');
+    await f.service.inputQueue;
+    expect(f.helper.request).toHaveBeenCalledWith(expect.objectContaining({ op: 'move', x: 500, y: 400 }));
+    f.helper.request.mockClear();
+    expect(f.service.video.onInput({ stream: context.stream, sequence: 2, barrier: 0, x: .7, y: .7 }, context)).toBe('accepted');
+    f.registry.returnControl(f.viewer, session.id);
+    await f.service.inputQueue;
+    expect(f.helper.request.mock.calls.some(([command]: any[]) => command.op === 'move')).toBe(false);
+    expect(f.service.video.onInput({ stream: context.stream, sequence: 3, barrier: 0, x: .7, y: .7 }, context)).toBe('unavailable');
+  } finally { await f.close(); }
 });
 
 async function fixture(options: Record<string, unknown> = {}) {
@@ -799,4 +836,34 @@ describe('capture failure recovery', () => {
       expect(f.service.tickPromise).toBeNull();
     } finally { await f.close(); }
   });
+});
+
+it('waits for actual reliable native dispatch and rejects queued old-lease actions at execution', async () => {
+  const f = await fixture();
+  try {
+    f.grant(); await f.service.action('enable'); const session = await f.watch();
+    f.registry.takeOver(f.viewer, session.id); await f.service.inputQueue;
+    const context = { controllerId: f.viewer.id, epoch: 1, stream: 'input-stream-1234567890', version: 2 };
+    f.registry.enableDirectInput(f.service.peer, session.id, context); f.helper.request.mockClear();
+    const first = f.registry.directReliableInput(f.service.peer, session.id, context, { stream: context.stream, index: 1, sequence: 1,
+      input: { kind: 'key', action: 'down', text: '只执行一次' } });
+    expect(await first).toMatchObject({ ok: true });
+    const duplicate = await f.registry.input(f.viewer, session.id, { kind: 'key', action: 'down', text: '只执行一次',
+      direct: { stream: context.stream, index: 1, sequence: 1 } });
+    expect(duplicate).toEqual(await first); expect(f.helper.request.mock.calls.filter(([cmd]: any[]) => ['text', 'unicode_text'].includes(cmd.op))).toHaveLength(1);
+    let unblock!: () => void; f.service.inputQueue = new Promise(resolve => { unblock = resolve; });
+    const second = f.registry.directReliableInput(f.service.peer, session.id, context, { stream: context.stream, index: 2, sequence: 2,
+      input: { kind: 'pointer', action: 'down', x: .2, y: .3 } });
+    const rejection = expect(second).rejects.toMatchObject({ code: 'ESTALE' });
+    f.registry.returnControl(f.viewer, session.id); unblock(); await f.service.inputQueue; await rejection;
+    expect(f.helper.request.mock.calls.some(([cmd]: any[]) => cmd.op === 'down')).toBe(false);
+  } finally { await f.close(); }
+});
+
+it.each(['darwin', 'win32'])('dispatches committed mixed text literally on %s', async platform => {
+  const f = await fixture({ platform });
+  try {
+    await f.service.dispatch({ kind: 'key', text: ' 中文 A B 123 ', key: '', code: '' });
+    expect(f.helper.request).toHaveBeenLastCalledWith({ op: platform === 'darwin' ? 'unicode_text' : 'text', text: ' 中文 A B 123 ' });
+  } finally { await f.close(); }
 });

@@ -4,6 +4,11 @@ import { BrowserLiveHeaderContext } from "./browser-live-header-context";
 // Direct source import: the @agent/core package root drags Node-only modules
 // into the browser bundle; this domain policy is dependency-free.
 import { RemoteVideoStallPolicy } from "../../../core/src/domain/live-view/remote-video-stall.js";
+import { BrowserCompoundVideo } from "./remote-compound-video.js";
+import { BrowserRemoteCursor } from "./remote-cursor.js";
+import { BrowserRemoteDirectInput } from './remote-direct-input.js';
+import { BrowserRemoteVideoPlayout } from './remote-video-playout.js';
+import { BrowserRemoteVideoNegotiation } from './remote-video-negotiation.js';
 import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal, flushSync } from "react-dom";
 import { ExternalLink, Hand, Keyboard, LoaderCircle, Lock, LockOpen, Mic, MicOff, MonitorUp, Maximize, Minimize, MousePointer2, PhoneOff, Power, RotateCcw, Volume2, VolumeX, X, ZoomIn, ZoomOut } from "lucide-react";
@@ -76,6 +81,10 @@ export function shouldOfferVisualTakeover(session: BrowserLiveSession | null): b
     && !session.controlledByAnotherViewer
     && (session.state === "agent-controlled" || session.state === "handoff-requested"),
   );
+}
+
+export function remoteShortcutModifier(session: Pick<BrowserLiveSession, "backend" | "platform"> | null): "Meta" | "Control" {
+  return session?.backend === "desktop" && session.platform === "darwin" ? "Meta" : "Control";
 }
 
 function modifierNames(event: React.KeyboardEvent): string[] {
@@ -274,6 +283,8 @@ export default function BrowserLivePanel({ open, active = true, agentSessionId, 
   const [unlockPending, setUnlockPending] = useState(false);
   const [unlockError, setUnlockError] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
+  const adaptiveZoomRef = useRef(zoom);
+  adaptiveZoomRef.current = zoom;
   const [panMode, setPanMode] = useState(false);
   const [surfaceSize, setSurfaceSize] = useState({ width: 0, height: 0 });
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -323,8 +334,15 @@ export default function BrowserLivePanel({ open, active = true, agentSessionId, 
   const [remoteVideoStats, setRemoteVideoStats] = useState<RemoteVideoStatsSample | null>(null);
   const remoteVideoStatsCursorRef = useRef<RemoteVideoStatsCursor | null>(null);
   const webrtcPeerRef = useRef<RTCPeerConnection | null>(null);
+  const webrtcNegotiationRef = useRef<BrowserRemoteVideoNegotiation | null>(null);
   const webrtcRetryRef = useRef(0);
   const webrtcVideoRef = useRef<HTMLVideoElement>(null);
+  const compoundCanvasRef = useRef<HTMLCanvasElement>(null);
+  const cursorCanvasRef = useRef<HTMLCanvasElement>(null);
+  const remoteCursorRef = useRef<BrowserRemoteCursor | null>(null);
+  const remoteInputRef = useRef<BrowserRemoteDirectInput | null>(null);
+  const remotePlayoutRef = useRef<BrowserRemoteVideoPlayout | null>(null);
+  const compoundVideoRef = useRef<BrowserCompoundVideo | null>(null);
   // Watchdog for a connected transport that stops delivering frames; on stall
   // the flowing JPEG fallback is revealed instead of a black <video> surface.
   const videoStallRef = useRef(new RemoteVideoStallPolicy());
@@ -633,22 +651,41 @@ export default function BrowserLivePanel({ open, active = true, agentSessionId, 
   useEffect(() => () => stopVoice(true), [stopVoice]);
   const fallbackWebrtcIceServers: RTCIceServer[] = useMemo(() => [{ urls: "stun:stun.l.google.com:19302" }], []);
 
-  const answerWebrtcOffer = useCallback(async (sessionId: string, sdp: RTCSessionDescriptionInit | undefined, iceServers?: RTCIceServer[]) => {
+  const answerWebrtcOffer = useCallback(async (sessionId: string, sdp: RTCSessionDescriptionInit | undefined, iceServers?: RTCIceServer[], inputStream?: string, inputVersion?: number, attemptId?: string) => {
     if (!api || !sessionId || !sdp) return;
+    let negotiation: BrowserRemoteVideoNegotiation | undefined;
     try {
       // A fallback offer is a new sender transport (new ICE credentials/SSRC).
       // Discard the old peer so late state callbacks cannot kill the retry.
       const previousPeer = webrtcPeerRef.current;
       webrtcPeerRef.current = null;
+      webrtcNegotiationRef.current?.stop();
+      webrtcNegotiationRef.current = null;
+      remoteCursorRef.current?.stop();
+      remoteInputRef.current?.stop(); remoteInputRef.current = null;
+      remotePlayoutRef.current?.stop(); remotePlayoutRef.current = null;
+      compoundVideoRef.current?.stop();
       previousPeer?.close();
       let peer = webrtcPeerRef.current;
       if (!peer) {
         peer = new RTCPeerConnection({ iceServers: iceServers?.length ? iceServers : fallbackWebrtcIceServers });
+        negotiation = new BrowserRemoteVideoNegotiation(peer, attemptId);
+        webrtcNegotiationRef.current = negotiation;
+        const compound = new BrowserCompoundVideo({ getVideo: () => webrtcVideoRef.current, getCanvas: () => compoundCanvasRef.current });
+        compound.attach(peer);
+        const cursor = new BrowserRemoteCursor({ getVideo: () => webrtcVideoRef.current, getCanvas: () => cursorCanvasRef.current });
+        cursor.attach(peer); remoteCursorRef.current?.stop(); remoteCursorRef.current = cursor;
+        const directInput = new BrowserRemoteDirectInput(inputStream, inputVersion === 2 ? 2 : 1, error => setError(error.message));
+        directInput.setVisible(document.visibilityState !== 'hidden');
+        directInput.attach(peer); remoteInputRef.current = directInput;
+        remotePlayoutRef.current = new BrowserRemoteVideoPlayout(peer);
+        compoundVideoRef.current = compound;
         peer.onicecandidate = (event) => {
-          if (!event.candidate) return;
-          void api.request("browser:webrtc", { sessionId, data: { kind: "ice", candidate: event.candidate.toJSON() } }).catch(() => undefined);
+          if (!event.candidate || webrtcPeerRef.current !== peer) return;
+          void api.request("browser:webrtc", { sessionId, data: { kind: "ice", candidate: event.candidate.toJSON(), ...(attemptId ? { attemptId } : {}) } }).catch(() => undefined);
         };
         peer.ontrack = (event) => {
+          if (webrtcPeerRef.current !== peer) return;
           const video = webrtcVideoRef.current;
           if (video && event.streams[0]) {
             video.srcObject = event.streams[0];
@@ -663,14 +700,14 @@ export default function BrowserLivePanel({ open, active = true, agentSessionId, 
         };
         webrtcPeerRef.current = peer;
       }
-      await peer.setRemoteDescription(sdp);
-      if (webrtcPeerRef.current !== peer) return;
-      const answer = await peer.createAnswer();
-      await peer.setLocalDescription(answer);
-      if (webrtcPeerRef.current !== peer) return;
+      const answer = await negotiation!.answer(sdp);
+      if (!answer || webrtcNegotiationRef.current !== negotiation) return;
       setWebrtcState("connecting");
-      await api.request("browser:webrtc", { sessionId, data: { kind: "answer", sdp: peer.localDescription.toJSON() } });
-    } catch {
+      await api.request("browser:webrtc", { sessionId, data: { kind: "answer", sdp: answer.toJSON(), ...(attemptId ? { attemptId } : {}) } });
+    } catch (error) {
+      if (negotiation ? webrtcNegotiationRef.current !== negotiation : webrtcNegotiationRef.current !== null) return;
+      void api.request("browser:webrtc", { sessionId, data: { kind: "viewer-trace", event: "negotiation-failed", attemptId,
+        error: error instanceof Error ? error.message.slice(0, 300) : "WebRTC negotiation failed" } }).catch(() => undefined);
       setWebrtcState("failed");
     }
   }, [api, fallbackWebrtcIceServers]);
@@ -702,16 +739,20 @@ export default function BrowserLivePanel({ open, active = true, agentSessionId, 
         sessionId,
         data.sdp as RTCSessionDescriptionInit | undefined,
         Array.isArray(data.iceServers) ? data.iceServers as RTCIceServer[] : undefined,
+        typeof data.inputStream === 'string' ? data.inputStream : undefined,
+        typeof data.inputVersion === 'number' ? data.inputVersion : undefined,
+        typeof data.attemptId === 'string' ? data.attemptId : undefined,
       );
       return;
     }
     if (data.kind === "ice") {
       const candidate = data.candidate as RTCIceCandidateInit | null | undefined;
-      const peer = webrtcPeerRef.current;
-      if (peer && candidate) void peer.addIceCandidate(candidate).catch(() => undefined);
+      const negotiation = webrtcNegotiationRef.current;
+      if (negotiation && candidate) void negotiation.addIceCandidate(candidate, data.attemptId).catch(() => undefined);
       return;
     }
     if (data.kind === "state") {
+      if (data.attemptId !== undefined && webrtcNegotiationRef.current && !webrtcNegotiationRef.current.accepts(data.attemptId)) return;
       const state = String(data.state);
       if (state === "connected") setWebrtcState("live");
       else if (state === "failed" || state === "disconnected" || state === "closed") setWebrtcState("failed");
@@ -792,8 +833,13 @@ export default function BrowserLivePanel({ open, active = true, agentSessionId, 
     void refresh();
     return api.onEvent((event) => {
       if (event.type === "browser:connection") {
+        remoteCursorRef.current?.stop();
+        remoteInputRef.current?.stop(); remoteInputRef.current = null;
+        remotePlayoutRef.current?.stop(); remotePlayoutRef.current = null;
+        compoundVideoRef.current?.stop();
         webrtcPeerRef.current?.close();
         webrtcPeerRef.current = null;
+        webrtcNegotiationRef.current?.stop(); webrtcNegotiationRef.current = null;
         setWebrtcState("off");
         setControlPending(false);
         setSessions([]);
@@ -847,27 +893,42 @@ export default function BrowserLivePanel({ open, active = true, agentSessionId, 
       videoStalledRef.current = false;
       setVideoStallError(null);
       webrtcRetryRef.current = 0;
+      remoteCursorRef.current?.stop();
+      remoteInputRef.current?.stop(); remoteInputRef.current = null;
+      remotePlayoutRef.current?.stop(); remotePlayoutRef.current = null;
+      compoundVideoRef.current?.stop();
       webrtcPeerRef.current?.close();
       webrtcPeerRef.current = null;
+      webrtcNegotiationRef.current?.stop(); webrtcNegotiationRef.current = null;
       if (webrtcVideoRef.current) webrtcVideoRef.current.srcObject = null;
       remoteVideoStatsCursorRef.current = null;
       setRemoteVideoStats(null);
       setWebrtcState("off");
       return;
     }
+    remoteCursorRef.current?.stop();
+    remoteInputRef.current?.stop(); remoteInputRef.current = null;
+    remotePlayoutRef.current?.stop(); remotePlayoutRef.current = null;
+    compoundVideoRef.current?.stop();
     webrtcPeerRef.current?.close();
     webrtcPeerRef.current = null;
+    webrtcNegotiationRef.current?.stop(); webrtcNegotiationRef.current = null;
     remoteVideoStatsCursorRef.current = null;
     setRemoteVideoStats(null);
     setWebrtcState("connecting");
     videoStallRef.current.begin(performance.now());
     void api.request("browser:webrtc", {
       sessionId: selectedId,
-      data: { kind: "start", receiverProfiles: readReceiverH264Profiles() },
+      data: { kind: "start", inputVersion: 2, receiverProfiles: readReceiverH264Profiles(), ...(BrowserCompoundVideo.supported() ? { compoundVersion: 1 } : {}) },
     }).catch(() => setWebrtcState("failed"));
     return () => {
+      remoteCursorRef.current?.stop();
+      remoteInputRef.current?.stop(); remoteInputRef.current = null;
+      remotePlayoutRef.current?.stop(); remotePlayoutRef.current = null;
+      compoundVideoRef.current?.stop();
       webrtcPeerRef.current?.close();
       webrtcPeerRef.current = null;
+      webrtcNegotiationRef.current?.stop(); webrtcNegotiationRef.current = null;
       if (webrtcVideoRef.current) webrtcVideoRef.current.srcObject = null;
       remoteVideoStatsCursorRef.current = null;
       setRemoteVideoStats(null);
@@ -898,6 +959,9 @@ export default function BrowserLivePanel({ open, active = true, agentSessionId, 
     let latestSample: RemoteVideoStatsSample | null = null;
     let reportedPlayback = false;
     let lastPlaybackReportAt = 0;
+    let presentationDelayMs: number | undefined;
+    let presentationAt = -Infinity;
+    let receiverSequence = 0;
     videoStallRef.current.begin(performance.now());
     const observePlayback = (frames: number | undefined) => {
       if (!alive || document.visibilityState === "hidden") return;
@@ -924,6 +988,10 @@ export default function BrowserLivePanel({ open, active = true, agentSessionId, 
     if (usesFrameCallback && video) {
       const onFrame: VideoFrameRequestCallback = (_now, metadata) => {
         observePlayback(metadata.presentedFrames);
+        if (document.visibilityState !== "hidden" && Number.isFinite(metadata.expectedDisplayTime)) {
+          presentationDelayMs = Math.max(0, _now - metadata.expectedDisplayTime);
+          presentationAt = performance.now();
+        }
         if (alive) frameCallback = video.requestVideoFrameCallback(onFrame);
       };
       frameCallback = video.requestVideoFrameCallback(onFrame);
@@ -931,6 +999,10 @@ export default function BrowserLivePanel({ open, active = true, agentSessionId, 
     const onVisibilityChange = () => {
       // Background tabs may suspend decoding and timers. Start a fresh grace
       // window on return instead of treating the suspension as a media stall.
+      remoteVideoStatsCursorRef.current = null;
+      presentationDelayMs = undefined; presentationAt = -Infinity;
+      remoteInputRef.current?.setVisible(document.visibilityState !== 'hidden');
+      if (document.visibilityState === 'hidden') remotePlayoutRef.current?.stop();
       if (document.visibilityState !== "hidden") videoStallRef.current.resume(performance.now());
     };
     document.addEventListener("visibilitychange", onVisibilityChange);
@@ -944,9 +1016,17 @@ export default function BrowserLivePanel({ open, active = true, agentSessionId, 
         const now = performance.now();
         const result = report && readRemoteVideoStats(
           report as unknown as Iterable<Record<string, unknown>>,
-          remoteVideoStatsCursorRef.current,
+          remoteVideoStatsCursorRef.current, Date.now(), {
+            visible: document.visibilityState !== "hidden",
+            ...(now - presentationAt <= 2000 ? { presentationDelayMs } : {}),
+            viewport: { width: viewportRef.current?.clientWidth ?? 0, height: viewportRef.current?.clientHeight ?? 0,
+              pixelRatio: Math.min(4, Math.max(1, window.devicePixelRatio || 1)), zoom: Math.min(4, Math.max(1, adaptiveZoomRef.current)) },
+          },
         );
         if (result) {
+          if (result.sample.receiver) result.sample.receiver.sequence = ++receiverSequence;
+          const control = remotePlayoutRef.current?.apply(result.sample, now);
+          if (control && result.sample.receiver) Object.assign(result.sample.receiver, control);
           remoteVideoStatsCursorRef.current = result.cursor;
           latestSample = result.sample;
           setRemoteVideoStats(result.sample);
@@ -1060,13 +1140,16 @@ export default function BrowserLivePanel({ open, active = true, agentSessionId, 
   /** Sends input and resolves with the desktop hit-test reply (null otherwise). */
   const dispatchInputForResult = useCallback((input: Record<string, unknown>): Promise<Record<string, unknown> | null> => {
     if (!api || pendingDisplayId || pendingQuality || !selected?.isController || selected.state !== "user-controlled") return Promise.resolve(null);
-    return api.request<(Record<string, unknown> & { input?: { error?: string } }) | null>("browser:input", { sessionId: selected.id, input: { ...input, mobile: window.matchMedia("(pointer: coarse)").matches } })
+    if (input.kind === "pointer") remoteCursorRef.current?.localPoint(input);
+    const normalized = { ...input, mobile: window.matchMedia("(pointer: coarse)").matches };
+    const fallback = (value: Record<string, unknown>) => api.request<(Record<string, unknown> & { input?: { error?: string } }) | null>("browser:input", { sessionId: selected.id, input: value });
+    return (remoteInputRef.current?.dispatch(normalized, fallback) ?? fallback(normalized))
       .then((result) => {
-        if (result?.input?.error) throw new Error(result.input.error);
+        if ((result?.input as { error?: string } | undefined)?.error) throw new Error((result!.input as { error: string }).error);
         return result;
       })
       .catch((requestError) => {
-        setError(requestError instanceof Error ? requestError.message : "浏览器输入失败");
+        if ((requestError as { code?: string })?.code !== "ECANCELED") setError(requestError instanceof Error ? requestError.message : "浏览器输入失败");
         return null;
       });
   }, [api, selected, pendingDisplayId, pendingQuality]);
@@ -1081,20 +1164,20 @@ export default function BrowserLivePanel({ open, active = true, agentSessionId, 
     sendInput({ kind: "key", action: "up", key, code, text: "", modifiers });
   }, [sendInput]);
 
-  /** Sends a Ctrl+<letter> combo (copy/paste/select/…). */
+  /** Common shortcuts follow the controlled desktop's OS, not the viewer's. */
   const sendCombo = useCallback((letter: string) => {
-    sendKey(letter, `Key${letter.toUpperCase()}`, ["Control"]);
-  }, [sendKey]);
+    sendKey(letter, `Key${letter.toUpperCase()}`, [remoteShortcutModifier(selected)]);
+  }, [sendKey, selected]);
 
   const pasteText = useCallback(async (text: string) => {
     if (!api || !selected?.isController || selected.state !== "user-controlled" || pendingDisplayId || pendingQuality) {
       throw new Error("连接正在切换，请稍后重试");
     }
-    const result = await api.request<{ input?: { error?: string } }>("browser:input", {
-      sessionId: selected.id,
-      input: { kind: "key", action: "down", text, key: "", code: "", modifiers: [], mobile: window.matchMedia("(pointer: coarse)").matches },
-    });
-    if (result.input?.error) throw new Error(result.input.error);
+    const input = { kind: 'key', action: 'down', text, key: '', code: '', modifiers: [], mobile: window.matchMedia('(pointer: coarse)').matches };
+    const fallback = (value: Record<string, unknown>) => api.request<{ input?: { error?: string } }>("browser:input", { sessionId: selected.id, input: value });
+    const result = await (remoteInputRef.current?.dispatch(input, fallback) ?? fallback(input));
+    const failure = (result?.input as { error?: string } | undefined)?.error;
+    if (failure) throw new Error(failure);
   }, [api, selected, pendingDisplayId, pendingQuality]);
 
   const sendTapUp = useCallback((point: { x: number; y: number }, click?: number, requestIme = false) => {
@@ -1126,6 +1209,16 @@ export default function BrowserLivePanel({ open, active = true, agentSessionId, 
   const liveDisplays = selected?.displays ?? null;
   const handleRemoteKeyDown = (event: React.KeyboardEvent) => {
     if (!hasControl || panMode) return;
+    const proxy = textInputRef.current;
+    const selectsAll = event.code === "KeyA" && !event.shiftKey && !event.altKey
+      && (remoteShortcutModifier(selected) === "Meta" ? event.metaKey : event.ctrlKey);
+    if (proxy && event.target === proxy && selectsAll) {
+      // Selection belongs to the remote field. Its next replacement must not
+      // be compared with the proxy's previously delivered text.
+      event.preventDefault();
+      proxy.value = "";
+      lastTypedRef.current = "";
+    }
     if (event.target === textInputRef.current && event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) return;
     sendInput({ kind: "key", action: "down", key: event.key, code: event.code, text: event.key.length === 1 ? event.key : "", modifiers: modifierNames(event) });
     if (["Backspace", "Tab", "Enter", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "PageUp", "PageDown", "Home", "End", "Escape"].includes(event.key)) event.preventDefault();
@@ -1647,7 +1740,9 @@ export default function BrowserLivePanel({ open, active = true, agentSessionId, 
                   playsInline
                   muted
                 />
-
+                <canvas ref={compoundCanvasRef} className="browser-live-compound" aria-hidden="true"
+                  style={{ display: webrtcState === "live" ? "block" : "none", visibility: "hidden" }} />
+                <canvas ref={cursorCanvasRef} className="browser-live-compound browser-live-cursor" aria-hidden="true" style={{ display: webrtcState === "live" ? "block" : "none", visibility: "hidden" }} />
                 {pendingQuality && (
                   <div className="browser-live-quality-pending" role="status">
                     <LoaderCircle size={13} className="spin" aria-hidden="true" />

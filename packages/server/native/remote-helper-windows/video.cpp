@@ -1,6 +1,16 @@
 #include "remote.hpp"
 
 namespace remote {
+void VideoEncoder::configure(int rate, int fps, int interval) {
+    if(rate<250'000||rate>20'000'000||fps<5||fps>30||interval<5||interval>120) throw std::runtime_error("Invalid video tuning");
+    bool reopen=maxFps!=fps;bitRate=rate;maxFps=fps;keyFrameInterval=interval;
+    if(transform && !reopen) {
+        VARIANT value{};value.vt=VT_UI4;value.ulVal=ULONG(rate);
+        reopen=FAILED(codec->SetValue(&CODECAPI_AVEncCommonMeanBitRate,&value));
+        value.ulVal=ULONG(interval);reopen|=FAILED(codec->SetValue(&CODECAPI_AVEncMPVGOPSize,&value));
+    }
+    if(reopen)reset();
+}
 void VideoEncoder::reset() { transform.Reset(); codec.Reset(); width=0; height=0; parameterSets.clear(); }
 void VideoEncoder::open(int w, int h, const std::string& q) {
     reset();
@@ -9,9 +19,9 @@ void VideoEncoder::open(int w, int h, const std::string& q) {
     check(transform->QueryInterface(IID_ICodecAPI, reinterpret_cast<void**>(codec.GetAddressOf())), "H264 codec settings");
     auto set = [&](const GUID& name, ULONG value) { VARIANT v{}; v.vt=VT_UI4;v.ulVal=value; return codec->SetValue(&name,&v); };
     set(CODECAPI_AVEncMPVDefaultBPictureCount,0);
-    set(CODECAPI_AVEncMPVGOPSize,40);
+    set(CODECAPI_AVEncMPVGOPSize,ULONG(keyFrameInterval));
     VARIANT latency{}; latency.vt=VT_BOOL;latency.boolVal=VARIANT_TRUE; codec->SetValue(&CODECAPI_AVLowLatencyMode,&latency);
-    const UINT32 bitrate = q == "smooth" ? 2'000'000 : q == "hd" ? 6'000'000 : 12'000'000;
+    const UINT32 bitrate = UINT32(bitRate);
     ComPtr<IMFMediaType> output; check(MFCreateMediaType(&output), "Create H264 media type");
     check(output->SetGUID(MF_MT_MAJOR_TYPE,MFMediaType_Video), "Set video type");
     check(output->SetGUID(MF_MT_SUBTYPE,MFVideoFormat_H264), "Set H264 subtype");
@@ -22,7 +32,7 @@ void VideoEncoder::open(int w, int h, const std::string& q) {
     check(output->SetUINT32(MF_MT_MPEG2_PROFILE,66), "Set baseline profile");
     check(output->SetUINT32(MF_MT_MPEG2_LEVEL,52), "Set H264 level");
     check(MFSetAttributeSize(output.Get(),MF_MT_FRAME_SIZE,w,h), "Set H264 frame size");
-    check(MFSetAttributeRatio(output.Get(),MF_MT_FRAME_RATE,20,1), "Set H264 frame rate");
+    check(MFSetAttributeRatio(output.Get(),MF_MT_FRAME_RATE,maxFps,1), "Set H264 frame rate");
     check(MFSetAttributeRatio(output.Get(),MF_MT_PIXEL_ASPECT_RATIO,1,1), "Set aspect ratio");
     check(transform->SetOutputType(0,output.Get(),0), "Configure H264 output");
     ComPtr<IMFMediaType> input; check(MFCreateMediaType(&input), "Create NV12 media type");
@@ -32,7 +42,7 @@ void VideoEncoder::open(int w, int h, const std::string& q) {
     check(input->SetUINT32(MF_MT_VIDEO_NOMINAL_RANGE,MFNominalRange_16_235), "Set limited input range");
     check(input->SetUINT32(MF_MT_INTERLACE_MODE,MFVideoInterlace_Progressive), "Set input progressive");
     check(MFSetAttributeSize(input.Get(),MF_MT_FRAME_SIZE,w,h), "Set NV12 size");
-    check(MFSetAttributeRatio(input.Get(),MF_MT_FRAME_RATE,20,1), "Set input rate");
+    check(MFSetAttributeRatio(input.Get(),MF_MT_FRAME_RATE,maxFps,1), "Set input rate");
     check(MFSetAttributeRatio(input.Get(),MF_MT_PIXEL_ASPECT_RATIO,1,1), "Set input aspect");
     check(transform->SetInputType(0,input.Get(),0), "Configure NV12 input");
     check(transform->ProcessMessage(MFT_MESSAGE_NOTIFY_BEGIN_STREAMING,0), "Begin H264 streaming");
@@ -63,13 +73,19 @@ Json VideoEncoder::encode(const Frame& frame, const std::string& q, bool keyfram
     ComPtr<IMFSample> sample; check(MFCreateSample(&sample), "Create video sample");check(sample->AddBuffer(buffer.Get()), "Attach NV12");
     static const auto epoch=std::chrono::steady_clock::now();
     timestamp=std::max(timestamp+1,LONGLONG(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now()-epoch).count()/100));
-    check(sample->SetSampleTime(timestamp), "Set video time");check(sample->SetSampleDuration(500'000), "Set video duration");
+    check(sample->SetSampleTime(timestamp), "Set video time");check(sample->SetSampleDuration(10'000'000/maxFps), "Set video duration");
     check(transform->ProcessInput(0,sample.Get(),0), "Encode H264 input");
+    if(onSubmitted)onSubmitted(double(timestamp)/10'000'000);
+    return drain();
+}
+Json VideoEncoder::drain() {
+    if (!transform) return nullptr;
+    BYTE* bytes=nullptr;
     MFT_OUTPUT_STREAM_INFO info{};check(transform->GetOutputStreamInfo(0,&info), "H264 output info");
     ComPtr<IMFSample> encoded; ComPtr<IMFMediaBuffer> encodedBuffer;
     if (!(info.dwFlags & MFT_OUTPUT_STREAM_PROVIDES_SAMPLES)) {
         check(MFCreateSample(&encoded), "Create H264 sample");
-        check(MFCreateMemoryBuffer(std::max(info.cbSize,DWORD(w*h*2)),&encodedBuffer), "Allocate H264 output");
+        check(MFCreateMemoryBuffer(std::max(info.cbSize,DWORD(width*height*2)),&encodedBuffer), "Allocate H264 output");
         check(encoded->AddBuffer(encodedBuffer.Get()), "Attach H264 output");
     }
     MFT_OUTPUT_DATA_BUFFER output{};output.pSample=encoded.Get();DWORD flags=0;

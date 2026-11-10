@@ -44,7 +44,7 @@ export interface ClientErrorReporter {
   uninstall: () => void;
 }
 
-function describeError(error: unknown): ClientLogEntry["error"] {
+function describeError(error: unknown): NonNullable<ClientLogEntry["error"]> {
   if (error instanceof Error) {
     return { name: error.name, message: error.message, stack: error.stack?.slice(0, 8000) };
   }

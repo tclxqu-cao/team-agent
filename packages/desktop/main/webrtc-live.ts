@@ -1,7 +1,7 @@
 import { BrowserWindow, ipcMain } from "electron";
 import { join } from "node:path";
 import { BrowserRemoteVideoPolicy } from "./remote-video-browser-policy.js";
-import type { RemoteVideoDecision, RemoteVideoH264Profile, RemoteVideoObservation, RemoteVideoQuality } from "@agent/core";
+import type { RemoteVideoDecision, RemoteVideoH264Profile, RemoteVideoObservation, RemoteVideoQuality, RemoteVideoReceiverTelemetry } from "@agent/core";
 
 export type WebrtcSignal = Record<string, unknown>;
 
@@ -66,6 +66,11 @@ export class WebrtcLive {
       this.#ensureWindow((window) => {
         this.#startCapture(window);
       });
+      return;
+    }
+    if (kind === "stats" && this.connected && data.receiver && typeof data.receiver === "object") {
+      const decision = this.mediaPolicy.observe({ receiver: data.receiver as RemoteVideoReceiverTelemetry, now: this.options.now?.() ?? Date.now() });
+      this.#postDecision("tuning", decision);
       return;
     }
     if (kind === "quality" && ["smooth", "hd", "original"].includes(String(data.quality))) {
@@ -160,7 +165,7 @@ export class WebrtcLive {
   }
 
   #postDecision(kind: "configure" | "tuning", decision: RemoteVideoDecision): void {
-    const key = JSON.stringify([kind, decision.bitRate, decision.maxFps, decision.preferredCodec]);
+    const key = JSON.stringify([kind, decision.bitRate, decision.maxFps, decision.preferredCodec, decision.maxEdge ?? 0]);
     if (kind === "tuning" && key === this.lastDecisionKey) return;
     this.lastDecisionKey = key;
     this.#post({ kind, decision });

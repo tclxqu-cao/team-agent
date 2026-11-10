@@ -10,6 +10,12 @@ export interface RemoteVideoStatsCursor {
   framesDropped: number;
   /** Receiver's monotonic decoded-frame counter; feeds the stall watchdog. */
   framesDecoded?: number;
+  totalDecodeTime?: number;
+  jitterBufferDelay?: number;
+  jitterBufferTargetDelay?: number;
+  jitterBufferMinimumDelay?: number;
+  jitterBufferEmittedCount?: number;
+  sequence?: number;
 }
 
 type StatsLike = Iterable<Record<string, unknown>> | {
@@ -55,7 +61,10 @@ function h264Profile(sdpFmtpLine: unknown): RemoteVideoH264Profile | undefined {
   return undefined;
 }
 
-export function readRemoteVideoStats(report: StatsLike, previous: RemoteVideoStatsCursor | null, now = Date.now()): { sample: RemoteVideoStatsSample; cursor: RemoteVideoStatsCursor } | null {
+export function readRemoteVideoStats(report: StatsLike, previous: RemoteVideoStatsCursor | null, now = Date.now(), context?: {
+  visible: boolean; presentationDelayMs?: number;
+  viewport?: { width: number; height: number; pixelRatio: number; zoom: number };
+}): { sample: RemoteVideoStatsSample; cursor: RemoteVideoStatsCursor } | null {
   const source = typeof (report as { values?: unknown }).values === "function"
     ? (report as { values(): Iterable<Record<string, unknown>> }).values()
     : report as Iterable<Record<string, unknown>>;
@@ -85,7 +94,36 @@ export function readRemoteVideoStats(report: StatsLike, previous: RemoteVideoSta
     powerEfficient,
     acceleration: powerEfficient === true ? "hardware" as const : powerEfficient === false ? "software" as const : "unknown" as const,
   } : undefined;
+  const framesDecoded = finite(inbound.framesDecoded);
+  const totalDecodeTime = finite(inbound.totalDecodeTime);
+  const counterValid = previous !== null && framesDecoded !== undefined && previous.framesDecoded !== undefined
+    && framesDecoded >= previous.framesDecoded && framesDropped >= previous.framesDropped && now > previous.at && now - previous.at <= 5000;
+  const decodedDelta = counterValid ? framesDecoded! - previous!.framesDecoded! : undefined;
+  const decodeMs = counterValid && decodedDelta! > 0 && totalDecodeTime !== undefined && previous?.totalDecodeTime !== undefined
+    && totalDecodeTime >= previous.totalDecodeTime ? (totalDecodeTime - previous.totalDecodeTime) * 1000 / decodedDelta! : undefined;
+  const sequence = (previous?.sequence ?? 0) + 1;
+  const emitted = finite(inbound.jitterBufferEmittedCount);
+  const emittedDelta = previous && emitted !== undefined && previous.jitterBufferEmittedCount !== undefined
+    && now > previous.at && now - previous.at <= 5000 ? emitted - previous.jitterBufferEmittedCount : 0;
+  const bufferMs = (key: 'jitterBufferDelay' | 'jitterBufferTargetDelay' | 'jitterBufferMinimumDelay') => {
+    const current = finite(inbound[key]), before = previous?.[key];
+    if (emittedDelta <= 0 || current === undefined || before === undefined || current < before) return undefined;
+    const ms = (current - before) * 1000 / emittedDelta;
+    return Number.isFinite(ms) && ms >= 0 && ms <= 60_000 ? ms : undefined;
+  };
+  const buffering = { jitterBufferMs: bufferMs('jitterBufferDelay'), jitterBufferTargetMs: bufferMs('jitterBufferTargetDelay'),
+    jitterBufferMinimumMs: bufferMs('jitterBufferMinimumDelay') };
   const sample: RemoteVideoStatsSample = {
+    ...(context ? { receiver: {
+      sequence, visible: context.visible, viewport: context.viewport,
+      width: finite(inbound.frameWidth), height: finite(inbound.frameHeight),
+      ...Object.fromEntries(Object.entries(buffering).filter(([, value]) => value !== undefined)),
+      ...(counterValid ? { intervalMs: now - previous!.at, decodedFrames: decodedDelta,
+        ...(decodeMs !== undefined ? { decodeMs } : {}),
+        ...(decodedDelta! + droppedDelta > 0 ? { droppedRatio: droppedDelta / (decodedDelta! + droppedDelta) } : {}),
+        ...(Number.isFinite(context.presentationDelayMs) ? { presentationDelayMs: context.presentationDelayMs } : {}),
+      } : {}),
+    } } : {}),
     codec: typeof codec?.mimeType === "string" ? codec.mimeType.replace(/^video\//i, "") : undefined,
     codecProfile: h264Profile(codec?.sdpFmtpLine),
     decoder,
@@ -100,12 +138,14 @@ export function readRemoteVideoStats(report: StatsLike, previous: RemoteVideoSta
     protocol: local?.protocol === "tcp" || remote?.protocol === "tcp" ? "tcp" : (pair ? "udp" : undefined),
   };
   for (const key of Object.keys(sample) as Array<keyof RemoteVideoStatsSample>) if (sample[key] === undefined) delete sample[key];
-  const framesDecoded = finite(inbound.framesDecoded);
   return {
     sample,
     cursor: {
-      at: now, bytesReceived, packetsReceived, packetsLost, framesDropped,
+      at: now, bytesReceived, packetsReceived, packetsLost, framesDropped, sequence,
+      ...(totalDecodeTime !== undefined ? { totalDecodeTime } : {}),
       ...(framesDecoded !== undefined ? { framesDecoded } : {}),
+      ...Object.fromEntries(['jitterBufferDelay', 'jitterBufferTargetDelay', 'jitterBufferMinimumDelay', 'jitterBufferEmittedCount']
+        .map(key => [key, finite(inbound[key])]).filter(([, value]) => value !== undefined)),
     },
   };
 }

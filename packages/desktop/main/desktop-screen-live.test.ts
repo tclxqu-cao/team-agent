@@ -237,6 +237,7 @@ describe("DesktopScreenLive", () => {
       sessionId: DESKTOP_LIVE_SESSION_ID,
       backend: "desktop",
       title: "桌面屏幕",
+      platform: process.platform,
       state: "agent-controlled",
     }));
     expect(status.accessibilityTrusted).toBe(true);

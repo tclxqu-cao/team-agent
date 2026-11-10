@@ -2,7 +2,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const state = vi.hoisted(() => ({ navigationLayout: "classic", webShell: false, setNavigationLayout: vi.fn() }));
+const state = vi.hoisted(() => ({ navigationLayout: "classic", webShell: false }));
 vi.mock("../stores/uiStore", () => ({ useUIStore: (selector: (value: typeof state) => unknown) => selector(state) }));
 vi.mock("../web/webLayout", () => ({ isWebShell: () => state.webShell }));
 import ChatHeaderActions from "./ChatHeaderActions";
@@ -13,7 +13,7 @@ const render = (showSettings: boolean) => renderToStaticMarkup(createElement(Cha
   appearanceOpen: false, settingsOpen: false, showSettings,
   onHideToBackground: noop, onToggleAppearance: noop, onOpenSettings: noop,
   onToggleFiles: noop, onOpenHub: noop, onOpenDesktopLive: noop,
-  onOpenCollaborationDashboard: noop, onOpenSessionDashboard: noop, onReleaseCodex: noop,
+  onOpenCollaborationDashboard: noop, onOpenSessionDashboard: noop, onOpenMessaging: noop, onReleaseCodex: noop,
 }));
 
 describe("chat header action layout", () => {
@@ -31,15 +31,15 @@ describe("chat header action layout", () => {
     state.navigationLayout = "agent-rail";
     const html = render(true);
     expect(html).toContain("header-action-menu-trigger");
-    for (const label of ["我的文件", "打开 AI Hub", "桌面直播与远程控制", "打开群聊列表", "打开会话 Dashboard", "隐藏后台", "皮肤与布局", "切换布局", "设置"]) {
+    for (const label of ["我的文件", "打开 AI Hub", "桌面直播与远程控制", "打开群聊列表", "打开进行中的 Agent 会话", "打开消息接入", "隐藏后台", "皮肤与布局", "设置"]) {
       expect(html).toContain(`aria-label="${label}"`);
     }
     expect(html).toContain("chat-header-action--codex-release");
     expect(html).toContain("lucide-folder-open");
-    expect(html).toContain("lucide-panels-top-left");
+    expect(html).toContain("lucide-inbox");
+    expect(html).not.toContain('aria-label="切换布局"');
     expect(html).not.toContain("lucide-panel-left");
     expect(html).not.toContain("lucide-panel-right");
-    expect(html.indexOf("chat-header-action--appearance")).toBeLessThan(html.indexOf("chat-header-action--navigation-layout"));
   });
 
   it.each(["classic", "agent-rail"])("shows web conversation actions directly with %s navigation", navigationLayout => {

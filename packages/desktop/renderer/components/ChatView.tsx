@@ -19,6 +19,9 @@ import ComposerAgentPicker from "./ComposerAgentPicker";
 import ParallelAgentTabs from "./ParallelAgentTabs";
 import ParallelAgentSettings from "./ParallelAgentSettings";
 import { useParallelSessions } from "../lib/use-parallel-sessions";
+import { useNativeModelCatalog } from "../lib/use-native-model-catalog";
+import NativeModelCatalogNotice from "./NativeModelCatalogNotice";
+import ComposerModelPicker, { type ComposerModelPickerHandle } from "./ComposerModelPicker";
 import ComposerWorkspacePicker from "./ComposerWorkspacePicker";
 import AppActionNotice from "./AppActionNotice";
 import RunFailureNotice from "./RunFailureNotice";
@@ -131,6 +134,9 @@ import {
   isActiveNativeSession,
   isNativeRuntimeSelection,
   isObservedNativeRun,
+  isNativeRunVisible,
+  type NativeRunObservation,
+  type NativeSessionViewState,
   shouldDeferAnchoredSessionEvent,
   shouldFollowNativeHistory,
   shouldPollNativeHistoryFallback,
@@ -470,7 +476,7 @@ import {
   type OccupiedSendPayload,
   type OccupiedSessionRecovery,
 } from "../lib/occupied-session-fork";
-import type { AgentType, AgentWorkspace, NativeReasoningEffort, RuntimeHealth, RuntimeModelInfo, RuntimeModelSelection, SessionGoalState, ThreadGoalInfo, ToolPermissionMode, UnifiedSessionSummary } from "../global";
+import type { AgentType, AgentWorkspace, NativeReasoningEffort, RuntimeHealth, RuntimeModelSelection, SessionGoalState, ThreadGoalInfo, ToolPermissionMode, UnifiedSessionSummary } from "../global";
 import { NativeGoalBar } from "./NativeGoalBar";
 import { useNativeSessionGoal } from "../lib/use-native-session-goal";
 import { nativeGoalSubmission } from "../lib/native-goal-submission";
@@ -503,6 +509,7 @@ interface ChatViewProps {
   onToggleSidebar?: () => void;
   onOpenCollaborationDashboard?: () => void;
   onOpenSessionDashboard?: () => void;
+  onOpenMessaging?: () => void;
   settingsOpen?: boolean;
   onHideToBackground?: () => void;
   onOpenHub?: () => void;
@@ -602,6 +609,7 @@ export default function ChatView({
   onToggleSidebar,
   onOpenCollaborationDashboard,
   onOpenSessionDashboard,
+  onOpenMessaging,
   settingsOpen = false,
   onHideToBackground,
   onOpenHub,
@@ -759,38 +767,16 @@ export default function ChatView({
   // The choice is per agent type, lives in localStorage, and rides along with
   // every native run (see startRun); the model list comes from each runtime's
   // own connection via /api/agent/models.
-  const [nativeModels, setNativeModels] = useState<RuntimeModelInfo[]>([]);
-  const [nativeModelsLoadedAgent, setNativeModelsLoadedAgent] = useState<AgentType | null>(null);
-  const nativeModelsAgentRef = useRef<AgentType | null>(null);
+  const nativeModelCatalog = useNativeModelCatalog(composerAgentType, isNativeRuntime, viewSessionId);
+  const nativeModels = nativeModelCatalog.models;
   const [nativePref, setNativePref] = useState<NativeAgentRunPref>(() => loadNativeRunPref(composerAgentType));
   const [nativeEffortMenuOpen, setNativeEffortMenuOpen] = useState(false);
   const nativeEffortMenuRef = useRef<HTMLDivElement>(null);
-  const modelPickerRef = useRef<HTMLSelectElement>(null);
+  const modelPickerRef = useRef<ComposerModelPickerHandle>(null);
   useEffect(() => {
     setNativePref(loadNativeRunPref(composerAgentType));
     setNativeEffortMenuOpen(false);
   }, [composerAgentType]);
-  useEffect(() => {
-    if (!isNativeRuntime || !window.agentApi?.listAgentModels) return;
-    if (nativeModelsAgentRef.current === composerAgentType) return;
-    const requestedAgentType = composerAgentType;
-    nativeModelsAgentRef.current = requestedAgentType;
-    setNativeModels([]);
-    setNativeModelsLoadedAgent(null);
-    void window.agentApi.listAgentModels(requestedAgentType)
-      .then((result) => {
-        if (nativeModelsAgentRef.current !== requestedAgentType) return;
-        setNativeModels(result.models ?? []);
-        setNativeModelsLoadedAgent(requestedAgentType);
-      })
-      .catch(() => {
-        if (nativeModelsAgentRef.current !== requestedAgentType) return;
-        setNativeModels([]);
-        setNativeModelsLoadedAgent(null);
-        // Allow a retry when the composer renders this agent type again.
-        nativeModelsAgentRef.current = null;
-      });
-  }, [isNativeRuntime, composerAgentType]);
   useEffect(() => {
     if (!nativeEffortMenuOpen) return;
     const onDown = (event: MouseEvent) => {
@@ -821,7 +807,7 @@ export default function ChatView({
     () => composerAgentType === "opencode" ? groupOpenCodeModels(nativeModels) : [],
     [composerAgentType, nativeModels],
   );
-  const nativeModelCatalogReady = nativeModelsLoadedAgent === composerAgentType;
+  const nativeModelCatalogReady = nativeModelCatalog.catalogReady;
   const effectiveNativePref = useMemo(
     () => resolveNativeRunPref(nativePref, nativeModels, nativeModelCatalogReady),
     [nativeModels, nativeModelCatalogReady, nativePref],
@@ -879,6 +865,13 @@ export default function ChatView({
     setThinkingStartedAt(Date.now());
     setAgentActivity("thinking");
   }, []);
+  const [nativeRunObservation, setNativeRunObservation] = useState<NativeRunObservation | null>(null);
+  const observeNativeRun = useCallback((targetSessionId: string, detail: NativeSessionViewState | null | undefined) => {
+    if (!detail?.agentType || detail.agentType === "customer-agent" || !detail.status) return;
+    const running = isObservedNativeRun(detail);
+    setNativeRunObservation(previous => previous?.sessionId === targetSessionId && previous.running === running
+      ? previous : { sessionId: targetSessionId, running });
+  }, []);
 
   // Local ownership controls actions; externally observed activity remains visible.
   const isLocallyRunning = !!(
@@ -886,7 +879,8 @@ export default function ChatView({
     && (runningSessionId === viewSessionId || runningSubIdsRef.current.has(viewSessionId) || parallel.isRunning(viewSessionId))
   );
   const shouldQueueMessage = shouldQueueMessageForActiveRun(sessionSummary, isLocallyRunning);
-  const isRunning = parallel.group ? parallel.isRunning(viewSessionId) : isLocallyRunning || isObservedNativeRun(sessionSummary);
+  const isRunning = parallel.group ? parallel.isRunning(viewSessionId)
+    : isNativeRunVisible(sessionSummary, viewSessionId, isLocallyRunning, nativeRunObservation);
   const runtimeProgress = viewSessionId ? runtimeProgressBySession[viewSessionId] ?? [] : [];
   const nativeSubagents = viewSessionId ? nativeSubagentsBySession[viewSessionId] ?? {} : {};
   const jobRuntimeProgress = runtimeProgress.filter(progress => progress.kind === "background-job");
@@ -1870,6 +1864,7 @@ export default function ChatView({
             },
             (detail, phase) => {
               if (!isCurrentLoad() || !isCurrentSnapshot()) return;
+              observeNativeRun(targetSid, detail);
               const permissionDetail = detail as (SessionHistoryDetail & {
                 permissionMode?: unknown;
                 nativePermissions?: UnifiedSessionSummary["nativePermissions"];
@@ -1961,7 +1956,7 @@ export default function ChatView({
         initialHistoryLoadingSessionRef.current = null;
       }
     };
-  }, [activeAgentType, getMessagesForSession, getSessionHistoryWindow, historyAgentType, initialSessionHistory, isWorkspaceWelcome, prefetchOlderHistory, selectedSessionId, sessionReloadGeneration, setContextUsage, setHistoryMode, setMessages, setSessionId, syncToolResultScope, updateAgentActivity]);
+  }, [activeAgentType, getMessagesForSession, getSessionHistoryWindow, historyAgentType, initialSessionHistory, isWorkspaceWelcome, observeNativeRun, prefetchOlderHistory, selectedSessionId, sessionReloadGeneration, setContextUsage, setHistoryMode, setMessages, setSessionId, syncToolResultScope, updateAgentActivity]);
 
   const loadSessionQueryIndex = useCallback(async (targetSid: string) => {
     const agentApi = window.agentApi;
@@ -2074,6 +2069,7 @@ export default function ChatView({
               if (historyAgentType(targetSid) === "codex") scheduleCodexTraceRefresh(targetSid);
               return;
             }
+            observeNativeRun(targetSid, detail);
             const refreshed = restoreSessionHistoryPage(detail);
             const current = getMessagesForSession(targetSid);
             const restoredWindow = restoreLatestSessionHistoryWindow(
@@ -2149,7 +2145,7 @@ export default function ChatView({
         historyRefreshInFlightRef.current = false;
       }
     }
-  }, [getMessagesForSession, getSessionHistoryWindow, historyAgentType, loadSessionQueryIndex, prefetchOlderHistory, scheduleCodexTraceRefresh, setContextUsage, setMessages, syncToolResultScope, updateAgentActivity]);
+  }, [getMessagesForSession, getSessionHistoryWindow, historyAgentType, loadSessionQueryIndex, observeNativeRun, prefetchOlderHistory, scheduleCodexTraceRefresh, setContextUsage, setMessages, syncToolResultScope, updateAgentActivity]);
 
   useEffect(() => {
     const targetSid = selectedSessionId;
@@ -4391,6 +4387,7 @@ export default function ChatView({
         {onOpenSettings && onHideToBackground && onToggleAppearance && (
           <ChatHeaderActions
             appActions={headerAppActions}
+            onOpenMessaging={onOpenMessaging}
             appearanceOpen={appearanceOpen}
             settingsOpen={settingsOpen}
             showSettings={composerAgentType === "customer-agent"}
@@ -6142,7 +6139,7 @@ export default function ChatView({
                   writeSessionDraft(member.id, composerDraftRef.current.text);
                   await imageDraftCoordinator.save(member.id, composerDraftRef.current.images);
                 }); }}
-              /> : <label className={`web-native-model-control${isNativeRuntime ? " web-native-model-control--native" : ""}`} title="切换模型">
+              /> : <div className={`web-native-model-control${isNativeRuntime ? " web-native-model-control--native" : ""}`} title="切换模型">
                 {isNativeRuntime && isNativeAgentType(composerAgentType) ? (
                   <>
                     <span
@@ -6153,47 +6150,33 @@ export default function ChatView({
                       <span className="web-native-model-agent-name">{NATIVE_AGENT_LABELS[composerAgentType]}</span>
                     </span>
                     {!supportsNativeModelSelection && <span title="子会话沿用原生模型设置">原生模型</span>}
+                    {supportsNativeModelSelection && composerAgentType === "qoder" && (
+                      <NativeModelCatalogNotice status={nativeModelCatalog.status} error={nativeModelCatalog.error} onRetry={nativeModelCatalog.retry} />
+                    )}
                     {supportsNativeModelSelection && nativeModelPickerReady && (
-                      <select
+                      <ComposerModelPicker
                         ref={modelPickerRef}
-                        aria-label="当前模型"
-                        title="切换模型"
                         value={selectedNativeModelKey}
-                        onChange={(event) => {
-                          updateNativePref({
-                            model: event.target.value ? nativeModelFromKey(event.target.value, nativeModels) : undefined,
-                          });
-                        }}
-                      >
-                        <option value="">默认模型</option>
-                        {composerAgentType === "opencode" ? openCodeRuntimeModelGroups.map((group) => (
-                          <optgroup key={group.key} label={group.label}>
-                            {group.models.map((model) => {
-                              const key = nativeModelKey(model);
-                              return <option key={key} value={key}>{model.optionLabel}</option>;
-                            })}
-                          </optgroup>
-                        )) : runtimeModelOptions.map((option) => (
-                          <option key={option.key} value={option.key}>{option.label}</option>
-                        ))}
-                      </select>
+                        options={[
+                          { value: "", label: "默认模型" },
+                          ...(composerAgentType === "opencode" ? openCodeRuntimeModelGroups.flatMap(group =>
+                            group.models.map(model => ({ value: nativeModelKey(model), label: model.optionLabel, group: group.label })),
+                          ) : runtimeModelOptions.map(option => ({ value: option.key, label: option.label }))),
+                        ]}
+                        onChange={value => updateNativePref({ model: value ? nativeModelFromKey(value, nativeModels) : undefined })}
+                      />
                     )}
                   </>
                 ) : (
-                  <select
-                    aria-label="当前模型"
+                  <ComposerModelPicker
                     value={activeProfileId}
                     disabled={profiles.length === 0}
-                    onChange={(event) => { void switchActiveProfile(event.target.value); }}
-                  >
-                    {profiles.length === 0 ? (
-                      <option value="">未配置模型</option>
-                    ) : profiles.map((profile) => (
-                      <option key={profile.id} value={profile.id}>{profile.name || profile.modelId}</option>
-                    ))}
-                  </select>
+                    options={profiles.length === 0 ? [{ value: "", label: "未配置模型" }]
+                      : profiles.map(profile => ({ value: profile.id, label: profile.name || profile.modelId }))}
+                    onChange={value => { void switchActiveProfile(value); }}
+                  />
                 )}
-              </label>}
+              </div>}
 
               {isParallelComposer && !isLocallyRunning ? null : isLocallyRunning ? (
                 <button type="button" onClick={() => handleAbort("button")} className="web-native-stop-button" aria-label="停止生成" title="停止生成">

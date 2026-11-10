@@ -3,9 +3,9 @@ import { describe, expect, it } from "vitest";
 
 const css = readFileSync(new URL("./glass.css", import.meta.url), "utf8");
 
-describe("glass skin stylesheet", () => {
+describe("shared glass stylesheet", () => {
   it("gives the directory agent switcher glass material without changing its geometry", () => {
-    const selector = ':root[data-skin="glass"] .app-sidebar .agent-workspace-switcher:not(.is-vertical)';
+    const selector = ':root[data-skin] .app-sidebar .agent-workspace-switcher:not(.is-vertical)';
     const surface = css.slice(css.indexOf(`${selector} {`)).split("}")[0];
     expect(surface).toContain("background: var(--glass-surface)");
     expect(surface).toContain("backdrop-filter: var(--glass-blur)");

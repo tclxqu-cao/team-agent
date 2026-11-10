@@ -36,7 +36,7 @@ void Capture::select(const std::string& id) {
     if (std::none_of(items.begin(), items.end(), [&](const auto& d) { return d.id == id; })) throw std::runtime_error("Display disconnected; refresh display list");
     if (id != selected) { reset(); selected = id; }
 }
-void Capture::reset() { duplication.Reset(); staging.Reset(); context.Reset(); device.Reset(); cached = {}; separateCursor = false; }
+void Capture::reset() { duplication.Reset(); staging.Reset(); context.Reset(); device.Reset(); cached = {}; separateCursor = false; separateCursorKnown = false; }
 void Capture::open(const Display& display) {
     reset(); selected = display.id;
     check(D3D11CreateDevice(display.adapter.Get(), D3D_DRIVER_TYPE_UNKNOWN, nullptr, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
@@ -73,10 +73,12 @@ Frame Capture::frame() {
     if (!duplication || selected != target->id || cached.x != target->bounds.left || cached.y != target->bounds.top ||
         cached.width != target->bounds.right - target->bounds.left || cached.height != target->bounds.bottom - target->bounds.top) open(*target);
     DXGI_OUTDUPL_FRAME_INFO info{}; ComPtr<IDXGIResource> resource;
+    uint32_t coalesced = 0;
     HRESULT hr = duplication->AcquireNextFrame(cached.pixels.empty() ? 500 : 0, &info, &resource);
     if (hr == DXGI_ERROR_WAIT_TIMEOUT) {
         if (cached.pixels.empty()) throw std::runtime_error("Waiting for first desktop frame");
     } else {
+        coalesced = info.AccumulatedFrames > 0 ? info.AccumulatedFrames - 1 : 0;
         if (FAILED(hr)) { reset(); check(hr, "Acquire desktop frame"); }
         struct Release { IDXGIOutputDuplication* d; ~Release(){ d->ReleaseFrame(); } } release{duplication.Get()};
         ComPtr<ID3D11Texture2D> texture; check(resource.As(&texture), "Read desktop texture");
@@ -100,10 +102,11 @@ Frame Capture::frame() {
                 memcpy(dest + x * 4, static_cast<uint8_t*>(mapped.pData) + size_t(sy) * mapped.RowPitch + sx * 4, 4);
             }
         }
-        if (info.LastMouseUpdateTime.QuadPart) separateCursor = info.PointerPosition.Visible != FALSE;
+        if (info.LastMouseUpdateTime.QuadPart || info.PointerShapeBufferSize) { separateCursorKnown = true; separateCursor = info.PointerPosition.Visible != FALSE; }
     }
     Frame result = cached;
-    if (separateCursor) cursor(result);
+    result.coalescedFrames = coalesced;
+    if (separateCursor && !independentCursor) cursor(result);
     return result;
 }
 Json Capture::preview(const Frame& frame, const std::string& quality) {

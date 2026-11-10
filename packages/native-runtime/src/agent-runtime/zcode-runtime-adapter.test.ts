@@ -238,15 +238,23 @@ describe("ZCode desktop running-state projection", () => {
     expect(rpc.calls.filter(call => call.method === "session/send")).toHaveLength(1);
   });
 
-  it("keeps an owned local run visible when native list and desktop logs both report idle", async () => {
+  it.each([false, true])("preserves local ownership when observed desktop activity is %s", async desktopRunning => {
     const rpc = new ZCodeFixture();
+    let observed = false;
     let started!: () => void; const ready = new Promise<void>(resolve => { started = resolve; });
-    rpc.prompt = async () => { started(); };
-    const client = new ZCodeClient(rpc, { readMany: async () => new Map([["sess_native", false]]) });
+    rpc.prompt = async () => { observed = desktopRunning; started(); };
+    const guide = { available: vi.fn(async () => true), steer: vi.fn(async () => true) };
+    const client = new ZCodeClient(rpc, { readMany: async () => new Map([["sess_native", observed]]) }, guide);
     const adapter = new ZCodeRuntimeAdapter(client);
     const pending = collect(adapter.run("sess_native", "local turn"));
     await ready;
     expect((await adapter.discoverSessions())[0]).toMatchObject({ status: "running", occupancy: "owned-by-customer-agent", canResume: true });
+    expect(await adapter.getSession("sess_native")).toMatchObject({ status: "running", occupancy: "owned-by-customer-agent", canResume: true });
+    expect(guide.available).not.toHaveBeenCalled();
+    expect(guide.steer).not.toHaveBeenCalled();
+    expect(rpc.calls.filter(call => call.method === "session/send")).toHaveLength(1);
+    expect(rpc.calls.some(call => call.method === "session/stop")).toBe(false);
+    observed = false;
     rpc.emit("turn.completed", {}); await pending;
     expect((await adapter.discoverSessions())[0]).toMatchObject({ status: "idle", occupancy: "available" });
   });

@@ -12,7 +12,9 @@
       "@agent/core/*": [
         "../core/src/*"
       ],
-      "@agent/messaging": ["./packages/messaging/src"]
+      "@agent/messaging": [
+        "./packages/messaging/src"
+      ]
     },
     "plugins": [
       {
@@ -40,6 +42,7 @@
     ".next-goaltest/types/**/*.ts",
     ".next-invalid-workspace-check/types/**/*.ts",
     ".next-remote-desktop-20261019/types/**/*.ts",
-    ".next-slider-20261022/types/**/*.ts"
+    ".next-slider-20261022/types/**/*.ts",
+    ".next-remote-original-acceptance/types/**/*.ts"
   ]
 }

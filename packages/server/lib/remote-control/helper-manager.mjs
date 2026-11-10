@@ -64,10 +64,12 @@ export class RemoteHelper {
     this.application = application;
     this.appPath = appPath ?? application?.appPath ?? bundledRemoteAppPath();
     this.launch = launch ?? ((socket, videoSocket) => run('/usr/bin/open', ['-n', this.appPath, '--args', socket, videoSocket, String(process.pid)]));
-    this.stopTimeoutMs = stopTimeoutMs; this.pending = new Map(); this.videoListeners = new Set(); this.audioListeners = new Set(); this.sequence = 0; this.generation = 0;
+    this.stopTimeoutMs = stopTimeoutMs; this.pending = new Map(); this.videoListeners = new Set(); this.audioListeners = new Set(); this.compoundListeners = new Set(); this.cursorListeners = new Set(); this.sequence = 0; this.generation = 0;
   }
   onVideo(listener) { this.videoListeners.add(listener); return () => this.videoListeners.delete(listener); }
   onAudio(listener) { this.audioListeners.add(listener); return () => this.audioListeners.delete(listener); }
+  onCursor(listener) { this.cursorListeners.add(listener); return () => this.cursorListeners.delete(listener); }
+  onCompound(listener) { this.compoundListeners.add(listener); return () => this.compoundListeners.delete(listener); }
   async available() { if (this.application) return this.application.available(); try { await access(join(this.appPath, 'Contents/MacOS/agentroam-remote-desktop')); return true; } catch { return false; } }
   async describe() { return this.application ? this.application.describe() : { name: 'AgentRoam Remote Desktop', path: this.appPath, version: 'unknown' }; }
   start() {
@@ -118,6 +120,8 @@ export class RemoteHelper {
                 const result = JSON.parse(line);
                 if (result.event === 'video') { for (const listener of this.videoListeners) listener(result); continue; }
                 if (result.event === 'audio') { for (const listener of this.audioListeners) listener(result); continue; }
+                if (result.event === 'cursor' && result.id == null) { for (const listener of this.cursorListeners) listener(result); continue; }
+                if (result.event === 'compound' && result.id == null) { for (const listener of this.compoundListeners) listener(result); continue; }
                 const pending = this.pending.get(result.id);
                 // preview.23's read-only probe omitted the success envelope.
                 // Support installed helpers without changing their macOS identity.

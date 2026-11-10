@@ -151,7 +151,10 @@
         params.degradationPreference = "maintain-resolution";
         params.encodings[0].maxBitrate = decision.bitRate;
         params.encodings[0].maxFramerate = decision.maxFps;
-        params.encodings[0].scaleResolutionDownBy = 1;
+        const settings = track?.getSettings?.() ?? {};
+        const sourceEdge = Math.max(settings.width ?? captureSize?.width ?? 0, settings.height ?? captureSize?.height ?? 0);
+        params.encodings[0].scaleResolutionDownBy = Number.isFinite(decision.maxEdge) && decision.maxEdge >= 640
+          ? Math.max(1, sourceEdge / decision.maxEdge) : 1;
         try { await sender.setParameters(params); } catch {}
       }
       if (!configure || offerCreated || !pc) return;

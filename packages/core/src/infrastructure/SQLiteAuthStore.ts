@@ -1,4 +1,4 @@
-import type Database from "better-sqlite3";
+import type { Database } from "better-sqlite3";
 import type { AuthSession, AuthStore, CreateAuthSessionInput, CreateUserInput, User } from "../domain/auth/index.js";
 import { getDatabase } from "./SQLiteDatabase.js";
 

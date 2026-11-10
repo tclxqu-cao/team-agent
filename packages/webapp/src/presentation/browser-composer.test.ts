@@ -41,6 +41,14 @@ describe("browser composer add menu theme", () => {
 });
 
 describe("shared composer panel layout", () => {
+  it("keeps the entire input row visible when a loaded model title contains a provider separator", () => {
+    const picker = readFileSync(new URL("../../../desktop/renderer/components/ComposerModelPicker.tsx", import.meta.url), "utf8");
+    expect(picker).toContain('title={selected?.label ?? "切换模型"}');
+    expect(chatView).toContain("label: option.label");
+    expect(webCss).not.toContain('div:has(button[title*=');
+    expect(webCss).not.toMatch(/\.composer-input-row\s*\{[^}]*display:\s*none/);
+  });
+
   it("keeps Electron and Web on one multiline input and action toolbar", () => {
     expect(chatView).toContain('className="composer-text-input web-native-composer-textarea"');
     expect(chatView).toContain('className="web-native-composer-toolbar"');

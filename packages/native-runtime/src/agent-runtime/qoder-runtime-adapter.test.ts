@@ -1,10 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { AgentEvent, Message } from "@agent/core";
 import { QoderClient } from "./qoder-client.js";
 import { QoderRuntimeAdapter } from "./qoder-runtime-adapter.js";
 import type { NativeRpcConnection } from "./native-rpc-client.js";
 import type { NativeJsonPacket } from "./native-stdio-channel.js";
-import { RuntimeSessionError } from "./types.js";
+import { RuntimeSessionError, type RuntimeModelInfo } from "./types.js";
+import type { QoderModelCatalogLoader } from "./qoder-model-catalog.js";
 import { encodeUnifiedSessionId } from "./session-id.js";
 
 class RpcFixture implements NativeRpcConnection {
@@ -22,8 +23,9 @@ class RpcFixture implements NativeRpcConnection {
     { role: "assistant", content: "stored answer", historyId: "history-answer" },
   ];
   historyReads = 0;
+  modelCatalog = vi.fn<QoderModelCatalogLoader>(async () => [{ id: "catalog-model", displayName: "Catalog model" }]);
   client(workspaces = { list: async (): Promise<string[]> => [] }) {
-    return new QoderClient(this, workspaces, { read: async () => { this.historyReads++; return structuredClone(this.history); } });
+    return new QoderClient(this, workspaces, { read: async () => { this.historyReads++; return structuredClone(this.history); } }, this.modelCatalog);
   }
   async request(method: string, params: NativeJsonPacket): Promise<NativeJsonPacket> {
     this.calls.push({ method, params });
@@ -83,6 +85,116 @@ describe("Qoder cwd-scoped discovery", () => {
   });
 });
 
+describe("Qoder session-independent model discovery", () => {
+  it("lists models with no sessions and never calls ACP, workspaces or history", async () => {
+    const rpc = new RpcFixture();
+    const workspaces = { list: vi.fn(async (): Promise<string[]> => []) };
+    rpc.request = vi.fn(async () => { throw new Error("Model enumeration must not call ACP"); });
+    const client = rpc.client(workspaces);
+    const adapter = new QoderRuntimeAdapter(client);
+    await expect(adapter.listModels()).resolves.toEqual([{ id: "catalog-model", displayName: "Catalog model" }]);
+    expect(rpc.modelCatalog).toHaveBeenCalledOnce();
+    expect(rpc.request).not.toHaveBeenCalled();
+    expect(workspaces.list).not.toHaveBeenCalled();
+    expect(rpc.historyReads).toBe(0);
+    expect(rpc.calls).toEqual([]);
+  });
+
+  it("coalesces concurrent catalog calls and caches only the nonempty result", async () => {
+    const rpc = new RpcFixture();
+    let release!: (models: RuntimeModelInfo[]) => void;
+    rpc.modelCatalog.mockImplementationOnce(() => new Promise(resolve => { release = resolve; }));
+    const client = rpc.client();
+    const first = client.listModels();
+    const second = client.listModels();
+    const third = client.listModels();
+    expect(rpc.modelCatalog).toHaveBeenCalledOnce();
+    const models = [{ id: "Auto", displayName: "Auto" }];
+    release(models);
+    const results = await Promise.all([first, second, third]);
+    for (const result of results) expect(result).toEqual(models);
+    expect(results[0]).not.toBe(results[1]);
+    models.push({ id: "Source mutation", displayName: "Source mutation" });
+    results[0].length = 0;
+    await expect(client.listModels()).resolves.toEqual([{ id: "Auto", displayName: "Auto" }]);
+    expect(rpc.modelCatalog).toHaveBeenCalledOnce();
+    expect(rpc.calls).toEqual([]);
+  });
+
+  it("shares a catalog failure but retries on the next request without opening a session", async () => {
+    const rpc = new RpcFixture();
+    let reject!: (reason: Error) => void;
+    rpc.modelCatalog.mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail; }));
+    const client = rpc.client();
+    const first = client.listModels();
+    const second = client.listModels();
+    const error = new RuntimeSessionError("Qoder catalog unavailable", "RUNTIME_UNAVAILABLE");
+    const settled = Promise.allSettled([first, second]);
+    reject(error);
+    expect(await settled).toEqual([{ status: "rejected", reason: error }, { status: "rejected", reason: error }]);
+    await expect(client.listModels()).resolves.toEqual([{ id: "catalog-model", displayName: "Catalog model" }]);
+    await client.listModels();
+    expect(rpc.modelCatalog).toHaveBeenCalledTimes(2);
+    expect(rpc.calls).toEqual([]);
+  });
+
+  it("retries an empty catalog instead of caching it or falling back to session discovery", async () => {
+    const rpc = new RpcFixture();
+    rpc.modelCatalog.mockResolvedValueOnce([]);
+    const client = rpc.client();
+    await expect(client.listModels()).resolves.toEqual([]);
+    await expect(client.listModels()).resolves.toEqual([{ id: "catalog-model", displayName: "Catalog model" }]);
+    expect(rpc.modelCatalog).toHaveBeenCalledTimes(2);
+    expect(rpc.calls).toEqual([]);
+    expect(rpc.historyReads).toBe(0);
+  });
+
+  it("keeps models returned by normal session creation without running the catalog", async () => {
+    const rpc = new RpcFixture();
+    const client = rpc.client();
+    await client.create({ title: "Owned", cwd: "/native/workspace" });
+    const calls = [...rpc.calls];
+    await expect(client.listModels()).resolves.toEqual([{ id: "native-model", displayName: "Native model", description: undefined }]);
+    expect(rpc.modelCatalog).not.toHaveBeenCalled();
+    expect(rpc.calls).toEqual(calls);
+  });
+
+  it("keeps models returned by a normal resume without running the catalog", async () => {
+    const rpc = new RpcFixture();
+    const client = rpc.client();
+    await client.read("native-1");
+    const calls = [...rpc.calls];
+    await expect(client.listModels()).resolves.toEqual([{ id: "native-model", displayName: "Native model", description: undefined }]);
+    expect(rpc.modelCatalog).not.toHaveBeenCalled();
+    expect(rpc.calls).toEqual(calls);
+  });
+
+  it("keeps the CLI catalog stable and maps a preset only from the current session's advertised ID", async () => {
+    const rpc = new RpcFixture();
+    rpc.modelCatalog.mockResolvedValue([{ id: "Auto", displayName: "Auto" }]);
+    rpc.options = () => ({ models: { currentModelId: "auto", availableModels: [{ modelId: "auto", name: "Auto" }] }, modes: { currentModeId: "default", availableModes: [] } });
+    const client = rpc.client();
+    await expect(client.listModels()).resolves.toEqual([{ id: "Auto", displayName: "Auto" }]);
+    await client.create({ title: "Owned", cwd: "/native/workspace" });
+    await expect(client.listModels()).resolves.toEqual([{ id: "Auto", displayName: "Auto" }]);
+    await collect(client.run("native-1", "First", undefined, { model: { id: "Auto" } }));
+    expect(rpc.calls.find(call => call.method === "session/set_model")).toEqual({
+      method: "session/set_model", params: { sessionId: "native-1", modelId: "auto" },
+    });
+    expect(rpc.modelCatalog).toHaveBeenCalledOnce();
+  });
+
+  it("does not discard a nonempty catalog when a session returns no models", async () => {
+    const rpc = new RpcFixture();
+    rpc.options = () => ({ models: { currentModelId: "", availableModels: [] }, modes: { currentModeId: "default", availableModes: [] } });
+    const client = rpc.client();
+    await client.listModels();
+    await client.create({ title: "Owned", cwd: "/native/workspace" });
+    await expect(client.listModels()).resolves.toEqual([{ id: "catalog-model", displayName: "Catalog model" }]);
+    expect(rpc.modelCatalog).toHaveBeenCalledOnce();
+  });
+});
+
 describe("Qoder native ACP adapter", () => {
   it("reads a newly created blank session and sends its first prompt without resuming a nonexistent transcript", async () => {
     const rpc = new RpcFixture();
@@ -95,7 +207,7 @@ describe("Qoder native ACP adapter", () => {
     const client = new QoderClient(rpc, { list: async () => [] }, { read: async () => {
       if (!persisted) throw new RuntimeSessionError("Qoder session not found", "SESSION_NOT_FOUND");
       return [{ role: "user", content: "First prompt", historyId: "first-user" }, { role: "assistant", content: "First answer", historyId: "first-answer" }];
-    } });
+    } }, rpc.modelCatalog);
     const adapter = new QoderRuntimeAdapter(client);
     await adapter.create({ title: "Blank draft", cwd: "/native/workspace" });
     expect((await adapter.getSession("native-1")).messages).toEqual([]);
@@ -115,7 +227,7 @@ describe("Qoder native ACP adapter", () => {
 
   it("does not treat corrupt fresh-session history as an empty transcript", async () => {
     const rpc = new RpcFixture();
-    const client = new QoderClient(rpc, { list: async () => [] }, { read: async () => { throw new Error("Corrupt draft history"); } });
+    const client = new QoderClient(rpc, { list: async () => [] }, { read: async () => { throw new Error("Corrupt draft history"); } }, rpc.modelCatalog);
     await client.create({ title: "Blank draft", cwd: "/native/workspace" });
     await expect(client.read("native-1")).rejects.toThrow("Corrupt draft history");
     await expect(collect(client.run("native-1", "Do not send"))).rejects.toThrow("Corrupt draft history");
@@ -178,6 +290,90 @@ describe("Qoder native ACP adapter", () => {
     expect(second.at(-1)).toEqual({ type: "done", finalText: "answer" });
     expect(rpc.calls.filter(call => call.method === "session/new")).toHaveLength(1);
     expect(rpc.calls.filter(call => call.method === "session/prompt").map(call => call.params.sessionId)).toEqual(["native-1", "native-1"]);
+  });
+
+  it("awaits the selected opaque model before every turn's prompt", async () => {
+    const rpc = new RpcFixture();
+    const adapter = new QoderRuntimeAdapter(rpc.client());
+    await adapter.create({ title: "Owned", cwd: "/native/workspace" });
+    const request = rpc.request.bind(rpc);
+    let release!: () => void;
+    const selected = new Promise<void>(resolve => { release = resolve; });
+    rpc.request = async (method, params) => {
+      if (method === "session/set_model") {
+        const result = await request(method, params);
+        await selected;
+        return result;
+      }
+      return request(method, params);
+    };
+    const first = collect(adapter.run("native-1", "First", undefined, undefined, undefined, { model: { id: "magpie/group/gpt-6" } }));
+    await new Promise(resolve => setImmediate(resolve));
+    expect(rpc.calls.at(-1)).toEqual({ method: "session/set_model", params: { sessionId: "native-1", modelId: "magpie/group/gpt-6" } });
+    expect(rpc.calls.some(call => call.method === "session/prompt")).toBe(false);
+    release();
+    expect((await first).at(-1)?.type).toBe("done");
+    await collect(adapter.run("native-1", "Second", undefined, undefined, undefined, { model: { id: "Auto" } }));
+    expect(rpc.calls.filter(call => call.method === "session/set_model" || call.method === "session/prompt")).toEqual([
+      { method: "session/set_model", params: { sessionId: "native-1", modelId: "magpie/group/gpt-6" } },
+      { method: "session/prompt", params: { sessionId: "native-1", prompt: [{ type: "text", text: "First" }] } },
+      { method: "session/set_model", params: { sessionId: "native-1", modelId: "Auto" } },
+      { method: "session/prompt", params: { sessionId: "native-1", prompt: [{ type: "text", text: "Second" }] } },
+    ]);
+  });
+
+  it.each([
+    { selected: "Auto", models: [{ modelId: "Auto", name: "Exact" }, { modelId: "auto", name: "Auto" }], expected: "Auto" },
+    { selected: "Auto", models: [{ modelId: "one", name: "Auto" }, { modelId: "two", name: "Auto" }], expected: "Auto" },
+    { selected: "AUTO", models: [{ modelId: "auto", name: "Auto" }], expected: "AUTO" },
+    { selected: "magpie/group/model", models: [{ modelId: "native", name: "Other" }], expected: "magpie/group/model" },
+  ])("prefers exact model IDs and never guesses a missing or ambiguous name: $selected", async ({ selected, models, expected }) => {
+    const rpc = new RpcFixture();
+    rpc.options = () => ({ models: { currentModelId: "", availableModels: models }, modes: { currentModeId: "default", availableModes: [] } });
+    const client = rpc.client();
+    await client.create({ title: "Owned", cwd: "/native/workspace" });
+    await collect(client.run("native-1", "Question", undefined, { model: { id: selected } }));
+    expect(rpc.calls.find(call => call.method === "session/set_model")?.params.modelId).toBe(expected);
+  });
+
+  it("keeps model name resolution scoped to the session instead of the most recently opened session", async () => {
+    const rpc = new RpcFixture();
+    const request = rpc.request.bind(rpc);
+    rpc.request = async (method, params) => {
+      if (method === "session/new") {
+        rpc.calls.push({ method, params });
+        return { sessionId: String(params.cwd), models: { availableModels: [{ modelId: `${params.cwd}-auto`, name: "Auto" }] } };
+      }
+      return request(method, params);
+    };
+    const client = rpc.client();
+    await client.create({ title: "A", cwd: "/a" });
+    await client.create({ title: "B", cwd: "/b" });
+    await collect(client.run("/a", "First", undefined, { model: { id: "Auto" } }));
+    await collect(client.run("/b", "Second", undefined, { model: { id: "Auto" } }));
+    expect(rpc.calls.filter(call => call.method === "session/set_model")).toEqual([
+      { method: "session/set_model", params: { sessionId: "/a", modelId: "/a-auto" } },
+      { method: "session/set_model", params: { sessionId: "/b", modelId: "/b-auto" } },
+    ]);
+  });
+
+  it("does not prompt or silently use another model when native model selection is rejected", async () => {
+    const rpc = new RpcFixture();
+    const adapter = new QoderRuntimeAdapter(rpc.client());
+    await adapter.create({ title: "Owned", cwd: "/native/workspace" });
+    const request = rpc.request.bind(rpc);
+    const error = new RuntimeSessionError("Native model rejected", "NATIVE_PROTOCOL_ERROR");
+    rpc.request = async (method, params) => {
+      if (method === "session/set_model") {
+        rpc.calls.push({ method, params });
+        throw error;
+      }
+      return request(method, params);
+    };
+    await expect(collect(adapter.run("native-1", "Never send", undefined, undefined, undefined, { model: { id: "group/rejected-model" } }))).rejects.toBe(error);
+    expect(rpc.calls.at(-1)).toEqual({ method: "session/set_model", params: { sessionId: "native-1", modelId: "group/rejected-model" } });
+    expect(rpc.calls.some(call => call.method === "session/prompt")).toBe(false);
+    expect(rpc.calls.filter(call => call.method === "session/new")).toHaveLength(1);
   });
 
   it("keeps reasoning segments separate across text and tool boundaries", async () => {
@@ -284,7 +480,7 @@ describe("Qoder native ACP adapter", () => {
 
   it("fails closed when native history cannot be read instead of prompting with an incomplete snapshot", async () => {
     const rpc = new RpcFixture();
-    const client = new QoderClient(rpc, { list: async () => [] }, { read: async () => { throw new Error("Corrupt native history"); } });
+    const client = new QoderClient(rpc, { list: async () => [] }, { read: async () => { throw new Error("Corrupt native history"); } }, rpc.modelCatalog);
     await expect(client.read("native-1")).rejects.toThrow("Corrupt native history");
     await expect(collect(client.run("native-1", "Do not send"))).rejects.toThrow("Corrupt native history");
     expect(rpc.calls.filter(call => call.method === "session/resume")).toHaveLength(1);

@@ -7,7 +7,7 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import os from 'node:os';
 import { RemoteHelper } from './helper-manager.mjs';
-import { RemoteAudioSession, logGlobal } from '@agent/core';
+import { RemoteAudioSession, RemoteInputCoalescer, logGlobal } from '@agent/core';
 import { parseProducerRemoteVideoSignal } from './remote-video-signal.mjs';
 
 const CAPTURE_RETRY_DELAY_MS = 3000;
@@ -61,15 +61,23 @@ export class RemoteAuthorization {
     this.selectedDisplayId = null;
     this.captureFailures = 0; this.captureHealthySince = null;
     this.sessionId = 'cli-desktop:primary';
+    this.inputCoalescer = new RemoteInputCoalescer();
     this.peer = { id: `cli-remote:${randomUUID()}`, userId, producerSessionIds: new Set(), watchedSessionId: null, send: (event) => {
       const microphoneFrame = event.type === 'browser:webrtc' && event.data?.kind === 'audio-microphone';
       if (microphoneFrame && this.microphoneFramesQueued >= 4) return;
       if (microphoneFrame) this.microphoneFramesQueued += 1;
       const generation = this.switching ? -1 : this.generation;
-      this.inputQueue = this.inputQueue
-        .then(() => this.onEvent(event, generation))
-        .catch((error) => { this.error = error.message; })
-        .finally(() => { if (microphoneFrame) this.microphoneFramesQueued = Math.max(0, this.microphoneFramesQueued - 1); });
+      if (event.type === 'browser:input' && !event.directMove) this.video?.cancelPendingHover();
+      const pointer = !event.reliableContext && event.type === 'browser:input' && event.input?.kind === 'pointer' && !event.input?.probe;
+      const kind = pointer && event.input.action === 'move' ? 'hover' : pointer && event.input.action === 'down' ? 'down' : pointer && event.input.action === 'up' ? 'up' : 'barrier';
+      const { replaced } = this.inputCoalescer.offer({ event, generation, microphoneFrame }, kind);
+      if (replaced && Number.isSafeInteger(replaced.event.token)) this.registry.inputResult(this.peer, this.sessionId, replaced.event.token, { coalesced: true });
+      this.inputQueue = this.inputQueue.then(async () => {
+        const entry = this.inputCoalescer.shift();
+        if (!entry) return;
+        try { await this.onEvent(entry.event, entry.generation); }
+        finally { if (entry.microphoneFrame) this.microphoneFramesQueued = Math.max(0, this.microphoneFramesQueued - 1); }
+      }).catch(error => { this.error = error.message; });
     } };
     this.inputQueue = Promise.resolve();
     // WebRTC signaling chain: a start waits for ICE gathering (a slow STUN
@@ -79,9 +87,27 @@ export class RemoteAuthorization {
     this.mediaChain = Promise.resolve();
     this.video = new RemoteWebrtcVideo({
       helper,
+      onInput: (message, context) => {
+        if (!context || !this.enabled || !this.online || this.switching
+          || !this.registry.isDirectInputActive(this.peer, this.sessionId, context)) return 'unavailable';
+        return this.registry.directPointerInput(this.peer, this.sessionId, context, message) ? 'accepted' : 'ignored';
+      },
+      onReliableInput: async (message, context) => {
+        if (!context || !this.enabled || !this.online || this.switching) throw new Error('输入会话已切换');
+        return this.registry.directReliableInput(this.peer, this.sessionId, context, message);
+      },
       highProfile: platform === 'darwin',
       log,
-      signal: data => { if (this.enabled && this.online) this.registry.webrtcFromProducer(this.peer, this.sessionId, data); },
+      signal: data => {
+        if (!this.enabled || !this.online) return;
+        if (data.kind === 'offer' && data.inputStream) {
+          const context = this.pendingDirectInput ? { ...this.pendingDirectInput, stream: data.inputStream } : undefined;
+          if (!context || !this.registry.enableDirectInput(this.peer, this.sessionId, context)) {
+            data = { ...data, inputStream: undefined, inputVersion: undefined };
+          }
+        }
+        this.registry.webrtcFromProducer(this.peer, this.sessionId, data);
+      },
     });
     this.audioSequence = 0;
     this.audioSession = new RemoteAudioSession(audioCapabilities ?? NO_REMOTE_AUDIO, { foreground: true, controller: false });
@@ -511,7 +537,14 @@ export class RemoteAuthorization {
       // settles (a slow STUN round trip can take ~10s) — they must share the
       // media chain with start instead of stalling the serialized event queue.
       if (event.data.kind === 'start') signalQuality();
-      this.mediaChain = this.mediaChain.then(() => this.video.handle(event.data)).catch(() => {});
+      let inputContext;
+      if (event.data.kind === 'start') this.pendingDirectInput = undefined;
+      if (event.data.kind === 'start' && [1, 2].includes(event.data.inputVersion) && typeof event.controllerId === 'string'
+        && Number.isSafeInteger(event.controlEpoch)) {
+        const candidate = { controllerId: event.controllerId, epoch: event.controlEpoch, stream: randomUUID(), version: event.data.inputVersion };
+        this.pendingDirectInput = candidate; inputContext = candidate;
+      }
+      this.mediaChain = this.mediaChain.then(() => this.video.handle(event.data, inputContext)).catch(() => {});
       return;
     }
     if (event.type === 'browser:takeover-requested') {
@@ -536,9 +569,11 @@ export class RemoteAuthorization {
     }
     else if (event.type === 'browser:input') {
       try {
+        if (event.reliableContext && !this.registry.isDirectInputActive(this.peer, this.sessionId, event.reliableContext)) throw new Error('输入会话已切换或控制已归还');
+        if (event.directMove && (this.pointerDown || !this.registry.isDirectInputActive(this.peer, this.sessionId, event.directContext))) return;
         if (generation !== this.generation || !this.bounds) throw new Error('屏幕正在切换，请等待新画面');
         if (!this.accessibility) throw new Error(this.platform === 'win32' ? 'Windows 桌面输入暂不可用，请恢复普通桌面' : '请在电脑的远程授权中授予辅助功能权限');
-        this.video.noteInteraction();
+        this.video.noteInteraction(event.input);
         this.lastInteractionAt = Date.now();
         if (this.platform === 'darwin' && event.input?.mobile === true
           && Date.now() - (this.lastMobileInteractionAt || 0) >= 500) {
@@ -573,7 +608,7 @@ export class RemoteAuthorization {
       if (input.action === 'up') this.pointerDown = false;
       return this.helper.request({ op, x, y, button: input.button, click: input.click || 1 });
     }
-    if (input.text && !input.key && !input.code) return this.helper.request({ op: 'text', text: input.text });
+    if (input.text && !input.key && !input.code) return this.helper.request({ op: this.platform === 'darwin' ? 'unicode_text' : 'text', text: input.text });
     return this.helper.request({ op: 'key', action: input.action, code: input.code || input.key, modifiers: input.modifiers });
   }
   async handle(req, res) {

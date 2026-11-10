@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import type { BrowserLiveSession } from "../global";
 import { BrowserLiveTouch } from "./browser-live-touch";
-import { decodePcm16Base64, encodePcm16Base64, isStaleControlReply, prepareVoiceAudio, remoteFieldContains, selectBrowserLiveSessionId, shouldOfferVisualTakeover, touchScrollDelta } from "./BrowserLivePanel";
+import { decodePcm16Base64, encodePcm16Base64, isStaleControlReply, prepareVoiceAudio, remoteFieldContains, remoteShortcutModifier, selectBrowserLiveSessionId, shouldOfferVisualTakeover, touchScrollDelta } from "./BrowserLivePanel";
 
 function session(id: string, agentSessionId: string): BrowserLiveSession {
   return {
@@ -101,6 +101,20 @@ describe("read-only visual takeover", () => {
   it("waits for a usable frame before asking for input control", () => {
     expect(shouldOfferVisualTakeover({ ...session("desktop", ""), availability: "starting" })).toBe(false);
     expect(shouldOfferVisualTakeover(null)).toBe(false);
+  });
+});
+
+describe("remote shortcut platform", () => {
+  it("uses Command for the controlled Mac", () => {
+    expect(remoteShortcutModifier({ backend: "desktop", platform: "darwin" })).toBe("Meta");
+  });
+
+  it.each(["win32", "linux", undefined])("uses Control for desktop platform %s", platform => {
+    expect(remoteShortcutModifier({ backend: "desktop", platform })).toBe("Control");
+  });
+
+  it.each(["ego-browser", "codex-browser"] as const)("preserves %s browser shortcuts", backend => {
+    expect(remoteShortcutModifier({ backend, platform: "darwin" })).toBe("Control");
   });
 });
 

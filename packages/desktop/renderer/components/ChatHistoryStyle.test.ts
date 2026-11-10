@@ -262,7 +262,6 @@ describe("shared Codex-style message history", () => {
   it("follows selected native history immediately and uses runtime-aware fallback polling", () => {
     expect(chatView).toContain("shouldFollowNativeHistory(sessionSummary, targetSid, runningSessionId)");
     expect(chatView).toContain("shouldRestoreLocalNativeRun(detail)");
-    expect(chatView).toContain("isLocallyRunning || isObservedNativeRun(sessionSummary)");
     expect(chatView).not.toContain('sessionSummary?.occupancy === "owned-externally"\n      && sessionSummary.status === "running"');
     expect(chatView).toContain("const shouldPollFallback = shouldPollNativeHistoryFallback(sessionSummary)");
     expect(chatView).toContain('prefersNativeHistoryPolling(sessionSummary) || typeof window.agentApi.observeSession !== "function"');

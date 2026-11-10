@@ -8,6 +8,34 @@ const nativeCapabilities = {
 };
 
 describe("RemoteVideoPolicy", () => {
+  it("uses the same pressure evidence for urgent feedback without counting healthy checks as recovery", () => {
+    const policy = new RemoteVideoPolicy("hd", nativeCapabilities);
+    expect(policy.hasNetworkPressure({ rttMs: 600, lossRate: 0, availableOutgoingBitrate: 7_000 })).toBe(false);
+    expect(policy.hasNetworkPressure({ rttMs: 30, lossRate: 0.2 })).toBe(true);
+    policy.update({ network: { rttMs: 30, lossRate: 0.2 } });
+    const reduced = policy.current().bitRate;
+    for (let index = 0; index < 20; index += 1) {
+      expect(policy.hasNetworkPressure({ rttMs: 30, lossRate: 0, availableOutgoingBitrate: 20_000_000 })).toBe(false);
+    }
+    expect(policy.current().bitRate).toBe(reduced);
+  });
+
+  it("uses FPS for local backlog on a healthy path while preserving unknown-path backoff", () => {
+    const policy = new RemoteVideoPolicy("hd", nativeCapabilities);
+    const sender = { queuedBytes: 80_000, queuedFrames: 4, queueDelayMs: 180, droppedFrames: 0, pacingBitRate: 10_000_000, waitingForKeyframe: false };
+    expect(policy.update({ sender, network: { rttMs: 600, lossRate: 0, availableOutgoingBitrate: 20_000_000 } }))
+      .toMatchObject({ bitRate: 8_000_000, maxFps: 30, reason: "sender-pressure", maintainResolution: true });
+    expect(policy.update({ sender: { ...sender, queueDelayMs: 0, droppedFrames: 1 } }).maxFps).toBe(15);
+  });
+
+  it("does not collapse bitrate after repeated local drops with fresh healthy transport evidence", () => {
+    const policy = new RemoteVideoPolicy("hd", nativeCapabilities);
+    for (let index = 0; index < 60; index++) policy.update({ network: { rttMs: index % 2 ? 10 : 0, lossRate: 0 },
+      sender: { queuedBytes: 50_000, queuedFrames: 2, queueDelayMs: 180, droppedFrames: 2, pacingBitRate: 10_000_000, waitingForKeyframe: false } });
+    expect(policy.current()).toMatchObject({ bitRate: 8_000_000, maxFps: 5 });
+    expect(policy.update({ network: { rttMs: 300, lossRate: .1 } }).bitRate).toBeLessThan(8_000_000);
+  });
+
   it("keeps quality as a bitrate ceiling and never changes resolution", () => {
     const policy = new RemoteVideoPolicy("smooth", nativeCapabilities);
     for (let index = 0; index < 12; index += 1) policy.update({ network: { lossRate: 0, rttMs: 30 } });
@@ -105,5 +133,40 @@ describe("RemoteVideoPolicy", () => {
     expect(policy.current().maxFps).toBe(30);
     for (let n = 0; n < 2; n++) policy.update({network:{lossRate:0,rttMs:230,availableOutgoingBitrate:7000}});
     expect(policy.current().maxFps).toBe(15);
+  });
+
+  it.each([
+    [280, 20_000_000], [600, 20_000_000], [280, 7_000], [600, 7_000],
+  ])("keeps stable %dms paths responsive with a %d bps estimate", (rttMs, availableOutgoingBitrate) => {
+    const policy = new RemoteVideoPolicy("hd", nativeCapabilities);
+    for (let index = 0; index < 15; index += 1) {
+      policy.update({ now: index * 2_000,
+        network: { rttMs, lossRate: 0, droppedFrames: 0, availableOutgoingBitrate },
+        content: { activity: "motion", confidence: 1, observedAt: index * 2_000 } });
+    }
+    expect(policy.current()).toMatchObject({ bitRate: 8_000_000, maxFps: 30 });
+  });
+
+  it("does not treat a clean path RTT change as bandwidth exhaustion", () => {
+    const policy = new RemoteVideoPolicy("hd", nativeCapabilities);
+    policy.update({ network: { rttMs: 20, lossRate: 0, availableOutgoingBitrate: 20_000_000 } });
+    for (let index = 0; index < 15; index += 1) {
+      policy.update({ network: { rttMs: 280, lossRate: 0, availableOutgoingBitrate: 20_000_000 } });
+    }
+    expect(policy.current()).toMatchObject({ bitRate: 8_000_000, maxFps: 30 });
+  });
+
+  it("still backs off for real loss and recovers when a high-RTT path becomes healthy", () => {
+    const policy = new RemoteVideoPolicy("hd", nativeCapabilities);
+    for (let index = 0; index < 8; index += 1) {
+      policy.update({ network: { rttMs: 280, lossRate: 0.4, availableOutgoingBitrate: 2_000_000 } });
+    }
+    const congested = policy.current();
+    expect(congested).toMatchObject({ bitRate: 1_000_000, maxFps: 5 });
+    for (let index = 0; index < 6; index += 1) {
+      policy.update({ network: { rttMs: 280, lossRate: 0, availableOutgoingBitrate: 20_000_000 } });
+    }
+    expect(policy.current().maxFps).toBe(30);
+    expect(policy.current().bitRate).toBeGreaterThan(congested.bitRate);
   });
 });

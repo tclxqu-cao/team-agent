@@ -7,12 +7,14 @@ import dynamic from "next/dynamic";
 import { CONSOLE_CSS } from "./console-styles";
 import { consoleFrameUrl, consoleOrigin } from "./console-environment";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, ExternalLink, Bot, FolderOpen, PanelRight, X, Inbox, LayoutGrid, LayoutDashboard, MonitorUp, RefreshCw, UsersRound } from "lucide-react";
+import { ArrowLeft, ExternalLink, Bot, FolderOpen, PanelRight, X, Inbox, LayoutGrid, MonitorUp, RefreshCw, UsersRound } from "lucide-react";
+import RunningSessionsIcon from "../../../desktop/renderer/components/RunningSessionsIcon";
 import PwaInstallButton from "./PwaInstallButton";
 import ComputerSwitcher from "./ComputerSwitcher";
 import ComputerPagePane from "./ComputerPagePane";
 import type { ComputerPage } from "./ComputerPageDialog";
 import ResponsiveToolbar from "./ResponsiveToolbar";
+import { moveToolbarAction } from "./toolbar-order";
 import { useComputerSettings } from "./useComputerSettings";
 import type { FileWorkspaceGateway } from "../../../core/src/application/file-workspace/FileWorkspaceGateway";
 import type { PinnedCommand } from "../../../core/src/domain/web-console/entities";
@@ -33,8 +35,7 @@ import { useFrameActivity } from "./useFrameActivity";
 import AuthGate, { type WebAuthController } from "./AuthGate";
 import HistoryPanel from "./HistoryPanel";
 import ThemePicker from "./ThemePicker";
-import NavigationLayoutSwitcher from "./NavigationLayoutSwitcher";
-import { readNavigationLayoutPreference, writeNavigationLayoutPreference, UI_PREFERENCES_KEY } from "./navigation-layout-preference";
+import { readNavigationLayoutPreference, UI_PREFERENCES_KEY } from "./navigation-layout-preference";
 import { DEFAULT_NAVIGATION_LAYOUT, NAVIGATION_LAYOUT_MESSAGE, type NavigationLayout } from "../../../core/src/domain/web-console/navigation-layout";
 import { resetHorizontalScroll, resolveVisualViewport } from "./mobileViewport";
 import { DEFAULT_THEME_ID, resolveWebTheme, type WebThemeId } from "./themes";
@@ -198,11 +199,6 @@ function AuthenticatedConsole({
     restore();
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
-  }, []);
-  const changeNavigationLayout = useCallback((next: NavigationLayout) => {
-    setNavigationLayout(next);
-    try { writeNavigationLayoutPreference(window.localStorage, next); }
-    catch { /* Layout switching does not depend on persistent storage. */ }
   }, []);
   const [preferencesLoaded,setPreferencesLoaded]=useState(false);
   const computerConfiguration = useComputerSettings(auth.csrfToken);
@@ -740,12 +736,16 @@ function AuthenticatedConsole({
         <button className="terminal-add" aria-label="新建终端页签" hidden={Boolean(selectedPage)} disabled={tabs.length >= 8} onClick={addTerminal}>＋</button>
         <div className="terminal-connection">
           <ResponsiveToolbar
-            glass={themeId === "glass"}
-            compact={navigationLayout !== "classic"}
+            sortingDisabled={!computerConfiguration.loaded || computerConfiguration.saving}
+            onReorder={(source, target) => {
+              const tools = computerConfiguration.settings.visibleTools;
+              const order = tools.includes("messaging") ? tools : ["messaging" as const, ...tools];
+              return computerConfiguration.setVisibleTools(moveToolbarAction(order, source as typeof order[number], target as typeof order[number]));
+            }}
             avatar={<ComputerSwitcher username={auth.user?.username ?? "?"} connected={state.connected} accent={activeTheme.keybar.accent} accentText={activeTheme.keybar.accentText} selectedPageId={selectedPage?.id} onSelectPage={selectComputerPage} onUpdatePage={updateComputerPage} configuration={computerConfiguration} csrfToken={auth.csrfToken} />}
             items={[
               { id: "refresh", content: <button type="button" className="file-drawer-toggle" aria-label="刷新页面" title="刷新页面" onClick={() => selectedPage ? setPageReloadKey(key => key + 1) : window.location.reload()}><RefreshCw size={17} aria-hidden="true" /></button> },
-              { id: "dashboard", content: <button type="button" className="file-drawer-toggle" aria-label="打开会话 Dashboard" title="Dashboard · 会话总览" onClick={() => { setSelectedPage(null); setTabs(withSessionDashboard); setActiveTerminalId(SESSION_DASHBOARD_TAB.id); }}><LayoutDashboard size={17} aria-hidden="true"/></button> },
+              { id: "dashboard", content: <button type="button" className="file-drawer-toggle" aria-label="打开进行中的 Agent 会话" title="进行中的 Agent 会话" onClick={() => { setSelectedPage(null); setTabs(withSessionDashboard); setActiveTerminalId(SESSION_DASHBOARD_TAB.id); }}><RunningSessionsIcon size={17} aria-hidden="true"/></button> },
               { id: "messaging", content: <button type="button" className="file-drawer-toggle" aria-label="打开消息接入" title="消息接入 · 监听与路由" onClick={() => { setSelectedPage(null); setTabs(withMessaging); setActiveTerminalId(MESSAGING_TAB.id); }}><Inbox size={17} aria-hidden="true"/></button> },
               { id: "collaboration", content: <button type="button" className="file-drawer-toggle" aria-label="打开群聊列表" title="群聊列表" onClick={() => {
                 setSelectedPage(null);
@@ -756,12 +756,9 @@ function AuthenticatedConsole({
               { id: "remote", content: <button type="button" className="file-drawer-toggle" aria-label="打开远程桌面" title="远程桌面 · 浏览器直播" onClick={() => { setSelectedPage(null); openRemoteDesktopTab(); }}><MonitorUp size={17} aria-hidden="true" /></button> },
               { id: "ai-hub", content: <button type="button" className="file-drawer-toggle" aria-label="打开 AI Hub" title="AI Hub · 多模型对比" onClick={() => { setSelectedPage(null); openAiHubTab(); }}><LayoutGrid size={17} aria-hidden="true" /></button> },
               { id: "flow", content: <button type="button" className="file-drawer-toggle" aria-label="打开数字人" title="数字人 · Flow Studio" onClick={() => { setSelectedPage(null); openFlowStudioTab(); }}><Bot size={17} aria-hidden="true" /></button> },
-              { id: "theme", content: <div className="web-appearance-controls"><ThemePicker themeId={themeId} onThemeChange={setThemeId} /><NavigationLayoutSwitcher value={navigationLayout} onChange={changeNavigationLayout} /></div>, compactItems: [
-                { id: "theme", content: <ThemePicker themeId={themeId} onThemeChange={setThemeId} /> },
-                { id: "navigation-layout", content: <NavigationLayoutSwitcher value={navigationLayout} onChange={changeNavigationLayout} /> },
-              ] },
+              { id: "theme", content: <ThemePicker themeId={themeId} onThemeChange={setThemeId} /> },
               { id: "files", content: <button type="button" className="file-drawer-toggle" aria-label={drawerOpen ? "关闭我的文件" : "打开我的文件"} title="我的文件" aria-expanded={drawerOpen} onClick={() => { setSelectedPage(null); setDrawerOpen((open) => !open); }}><FolderOpen size={17} aria-hidden="true" /></button> },
-            ].filter(item => computerConfiguration.settings.visibleTools.some(id => id === item.id)).sort((left, right) => computerConfiguration.settings.visibleTools.findIndex(id => id === left.id) - computerConfiguration.settings.visibleTools.findIndex(id => id === right.id))}
+            ].filter(item => item.id === "messaging" || computerConfiguration.settings.visibleTools.some(id => id === item.id)).sort((left, right) => computerConfiguration.settings.visibleTools.findIndex(id => id === left.id) - computerConfiguration.settings.visibleTools.findIndex(id => id === right.id))}
           />
         </div>
       </div>

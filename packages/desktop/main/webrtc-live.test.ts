@@ -17,6 +17,8 @@ const electron = vi.hoisted(() => {
   return { handlers, windows, BrowserWindow, ipcMain: { on: vi.fn((name: string, handler: any) => handlers.set(name, handler)) } };
 });
 
+vi.mock("@agent/core", async original => ({ ...await original<Record<string, unknown>>(), ...await import("../../core/src/domain/live-view/index.js") }));
+
 vi.mock("electron", () => ({ BrowserWindow: electron.BrowserWindow, ipcMain: electron.ipcMain }));
 
 import { defaultWebrtcCapturePagePath, WebrtcLive } from "./webrtc-live.js";
@@ -26,6 +28,27 @@ describe("WebrtcLive browser policy bridge", () => {
     electron.windows.length = 0;
     electron.handlers.clear();
     electron.ipcMain.on.mockClear();
+  });
+
+  it("forwards receiver sizing through Core and includes dimension changes in tuning deduplication", async () => {
+    let now = 0;
+    const live = new WebrtcLive({ capturePagePath: () => "/capture.html", preloadPath: () => "/preload.cjs",
+      sendToViewer: vi.fn(async () => undefined), setStandby: vi.fn(), now: () => now });
+    try {
+      live.handleViewerSignal({ kind: "start" });
+      await vi.waitFor(() => expect(electron.windows).toHaveLength(1));
+      const window = electron.windows[0];
+      const handler = electron.handlers.get("webrtc-live:signal")!;
+      handler(null, { kind: "state", state: "connected" });
+      live.handleViewerSignal({ kind: "quality", quality: "hd" });
+      const receiver = { sequence: 1, visible: true, width: 2560, height: 1440,
+        viewport: { width: 390, height: 700, pixelRatio: 3, zoom: 1 } };
+      live.handleViewerSignal({ kind: "stats", receiver });
+      expect(window.webContents.send).toHaveBeenLastCalledWith("webrtc-live:signal", expect.objectContaining({ decision: expect.objectContaining({ maxEdge: 1280 }) }));
+      now = 6000;
+      live.handleViewerSignal({ kind: "stats", receiver: { ...receiver, sequence: 2, viewport: { ...receiver.viewport, zoom: 2 } } });
+      expect(window.webContents.send).toHaveBeenLastCalledWith("webrtc-live:signal", expect.objectContaining({ decision: expect.objectContaining({ maxEdge: 2560 }) }));
+    } finally { live.stop(); }
   });
 
   it("maps sender capabilities to High and recreates the peer once for Baseline", async () => {

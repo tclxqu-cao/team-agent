@@ -34,7 +34,8 @@
     "werift": "^0.24.4",
     "ws": "^8.21.3",
     "zod": "^3.23.0",
-    "@agent/messaging": "*"
+    "@agent/messaging": "*",
+    "zstd-codec": "0.1.5"
   },
   "devDependencies": {
     "@types/react": "^18.3.0",

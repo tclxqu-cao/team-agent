@@ -12,6 +12,88 @@ function publish(registry: LiveViewRegistry, producer: LiveViewPeer, availabilit
 }
 
 describe("LiveViewRegistry", () => {
+  it('shares ordered native receipts between reliable input and RPC, including renegotiation', async () => {
+    const registry = new LiveViewRegistry(), producer = peer('producer'), controller = peer('controller');
+    publish(registry, producer); registry.takeOver(controller, 'browser-1'); registry.producerState(producer, 'browser-1', 'user-controlled');
+    const context = { controllerId: controller.id, epoch: 1, stream: 'input-stream-1234567890', version: 2 };
+    registry.enableDirectInput(producer, 'browser-1', context);
+    const input = { kind: 'key', action: 'down', text: '中文输入', key: '', code: '' };
+    const second = registry.input(controller, 'browser-1', { kind: 'pointer', action: 'up', x: .2, y: .4,
+      direct: { stream: context.stream, index: 2, sequence: 4 } });
+    const first = registry.directReliableInput(producer, 'browser-1', context, { stream: context.stream, index: 1, sequence: 2, input });
+    const duplicate = registry.input(controller, 'browser-1', { ...input, direct: { stream: context.stream, index: 1, sequence: 2 } });
+    expect(first).toBe(duplicate);
+    const sent = producer.messages.filter(message => message.type === 'browser:input'); expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ reliableContext: context, input: { text: '中文输入' } });
+    registry.inputResult(producer, 'browser-1', sent[0].token, { inserted: true });
+    expect(await first).toEqual({ inserted: true }); await Promise.resolve();
+    const next = producer.messages.filter(message => message.type === 'browser:input'); expect(next).toHaveLength(2);
+    registry.inputResult(producer, 'browser-1', next[1].token, { editable: true }); expect(await second).toEqual({ editable: true });
+    registry.enableDirectInput(producer, 'browser-1', { ...context, stream: 'input-stream-2222222222' });
+    expect(await registry.input(controller, 'browser-1', { ...input, direct: { stream: context.stream, index: 1, sequence: 2 } })).toEqual({ inserted: true });
+    await expect(registry.input(controller, 'browser-1', { ...input, direct: { stream: context.stream, index: 3, sequence: 6 } })).rejects.toMatchObject({ code: 'ESTALE' });
+  });
+
+  it('cancels gapped reliable work when capture becomes unavailable and does not revive its old lease', async () => {
+    const registry = new LiveViewRegistry(), producer = peer('producer'), controller = peer('controller');
+    publish(registry, producer); registry.takeOver(controller, 'browser-1'); registry.producerState(producer, 'browser-1', 'user-controlled');
+    const context = { controllerId: controller.id, epoch: 1, stream: 'input-stream-1234567890', version: 2 };
+    registry.enableDirectInput(producer, 'browser-1', context);
+    const input = { kind: 'key', text: 'queued', direct: { stream: context.stream, index: 2, sequence: 2 } };
+    const waiting = expect(registry.input(controller, 'browser-1', input)).rejects.toMatchObject({ code: 'ESTALE' });
+    registry.updateAvailability(producer, 'browser-1', { availability: 'unavailable' }); await waiting;
+    registry.updateAvailability(producer, 'browser-1', { availability: 'ready' });
+    expect(registry.isDirectInputActive(producer, 'browser-1', context)).toBe(false);
+    expect(producer.messages.filter(event => event.type === 'browser:input')).toHaveLength(0);
+  });
+
+  it('binds direct hover to a trusted controller epoch and reliable input fence', async () => {
+    const registry = new LiveViewRegistry(), producer = peer('producer'), controller = peer('controller');
+    publish(registry, producer); registry.takeOver(controller, 'browser-1');
+    registry.producerState(producer, 'browser-1', 'user-controlled');
+    registry.webrtcFromViewer(controller, 'browser-1', { kind: 'start', inputVersion: 1, controllerId: 'forged', controlEpoch: 99 });
+    const signal = producer.messages.at(-1)!;
+    expect(signal).toMatchObject({ controllerId: 'controller', controlEpoch: 1 });
+    const context = { controllerId: signal.controllerId as string, epoch: signal.controlEpoch as number, stream: 'input-stream-1234567890' };
+    expect(registry.enableDirectInput(producer, 'browser-1', context)).toBe(true);
+    const move = { stream: context.stream, sequence: 1, barrier: 0, x: .25, y: .75 };
+    expect(registry.directPointerInput(producer, 'browser-1', context, move)).toBe(true);
+    expect(producer.messages.at(-1)).toMatchObject({ type: 'browser:input', directMove: true, input: { action: 'move', x: .25 } });
+    await registry.input(controller, 'browser-1', { kind: 'key', key: 'a', direct: { stream: context.stream, sequence: 2 } });
+    expect(registry.directPointerInput(producer, 'browser-1', context, { ...move, sequence: 3 })).toBe(false);
+    expect(registry.directPointerInput(producer, 'browser-1', context, { ...move, sequence: 3, barrier: 2 })).toBe(true);
+    registry.returnControl(controller, 'browser-1');
+    // Revocation is immediate, even before the producer confirms agent-controlled state.
+    expect(registry.isDirectInputActive(producer, 'browser-1', context)).toBe(false);
+    expect(registry.directPointerInput(producer, 'browser-1', context, { ...move, sequence: 4, barrier: 2 })).toBe(false);
+  });
+
+  it('retires old streams on renegotiation and refuses non-producer, stale and disconnected authorization', () => {
+    const registry = new LiveViewRegistry(), producer = peer('producer'), controller = peer('controller');
+    publish(registry, producer); registry.takeOver(controller, 'browser-1');
+    registry.producerState(producer, 'browser-1', 'user-controlled');
+    const context = { controllerId: controller.id, epoch: 1, stream: 'input-stream-1234567890' };
+    expect(registry.enableDirectInput(producer, 'browser-1', { ...context, epoch: 0 })).toBe(false);
+    expect(() => registry.enableDirectInput(controller, 'browser-1', context)).toThrow('producer mismatch');
+    expect(registry.enableDirectInput(producer, 'browser-1', context)).toBe(true);
+    expect(registry.enableDirectInput(producer, 'browser-1', { ...context, stream: 'input-stream-2222222222' })).toBe(true);
+    expect(registry.isDirectInputActive(producer, 'browser-1', context)).toBe(false);
+    const next = { ...context, stream: 'input-stream-2222222222' };
+    expect(registry.isDirectInputActive(producer, 'browser-1', next)).toBe(true);
+    registry.unwatch(controller);
+    expect(registry.isDirectInputActive(producer, 'browser-1', next)).toBe(false);
+  });
+
+  it('keeps legacy reliable input functional while invalidating its unfenced hover stream', async () => {
+    const registry = new LiveViewRegistry(), producer = peer('producer'), controller = peer('controller');
+    publish(registry, producer); registry.takeOver(controller, 'browser-1');
+    registry.producerState(producer, 'browser-1', 'user-controlled');
+    const context = { controllerId: controller.id, epoch: 1, stream: 'input-stream-1234567890' };
+    registry.enableDirectInput(producer, 'browser-1', context);
+    await registry.input(controller, 'browser-1', { kind: 'pointer', action: 'down', x: .1, y: .1 });
+    expect(producer.messages.at(-1)).toMatchObject({ type: 'browser:input', input: { action: 'down' } });
+    expect(registry.isDirectInputActive(producer, 'browser-1', context)).toBe(false);
+  });
   it("announces sessions to connected same-user clients before they select one", () => {
     const registry = new LiveViewRegistry();
     const producer = peer("producer");

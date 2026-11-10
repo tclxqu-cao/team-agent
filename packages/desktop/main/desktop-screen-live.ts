@@ -36,7 +36,7 @@ export class DesktopScreenLive {
   private readonly clientFactory: ClientFactory;
   private readonly screencast: LiveScreencastPort;
   private readonly input: DesktopInputGateway;
-  private readonly metadata: { sessionId: string; backend: LiveViewSource; title: string; url: string };
+  private readonly metadata: { sessionId: string; backend: LiveViewSource; title: string; url: string; platform: string };
   private readonly probeScreen: ProbeScreen;
   private readonly probeAccessibility: ProbeAccessibility;
   private readonly keepAwake: DisplayWakeControl | null;
@@ -79,7 +79,7 @@ export class DesktopScreenLive {
     this.clientFactory = clientFactory;
     this.screencast = screencast;
     this.input = input;
-    this.metadata = { sessionId: DESKTOP_LIVE_SESSION_ID, backend: "desktop", title: "桌面屏幕", url: "" };
+    this.metadata = { sessionId: DESKTOP_LIVE_SESSION_ID, backend: "desktop", title: "桌面屏幕", url: "", platform: process.platform };
     this.probeScreen = probeScreen;
     this.probeAccessibility = probeAccessibility;
     this.keepAwake = keepAwake;

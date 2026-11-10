@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import ResponsiveToolbar, { compactToolbarGroups, glassMobileToolbarActions } from "./ResponsiveToolbar";
 import { CONSOLE_CSS } from "./console-styles";
 
-describe("rail layout compact toolbar", () => {
+describe("shared glass toolbar", () => {
   it("also gives classic glass mobile menus separate appearance cards without duplicating files", () => {
     const grouped = createElement("div", {}, "classic appearance controls");
     const actions = glassMobileToolbarActions([
@@ -39,35 +39,39 @@ describe("rail layout compact toolbar", () => {
     expect(compactToolbarGroups([{ id: "empty", content: null, compactItems: [] }])).toEqual([]);
   });
 
-  it.each([true, false])("uses only the overflow trigger and avatar with glass=%s", glass => {
+  it("keeps files beside the overflow trigger and avatar in the shared desktop layout", () => {
     const html = renderToStaticMarkup(createElement(ResponsiveToolbar, {
-      glass, compact: true, avatar: createElement("button", { "aria-label": "电脑" }),
-      items: [{ id: "files", content: createElement("button", { "aria-label": "我的文件" }) }],
+      avatar: createElement("button", { "aria-label": "电脑" }),
+      items: [
+        { id: "files", content: createElement("button", { "aria-label": "我的文件" }) },
+        { id: "theme", content: "skin" },
+      ],
     }));
-    expect(html).toContain("compact-toolbar");
+    expect(html).toContain("glass-desktop-toolbar");
     expect(html).toContain('aria-label="更多功能"');
     expect(html).toContain('aria-expanded="false"');
     expect(html).toContain('aria-label="电脑"');
-    expect(html).not.toContain('aria-label="我的文件"');
-    expect(html).not.toContain('>更多功能<');
+    expect(html).toContain('aria-label="我的文件"');
+    expect(html).not.toContain('compact-toolbar');
   });
 
   it("does not render an empty overflow when all tools are hidden", () => {
-    const html = renderToStaticMarkup(createElement(ResponsiveToolbar, { compact: true, avatar: "", items: [] }));
+    const html = renderToStaticMarkup(createElement(ResponsiveToolbar, { avatar: "", items: [] }));
     expect(html).not.toContain('aria-label="更多功能"');
   });
 
-  it("backfills mobile grid gaps while keeping the skin and layout controls together", () => {
-    expect(CONSOLE_CSS).toContain('grid-template-columns:repeat(3, minmax(0, 1fr)); grid-auto-flow:row dense;');
-    expect(CONSOLE_CSS).toContain('.compact-tools-panel.is-mobile .compact-tools-group { display:grid; grid-column:span 2;');
+  it("keeps tool dialogs mounted when their menu is closed", () => {
+    const toolbar = readFileSync(new URL("./ResponsiveToolbar.tsx", import.meta.url), "utf8");
+    expect(toolbar).toContain('hidden={!overflowOpen} className="glass-desktop-menu"');
+    expect(toolbar).toContain('hidden={!overflowOpen} className="glass-tools-backdrop"');
+    expect(toolbar).not.toContain("overflowOpen && portalNode");
+    expect(CONSOLE_CSS).toContain('.glass-desktop-menu[hidden], .glass-tools-backdrop[hidden] { display:none; }');
   });
 
-  it("enables compaction by layout without bypassing configured visibility or theme", () => {
+  it("retains configured tool visibility while removing theme-specific layout branches", () => {
     const page = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
-    expect(page).toContain('compact={navigationLayout !== "classic"}');
-    expect(page).toContain('glass={themeId === "glass"}');
+    expect(page).not.toContain('compact={navigationLayout');
+    expect(page).not.toContain('glass={themeId');
     expect(page).toContain('computerConfiguration.settings.visibleTools.some(id => id === item.id)');
-    expect(CONSOLE_CSS).toContain('backdrop-filter:blur(22px) saturate(1.2)');
-    expect(CONSOLE_CSS).toContain('.compact-tools-backdrop[hidden], .compact-tools-overlay[hidden] { display:none; }');
   });
 });

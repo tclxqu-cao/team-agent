@@ -9,6 +9,7 @@ import type { NativeProtocolSession, NativeSessionProtocol } from "./stdio-nativ
 import { RuntimeSessionError, type CreateRuntimeSessionOptions, type RuntimeModelInfo, type RuntimeQuestionAnswer, type RuntimeRunOptions } from "./types.js";
 import { QoderWorkspaceCatalog } from "./qoder-workspace-catalog.js";
 import { QoderSessionHistory } from "./qoder-session-history.js";
+import { loadQoderModelCatalog, type QoderModelCatalogLoader } from "./qoder-model-catalog.js";
 
 interface Run {
   queue: AsyncEventQueue<AgentEvent>;
@@ -49,16 +50,20 @@ export class QoderClient implements NativeSessionProtocol {
   private readonly runs = new Map<string, Run>();
   private readonly permissions = new Map<string, Permission>();
   private models: RuntimeModelInfo[] = [];
+  private catalogModels: RuntimeModelInfo[] = [];
+  private readonly sessionModels = new Map<string, RuntimeModelInfo[]>();
+  private modelLoad: Promise<void> | null = null;
   private readonly unsubscribe: Array<() => void>;
 
   constructor(
     private readonly rpc: NativeRpcConnection = new NativeRpcClient(() => resolveNativeCliCommand("qoder")),
     private readonly workspaces: Pick<QoderWorkspaceCatalog, "list"> = new QoderWorkspaceCatalog(),
     private readonly historySource: Pick<QoderSessionHistory, "read"> = new QoderSessionHistory(),
+    private readonly modelCatalog: QoderModelCatalogLoader = loadQoderModelCatalog,
   ) {
     rpc.onRequest((method, params) => this.callback(method, params));
     this.unsubscribe = [rpc.onNotification((method, params) => this.notification(method, params)), rpc.onFailure(error => {
-      this.initializing = null; this.loaded.clear(); this.unpersistedSessions.clear();
+      this.initializing = null; this.loaded.clear(); this.unpersistedSessions.clear(); this.sessionModels.clear();
       for (const [id, run] of this.runs) {
         this.cancelPermissions(id);
         run.queue.push({ type: "error", code: error.code, message: error.message }); run.queue.close();
@@ -109,8 +114,12 @@ export class QoderClient implements NativeSessionProtocol {
 
   private captureOptions(id: string, result: NativeJsonPacket): void {
     const models = nativeRecord(result.models);
-    if (Array.isArray(models.availableModels)) this.models = records(models.availableModels).flatMap(row => typeof row.modelId === "string"
-      ? [{ id: row.modelId, displayName: typeof row.name === "string" ? row.name : row.modelId, description: typeof row.description === "string" ? row.description : undefined }] : []);
+    if (Array.isArray(models.availableModels)) {
+      const available = records(models.availableModels).flatMap(row => typeof row.modelId === "string" && row.modelId
+        ? [{ id: row.modelId, displayName: typeof row.name === "string" ? row.name : row.modelId, description: typeof row.description === "string" ? row.description : undefined }] : []);
+      this.sessionModels.set(id, available);
+      if (available.length) this.models = available;
+    }
     const modes = nativeRecord(result.modes);
     const session = this.sessions.get(id);
     if (session && typeof modes.currentModeId === "string") session.nativePermissions = { currentValue: modes.currentModeId,
@@ -169,18 +178,29 @@ export class QoderClient implements NativeSessionProtocol {
   restoreDraft(session: NativeProtocolSession): void { this.sessions.set(session.id, { ...session }); }
 
   async listModels(): Promise<RuntimeModelInfo[]> {
-    if (!this.models.length) {
-      const sessions = await this.list();
-      if (sessions[0]) await this.load(sessions[0].id);
+    if (!this.catalogModels.length && !this.models.length) {
+      const operation = this.modelLoad ??= this.modelCatalog().then(models => {
+        if (models.length) this.catalogModels = [...models];
+      });
+      try { await operation; }
+      finally { if (this.modelLoad === operation) this.modelLoad = null; }
     }
-    return [...this.models];
+    // Once loaded, the CLI catalog stays stable when a session advertises ACP IDs.
+    return [...(this.catalogModels.length ? this.catalogModels : this.models)];
+  }
+
+  private modelId(sessionId: string, selected: string): string {
+    const available = this.sessionModels.get(sessionId) ?? [];
+    if (available.some(model => model.id === selected)) return selected;
+    const named = available.filter(model => model.displayName === selected);
+    return named.length === 1 ? named[0].id : selected;
   }
 
   async *run(id: string, input: string, images?: string[], options?: RuntimeRunOptions): AsyncIterable<AgentEvent> {
     await this.load(id);
     if (this.runs.has(id)) throw new RuntimeSessionError("Qoder session is already running", "SESSION_ALREADY_RUNNING");
     if (options?.reasoningEffort) throw new RuntimeSessionError("Qoder does not expose per-turn reasoning effort", "OPERATION_NOT_SUPPORTED");
-    if (options?.model) await this.rpc.request("session/set_model", { sessionId: id, modelId: options.model.id });
+    if (options?.model) await this.rpc.request("session/set_model", { sessionId: id, modelId: this.modelId(id, options.model.id) });
     const prompt: NativeJsonPacket[] = [{ type: "text", text: input }, ...parseImageDataUrls(images).map(image => ({ type: "image", mimeType: image.mimeType, data: image.base64 }))];
     const history = this.histories.get(id) ?? [];
     const run: Run = { queue: new AsyncEventQueue(), text: "", aborted: false, reasoningId: randomUUID(), reasoningActive: false,
@@ -281,6 +301,6 @@ export class QoderClient implements NativeSessionProtocol {
     for (const id of this.runs.keys()) this.cancelPermissions(id);
     await this.rpc.dispose();
     for (const unsubscribe of this.unsubscribe) unsubscribe();
-    this.loaded.clear(); this.unpersistedSessions.clear();
+    this.loaded.clear(); this.unpersistedSessions.clear(); this.sessionModels.clear();
   }
 }

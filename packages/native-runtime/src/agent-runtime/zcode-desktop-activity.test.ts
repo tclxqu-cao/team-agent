@@ -20,6 +20,12 @@ const delivery = (options: { pid?: number; sessionId?: string; turnId?: string; 
   + `[${options.time ?? "2026-10-29 11:51:20.100"}] [pid:${options.pid ?? 512}] [cua-pip-session] [cua-pip-session] event delivery acknowledged `
   + JSON.stringify({ kind: options.kind ?? "turn-started", sessionId: options.sessionId ?? session.id,
     turnId: options.turnId ?? "turn-1", applied: options.applied ?? true, reason: "applied" }) + "\n";
+const runtimeHeaders = (options: { pid?: number; sessionId?: string; turnId?: string; cwd?: string; time?: string } = {}) =>
+  `[${options.time ?? "2026-10-29 11:51:20.100"}] [info] [pid:910] [main] [host-log] (local-1) [host] `
+  + `[${options.time ?? "2026-10-29 11:51:20.100"}] [pid:${options.pid ?? 512}] [zcode-agent-service][trace:example] `
+  + "收到 ZCode provider runtime headers 请求 "
+  + JSON.stringify({ sessionId: options.sessionId ?? session.id, turnId: options.turnId ?? "turn-1",
+    workspacePath: options.cwd ?? session.cwd }) + "\n";
 
 async function fixture() {
   const home = await mkdtemp(join(tmpdir(), "zcode-desktop-activity-")); homes.push(home);
@@ -45,6 +51,71 @@ describe("ZCode desktop turn discovery", () => {
     expect((await reader.readMany([session])).get(session.id)).toBe(true);
     alive.clear(); alive.add(910);
     expect((await reader.readMany([session])).get(session.id)).toBe(false);
+  });
+
+  it("recognizes a desktop turn whose local host request has no delivery receipt", async () => {
+    const { reader, host, alive } = await fixture();
+    await writeFile(host, runtimeHeaders()); alive.clear(); alive.add(512);
+    expect((await reader.readMany([session])).get(session.id)).toBe(true);
+    alive.clear(); alive.add(910);
+    expect((await reader.readMany([session])).get(session.id)).toBe(false);
+  });
+
+  it.each([
+    { sessionId: "other-session" }, { turnId: "other-turn" }, { cwd: "/other/workspace" },
+    { time: "2026-10-29 11:51:19.999" },
+  ])("does not infer running from a mismatched local host request (%j)", async options => {
+    const { reader, host, alive } = await fixture();
+    await writeFile(host, runtimeHeaders(options)); alive.add(512);
+    expect((await reader.readMany([session])).has(session.id)).toBe(false);
+  });
+
+  it.each(["turn.completed", "turn.failed"])("clears request-based activity on %s", async terminal => {
+    const { reader, host, log, alive } = await fixture();
+    await writeFile(host, runtimeHeaders()); alive.add(512);
+    expect((await reader.readMany([session])).get(session.id)).toBe(true);
+    await appendFile(log, event(terminal, "turn-1", start + 200));
+    expect((await reader.readMany([session])).get(session.id)).toBe(false);
+  });
+
+  it("keeps an acknowledged end authoritative over a local host request", async () => {
+    const { reader, host, alive } = await fixture();
+    await writeFile(host, runtimeHeaders() + delivery({ kind: "turn-ended", time: "2026-10-29 11:51:20.200" }));
+    alive.add(512);
+    expect((await reader.readMany([session])).get(session.id)).toBe(false);
+  });
+
+  it("requires the inner execution host rather than the outer Electron process", async () => {
+    const { reader, host, alive } = await fixture();
+    await writeFile(host, runtimeHeaders().replace(/\[host\] \[[^\]]+\] \[pid:512\] /, ""));
+    alive.add(910);
+    expect((await reader.readMany([session])).has(session.id)).toBe(false);
+  });
+
+  it("does not let a late request from the preceding turn hide the current host", async () => {
+    const { reader, host, log, alive } = await fixture();
+    await appendFile(log, event("turn.started", "turn-2", start + 200));
+    await writeFile(host, runtimeHeaders({ turnId: "turn-2", time: "2026-10-29 11:51:20.300" })
+      + runtimeHeaders({ pid: 513, time: "2026-10-29 11:51:20.400" }));
+    alive.add(512);
+    expect((await reader.readMany([session])).get(session.id)).toBe(true);
+  });
+
+  it("retains a request arriving just before the CLI turn boundary is flushed", async () => {
+    const { reader, host, log, alive } = await fixture();
+    await writeFile(host, runtimeHeaders({ turnId: "turn-2", time: "2026-10-29 11:51:20.300" }));
+    alive.add(512);
+    expect((await reader.readMany([session])).has(session.id)).toBe(false);
+    await appendFile(log, event("turn.started", "turn-2", start + 200));
+    expect((await reader.readMany([session])).get(session.id)).toBe(true);
+  });
+
+  it("discards request ownership when the desktop log is truncated", async () => {
+    const { reader, host, alive } = await fixture();
+    await writeFile(host, runtimeHeaders()); alive.add(512);
+    expect((await reader.readMany([session])).get(session.id)).toBe(true);
+    await writeFile(host, "\n");
+    expect((await reader.readMany([session])).has(session.id)).toBe(false);
   });
 
   it.each([
@@ -186,9 +257,10 @@ describe("ZCode desktop turn discovery", () => {
     expect((await reader.readMany([session])).size).toBe(0);
   });
 
-  it.each(["legacy", "host"])("projects desktop execution and completion through the client and adapter (%s)", async kind => {
+  it.each(["legacy", "host", "request"])("projects desktop execution and completion through the client and adapter (%s)", async kind => {
     const { reader, log, host, alive } = await fixture();
     if (kind === "host") { await writeFile(host, delivery()); alive.clear(); alive.add(512); }
+    if (kind === "request") { await writeFile(host, runtimeHeaders()); alive.clear(); alive.add(512); }
     const row = { sessionId: session.id, title: "VPN 工具聚合免费隧道与界面方案", status: "idle",
       workspace: { workspacePath: session.cwd }, createdAt: start - 1000, updatedAt: start };
     const request = vi.fn<NativeRpcConnection["request"]>(async method => {

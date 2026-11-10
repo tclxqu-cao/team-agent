@@ -7,6 +7,7 @@
 
 using namespace remote;
 static void emit(const Json& value) {
+    static std::mutex outputMutex;std::lock_guard<std::mutex> lock(outputMutex);
     auto line=value.dump()+"\n";
     if (line.size()>8*1024*1024) throw std::runtime_error("Helper response too large");
     size_t offset=0;
@@ -19,7 +20,8 @@ int main(int argc,char** argv) {
             check(CoInitializeEx(nullptr,COINIT_MULTITHREADED), "Initialize test COM");
             check(MFStartup(MF_VERSION,MFSTARTUP_LITE), "Initialize test Media Foundation");
             Frame frame;frame.width=320;frame.height=240;frame.pixels.resize(320*240*4,128);
-            VideoEncoder encoder;bool received=false;
+            CompoundCapture::selfTest();
+            VideoEncoder encoder;encoder.configure(1'000'000,15,30);bool received=false;
             for(int i=0;i<20;++i) {auto event=encoder.encode(frame,"smooth",true);if(!event.is_null()&&!event["nals"].empty()){received=true;break;}}
             if(!received)throw std::runtime_error("H264 encoder produced no test frame");
             encoder.reset();MFShutdown();CoUninitialize();
@@ -47,15 +49,14 @@ int main(int argc,char** argv) {
             }
             std::lock_guard<std::mutex> guard(queue->mutex);queue->closed=true;
         }).detach();
-        Capture capture;VideoEncoder encoder;Input input;Power power;Audio audio;
-        bool video=false,forceKeyframe=false,wasAvailable=false;std::string quality="hd";
-        auto nextFrame=std::chrono::steady_clock::now();
-        auto failDesktop=[&] {input.release();capture.reset();encoder.reset();};
+        Capture capture;VideoPipeline pipeline(emit);Input input;Power power;Audio audio;
+        bool wasAvailable=false;std::string quality="hd";
+        auto failDesktop=[&] {input.release();capture.reset();};
         try {
             while(WaitForSingleObject(parent,0)==WAIT_TIMEOUT) {
                 bool available=desktopAvailable();
                 if(!available&&wasAvailable) failDesktop();
-                if(available&&!wasAvailable) forceKeyframe=true;
+
                 wasAvailable=available;
                 std::deque<std::string> lines;
                 {std::lock_guard<std::mutex> guard(queue->mutex);if(queue->closed)break;lines.swap(queue->lines);}
@@ -64,39 +65,31 @@ int main(int argc,char** argv) {
                     try {
                         auto cmd=Json::parse(line);id=cmd.at("id");if(!id.is_number_unsigned()&&!id.is_number_integer())throw std::runtime_error("Invalid request id");
                         auto op=cmd.at("op").get<std::string>();Json result={{"ok",true}};
-                        if(op=="status") result={{"ok",true},{"screen",available},{"accessibility",available},{"locked",sessionLocked()},{"error",available?Json(nullptr):Json("Windows 已锁定、会话已断开或正在显示 UAC，请在电脑上恢复普通桌面。")}};
+                        if(op=="status") result={{"ok",true},{"screen",available},{"accessibility",available},{"videoProtocolVersion",2},{"compoundVersion",1},{"cursorVersion",1},{"locked",sessionLocked()},{"error",available?Json(nullptr):Json("Windows 已锁定、会话已断开或正在显示 UAC，请在电脑上恢复普通桌面。")}};
                         else if(op=="release") input.release();
                         else if(op=="quit") {input.release();return 0;}
                         else if(op=="wake"||op=="lock"||op=="keep-display") result=power.command(cmd);
-                        else if(op=="video") {
-                            bool enabled=cmd.at("enabled").get<bool>();
-                            if(enabled) check(mediaStartup,"H264 requires Windows Media Feature Pack");else encoder.reset();
-                            video=enabled;forceKeyframe=video;
+                        else if(op=="video"||op=="video-start"||op=="video-tuning"||op=="video-stats"||op=="compound-enable"||op=="compound-sample"||op=="cursor-enable") {
+                            pipeline.submit(cmd);continue;
                         } else if(op=="audio-start") audio.start();
                         else if(op=="audio-stop") audio.stop();
                         else if(op=="audio-play") audio.play(cmd);
                         else if(!available) throw std::runtime_error("Windows 已锁定或正在显示 UAC，请在电脑上恢复普通桌面。");
                         else if(op=="displays") result["displays"]=capture.displayList();
                         else if(op=="capture"||op=="set-display"||op=="set-quality") {
-                            if(op=="set-display"){input.release();capture.select(cmd.at("displayId").get<std::string>());encoder.reset();forceKeyframe=true;}
-                            if(op=="set-quality"){auto q=cmd.at("quality").get<std::string>();dimensions(100,100,q);quality=q;encoder.reset();forceKeyframe=true;}
+                            if(op=="set-display"){input.release();capture.select(cmd.at("displayId").get<std::string>());auto change=cmd;change.erase("id");pipeline.submit(change);}
+                            if(op=="set-quality"){auto q=cmd.at("quality").get<std::string>();dimensions(100,100,q);quality=q;auto change=cmd;change.erase("id");pipeline.submit(change);}
                             result=capture.preview(capture.frame(),quality);
                             if(!desktopAvailable()) {failDesktop();throw std::runtime_error("Desktop changed during capture");}
                         } else result=input.command(cmd);
                         result["id"]=id;emit(result);
                     } catch(const std::exception& error) {input.release();emit({{"id",id},{"ok",false},{"error",error.what()}});}
                 }
-                auto now=std::chrono::steady_clock::now();
-                if(video&&available&&now>=nextFrame) {
-                    nextFrame=now+std::chrono::milliseconds(50);
-                    try {auto frame=capture.frame();auto encoded=encoder.encode(frame,quality,forceKeyframe);forceKeyframe=false;if(!desktopAvailable()){failDesktop();continue;}if(!encoded.is_null())emit(encoded);}
-                    catch(const std::exception& error){video=false;failDesktop();emit({{"event","video-error"},{"error",error.what()}});}
-                }
                 for(auto& event:audio.poll())emit(event);
                 Sleep(10);
             }
         } catch(...) {input.release();throw;}
-        audio.stop();input.release();encoder.reset();capture.reset();CloseHandle(parent);
+        audio.stop();input.release();capture.reset();CloseHandle(parent);
         if(SUCCEEDED(mediaStartup)) MFShutdown();
         CoUninitialize();return 0;
     } catch(const std::exception& error){std::cerr<<error.what()<<'\n';return 1;}

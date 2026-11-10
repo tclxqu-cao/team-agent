@@ -31,6 +31,7 @@ export class BrowserRemoteVideoPolicy {
     this.policy = new RemoteVideoPolicy(quality, {
       dynamicBitrate: true,
       dynamicFrameRate: true,
+      dynamicResolution: true,
       encoderQueueTelemetry: false,
       explicitH264Profile: false,
       codecPreferences: ["high", "baseline"],

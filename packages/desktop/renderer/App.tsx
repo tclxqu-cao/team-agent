@@ -1,7 +1,7 @@
 import { isPageActive } from "./lib/page-activity";
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { createPortal } from "react-dom";
-import { History, Inbox, LoaderCircle, Plus, Search } from "lucide-react";
+import { History, LoaderCircle, Plus, Search } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import ChatView from "./components/ChatView";
 import AllSessionsSidebar from "./components/AllSessionsSidebar";
@@ -2271,7 +2271,6 @@ export default function App() {
 
         </>}
         <div className="sidebar-bottom-action">
-          <button type="button" className="messaging-sidebar-entry" onClick={openMessaging} title="查看监听消息、路由与回传"><Inbox size={16} aria-hidden="true"/><span>消息接入</span></button>
           {!allSessionsLayout && <CollaborationLauncher refreshKey={collaborationGroupsRevision} onOpen={openCollaboration}/>}
           <button
             type="button"
@@ -2491,6 +2490,7 @@ export default function App() {
             } : undefined}
             onOpenCollaborationDashboard={!webShell ? openCollaborationDashboard : undefined}
             onOpenSessionDashboard={!webShell ? openSessionDashboard : undefined}
+            onOpenMessaging={!webShell ? openMessaging : undefined}
             activeAgentType={activeAgent}
             selectedProjectId={selectedProjectId}
             selectedSessionId={selectedSessionId}

@@ -15,6 +15,14 @@ function fixture(script: string) {
 }
 const echo = `require('readline').createInterface({input:process.stdin}).on('line',line=>{const c=JSON.parse(line);console.log(JSON.stringify({...c,ok:true,screen:true,accessibility:true}));}).on('close',()=>process.exit(0));`;
 
+it('negotiates native v2 and routes compound/cursor metadata separately from correlated samples', async () => {
+  const { helper } = fixture(`require('readline').createInterface({input:process.stdin}).on('line',line=>{const c=JSON.parse(line);if(c.op==='status')console.log(JSON.stringify({id:c.id,ok:true,videoProtocolVersion:2}));else {console.log(JSON.stringify({event:'compound',kind:'frame',epoch:1}));console.log(JSON.stringify({event:'cursor',sequence:1}));console.log(JSON.stringify({id:c.id,ok:true,kind:'sample',tiles:[]}));}}).on('close',()=>process.exit(0));`);
+  const compound = vi.fn(), cursor = vi.fn(); helper.onCompound(compound); helper.onCursor(cursor);
+  await helper.start(); expect(helper.videoProtocolVersion).toBe(2);
+  await expect(helper.request({ op: 'compound-sample' })).resolves.toMatchObject({ kind: 'sample', tiles: [] });
+  expect(compound).toHaveBeenCalledOnce(); expect(cursor).toHaveBeenCalledOnce(); expect(helper.pending.size).toBe(0);
+});
+
 it('uses inherited pipes, probes status, routes requests and permits restart after EOF shutdown', async () => {
   const { helper, launch, children } = fixture(echo);
   await helper.start();

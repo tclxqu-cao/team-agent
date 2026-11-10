@@ -3,6 +3,36 @@ import { describe, expect, it } from 'vitest';
 import { MAX_REMOTE_AUDIO_BUFFERED_BYTES, parseProducerRemoteVideoSignal, parseViewerRemoteVideoSignal, shouldDropRemoteAudioEvent } from './remote-video-signal.mjs';
 
 describe('remote video signal boundary', () => {
+  it('preserves bounded attempt identities on both directions', () => {
+    expect(parseViewerRemoteVideoSignal({ kind: 'answer', attemptId: '7-2', sdp: { type: 'answer', sdp: 'v=0' } }).attemptId).toBe('7-2');
+    expect(parseProducerRemoteVideoSignal({ kind: 'offer', attemptId: '7-2', sdp: { type: 'offer', sdp: 'v=0' } }).attemptId).toBe('7-2');
+    for (const attemptId of ['', 'x'.repeat(81), 12, 'bad id']) {
+      expect(() => parseViewerRemoteVideoSignal({ kind: 'ice', attemptId, candidate: { candidate: 'candidate:1' } })).toThrow();
+    }
+  });
+  it('validates playout telemetry and the optional direct-input negotiation', () => {
+    const receiver = { sequence: 1, visible: true, jitterBufferMs: 80, jitterBufferMinimumMs: 20,
+      jitterBufferTargetMs: 40, playoutTargetMs: 40, playoutControl: true };
+    expect(parseViewerRemoteVideoSignal({ kind: 'stats', receiver }).receiver).toEqual(receiver);
+    expect(parseViewerRemoteVideoSignal({ kind: 'start', inputVersion: 1 }).inputVersion).toBe(1);
+    expect(parseViewerRemoteVideoSignal({ kind: 'start', inputVersion: 2 })).toMatchObject({ inputVersion: 2 });
+    expect(() => parseViewerRemoteVideoSignal({ kind: 'start', inputVersion: 3 })).toThrow();
+    for (const bad of [{ jitterBufferMs: -1 }, { jitterBufferMinimumMs: NaN }, { playoutTargetMs: 10000 }, { playoutControl: 'yes' }]) {
+      expect(() => parseViewerRemoteVideoSignal({ kind: 'stats', receiver: { ...receiver, ...bad } })).toThrow();
+    }
+    expect(parseProducerRemoteVideoSignal({ kind: 'offer', sdp: { type: 'offer', sdp: 'v=0' }, inputStream: 'input-stream-1234567890' }).inputStream).toBe('input-stream-1234567890');
+    expect(() => parseProducerRemoteVideoSignal({ kind: 'offer', sdp: { type: 'offer', sdp: 'v=0' }, inputStream: 'short' })).toThrow();
+  });
+  it('bounds structured receiver telemetry while retaining legacy stats', () => {
+    const receiver = { sequence: 1, visible: true, intervalMs: 1000, decodedFrames: 30, decodeMs: 20,
+      droppedRatio: .1, viewport: { width: 390, height: 700, pixelRatio: 3, zoom: 2 } };
+    expect(parseViewerRemoteVideoSignal({ kind: 'stats', receiver }).receiver).toEqual(receiver);
+    for (const input of [{ ...receiver, decodeMs: NaN }, { ...receiver, sequence: -1 }, { ...receiver, visible: 'true' },
+      { ...receiver, viewport: { ...receiver.viewport, zoom: 100 } }, { ...receiver, viewport: {} }]) {
+      expect(() => parseViewerRemoteVideoSignal({ kind: 'stats', receiver: input })).toThrow();
+    }
+  });
+
   it('accepts bounded viewer control, capabilities and receiver stats', () => {
     expect(parseViewerRemoteVideoSignal({ kind: 'start', receiverProfiles: ['high', 'baseline'] })).toMatchObject({ kind: 'start' });
     expect(parseViewerRemoteVideoSignal({ kind: 'answer', sdp: { type: 'answer', sdp: 'v=0' } })).toMatchObject({ kind: 'answer' });
@@ -61,4 +91,11 @@ describe('remote video signal boundary', () => {
     expect(shouldDropRemoteAudioEvent(audio, MAX_REMOTE_AUDIO_BUFFERED_BYTES + 1)).toBe(true);
     expect(shouldDropRemoteAudioEvent({ type: 'browser:webrtc', data: { kind: 'audio-state' } }, Number.MAX_SAFE_INTEGER)).toBe(false);
   });
+});
+
+
+it('negotiates only the supported compound version', () => {
+  expect(parseViewerRemoteVideoSignal({ kind: 'start', compoundVersion: 1 })).toMatchObject({ compoundVersion: 1 });
+  expect(() => parseViewerRemoteVideoSignal({ kind: 'start', compoundVersion: 2 })).toThrow();
+  expect(() => parseViewerRemoteVideoSignal({ kind: 'start', compoundVersion: '1' })).toThrow();
 });

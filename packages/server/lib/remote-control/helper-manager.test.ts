@@ -192,3 +192,28 @@ it('preserves native capture error codes and domains across the helper socket', 
     });
   } finally { clients!.control.destroy(); clients!.video.destroy(); await helper.stop(); }
 });
+
+
+it('keeps unsolicited compound metadata separate from sample request receipts', async () => {
+  let clients: ReturnType<typeof connectHelperSockets>;
+  const events: any[] = [];
+  const helper = new RemoteHelper({ launch: async (controlPath: string, videoPath: string) => {
+    clients = connectHelperSockets(controlPath, videoPath);
+    clients.control.setEncoding('utf8');
+    clients.control.on('data', (chunk: string) => {
+      for (const line of chunk.trim().split('\n')) {
+        const command = JSON.parse(line);
+        clients.control.write(JSON.stringify({ event: 'compound', kind: 'frame', timestamp: 1 }) + '\n');
+        clients.control.write(JSON.stringify({ id: command.id, ok: true, event: 'compound', kind: 'sample', tiles: [] }) + '\n');
+      }
+    });
+  } });
+  helper.available = async () => true;
+  const unsubscribe = helper.onCompound((event: any) => events.push(event));
+  try {
+    await helper.start();
+    await expect(helper.request({ op: 'compound-sample' })).resolves.toMatchObject({ ok: true, kind: 'sample' });
+    expect(events).toHaveLength(1);
+    unsubscribe();
+  } finally { clients!.control.destroy(); clients!.video.destroy(); await helper.stop(); }
+});

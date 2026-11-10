@@ -1,7 +1,25 @@
+[data-web-theme] {
+  --ui-glass-surface: color-mix(in srgb, var(--ui-tabbar-bg) 72%, transparent);
+  --ui-glass-solid: var(--ui-tabbar-bg);
+  --ui-glass-border: var(--ui-tabbar-border);
+  --ui-glass-active: color-mix(in srgb, var(--ui-tab-active-bg) 88%, transparent);
+  --ui-glass-menu: color-mix(in srgb, var(--ui-panel-input-bg) 96%, transparent);
+  --ui-glass-cell: color-mix(in srgb, var(--ui-tab-active-bg) 74%, transparent);
+}
+
 .web-theme-root {
   min-height: 100dvh;
   background: var(--ui-root-bg, #f5f6fa);
   color: var(--ui-text, #111827);
+}
+
+[data-web-theme="glass"] {
+  --ui-glass-surface: rgba(248, 251, 252, 0.72);
+  --ui-glass-solid: #eef4f5;
+  --ui-glass-border: rgba(255, 255, 255, 0.84);
+  --ui-glass-active: rgba(255, 255, 255, 0.88);
+  --ui-glass-menu: #f4f8f5;
+  --ui-glass-cell: #ffffffbb;
 }
 
 .web-theme-root[data-web-theme="glass"] {
@@ -9,40 +27,39 @@
     radial-gradient(ellipse at 90% 100%, #edd3b9, transparent 65%), #edf3f4;
 }
 
-[data-web-theme="glass"] :is(.terminal-tabs, .tree-col, .tree-head) {
-  background: rgba(248, 251, 252, 0.72) !important;
+[data-web-theme] :is(.terminal-tabs, .tree-col, .tree-head) {
+  background: var(--ui-glass-surface) !important;
   backdrop-filter: blur(22px) saturate(1.2);
   -webkit-backdrop-filter: blur(22px) saturate(1.2);
-  border-color: rgba(255, 255, 255, 0.84) !important;
+  border-color: var(--ui-glass-border) !important;
 }
 
 /* Reading surfaces need enough tint to stay light over a terminal or remote
    picture. The page scrim must not become the file tree's background. */
-[data-web-theme="glass"] .tree-col {
-  --ui-tree-bg: #f4f8f9;
-  background: rgba(248, 251, 252, 0.96) !important;
+[data-web-theme] .tree-col {
+  background: var(--ui-glass-menu) !important;
 }
 
-[data-web-theme="glass"] .tree-col :is(.tree-head, .tree-foot) {
+[data-web-theme] .tree-col :is(.tree-head, .tree-foot) {
   background: transparent !important;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
   box-shadow: none !important;
 }
 
-[data-web-theme="glass"] .tree-col :is(.tree-location, .tree-filter) {
+[data-web-theme] .tree-col :is(.tree-location, .tree-filter) {
   background: var(--ui-tree-bg);
 }
 
 @supports not (backdrop-filter: blur(1px)) {
-  [data-web-theme="glass"] :is(.terminal-tabs, .tree-col, .tree-head) {
-    background: #eef4f5 !important;
+  [data-web-theme] :is(.terminal-tabs, .tree-col, .tree-head) {
+    background: var(--ui-glass-solid) !important;
   }
 }
 
 @media (prefers-reduced-transparency: reduce) {
-  [data-web-theme="glass"] :is(.terminal-tabs, .tree-col, .tree-head) {
-    background: #eef4f5 !important;
+  [data-web-theme] :is(.terminal-tabs, .tree-col, .tree-head) {
+    background: var(--ui-glass-solid) !important;
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
   }
@@ -377,19 +394,19 @@
 }
 
 @media (max-width: 899px) {
-  [data-web-theme="glass"] .drawer-mask { background: rgba(27, 62, 73, 0.18); }
-  [data-web-theme="glass"] .tree-col-open { box-shadow: -8px 0 28px rgba(57, 92, 107, 0.12); }
-  [data-web-theme="glass"] .terminal-tabs {
+  [data-web-theme] .drawer-mask { background: rgba(27, 62, 73, 0.18); }
+  [data-web-theme] .tree-col-open { box-shadow: -8px 0 28px rgba(57, 92, 107, 0.12); }
+  [data-web-theme] .terminal-tabs {
     margin: 8px 10px 0;
     padding: 4px;
-    border: 1px solid rgba(255, 255, 255, 0.84);
+    border: 1px solid var(--ui-glass-border);
     border-radius: 24px;
     min-height: 46px;
     align-items: center;
     gap: 4px;
   }
-  [data-web-theme="glass"] .terminal-tab-list { min-width: 0; flex: 1; gap: 2px; height: auto; align-items: center; }
-  [data-web-theme="glass"] .terminal-tab {
+  [data-web-theme] .terminal-tab-list { min-width: 0; flex: 1; gap: 2px; height: auto; align-items: center; }
+  [data-web-theme] .terminal-tab {
     border: 0;
     border-radius: 20px;
     height: 36px;
@@ -398,43 +415,43 @@
     box-shadow: none;
     font-size: 12px;
   }
-  [data-web-theme="glass"] .terminal-tab.active { background: rgba(255, 255, 255, 0.88); color: #357b88; box-shadow: none; }
-  [data-web-theme="glass"] .terminal-tab::before { display: none; }
-  [data-web-theme="glass"] .terminal-add { border: 0; background: transparent; width: 36px; height: 36px; margin: 0; padding: 0; border-radius: 18px; }
-  [data-web-theme="glass"] .terminal-connection { background: transparent; border: 0; padding: 0; align-self: center; }
-  [data-web-theme="glass"] .glass-mobile-toolbar :is(.toolbar-slot, .glass-mobile-actions) .file-drawer-toggle { appearance: none; box-sizing: border-box; width: 36px; height: 36px; padding: 0; border: 0; border-radius: 18px; background: transparent; color: #66838d; }
-  [data-web-theme="glass"] .glass-tools-backdrop { position: fixed; inset: 0; z-index: 180; background: rgba(27, 62, 73, 0.2); display: flex; align-items: flex-end; }
-  [data-web-theme="glass"] .glass-tools-sheet { width: 100%; max-height: 80dvh; overflow: auto; padding: 18px 18px max(24px, env(safe-area-inset-bottom)); background: #f4f8f5; border: 1px solid white; border-radius: 26px 26px 0 0; box-shadow: 0 -10px 30px #29434e15; }
-  [data-web-theme="glass"] .glass-tools-sheet header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
-  [data-web-theme="glass"] .glass-tools-sheet header button { background: transparent; border: 0; font-size: 24px; color: inherit; width: 40px; height: 40px; }
-  [data-web-theme="glass"] .glass-tools-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-  [data-web-theme="glass"] .glass-tool-cell { position: relative; display: flex; flex-direction: column; align-items: stretch; background: #ffffffbb; border: 1px solid white; border-radius: 16px; padding: 0; font-size: 11px; }
-  [data-web-theme="glass"] .glass-tool-cell > * { width: 100%; min-width: 0; border-radius: inherit; }
-  [data-web-theme="glass"] .glass-tool-cell button { box-sizing: border-box; width: 100%; height: 68px; padding: 0; border-radius: inherit; }
-  [data-web-theme="glass"] .glass-tool-cell button svg { width: 20px; height: 20px; }
+  [data-web-theme] .terminal-tab.active { background: var(--ui-glass-active); color: var(--ui-tab-accent); box-shadow: none; }
+  [data-web-theme] .terminal-tab::before { display: none; }
+  [data-web-theme] .terminal-add { border: 0; background: transparent; width: 36px; height: 36px; margin: 0; padding: 0; border-radius: 18px; }
+  [data-web-theme] .terminal-connection { background: transparent; border: 0; padding: 0; align-self: center; }
+  [data-web-theme] .glass-mobile-toolbar :is(.toolbar-slot, .glass-mobile-actions) .file-drawer-toggle { appearance: none; box-sizing: border-box; width: 36px; height: 36px; padding: 0; border: 0; border-radius: 18px; background: transparent; color: var(--ui-connection-text); }
+  [data-web-theme] .glass-tools-backdrop { position: fixed; inset: 0; z-index: 180; background: rgba(27, 62, 73, 0.2); display: flex; align-items: flex-end; }
+  [data-web-theme] .glass-tools-sheet { width: 100%; max-height: 80dvh; overflow: auto; padding: 18px 18px max(24px, env(safe-area-inset-bottom)); box-sizing: border-box; background: var(--ui-glass-menu); color: var(--ui-text); border: 1px solid var(--ui-glass-border); border-radius: 26px 26px 0 0; box-shadow: 0 -10px 30px #29434e15; }
+  [data-web-theme] .glass-tools-sheet header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+  [data-web-theme] .glass-tools-sheet header button { background: transparent; border: 0; font-size: 24px; color: inherit; width: 40px; height: 40px; }
+  [data-web-theme] .glass-tools-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  [data-web-theme] .glass-tool-cell { position: relative; display: flex; flex-direction: column; align-items: stretch; background: var(--ui-glass-cell); border: 1px solid var(--ui-glass-border); border-radius: 16px; padding: 0; font-size: 11px; }
+  [data-web-theme] .glass-tool-cell > * { width: 100%; min-width: 0; border-radius: inherit; }
+  [data-web-theme] .glass-tool-cell button { box-sizing: border-box; width: 100%; height: 68px; padding: 0; border-radius: inherit; }
+  [data-web-theme] .glass-tool-cell button svg { width: 20px; height: 20px; }
 }
 
 @media (min-width: 900px) {
-  [data-web-theme="glass"] .terminal-tabs {
+  [data-web-theme] .terminal-tabs {
     align-items: center;
     min-height: 52px;
     padding: 0 12px;
     gap: 6px;
-    background: rgba(248, 251, 252, 0.66);
+    background: var(--ui-glass-surface);
     backdrop-filter: blur(22px) saturate(1.2);
     -webkit-backdrop-filter: blur(22px) saturate(1.2);
-    box-shadow: inset 0 -1px rgba(255, 255, 255, 0.8);
+    box-shadow: inset 0 -1px var(--ui-glass-border);
   }
-  [data-web-theme="glass"] .terminal-tab-list { align-items: center; height: auto; max-width: 60%; gap: 4px; }
-  [data-web-theme="glass"] .terminal-tab { height: 36px; padding: 0 12px; border-radius: 12px; background: transparent; }
-  [data-web-theme="glass"] .terminal-tab.active { background: rgba(255, 255, 255, 0.86); color: #357b88; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.95); }
-  [data-web-theme="glass"] .terminal-tab::before { display: none; }
-  [data-web-theme="glass"] .terminal-add { width: 36px; height: 36px; padding: 0; margin: 0; border: 0; border-radius: 12px; background: rgba(255, 255, 255, 0.5); }
-  [data-web-theme="glass"] .terminal-connection { flex: 0 0 auto; min-width: 0; margin-left: auto; padding: 0; background: transparent; }
-  [data-web-theme="glass"] .glass-desktop-toolbar { flex: 0 0 auto; min-width: 0; gap: var(--toolbar-avatar-gap); }
-  [data-web-theme="glass"] .glass-desktop-actions { display: flex; align-items: center; gap: 4px; padding-left: 8px; border-left: 1px solid rgba(57, 92, 107, 0.14); }
-  [data-web-theme="glass"] .glass-desktop-toolbar > .toolbar-avatar { margin-left: 0; padding: 0 8px; }
-  [data-web-theme="glass"] :is(.glass-desktop-actions, .glass-desktop-menu) .file-drawer-toggle { width: 36px; height: 36px; border-radius: 12px; }
-  [data-web-theme="glass"] .glass-desktop-menu { box-sizing: border-box; width: max-content; display: flex; flex-wrap: wrap; gap: 6px; max-width: min(292px, calc(100vw - 16px)); padding: 10px; border: 1px solid white; border-radius: 18px; background: rgba(244, 248, 245, 0.96); backdrop-filter: blur(22px); box-shadow: 0 8px 28px rgba(41, 67, 78, 0.15); }
-  [data-web-theme="glass"] :is(.glass-desktop-actions, .glass-desktop-menu) button svg { width: 20px; height: 20px; }
+  [data-web-theme] .terminal-tab-list { align-items: center; height: auto; max-width: 60%; gap: 4px; }
+  [data-web-theme] .terminal-tab { height: 36px; padding: 0 12px; border-radius: 12px; background: transparent; }
+  [data-web-theme] .terminal-tab.active { background: var(--ui-glass-active); color: var(--ui-tab-accent); box-shadow: inset 0 0 0 1px var(--ui-glass-border); }
+  [data-web-theme] .terminal-tab::before { display: none; }
+  [data-web-theme] .terminal-add { width: 36px; height: 36px; padding: 0; margin: 0; border: 0; border-radius: 12px; background: var(--ui-glass-cell); }
+  [data-web-theme] .terminal-connection { flex: 0 0 auto; min-width: 0; margin-left: auto; padding: 0; background: transparent; }
+  [data-web-theme] .glass-desktop-toolbar { flex: 0 0 auto; min-width: 0; gap: var(--toolbar-avatar-gap); }
+  [data-web-theme] .glass-desktop-actions { display: flex; align-items: center; gap: 4px; padding-left: 8px; border-left: 1px solid var(--ui-glass-border); }
+  [data-web-theme] .glass-desktop-toolbar > .toolbar-avatar { margin-left: 0; padding: 0 8px; }
+  [data-web-theme] :is(.glass-desktop-actions, .glass-desktop-menu) .file-drawer-toggle { width: 36px; height: 36px; border-radius: 12px; }
+  [data-web-theme] .glass-desktop-menu { box-sizing: border-box; width: max-content; display: flex; flex-wrap: wrap; gap: 6px; max-width: min(292px, calc(100vw - 16px)); padding: 10px; border: 1px solid var(--ui-glass-border); border-radius: 18px; background: var(--ui-glass-menu); color: var(--ui-text); backdrop-filter: blur(22px); box-shadow: 0 8px 28px rgba(41, 67, 78, 0.15); }
+  [data-web-theme] :is(.glass-desktop-actions, .glass-desktop-menu) button svg { width: 20px; height: 20px; }
 }

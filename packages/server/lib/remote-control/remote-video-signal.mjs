@@ -71,8 +71,26 @@ function validDecoder(value) {
     && (input.acceleration === undefined || ['hardware', 'software', 'unknown'].includes(String(input.acceleration))));
 }
 
+function validReceiver(value) {
+  if (value === undefined) return true;
+  const input = record(value);
+  if (!input || !Number.isSafeInteger(input.sequence) || input.sequence < 0 || typeof input.visible !== 'boolean') return false;
+  const fields = { intervalMs: [0, 60_000], decodedFrames: [0, 1_000_000], decodeMs: [0, 60_000],
+    jitterBufferMs: [0, 60_000], jitterBufferTargetMs: [0, 60_000], jitterBufferMinimumMs: [0, 60_000], playoutTargetMs: [0, 4_000],
+    droppedRatio: [0, 1], presentationDelayMs: [0, 60_000], width: [0, 16_384], height: [0, 16_384] };
+  if (!Object.entries(fields).every(([key, [min, max]]) => boundedNumber(input[key], min, max))) return false;
+  if (input.playoutControl !== undefined && typeof input.playoutControl !== 'boolean') return false;
+  if (input.viewport !== undefined) {
+    const viewport = record(input.viewport);
+    if (!viewport || !['width', 'height', 'pixelRatio', 'zoom'].every(key => typeof viewport[key] === 'number' && Number.isFinite(viewport[key]))) return false;
+    if (!boundedNumber(viewport.width, 0, 16_384) || !boundedNumber(viewport.height, 0, 16_384)
+      || !boundedNumber(viewport.pixelRatio, 1, 4) || !boundedNumber(viewport.zoom, 1, 4)) return false;
+  }
+  return true;
+}
+
 function validStats(data) {
-  if (!boundedString(data.codec, 40) || !validDecoder(data.decoder)) return false;
+  if (!boundedString(data.codec, 40) || !validDecoder(data.decoder) || !validReceiver(data.receiver)) return false;
   if (data.codecProfile !== undefined && !PROFILES.has(String(data.codecProfile))) return false;
   if (data.candidateType !== undefined && !['host', 'srflx', 'prflx', 'relay'].includes(String(data.candidateType))) return false;
   if (data.protocol !== undefined && !['udp', 'tcp'].includes(String(data.protocol))) return false;
@@ -108,6 +126,7 @@ export function shouldDropRemoteAudioEvent(event, bufferedAmount) {
 function boundedSignal(value, allowedKinds) {
   const data = record(value);
   if (!data || !allowedKinds.has(String(data.kind))) invalid();
+  if (data.attemptId !== undefined && (typeof data.attemptId !== 'string' || !/^[\w:-]{1,80}$/.test(data.attemptId))) invalid();
   let encoded;
   try { encoded = JSON.stringify(data); } catch { invalid(); }
   if (!encoded || encoded.length > MAX_SIGNAL_CHARS) invalid('remote video signal is too large');
@@ -119,6 +138,8 @@ export function parseViewerRemoteVideoSignal(value) {
   switch (data.kind) {
     case 'start':
       if (!validProfiles(data.receiverProfiles)) invalid();
+      if (data.compoundVersion !== undefined && data.compoundVersion !== 1) invalid();
+      if (data.inputVersion !== undefined && ![1, 2].includes(data.inputVersion)) invalid();
       break;
     case 'answer':
       if (!validDescription(data.sdp, 'answer')) invalid();
@@ -134,6 +155,7 @@ export function parseViewerRemoteVideoSignal(value) {
       break;
     case 'viewer-trace':
       if (!boundedString(data.event, 60, false)) invalid();
+      if (!boundedString(data.error, 300)) invalid();
       if (!boundedNumber(data.silentForMs, 0, 3_600_000)) invalid();
       if (data.sample !== undefined && !(record(data.sample) && validStats(data.sample))) invalid();
       break;
@@ -149,7 +171,9 @@ export function parseProducerRemoteVideoSignal(value) {
   switch (data.kind) {
     case 'offer':
       if (!validDescription(data.sdp, 'offer') || !validIceServers(data.iceServers) || !boundedString(data.warning, 500)) invalid();
+      if (data.inputVersion !== undefined && ![1, 2].includes(data.inputVersion)) invalid();
       if (data.selectedProfile !== undefined && !PROFILES.has(String(data.selectedProfile))) invalid();
+      if (data.inputStream !== undefined && (typeof data.inputStream !== 'string' || data.inputStream.length < 16 || data.inputStream.length > 64)) invalid();
       break;
     case 'ice':
       if (!validCandidate(data.candidate)) invalid();

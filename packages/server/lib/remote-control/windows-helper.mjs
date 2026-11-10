@@ -7,11 +7,15 @@ const MAX_MESSAGE = 8 * 1024 * 1024;
 export class WindowsRemoteHelper {
   constructor({ executable, launch = spawn, application = executable || launch !== spawn ? null : new WindowsRemoteHelperApp() } = {}) {
     this.application = application;
+    // The shipped C++ helper accepts video enable/disable, not dynamic video-* commands.
+    this.videoProtocolVersion = 1;
     this.executable = executable ?? application?.executable ?? bundledWindowsHelperPath(); this.launch = launch; this.sequence = 0;
-    this.pending = new Map(); this.listeners = new Set(); this.audioListeners = new Set(); this.generation = 0;
+    this.pending = new Map(); this.listeners = new Set(); this.audioListeners = new Set(); this.compoundListeners = new Set(); this.cursorListeners = new Set(); this.generation = 0;
   }
   async available() { if (this.application) return this.application.available(); try { await access(this.executable); return true; } catch { return false; } }
   async describe() { return this.application ? this.application.describe() : { name: 'AgentRoam Remote Desktop', path: this.executable, version: 'unknown' }; }
+  onCompound(listener) { this.compoundListeners.add(listener); return () => this.compoundListeners.delete(listener); }
+  onCursor(listener) { this.cursorListeners.add(listener); return () => this.cursorListeners.delete(listener); }
   onVideo(listener) { this.listeners.add(listener); return () => this.listeners.delete(listener); }
   onAudio(listener) { this.audioListeners.add(listener); return () => this.audioListeners.delete(listener); }
   start() {
@@ -54,6 +58,10 @@ export class WindowsRemoteHelper {
           if (result.event === 'video') {
             if (!Number.isFinite(result.timestamp) || !Array.isArray(result.nals) || !result.nals.every(nal => typeof nal === 'string')) throw new Error('Invalid video event');
             for (const listener of this.listeners) listener(result);
+          } else if (result.event === 'compound' && result.id == null) {
+            for (const listener of this.compoundListeners) listener(result);
+          } else if (result.event === 'cursor' && result.id == null) {
+            for (const listener of this.cursorListeners) listener(result);
           } else if (result.event === 'audio') {
             if (!Number.isSafeInteger(result.sequence) || !Number.isSafeInteger(result.sampleRate) || !Number.isSafeInteger(result.channels) || typeof result.data !== 'string') throw new Error('Invalid audio event');
             for (const listener of this.audioListeners) listener(result);
@@ -71,7 +79,8 @@ export class WindowsRemoteHelper {
       if (buffer.length > MAX_MESSAGE) fail(new Error('远程桌面组件响应过大'));
     });
     try {
-      await this.request({ op: 'status' });
+      const status = await this.request({ op: 'status' });
+      this.videoProtocolVersion = status?.videoProtocolVersion === 2 ? 2 : 1;
       if (generation !== this.generation) throw new Error('远程桌面组件启动已取消');
     } catch (error) { if (this.child === child) { this.child = null; child.kill(); this.rejectPending(error); } throw error; }
   }

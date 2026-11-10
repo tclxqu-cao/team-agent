@@ -26,6 +26,8 @@
 #include <mutex>
 #include <set>
 #include <thread>
+#include <functional>
+#include <optional>
 #include "algorithms.hpp"
 
 namespace remote {
@@ -38,7 +40,7 @@ std::string utf8(const std::wstring& value);
 std::wstring wide(const std::string& value);
 bool desktopAvailable();
 bool sessionLocked();
-struct Frame { int width = 0, height = 0, x = 0, y = 0; std::vector<uint8_t> pixels; };
+struct Frame { int width = 0, height = 0, x = 0, y = 0; uint32_t coalescedFrames = 0; std::vector<uint8_t> pixels; };
 struct Display { std::string id; RECT bounds; bool primary; ComPtr<IDXGIAdapter1> adapter; ComPtr<IDXGIOutput1> output; };
 class Capture {
     ComPtr<ID3D11Device> device;
@@ -49,8 +51,11 @@ class Capture {
     std::string selected;
     DXGI_MODE_ROTATION rotation = DXGI_MODE_ROTATION_IDENTITY;
     bool separateCursor = false;
+    bool separateCursorKnown = false;
     void open(const Display& display);
 public:
+    bool independentCursor = false;
+    bool canSeparateCursor() const { return separateCursorKnown; }
     std::vector<Display> displays();
     Json displayList();
     void select(const std::string& id);
@@ -63,13 +68,40 @@ class VideoEncoder {
     ComPtr<ICodecAPI> codec;
     int width = 0, height = 0;
     std::string quality;
+    int bitRate = 8'000'000, maxFps = 30, keyFrameInterval = 60;
     LONGLONG timestamp = 0;
     std::vector<std::vector<uint8_t>> parameterSets;
     void open(int w, int h, const std::string& q);
 public:
+    std::function<void(double)> onSubmitted;
+    void configure(int rate, int fps, int interval);
     void reset();
     Json encode(const Frame& frame, const std::string& q, bool keyframe);
+    Json drain();
+    bool ready() const { return transform.Get() != nullptr; }
 };
+class CompoundCapture {
+    struct State;
+    std::unique_ptr<State> state;
+public:
+    explicit CompoundCapture(std::function<void(const Json&)> emit);
+    ~CompoundCapture();
+    void configure(bool enabled);
+    void change(std::shared_ptr<const Frame> frame, double capturedAt);
+    void submitted(double timestamp);
+    void delivered(double timestamp);
+    Json sample(const Json& command);
+    static void selfTest();
+};
+class VideoPipeline {
+    struct State;
+    std::unique_ptr<State> state;
+public:
+    explicit VideoPipeline(std::function<void(const Json&)> emit);
+    ~VideoPipeline();
+    void submit(const Json& command);
+};
+Json cursorMetadata(const Frame& frame, uint64_t sequence, uint32_t cutover, bool includeShape);
 class Input {
     std::set<WORD> heldKeys;
     std::set<std::string> heldButtons;

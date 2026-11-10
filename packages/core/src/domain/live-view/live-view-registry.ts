@@ -10,6 +10,8 @@ import type {
   LiveViewViewport,
 } from "./entities.js";
 import type { RemoteAudioCapabilities } from "./remote-audio.js";
+import { RemoteDirectInputPolicy, type RemoteDirectPointer, type RemoteInputContext } from './remote-direct-input.js';
+import { RemoteReliableInputLedger } from './remote-reliable-input.js';
 
 const OWNERSHIP_STATES = new Set<LiveViewOwnershipState>([
   "agent-controlled", "handoff-requested", "user-controlled", "return-requested", "resyncing",
@@ -39,6 +41,9 @@ interface LiveSession {
   watchers: Set<LiveViewPeer>;
   controllerId: string | null;
   controller: LiveViewPeer | null;
+  controlEpoch: number;
+  directInput?: { controllerId: string; epoch: number; version: number; policy: RemoteDirectInputPolicy };
+  reliableInputs?: Map<string, { context: RemoteInputContext; ledger: RemoteReliableInputLedger<LiveViewInput & { mobile?: boolean }, Record<string, unknown> | null> }>;
   latestFrame: LiveFrame | null;
   frameSequence: number;
   createdAt: number;
@@ -166,6 +171,7 @@ export class LiveViewRegistry {
       watchers: new Set(),
       controllerId: null,
       controller: null,
+      controlEpoch: 0,
       latestFrame: null,
       frameSequence: 0,
       createdAt: timestamp,
@@ -202,6 +208,7 @@ export class LiveViewRegistry {
     session.state = OWNERSHIP_STATES.has(input.state as LiveViewOwnershipState)
       ? input.state as LiveViewOwnershipState
       : session.state;
+    if (session.state !== 'user-controlled' || session.availability !== 'ready') this.invalidateDirectInput(session);
     session.online = true;
     session.producer = peer;
     session.producerId = peer.id;
@@ -244,6 +251,7 @@ export class LiveViewRegistry {
     const session = this.requireProducer(peer, sessionId);
     if (!AVAILABILITY_STATES.has(input.availability)) throw domainError("invalid live availability", "EINVAL");
     session.availability = input.availability;
+    if (session.availability !== 'ready') this.invalidateDirectInput(session);
     session.capabilityError = optionalString(input.capabilityError, 500);
     session.capabilityErrorCode = optionalString(input.capabilityErrorCode, 80);
     if (input.availability !== "unavailable") {
@@ -298,6 +306,7 @@ export class LiveViewRegistry {
     session.watchers.add(peer);
     peer.watchedSessionId = session.id;
     session.controllerId = peer.id;
+    session.controlEpoch += 1; this.invalidateDirectInput(session);
     session.controller = peer;
     session.state = "handoff-requested";
     session.updatedAt = this.now();
@@ -311,6 +320,7 @@ export class LiveViewRegistry {
     if (session.controllerId !== peer.id) throw domainError("only the active controller can return control", "EWRITELOCK");
     if (session.state === "return-requested" || session.state === "resyncing") return view(session, peer);
     session.state = "return-requested";
+    session.controlEpoch += 1; this.invalidateDirectInput(session);
     session.updatedAt = this.now();
     session.producer.send({ type: "browser:return-requested", sessionId: session.id });
     this.announce(session, "browser:state");
@@ -324,8 +334,23 @@ export class LiveViewRegistry {
     if (session.controllerId !== peer.id || session.state !== "user-controlled") throw domainError("browser is read-only", "EWRITELOCK");
     const input = { ...normalizeInput(rawInput),
       ...((rawInput as Record<string, unknown>).mobile === true ? { mobile: true } : {}) };
+    const stamp = (rawInput as Record<string, unknown>).direct as { stream?: string; sequence?: number; index?: number } | undefined;
+    if (stamp?.index !== undefined) {
+      const lease = session.reliableInputs?.get(String(stamp.stream));
+      if (!lease || lease.context.controllerId !== peer.id || lease.context.epoch !== session.controlEpoch)
+        return Promise.reject(domainError('输入会话已过期', 'ESTALE'));
+      return lease.ledger.offer(stamp.index, stamp.sequence!, JSON.stringify(input), input);
+    }
+    if (session.directInput && !session.directInput.policy.acceptReliable(stamp)) {
+      // Legacy or stale reliable traffic invalidates the lossy stream; it never bypasses the reliable action.
+      this.invalidateDirectInput(session);
+    }
+    return this.dispatchInput(session, input);
+  }
+
+  private dispatchInput(session: LiveSession, input: LiveViewInput, awaitDispatch = false, context?: RemoteInputContext): Promise<Record<string, unknown> | null> {
     const committedText = input.kind === "key" && Boolean(input.text) && !input.key && !input.code;
-    if (!committedText && (input.kind !== "pointer" || input.action !== "up" && !input.probe)) {
+    if (!awaitDispatch && !committedText && (input.kind !== "pointer" || input.action !== "up" && !input.probe)) {
       session.producer.send({ type: "browser:input", sessionId: session.id, input });
       return Promise.resolve(null);
     }
@@ -333,14 +358,15 @@ export class LiveViewRegistry {
     const reply = new Promise<Record<string, unknown> | null>((resolve) => {
       const timer = setTimeout(() => {
         this.pendingInputResults.delete(token);
-        resolve(committedText ? { error: "电脑未确认文字输入，请检查输入框后再重试" } : null);
-      }, committedText ? Math.max(5_000, this.inputResultTimeoutMs) : this.inputResultTimeoutMs);
+        resolve(committedText ? { error: "电脑未确认文字输入，请检查输入框后再重试" }
+          : awaitDispatch ? { error: '电脑未确认输入，执行结果不确定，请检查远端状态', uncertain: true } : null);
+      }, committedText ? Math.max(5_000, this.inputResultTimeoutMs) : awaitDispatch ? Math.max(1000, this.inputResultTimeoutMs) : this.inputResultTimeoutMs);
       this.pendingInputResults.set(token, { sessionId: session.id, resolve: (value) => {
         clearTimeout(timer);
         resolve(value);
       } });
     });
-    session.producer.send({ type: "browser:input", sessionId: session.id, input, token });
+    session.producer.send({ type: "browser:input", sessionId: session.id, input, token, ...(context ? { reliableContext: context } : {}) });
     return reply;
   }
 
@@ -369,8 +395,60 @@ export class LiveViewRegistry {
     const session = this.requireVisible(peer, sessionId);
     if (data.kind === "quality") this.requireCaptureAdjustment(session, peer);
     else if (session.controllerId !== peer.id) throw domainError("browser is read-only", "EWRITELOCK");
-    session.producer.send({ type: "browser:webrtc", sessionId: session.id, data });
+    session.producer.send({ type: "browser:webrtc", sessionId: session.id, data,
+      controllerId: peer.id, controlEpoch: session.controlEpoch });
     return { accepted: true };
+  }
+
+  /** The producer binds a transport stream to the currently authenticated control lease. */
+  enableDirectInput(peer: LiveViewPeer, sessionId: unknown, context: RemoteInputContext): boolean {
+    const session = this.requireProducer(peer, sessionId);
+    if (!context || typeof context.stream !== 'string' || context.stream.length < 16 || context.stream.length > 64
+      || session.controllerId !== context.controllerId || session.controlEpoch !== context.epoch
+      || session.state !== 'user-controlled' || !session.online || session.availability !== 'ready') return false;
+    this.invalidateDirectInput(session);
+    const policy = new RemoteDirectInputPolicy(context.stream);
+    session.directInput = { controllerId: context.controllerId, epoch: context.epoch, version: context.version ?? 1, policy };
+    if (context.version === 2) {
+      session.reliableInputs ??= new Map();
+      const ledger = new RemoteReliableInputLedger<LiveViewInput & { mobile?: boolean }, Record<string, unknown> | null>(async (input, sequence) => {
+        if (!this.isDirectInputActive(peer, sessionId, context) || !policy.acceptReliable({ stream: context.stream, sequence }))
+          throw domainError('输入会话已切换或控制已归还', 'ESTALE');
+        return this.dispatchInput(session, input, true, context);
+      }, this.now);
+      session.reliableInputs.set(context.stream, { context, ledger });
+      while (session.reliableInputs.size > 4) session.reliableInputs.delete(session.reliableInputs.keys().next().value!);
+    }
+    return true;
+  }
+
+  directReliableInput(peer: LiveViewPeer, sessionId: unknown, context: RemoteInputContext,
+    message: { stream: string; sequence: number; index: number; input: unknown }): Promise<Record<string, unknown> | null> {
+    const session = this.requireProducer(peer, sessionId);
+    if (!context || message?.stream !== context.stream || !this.isDirectInputActive(peer, sessionId, context)
+      || session.directInput?.version !== 2 || !session.controller) return Promise.reject(domainError('输入控制已失效', 'ESTALE'));
+    const raw = message.input && typeof message.input === 'object' && !Array.isArray(message.input)
+      ? message.input as Record<string, unknown> : {};
+    return this.input(session.controller, sessionId, { ...raw, direct: { stream: context.stream, sequence: message.sequence, index: message.index } });
+  }
+
+  directPointerInput(peer: LiveViewPeer, sessionId: unknown, context: { controllerId: string; epoch: number; stream: string }, message: RemoteDirectPointer): boolean {
+    const session = this.requireProducer(peer, sessionId), binding = session.directInput;
+    if (!binding || session.controllerId !== context.controllerId || binding.controllerId !== context.controllerId
+      || session.controlEpoch !== context.epoch || binding.epoch !== context.epoch
+      || context.stream !== binding.policy.stream || session.state !== 'user-controlled'
+      || !session.online || session.availability !== 'ready' || !binding.policy.acceptMove(message)) return false;
+    session.producer.send({ type: 'browser:input', sessionId: session.id, directMove: true,
+      directContext: context, input: { kind: 'pointer', action: 'move', x: message.x, y: message.y,
+        button: 'left', mobile: message.mobile === true } });
+    return true;
+  }
+
+  isDirectInputActive(peer: LiveViewPeer, sessionId: unknown, context: { controllerId: string; epoch: number; stream: string }): boolean {
+    const session = this.requireProducer(peer, sessionId), binding = session.directInput;
+    return Boolean(binding && session.controllerId === context.controllerId && session.controlEpoch === context.epoch
+      && binding.epoch === context.epoch && binding.policy.stream === context.stream
+      && session.state === 'user-controlled' && session.online && session.availability === 'ready');
   }
 
   /** Relays WebRTC signaling from the producer back to the active controller. */
@@ -392,6 +470,7 @@ export class LiveViewRegistry {
     if (state === "user-controlled" && !session.controllerId) throw domainError("no viewer requested control", "EINVAL");
     session.state = state as LiveViewOwnershipState;
     if (state === "agent-controlled") {
+      session.controlEpoch += 1; this.invalidateDirectInput(session);
       session.controllerId = null;
       session.controller = null;
     }
@@ -402,6 +481,7 @@ export class LiveViewRegistry {
 
   close(peer: LiveViewPeer, sessionId: unknown): void {
     const session = this.requireProducer(peer, sessionId);
+    this.invalidateDirectInput(session);
     for (const connectedPeer of this.peers) {
       if (connectedPeer.userId !== session.userId) continue;
       connectedPeer.send({ type: "browser:closed", session: view(session, connectedPeer), reason: "producer-closed" });
@@ -421,6 +501,7 @@ export class LiveViewRegistry {
         connectedPeer.send({ type: "browser:closed", session: view(session, connectedPeer), reason: "producer-disconnected" });
         if (connectedPeer.watchedSessionId === session.id) connectedPeer.watchedSessionId = null;
       }
+      this.invalidateDirectInput(session);
       this.sessions.delete(id);
     }
     peer.producerSessionIds.clear();
@@ -436,10 +517,16 @@ export class LiveViewRegistry {
   private releaseController(session: LiveSession, reason: string): void {
     if (!session.controllerId) return;
     session.controllerId = null;
+    session.controlEpoch += 1; this.invalidateDirectInput(session);
     session.controller = null;
     session.state = "return-requested";
     session.updatedAt = this.now();
     session.producer.send({ type: "browser:return-requested", sessionId: session.id, reason });
+  }
+
+  private invalidateDirectInput(session: LiveSession): void {
+    session.directInput = undefined;
+    for (const lease of session.reliableInputs?.values() ?? []) lease.ledger.close();
   }
 
   private requireVisible(peer: LiveViewPeer, rawId: unknown): LiveSession {

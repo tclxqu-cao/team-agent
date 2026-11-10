@@ -28,6 +28,19 @@ export function isObservedNativeRun(session: NativeSessionViewState | null | und
     || (session?.agentType === "copilot" && session?.occupancy === "available"));
 }
 
+export interface NativeRunObservation { sessionId: string; running: boolean }
+
+/** Detail polling is fresher than a cached sidebar summary; local runs retain priority. */
+export function isNativeRunVisible(
+  session: NativeSessionViewState | null | undefined,
+  sessionId: string | null,
+  locallyRunning: boolean,
+  observation: NativeRunObservation | null,
+): boolean {
+  return locallyRunning || (observation?.sessionId === sessionId
+    ? observation.running : isObservedNativeRun(session));
+}
+
 export function shouldRestoreLocalNativeRun(session: NativeSessionViewState | null | undefined): boolean {
   return isActiveNativeSession(session) && !isObservedNativeRun(session);
 }

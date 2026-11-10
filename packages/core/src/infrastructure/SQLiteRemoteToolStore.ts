@@ -1,4 +1,4 @@
-import type Database from "better-sqlite3";
+import type { Database } from "better-sqlite3";
 import type { RemoteToolDefinition, RemoteToolJob, RemoteToolRegistration } from "../domain/remote-tools/entities.js";
 import type { RemoteToolStore } from "../domain/remote-tools/RemoteToolStore.js";
 

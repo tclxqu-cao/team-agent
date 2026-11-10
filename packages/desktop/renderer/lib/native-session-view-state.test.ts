@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   isObservedNativeRun,
+  isNativeRunVisible,
   isNativeRuntimeSelection,
   shouldQueueMessageForActiveRun,
   shouldFollowNativeHistory,
@@ -19,6 +20,21 @@ const externalRunning = (agentType: "codex" | "claude-code"): NativeSessionViewS
 });
 
 describe("native session view state", () => {
+  it("uses polled execution and completion instead of the selected session's cached status", () => {
+    const idle = { agentType: "zcode", status: "idle", occupancy: "available" } as const;
+    expect(isNativeRunVisible(idle, "selected", false, { sessionId: "selected", running: true })).toBe(true);
+    expect(isNativeRunVisible({ ...idle, status: "running", occupancy: "owned-externally" }, "selected", false,
+      { sessionId: "selected", running: false })).toBe(false);
+  });
+
+  it("keeps mobile-owned runs visible and ignores another session's observation", () => {
+    const idle = { agentType: "zcode", status: "idle", occupancy: "available" } as const;
+    expect(isNativeRunVisible(idle, "selected", true, { sessionId: "selected", running: false })).toBe(true);
+    expect(isNativeRunVisible(idle, "selected", false, { sessionId: "previous", running: true })).toBe(false);
+    expect(isNativeRunVisible({ ...idle, status: "running", occupancy: "owned-externally" }, "selected", false,
+      { sessionId: "previous", running: false })).toBe(true);
+  });
+
   it.each(["qoder", "zcode", "workbuddy"] as const)(
     "polls idle %s history when native transcript observation is unsupported",
     (agentType) => {

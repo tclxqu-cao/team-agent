@@ -404,7 +404,7 @@
   overflow: hidden;
   color: var(--text-primary);
 }
-.web-native-model-control select {
+.web-native-model-control :is(select, .web-native-model-picker-trigger) {
   box-sizing: border-box;
   min-width: 0;
   width: 100%;
@@ -419,7 +419,7 @@
   font: 500 15px/normal var(--font-body);
   text-overflow: ellipsis;
 }
-.web-native-model-control select:disabled {
+.web-native-model-control :is(select, .web-native-model-picker-trigger):disabled {
   opacity: 1;
 }
 .web-native-model-agent {
@@ -438,8 +438,34 @@
   font: 500 14px/normal var(--font-body);
   white-space: nowrap;
 }
-.web-native-model-control--native select {
+.web-native-model-control--native :is(select, .web-native-model-picker-trigger) {
   padding-left: 2px;
+}
+.web-native-model-notice {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font: 500 12px/normal var(--font-body);
+  color: var(--text-muted);
+}
+.web-native-model-notice > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.web-native-model-notice button {
+  flex: none;
+  padding: 4px;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+.web-native-model-notice button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 .web-native-runtime-status > svg,
 .web-native-agent-status > svg,
@@ -752,7 +778,7 @@
   flex: 1 1 120px;
   min-width: 0;
 }
-.composer-shell .web-native-model-control select {
+.composer-shell .web-native-model-control :is(select, .web-native-model-picker-trigger) {
   max-width: min(260px, 100%);
   padding-right: 18px;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23818a9b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
@@ -782,7 +808,7 @@
   .composer-shell .web-native-composer-toolbar {
     gap: 3px;
   }
-  .composer-shell .web-native-model-control select {
+  .composer-shell .web-native-model-control :is(select, .web-native-model-picker-trigger) {
     padding-left: 4px;
     font-size: 13px;
   }
@@ -793,3 +819,14 @@
     padding-left: 2px;
   }
 }
+
+/* Fixed to the viewport so blurred composer ancestors cannot move the menu. */
+.web-native-model-picker-trigger { text-align: left; white-space: nowrap; overflow: hidden; cursor: pointer; }
+.web-native-model-picker-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 6px; }
+.composer-model-menu { position: fixed; z-index: 300; box-sizing: border-box; overflow-y: auto; overscroll-behavior: contain; padding: 6px; border: 1px solid var(--border-default); border-radius: 14px; background: var(--bg-elevated); color: var(--text-primary); box-shadow: var(--shadow-md); font: 13px/1.4 var(--font-body); }
+.composer-model-menu [role="option"] { display: flex; align-items: center; gap: 8px; box-sizing: border-box; width: 100%; min-height: 38px; padding: 8px; border: 0; border-radius: 8px; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.composer-model-menu [role="option"] > span:last-child { min-width: 0; overflow-wrap: anywhere; }
+.composer-model-menu [role="option"]:is(:hover, :focus-visible), .composer-model-menu [aria-selected="true"] { outline: 0; background: var(--control-hover); color: var(--accent); }
+.composer-model-check { flex: 0 0 16px; }
+.composer-model-group { padding: 12px 8px 4px; color: var(--text-secondary); font-size: 11px; }
+@media (pointer: coarse) { .composer-model-menu [role="option"] { min-height: 44px; } }

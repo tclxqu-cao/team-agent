@@ -43,8 +43,8 @@ describe("shared Electron and Web composer", () => {
     const modelControl = chatView.slice(start, end);
 
     expect(start).toBeGreaterThan(-1);
-    expect(modelControl).toContain('aria-label="当前模型"');
-    expect(modelControl).toContain("switchActiveProfile(event.target.value)");
+    expect(modelControl).toContain("<ComposerModelPicker");
+    expect(modelControl).toContain("switchActiveProfile(value)");
     // Native runtimes get a brand icon + agent name beside the picker, never a chevron icon.
     expect(modelControl).toContain("<AgentBrandIcon");
     expect(modelControl).toContain("web-native-model-agent-name");

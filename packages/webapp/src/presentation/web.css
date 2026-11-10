@@ -459,6 +459,19 @@ body[data-remote-desktop="1"] .browser-live-panel {
   opacity: 1;
 }
 
+.browser-live-compound {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+.browser-live-surface.is-controlling .browser-live-image-hit-area.has-independent-cursor {
+  cursor: none;
+}
+
 .browser-live-surface.is-controlling {
   box-shadow: inset 0 0 0 2px var(--accent);
 }
@@ -788,52 +801,51 @@ body[data-remote-desktop="1"] .browser-live-panel {
 
 /* The remote tab uses the same material as the shell while keeping capture
    pixels opaque. All geometry stays within the shell's visible iframe. */
-:root[data-skin="glass"] body[data-remote-desktop="1"] {
-  background: radial-gradient(ellipse at 0 0, #c3dbee, transparent 65%),
-    radial-gradient(ellipse at 90% 100%, #edd3b9, transparent 65%), #edf3f4;
+:root[data-skin] body[data-remote-desktop="1"] {
+  background: var(--glass-workspace-bg);
 }
 
-:root[data-skin="glass"] body[data-remote-desktop="1"] :is(.browser-live-backdrop, .browser-live-panel) {
+:root[data-skin] body[data-remote-desktop="1"] :is(.browser-live-backdrop, .browser-live-panel) {
   background: transparent;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
 }
 
-:root[data-skin="glass"] body[data-remote-desktop="1"] .browser-live-surface {
+:root[data-skin] body[data-remote-desktop="1"] .browser-live-surface {
   /* Keep the dark letterbox inside the picture, below the glass controls. */
   background: transparent;
 }
 
-:root[data-skin="glass"] body[data-remote-desktop="1"] .browser-live-viewport {
+:root[data-skin] body[data-remote-desktop="1"] .browser-live-viewport {
   background: #101216;
 }
 
-:root[data-skin="glass"] body[data-remote-desktop="1"] :is(.browser-live-header, .browser-live-footer, .browser-live-zoom, .browser-live-quickkeys) {
+:root[data-skin] body[data-remote-desktop="1"] :is(.browser-live-header, .browser-live-footer, .browser-live-zoom, .browser-live-quickkeys) {
   background: var(--glass-surface);
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
-  border-color: rgba(255, 255, 255, 0.84);
+  border-color: var(--glass-border);
 }
 
-:root[data-skin="glass"] body[data-remote-desktop="1"] .browser-live-keyboard {
+:root[data-skin] body[data-remote-desktop="1"] .browser-live-keyboard {
   background: transparent;
 }
 
 @media (max-width: 699px) {
-  :root[data-skin="glass"] body[data-remote-desktop="1"] .browser-live-panel {
+  :root[data-skin] body[data-remote-desktop="1"] .browser-live-panel {
     width: calc(100% - 16px);
     height: calc(100% - 16px);
-    border: 1px solid rgba(255, 255, 255, 0.84);
+    border: 1px solid var(--glass-border);
     border-radius: 20px;
   }
-  :root[data-skin="glass"] body[data-remote-desktop="1"] .browser-live-panel.is-fullscreen,
-  :root[data-skin="glass"] body[data-remote-desktop="1"] .browser-live-panel:fullscreen {
+  :root[data-skin] body[data-remote-desktop="1"] .browser-live-panel.is-fullscreen,
+  :root[data-skin] body[data-remote-desktop="1"] .browser-live-panel:fullscreen {
     width: 100%;
     height: 100%;
     border: 0;
     border-radius: 0;
   }
-  :root[data-skin="glass"] body[data-remote-desktop="1"] .browser-live-zoom :is(button, output) { font-size: 12px; }
+  :root[data-skin] body[data-remote-desktop="1"] .browser-live-zoom :is(button, output) { font-size: 12px; }
 }
 
 /* Reuse the gesture-hint row in both phone orientations; diagnostics must
@@ -864,12 +876,6 @@ body[data-remote-desktop="1"] .browser-live-panel {
   .browser-live-panel .spin {
     animation-duration: 1.4s;
   }
-}
-
-/* Model/provider pills row: the server owns model config and the settings
-   sheet manages profiles — the inline selector bar is noise on mobile. */
-body[data-web-shell="1"] .composer-shell > div:has(button[title*="·"]) {
-  display: none !important;
 }
 
 /* ── Chat area ─────────────────────────────────────────────────────────── */

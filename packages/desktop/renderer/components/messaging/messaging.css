@@ -91,8 +91,6 @@
 .messaging-subscription input:not([type=checkbox]) { flex:1; width:100px; }
 .messaging-event-options { display:flex; flex-wrap:wrap; gap:14px; margin-top:10px; }
 .messaging-event-options label { display:flex; gap:4px; align-items:center; font-size:11px; }
-.messaging-sidebar-entry { display:flex; align-items:center; gap:8px; width:100%; border:0; border-radius:7px; background:transparent; color:var(--text-secondary); font:inherit; font-size:12px; padding:9px 10px; cursor:pointer; margin-bottom:7px; }
-.messaging-sidebar-entry:hover { color:var(--text-primary); background:var(--control-hover); }
 @media(max-width:1050px) { .messaging-page.has-detail .messaging-inbox { display:none; } .messaging-detail { flex:1; width:100%; margin:0; padding-left:0; border:0; } }
 @media(max-width:640px) {
   .messaging-page { padding:16px 14px 0; }

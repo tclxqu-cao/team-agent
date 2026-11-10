@@ -8,22 +8,22 @@ describe("computer settings contracts", () => {
     expect(validateComputerTools([])).toEqual([]);
     expect(validateSavedComputerPages([])).toEqual([]);
   });
-  it("rejects unknown or duplicate tools and gives tools a stable order", () => {
-    expect(validateComputerTools(["install", "refresh"])).toEqual(["refresh", "install"]);
+  it("rejects unknown or duplicate tools and preserves the user's order", () => {
+    expect(validateComputerTools(["install", "refresh"])).toEqual(["install", "refresh"]);
     for (const value of [null, {}, ["saved-page"], ["refresh", "refresh"]]) expect(() => validateComputerTools(value)).toThrow();
   });
-  it("keeps group creation hidden until enabled and places it immediately after refresh", () => {
+  it("keeps group creation hidden until enabled and retains its chosen position", () => {
     const defaults = defaultComputerSettings("owner").visibleTools;
     expect(defaults).not.toContain("collaboration");
     expect(validateComputerTools([...defaults, "collaboration"])).toEqual([
-      "refresh", "collaboration", "remote", "theme", "files",
+      "refresh", "remote", "theme", "files", "collaboration",
     ]);
     expect(validateComputerTools(["collaboration"])).toEqual(["collaboration"]);
   });
   it("allows the messaging entry without changing an existing toolbar selection", () => {
     const defaults = defaultComputerSettings("owner").visibleTools;
     expect(validateComputerTools(defaults)).toEqual(defaults);
-    expect(validateComputerTools(["messaging", "refresh", "files"])).toEqual(["refresh", "messaging", "files"]);
+    expect(validateComputerTools(["messaging", "refresh", "files"])).toEqual(["messaging", "refresh", "files"]);
   });
   it("normalizes pages and whitelists fields", () => {
     expect(validateSavedComputerPages([{ ...page, token: "secret" }])).toEqual([{ id: "docs", name: "文档", url: "https://example.com/", openMode: "current" }]);

@@ -6,14 +6,41 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <optional>
+#include <cstring>
 
 namespace remote {
-inline std::pair<int, int> dimensions(int width, int height, const std::string& quality) {
+struct StaticVideoAdmission {
+    double submittedAt = -1;
+    bool shouldSubmit(bool changed, bool forced, double nowMs) const {
+        return changed || forced || submittedAt < 0 || nowMs - submittedAt >= 1000;
+    }
+    void submitted(double nowMs) { submittedAt = nowMs; }
+    void reset() { submittedAt = -1; }
+};
+struct PixelScrollCopy { int sourceX,sourceY,x,y,width,height; };
+inline std::optional<PixelScrollCopy> findPixelScroll(const std::vector<uint8_t>& old,const std::vector<uint8_t>& next,int width,int height) {
+    if(width<64||height<64||width>4096||height>4096||old.size()!=size_t(width)*height*4||old.size()!=next.size())return std::nullopt;
+    auto score=[&](int dx,int dy){int matches=0,w=width-abs(dx),h=height-abs(dy),x0=std::max(0,dx),y0=std::max(0,dy);
+        for(int r=1;r<=6;r++)for(int c=1;c<=8;c++){int x=x0+c*w/9,y=y0+r*h/7;
+            matches+=memcmp(old.data()+(size_t(y-dy)*width+x-dx)*4,next.data()+(size_t(y)*width+x)*4,4)==0;}return matches;};
+    int best=score(0,0),dx=0,dy=0;if(best>=46)return std::nullopt;
+    for(int axis=0;axis<2;axis++){int radius=std::min(256,(axis?height:width)/2);for(int n=-radius;n<=radius;n++)if(n){int value=score(axis?0:n,axis?n:0);if(value>best){best=value;dx=axis?0:n;dy=axis?n:0;}}}
+    if(best!=48)return std::nullopt;
+    int x=std::max(0,dx),y=std::max(0,dy),w=width-abs(dx),h=height-abs(dy);
+    for(int row=y;row<y+h;row++)if(memcmp(old.data()+(size_t(row-dy)*width+x-dx)*4,next.data()+(size_t(row)*width+x)*4,size_t(w)*4))return std::nullopt;
+    return PixelScrollCopy{x-dx,y-dy,x,y,w,h};
+}
+inline std::pair<int, int> dimensions(int width, int height, const std::string& quality, int maxEdge = 0) {
+    if(maxEdge<0||(maxEdge>0&&(maxEdge<640||maxEdge>8192)))throw std::runtime_error("Invalid adaptive dimensions");
     if (width < 2 || height < 2 || width > 16384 || height > 16384) throw std::runtime_error("Invalid screen dimensions");
     if (quality != "smooth" && quality != "hd" && quality != "original") throw std::runtime_error("Unknown quality");
     const int limit = quality == "smooth" ? 1280 : quality == "hd" ? 2560 : 16384;
-    const double scale = std::min(1.0, double(limit) / std::max(width, height));
+    const double scale = std::min(1.0, double(maxEdge>0?std::min(limit,maxEdge):limit) / std::max(width, height));
     return {std::max(2, int(width * scale) & ~1), std::max(2, int(height * scale) & ~1)};
+}
+inline std::pair<int,int> adaptiveVideoDimensions(int width,int height,const std::string& quality,int maxEdge) {
+    return dimensions(width,height,quality,maxEdge);
 }
 inline int absoluteCoordinate(double value, int origin, int extent) {
     if (!std::isfinite(value) || extent < 2) throw std::runtime_error("Invalid pointer coordinate");

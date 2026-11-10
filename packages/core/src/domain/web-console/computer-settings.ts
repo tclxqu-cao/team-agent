@@ -27,7 +27,7 @@ export function validateComputerTools(value: unknown): ComputerToolId[] {
     throw new Error("顶部工具包含未知选项。");
   }
   if (new Set(value).size !== value.length) throw new Error("顶部工具不能重复。");
-  return COMPUTER_TOOLS.filter(id => value.includes(id));
+  return [...value] as ComputerToolId[];
 }
 
 export function validateSavedComputerPages(value: unknown): SavedComputerPage[] {

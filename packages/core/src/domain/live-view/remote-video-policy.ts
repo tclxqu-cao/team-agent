@@ -1,8 +1,10 @@
+import { RemoteVideoReceiverPolicy } from "./remote-video-receiver.js";
 import type {
   RemoteVideoAdapterCapabilities,
   RemoteVideoDecision,
   RemoteVideoH264Profile,
   RemoteVideoObservation,
+  RemoteVideoNetworkTelemetry,
   RemoteVideoQuality,
 } from "./remote-video-types.js";
 
@@ -38,10 +40,25 @@ function raiseFps(value: number): number {
   return 30;
 }
 
+function networkPressure(network: RemoteVideoNetworkTelemetry, bitRate: number, baselineRttMs: number | null) {
+  const lossRate = clamp(finite(network.lossRate), 0, 1);
+  const rttMs = Math.max(0, finite(network.rttMs));
+  const droppedFrames = Math.max(0, finite(network.droppedFrames));
+  const availableBitrate = Math.max(0, finite(network.availableOutgoingBitrate));
+  const delayInflation = rttMs >= Math.max(100, (baselineRttMs ?? rttMs) * 1.8);
+  const severe = lossRate >= 0.12 || droppedFrames >= 8;
+  // Sparse desktop traffic can produce a low REMB without congestion.
+  const throughputPressure = network.applicationLimited !== true && availableBitrate > 0 && availableBitrate < bitRate * 0.72
+    && (delayInflation || lossRate >= 0.02);
+  return { availableBitrate, severe, congested: severe || lossRate >= 0.05 || droppedFrames > 0 || throughputPressure
+    || network.congested === true && network.applicationLimited !== true };
+}
+
 export class RemoteVideoPolicy {
   readonly capabilities: RemoteVideoAdapterCapabilities;
   private quality: RemoteVideoQuality;
   private bitRate: number;
+  private readonly receiver = new RemoteVideoReceiverPolicy();
   private activityFps = 30;
   private pressureFps = 30;
   private idleSince: number | null = null;
@@ -67,10 +84,17 @@ export class RemoteVideoPolicy {
     this.bitRate = REMOTE_VIDEO_PROFILES[this.quality].maxBitRate;
     this.healthySamples = 0;
     this.congestedSamples = 0;
+    this.receiver.reset();
     return this.current("quality");
   }
 
+  setCapabilities(capabilities: RemoteVideoAdapterCapabilities): void {
+    Object.assign(this.capabilities, capabilities);
+    this.preferredCodec = this.capabilities.codecPreferences.includes("high") ? "high" : "baseline";
+  }
+
   resetSession(): RemoteVideoDecision {
+    this.receiver.reset();
     this.baselineRttMs = null;
     this.bitRate = REMOTE_VIDEO_PROFILES[this.quality].maxBitRate;
     this.activityFps = 30;
@@ -105,8 +129,9 @@ export class RemoteVideoPolicy {
     return {
       quality: this.quality,
       bitRate: this.bitRate,
-      maxFps: this.capabilities.dynamicFrameRate ? Math.min(this.activityFps, this.pressureFps) : 30,
-      maintainResolution: true,
+      maxFps: this.capabilities.dynamicFrameRate ? Math.min(this.activityFps, this.pressureFps, this.receiver.maxFps) : 30,
+      maintainResolution: !this.capabilities.dynamicResolution || this.receiver.maxEdge === undefined,
+      ...(this.capabilities.dynamicResolution && this.receiver.maxEdge !== undefined ? { maxEdge: this.receiver.maxEdge } : {}),
       preferredCodec: this.preferredCodec,
       reason,
     };
@@ -119,24 +144,27 @@ export class RemoteVideoPolicy {
     return this.current("interaction");
   }
 
+  /** Fast feedback may lower targets; healthy recovery stays on the periodic sampling loop. */
+  hasNetworkPressure(network: RemoteVideoNetworkTelemetry): boolean {
+    return networkPressure(network, this.bitRate, this.baselineRttMs).congested;
+  }
+
   update(observation: RemoteVideoObservation = {}): RemoteVideoDecision {
     const now = finite(observation.now, observation.content?.observedAt ?? Date.now());
     this.updateActivity(observation, now);
+    const receiverChanged = this.receiver.observe(observation.receiver, this.quality, this.current().maxFps, now);
 
     const network = observation.network ?? {};
     const encoder = observation.encoder;
-    const lossRate = clamp(finite(network.lossRate), 0, 1);
     const rttMs = Math.max(0, finite(network.rttMs));
-    const droppedFrames = Math.max(0, finite(network.droppedFrames));
-    const availableBitrate = Math.max(0, finite(network.availableOutgoingBitrate));
     if (rttMs > 0) this.baselineRttMs = Math.min(this.baselineRttMs ?? rttMs, rttMs);
-    const delayInflation = rttMs >= Math.max(100, (this.baselineRttMs ?? rttMs) * 1.8);
-    const severeNetwork = lossRate >= 0.12 || rttMs >= 500 || droppedFrames >= 8;
-    // Sparse desktop traffic can produce a REMB far below the encoder ceiling.
-    // Only corroborated delay/loss makes that estimate a congestion signal.
-    const throughputPressure = availableBitrate > 0 && availableBitrate < this.bitRate * 0.72
-      && (delayInflation || lossRate >= 0.02);
-    const networkPressure = severeNetwork || lossRate >= 0.05 || rttMs >= 250 || droppedFrames > 0 || throughputPressure;
+    const pressure = networkPressure(network, this.bitRate, this.baselineRttMs);
+    const { availableBitrate, severe: severeNetwork } = pressure;
+    const senderPressure = finite(observation.sender?.queueDelayMs) >= 150 || finite(observation.sender?.droppedFrames) > 0;
+    // A fresh loss/delay sample distinguishes local burst backlog from path congestion.
+    // Cutting a healthy path's pacing budget on every IDR replacement creates a self-reinforcing queue.
+    const healthyNetwork = Number.isFinite(network.lossRate) && network.lossRate! < .02
+      && Number.isFinite(network.rttMs) && !pressure.congested;
 
     const frameIntervalMs = 1_000 / Math.max(5, Math.min(this.activityFps, this.pressureFps));
     const encoderPressure = Boolean(encoder) && (
@@ -145,12 +173,13 @@ export class RemoteVideoPolicy {
       || finite(encoder?.droppedFrames) > 0
     );
 
-    if (networkPressure || encoderPressure) {
+    if (pressure.congested || senderPressure || encoderPressure) {
       this.healthySamples = 0;
       this.congestedSamples += 1;
-      if (networkPressure && this.capabilities.dynamicBitrate) {
+      if ((pressure.congested || senderPressure && !healthyNetwork) && this.capabilities.dynamicBitrate) {
         const profile = REMOTE_VIDEO_PROFILES[this.quality];
-        const measuredCeiling = availableBitrate > 0 ? Math.floor(availableBitrate * 0.9) : this.bitRate;
+        const measuredCeiling = availableBitrate > 0 && network.applicationLimited !== true
+          ? Math.floor(availableBitrate * 0.9) : this.bitRate;
         const reduced = Math.floor(this.bitRate * (severeNetwork ? 0.65 : 0.82));
         this.bitRate = Math.max(profile.minBitRate, Math.min(reduced, measuredCeiling || reduced));
       }
@@ -158,14 +187,14 @@ export class RemoteVideoPolicy {
         this.pressureFps = lowerFps(this.pressureFps);
         this.congestedSamples = 0;
       }
-      return this.current(encoderPressure ? "encoder-pressure" : severeNetwork ? "severe-congestion" : "congestion");
+      return this.current(encoderPressure ? "encoder-pressure" : severeNetwork ? "severe-congestion" : senderPressure ? "sender-pressure" : "congestion");
     }
 
     // An encoder-only sample cannot establish that the network has recovered.
-    if (!Number.isFinite(network.rttMs) || !Number.isFinite(network.lossRate)) return this.current();
+    if (!Number.isFinite(network.rttMs) || !Number.isFinite(network.lossRate)) return this.current(receiverChanged ? "receiver-adaptation" : "steady");
     this.congestedSamples = 0;
     this.healthySamples += 1;
-    if (this.healthySamples < 3) return this.current();
+    if (this.healthySamples < 3) return this.current(receiverChanged ? "receiver-adaptation" : "steady");
     this.healthySamples = 0;
     if (this.capabilities.dynamicBitrate) {
       const profile = REMOTE_VIDEO_PROFILES[this.quality];

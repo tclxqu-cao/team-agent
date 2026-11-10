@@ -15,12 +15,14 @@ export class RemoteWebrtcVideo extends RemoteVideoSession {
     transportFactory,
     encoder,
     log,
+    onInput,
+    onReliableInput,
   }) {
     const resolvedEncoder = encoder ?? new NativeVideoEncoder({ helper, highProfile });
     const resolvedTransportFactory = transportFactory
       ?? ((options) => new WeriftVideoTransport({ ...options, iceConfig }));
     super({
-      signal, policy, adaptation, encoder: resolvedEncoder, transportFactory: resolvedTransportFactory,
+      signal, policy, adaptation, encoder: resolvedEncoder, transportFactory: resolvedTransportFactory, onInput, onReliableInput,
       // Timeline lands in the server daily NDJSON log under source "remote-video".
       log: log ?? ((level, message, data) => logGlobal(level, 'remote-video', message, undefined, data)),
     });

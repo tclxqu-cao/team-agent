@@ -9,6 +9,17 @@ import {
 } from "./remote-video-stats";
 
 describe("remote video stats", () => {
+  it('measures emitted-frame buffer deltas independently from decode time and ignores reset/suspended counters', () => {
+    const values = (count: number, delay: number) => [{ id: 'in', type: 'inbound-rtp', kind: 'video',
+      jitterBufferEmittedCount: count, jitterBufferDelay: delay, jitterBufferTargetDelay: delay / 2,
+      jitterBufferMinimumDelay: delay / 4, framesDecoded: count, totalDecodeTime: count / 1000 }];
+    const first = readRemoteVideoStats(values(10, 1), null, 1000, { visible: true })!;
+    const next = readRemoteVideoStats(values(30, 3), first.cursor, 2000, { visible: true })!;
+    expect(next.sample.receiver).toMatchObject({ jitterBufferMs: 100, jitterBufferTargetMs: 50, jitterBufferMinimumMs: 25 });
+    expect(next.sample.receiver?.decodeMs).toBeCloseTo(1);
+    expect(readRemoteVideoStats(values(2, .1), next.cursor, 3000, { visible: true })!.sample.receiver).not.toHaveProperty('jitterBufferMs');
+    expect(readRemoteVideoStats(values(60, 4), next.cursor, 10000, { visible: true })!.sample.receiver).not.toHaveProperty('jitterBufferMs');
+  });
   afterEach(() => vi.unstubAllGlobals());
 
   const base = [
@@ -17,6 +28,17 @@ describe("remote video stats", () => {
     { id: "remote", type: "remote-candidate", candidateType: "relay", protocol: "udp" },
     { id: "pair", type: "candidate-pair", state: "succeeded", nominated: true, localCandidateId: "local", remoteCandidateId: "remote", currentRoundTripTime: 0.042, availableIncomingBitrate: 6_000_000 },
   ];
+
+  it("measures interval decoding cost and refuses reset, missing and suspended counter evidence", () => {
+    const context = { visible: true, viewport: { width: 390, height: 700, pixelRatio: 3, zoom: 1 }, presentationDelayMs: 12 };
+    const values = (framesDecoded: number, totalDecodeTime: number, framesDropped = 0) => [...base, { id: "in", type: "inbound-rtp", kind: "video", framesDecoded, totalDecodeTime, framesDropped }];
+    const first = readRemoteVideoStats(values(10, 1), null, 1000, context)!;
+    expect(first.sample.receiver).not.toHaveProperty("decodeMs");
+    const next = readRemoteVideoStats(values(30, 1.5, 5), first.cursor, 2000, context)!;
+    expect(next.sample.receiver).toMatchObject({ decodedFrames: 20, decodeMs: 25, droppedRatio: .2, presentationDelayMs: 12 });
+    expect(readRemoteVideoStats(values(2, .1), next.cursor, 3000, context)!.sample.receiver).not.toHaveProperty("decodeMs");
+    expect(readRemoteVideoStats(values(60, 2), next.cursor, 10000, context)!.sample.receiver).not.toHaveProperty("intervalMs");
+  });
 
   it("derives bitrate, loss, dropped frames and relay diagnostics from browser stats", () => {
     const firstValues = [...base, { id: "in", type: "inbound-rtp", kind: "video", codecId: "codec", bytesReceived: 1000, packetsReceived: 100, packetsLost: 2, framesDropped: 1, framesDecoded: 7 }];

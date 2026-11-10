@@ -1,5 +1,7 @@
 // ── Infrastructure Layer ──
 // Concrete implementations of domain interfaces
+export { compoundTileEncodingCost, compoundPngBytes, encodeCompoundTiles, decodeCompoundTiles } from './live-view/compound-video-wire.js';
+export type { CompoundWireFormat, CompoundWireTile, BinaryCompoundTiles } from './live-view/compound-video-wire.js';
 
 export { SQLiteDatabase, getDatabase } from './SQLiteDatabase.js';
 export { SQLiteSettingsStore } from './SQLiteSettingsStore.js';

@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { mkdirSync } from "node:fs";
 
 export class SQLiteDatabase {
-  readonly db: Database;
+  readonly db: Database.Database;
 
   constructor(baseDir: string) {
     const dataDir = join(baseDir, ".agent-data");

@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
-import { Check, FolderOpen, LayoutDashboard, LayoutGrid, LoaderCircle, Monitor, PanelsTopLeft, Unplug, UsersRound } from "lucide-react";
-import { navigationLayoutSwitchTitle, nextNavigationLayout } from "../../../core/src/domain/web-console/navigation-layout";
+import { Check, FolderOpen, Inbox, LayoutGrid, LoaderCircle, Monitor, Unplug, UsersRound } from "lucide-react";
 import { useUIStore } from "../stores/uiStore";
 import { isDesktopLiveSetupPending } from "../lib/desktop-live-setup";
 import { isWebShell } from "../web/webLayout";
 import type { DesktopLiveStatus } from "../global";
 import MobilePairingButton from "./MobilePairingButton";
 import HeaderActionMenu from "./HeaderActionMenu";
+import RunningSessionsIcon from "./RunningSessionsIcon";
 
 /**
  * Tracks whether remote authorization still needs user action, so the header
@@ -54,6 +54,7 @@ interface ChatHeaderActionsProps {
   onOpenHub?: () => void;
   onOpenCollaborationDashboard?: () => void;
   onOpenSessionDashboard?: () => void;
+  onOpenMessaging?: () => void;
   onOpenDesktopLive?: () => void;
   desktopLiveOpen?: boolean;
   filesOpen?: boolean;
@@ -74,6 +75,7 @@ export default function ChatHeaderActions({
   onOpenHub,
   onOpenCollaborationDashboard,
   onOpenSessionDashboard,
+  onOpenMessaging,
   onOpenDesktopLive,
   desktopLiveOpen = false,
   filesOpen = false,
@@ -83,7 +85,6 @@ export default function ChatHeaderActions({
 }: ChatHeaderActionsProps) {
   const desktopLivePending = useDesktopLiveSetupPending(Boolean(onOpenDesktopLive));
   const navigationLayout = useUIStore((state) => state.navigationLayout);
-  const setNavigationLayout = useUIStore((state) => state.setNavigationLayout);
   const releaseTitle = codexReleaseState === "releasing"
     ? "正在停止 AgentRoam 使用此会话"
     : codexReleaseState === "released"
@@ -93,7 +94,8 @@ export default function ChatHeaderActions({
     <div className="chat-header-actions" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
       {appActions}
       {typeof window !== "undefined" && window.sharedServiceApi?.mobilePairing && <MobilePairingButton />}
-      {onOpenSessionDashboard && <button type="button" onClick={onOpenSessionDashboard} title="Dashboard · 会话总览" aria-label="打开会话 Dashboard" className="ui-icon-button chat-header-action"><LayoutDashboard size={17} aria-hidden="true"/></button>}
+      {onOpenSessionDashboard && <button type="button" onClick={onOpenSessionDashboard} title="进行中的 Agent 会话" aria-label="打开进行中的 Agent 会话" className="ui-icon-button chat-header-action"><RunningSessionsIcon size={17} aria-hidden="true"/></button>}
+      {onOpenMessaging && <button type="button" onClick={onOpenMessaging} title="消息接入 · 监听与路由" aria-label="打开消息接入" className="ui-icon-button chat-header-action"><Inbox size={17} aria-hidden="true"/></button>}
       {onOpenCollaborationDashboard && <button
         type="button"
         onClick={onOpenCollaborationDashboard}
@@ -196,12 +198,6 @@ export default function ChatHeaderActions({
           <circle cx="6.5" cy="12.5" r=".5" fill="currentColor" />
           <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z" />
         </svg>
-      </button>
-      <button type="button" className="ui-icon-button chat-header-action chat-header-action--navigation-layout"
-        aria-label="切换布局" data-navigation-layout={navigationLayout}
-        title={navigationLayoutSwitchTitle(navigationLayout)}
-        onClick={() => setNavigationLayout(nextNavigationLayout(navigationLayout))}>
-        <PanelsTopLeft size={15} aria-hidden="true" />
       </button>
       {showSettings && <button
         type="button"
