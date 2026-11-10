@@ -41,6 +41,8 @@ if (unexpected.length) throw new Error(`unexpected runtime files:\n${unexpected.
 for (const required of [
   "package/runtime/package.json",
   "package/runtime/ws-server.mjs",
+  "package/runtime/lib/browser-live/viewer-frame-flow.mjs",
+  "package/runtime/lib/browser-live/viewer-video-flow.mjs",
   "package/runtime/lib/desktop-discovery.mjs",
   "package/runtime/lib/tunnel-control.mjs",
   "package/runtime/lib/device-pairing-store.mjs",

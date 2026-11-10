@@ -38,7 +38,9 @@ await cp(resolve(buildRoot, "static"), resolve(target, ".next/static"), { recurs
 await cp(resolve(server, "ws-server.mjs"), resolve(target, "ws-server.mjs"));
 await mkdir(resolve(target, "lib"), { recursive: true });
 await mkdir(resolve(target, "lib/browser-live"), { recursive: true });
-await cp(resolve(server, "lib/browser-live/viewer-frame-flow.mjs"), resolve(target, "lib/browser-live/viewer-frame-flow.mjs"));
+for (const name of ["viewer-frame-flow.mjs", "viewer-video-flow.mjs"]) {
+  await cp(resolve(server, "lib/browser-live", name), resolve(target, "lib/browser-live", name));
+}
 await cp(resolve(server, "lib/remote-control"), resolve(target, "lib/remote-control"), { recursive: true, filter: (source) => !source.endsWith(".test.ts") });
 if (targetName === "darwin-arm64") {
   execFileSync(process.execPath, [resolve(root, "scripts/build-wecom-send-helper.mjs")], { stdio: "inherit" });
@@ -71,8 +73,6 @@ await cp(resolve(server, "public/pwa"), resolve(target, "public/pwa"), { recursi
 await cp(resolve(server, "shell-integration.mjs"), resolve(target, "shell-integration.mjs"));
 await cp(resolve(server, "shell-platform.mjs"), resolve(target, "shell-platform.mjs"));
 await mkdir(resolve(target, "lib"), { recursive: true });
-await mkdir(resolve(target, "lib/browser-live"), { recursive: true });
-await cp(resolve(server, "lib/browser-live/viewer-frame-flow.mjs"), resolve(target, "lib/browser-live/viewer-frame-flow.mjs"));
 await cp(resolve(server, "lib/file-preview-service.mjs"), resolve(target, "lib/file-preview-service.mjs"));
 await cp(resolve(server, "lib/markdown-preview.mjs"), resolve(target, "lib/markdown-preview.mjs"));
 await cp(resolve(server, "lib/ai-hub-relay-client.mjs"), resolve(target, "lib/ai-hub-relay-client.mjs"));
