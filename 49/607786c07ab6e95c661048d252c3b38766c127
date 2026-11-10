@@ -1,0 +1,315 @@
+bun.lock
+  s_40a044c6acf2d3::t_0efe99f92bb8eb 64,68-70,186,638-639,1224-1225,1886-1887,1944-1945,2154-2155
+packages/core/package.json
+  s_40a044c6acf2d3::t_e7bcd149ee973d 16,19-21
+packages/core/src/domain/live-view/index.ts
+  s_40a044c6acf2d3::t_0536976542b7ec 16-22,32-39
+packages/core/src/domain/live-view/live-view-registry.test.ts
+  s_40a044c6acf2d3::t_49122d22114998 15-96
+packages/core/src/domain/live-view/live-view-registry.ts
+  s_40a044c6acf2d3::t_565343d3b97919 13-14,44-46,174,211,254,309,323,337-351,353,361-363,369,398-399,403-453,473,484,504,520,527-531
+packages/core/src/domain/live-view/remote-compound-budget.test.ts
+  s_40a044c6acf2d3::t_766c762a00ab1a 1-51
+packages/core/src/domain/live-view/remote-compound-budget.ts
+  s_40a044c6acf2d3::t_b07a08476d4bca 1-47
+packages/core/src/domain/live-view/remote-compound-quality.ts
+  s_40a044c6acf2d3::t_2033f40100063f 1-95
+packages/core/src/domain/live-view/remote-compound-video.test.ts
+  s_40a044c6acf2d3::t_913c217b42c8bb 1-106
+packages/core/src/domain/live-view/remote-compound-video.ts
+  s_40a044c6acf2d3::t_924d9704ca8f2e 1-196
+packages/core/src/domain/live-view/remote-direct-input.ts
+  s_40a044c6acf2d3::t_9d1a03a8fc3040 1-46
+packages/core/src/domain/live-view/remote-frame-qoe.ts
+  s_40a044c6acf2d3::t_d09f30c2a0ff0f 1-41
+packages/core/src/domain/live-view/remote-input-coalescer.ts
+  s_40a044c6acf2d3::t_62d804e88e64e2 1-18
+packages/core/src/domain/live-view/remote-network-optimization.test.ts
+  s_40a044c6acf2d3::t_94520742306360 1-122
+packages/core/src/domain/live-view/remote-reliable-input.test.ts
+  s_40a044c6acf2d3::t_bc06d0d98d6432 1-38
+packages/core/src/domain/live-view/remote-reliable-input.ts
+  s_40a044c6acf2d3::t_852bc67f39aeb4 1-64
+packages/core/src/domain/live-view/remote-video-encode-admission.ts
+  s_40a044c6acf2d3::t_3b14c3afd01b1a 1-10
+packages/core/src/domain/live-view/remote-video-feedback.ts
+  s_40a044c6acf2d3::t_d05d25132d3c72 1-23
+packages/core/src/domain/live-view/remote-video-optimization.test.ts
+  s_40a044c6acf2d3::t_ca457b4ba6afde 1-63
+packages/core/src/domain/live-view/remote-video-pacing.test.ts
+  s_40a044c6acf2d3::t_5bfa9ad39d0448 1-69
+packages/core/src/domain/live-view/remote-video-pacing.ts
+  s_40a044c6acf2d3::t_a49eb92c3d8a66 1-104
+packages/core/src/domain/live-view/remote-video-playout.ts
+  s_40a044c6acf2d3::t_1ffbcca14461bb 1-26
+packages/core/src/domain/live-view/remote-video-policy.test.ts
+  s_40a044c6acf2d3::t_decb814c15760f 11-38,137-171
+packages/core/src/domain/live-view/remote-video-policy.ts
+  s_40a044c6acf2d3::t_085837c073f738 1,7,43-56,61,87,91-95,97,132-134,147-151,155,161-167,176,179,181-182,190,194,197
+packages/core/src/domain/live-view/remote-video-protection.ts
+  s_40a044c6acf2d3::t_2a7ada6ada27fe 1-47
+packages/core/src/domain/live-view/remote-video-receiver.test.ts
+  s_40a044c6acf2d3::t_84db0debe7eb2d 1-41
+packages/core/src/domain/live-view/remote-video-receiver.ts
+  s_40a044c6acf2d3::t_e0d01309aad67b 1-67
+packages/core/src/domain/live-view/remote-video-recovery.test.ts
+  s_40a044c6acf2d3::t_74c3f1166c6bea 1-97
+packages/core/src/domain/live-view/remote-video-recovery.ts
+  s_40a044c6acf2d3::t_31f5f9a9206c06 1-126
+packages/core/src/domain/live-view/remote-video-types.ts
+  s_40a044c6acf2d3::t_6cd50987e00806 17-19,24-26,33-69,73,76,80-81,93-94,106
+packages/core/src/domain/web-console/computer-settings.test.ts
+  s_40a044c6acf2d3::t_ed5de10587bf18 11-12,15,19,26
+packages/core/src/domain/web-console/computer-settings.ts
+  s_40a044c6acf2d3::t_4b4fc4dd08141c 30
+packages/core/src/infrastructure/SQLiteAuthStore.ts
+  s_40a044c6acf2d3::t_d72aa3b1d8a8e7 1
+packages/core/src/infrastructure/SQLiteDatabase.ts
+  s_40a044c6acf2d3::t_ef668d2a7fcf43 6
+packages/core/src/infrastructure/SQLiteRemoteToolStore.ts
+  s_40a044c6acf2d3::t_2078fd47c0fe7a 1
+packages/core/src/infrastructure/SQLiteToolExecutionPolicyStore.ts
+  s_40a044c6acf2d3::t_990b5e7025207d 1
+packages/core/src/infrastructure/index.ts
+  s_40a044c6acf2d3::t_09fa59825f7e0d 3-4
+packages/core/src/infrastructure/live-view/compound-video-wire.test.ts
+  s_40a044c6acf2d3::t_65546a87be4e4b 1-46
+packages/core/src/infrastructure/live-view/compound-video-wire.ts
+  s_40a044c6acf2d3::t_bd341aafa8c57c 1-159
+packages/desktop/assets/webrtc-live.html
+  s_40a044c6acf2d3::t_a8365a3dfeb26c 154-157
+packages/desktop/main/desktop-screen-live.test.ts
+  s_40a044c6acf2d3::t_901db4c603e1fe 240
+packages/desktop/main/desktop-screen-live.ts
+  s_40a044c6acf2d3::t_42faf33b014192 39,82
+packages/desktop/main/remote-video-browser-policy.ts
+  s_40a044c6acf2d3::t_0be55b0b58a723 34
+packages/desktop/main/webrtc-live.test.ts
+  s_40a044c6acf2d3::t_474cbf333dabab 20-21,33-53
+packages/desktop/main/webrtc-live.ts
+  s_40a044c6acf2d3::t_2665b843f98a49 4,71-75,168
+packages/desktop/package.json
+  s_40a044c6acf2d3::t_61b822b7f8d0f8 3
+packages/desktop/renderer/App.tsx
+  s_40a044c6acf2d3::t_cb8c216c95071a 4,2493
+packages/desktop/renderer/components/AllSessionsSidebar.test.tsx
+  s_40a044c6acf2d3::t_21e0c2db523141 1-27
+packages/desktop/renderer/components/AllSessionsSidebar.tsx
+  s_40a044c6acf2d3::t_48db23038da233 5,26-29,38,55-60,69-70,116,122-124
+packages/desktop/renderer/components/BrowserLivePanel.test.ts
+  s_40a044c6acf2d3::t_20226e2f219add 5,107-120
+packages/desktop/renderer/components/BrowserLivePanel.tsx
+  s_40a044c6acf2d3::t_571c34cc5e000b 7-11,86-89,286-287,337,340-345,654,656,662-667,672-682,684-685,688,703-704,706-710,742-744,750-751,755,836-839,842,896-899,902,909-912,915,922,925-928,931,962-964,991-994,1002-1005,1019-1024,1027-1029,1143-1146,1148,1152,1167,1169-1170,1176-1180,1212-1221,1743-1745
+packages/desktop/renderer/components/ChatComposerStyle.test.ts
+  s_40a044c6acf2d3::t_34dee96565f639 46-47
+packages/desktop/renderer/components/ChatHeaderActions.test.tsx
+  s_40a044c6acf2d3::t_33b58c2b5dd90f 5,16,34,39-40
+packages/desktop/renderer/components/ChatHeaderActions.tsx
+  s_40a044c6acf2d3::t_a077bfd38713a9 2,9,57,78,97-98
+packages/desktop/renderer/components/ChatView.model-source.test.ts
+  s_40a044c6acf2d3::t_d8a9cff3536073 5,16,19,21,31-38,41-42
+packages/desktop/renderer/components/ChatView.tsx
+  s_40a044c6acf2d3::t_80c75fae21b591 22-24,137-139,479,512,612,770-771,775,810,868-874,882-883,1867,1959,2072,2148,4390,6142,6153-6155,6157,6160-6167,6171,6174-6177,6179
+packages/desktop/renderer/components/ComposerModelPicker.tsx
+  s_40a044c6acf2d3::t_7f6f6f62b43dcd 1-114
+packages/desktop/renderer/components/NativeModelCatalogNotice.test.tsx
+  s_40a044c6acf2d3::t_d105c10a2826f0 1-30
+packages/desktop/renderer/components/NativeModelCatalogNotice.tsx
+  s_40a044c6acf2d3::t_47949fdc6069fb 1-16
+packages/desktop/renderer/components/RunningSessionsIcon.ts
+  s_40a044c6acf2d3::t_3040a0dfa9a706 1-8
+packages/desktop/renderer/components/remote-compound-video.test.ts
+  s_40a044c6acf2d3::t_4b42fb37badf5f 1-196
+packages/desktop/renderer/components/remote-compound-video.ts
+  s_40a044c6acf2d3::t_396fca816643a6 1-344
+packages/desktop/renderer/components/remote-cursor.test.ts
+  s_40a044c6acf2d3::t_5ec00c76a7d86e 1-31
+packages/desktop/renderer/components/remote-cursor.ts
+  s_40a044c6acf2d3::t_c07976a4231acd 1-105
+packages/desktop/renderer/components/remote-direct-input.test.ts
+  s_40a044c6acf2d3::t_9f1efc10db0053 1-114
+packages/desktop/renderer/components/remote-direct-input.ts
+  s_40a044c6acf2d3::t_9fa72c365b180a 1-155
+packages/desktop/renderer/components/remote-video-negotiation.test.ts
+  s_40a044c6acf2d3::t_0def212545366f 1-43
+packages/desktop/renderer/components/remote-video-negotiation.ts
+  s_40a044c6acf2d3::t_d352374603b566 1-41
+packages/desktop/renderer/components/remote-video-playout.test.ts
+  s_40a044c6acf2d3::t_e1bdaf21fea53d 1-36
+packages/desktop/renderer/components/remote-video-playout.ts
+  s_40a044c6acf2d3::t_3813151d42b778 1-45
+packages/desktop/renderer/components/remote-video-stats.test.ts
+  s_40a044c6acf2d3::t_1bdd876ee93fee 12-22,32-42
+packages/desktop/renderer/components/remote-video-stats.ts
+  s_40a044c6acf2d3::t_f191f7b24d5fa7 13-18,64-67,97-115,117-126,144-145,147-148
+packages/desktop/renderer/lib/all-sessions-cache.test.ts
+  s_40a044c6acf2d3::t_6fb913321444a5 1-54
+packages/desktop/renderer/lib/all-sessions-cache.ts
+  s_40a044c6acf2d3::t_cd724ff3e5d6c7 1-44
+packages/desktop/renderer/lib/native-session-view-state.test.ts
+  s_40a044c6acf2d3::t_261f362b119973 4,23-37
+packages/desktop/renderer/lib/native-session-view-state.ts
+  s_40a044c6acf2d3::t_c3219eaeb23a4e 31-43
+packages/desktop/renderer/lib/use-native-model-catalog.test.ts
+  s_40a044c6acf2d3::t_fb43380ae13c24 1-118
+packages/desktop/renderer/lib/use-native-model-catalog.ts
+  s_40a044c6acf2d3::t_6027d7e8ea57fe 1-63
+packages/desktop/renderer/styles/composer.css
+  s_40a044c6acf2d3::t_7600eae1ae1bda 407,422,441,444-469,781,811,822-832
+packages/desktop/renderer/styles/glass.css
+  s_40a044c6acf2d3::t_663f1b59f9189b 1-9,41-43,46-47,50,54,58-59,62-63,67,71,75-76,79,85,87,90,92-93,96,103,107-108,110,115,121-124
+packages/desktop/renderer/styles/glass.test.ts
+  s_40a044c6acf2d3::t_7c270bb82ba9e1 6,8
+packages/native-runtime/src/agent-runtime/qoder-client.ts
+  s_40a044c6acf2d3::t_985c436a7cd8f0 12,53-55,62,66,117-122,181-186,188-196,203,304
+packages/native-runtime/src/agent-runtime/qoder-model-catalog.test.ts
+  s_40a044c6acf2d3::t_90c794df582e59 1-141
+packages/native-runtime/src/agent-runtime/qoder-model-catalog.ts
+  s_40a044c6acf2d3::t_a0eaa11adf8f26 1-75
+packages/native-runtime/src/agent-runtime/qoder-runtime-adapter.test.ts
+  s_40a044c6acf2d3::t_55e99820512ff6 1,7-8,26,28,88-197,210,230,295-378,483
+packages/native-runtime/src/agent-runtime/zcode-desktop-activity.test.ts
+  s_40a044c6acf2d3::t_a34cc45d07d1f4 23-28,56-120,260,263
+packages/native-runtime/src/agent-runtime/zcode-desktop-activity.ts
+  s_40a044c6acf2d3::t_c3b7973c9ac8e1 14,29,45,78-86,101-103,130-136,181-182,211-229
+packages/native-runtime/src/agent-runtime/zcode-runtime-adapter.test.ts
+  s_40a044c6acf2d3::t_4176b51808cb52 241,243,245-247,252-257
+packages/server/app/web/ComputerSwitcher.tsx
+  s_40a044c6acf2d3::t_344d1f3c8cd952 5-6,20
+packages/server/app/web/ResponsiveToolbar.tsx
+  s_40a044c6acf2d3::t_17af7b133d3a9f 5-6,10,23-24,27,29,43-51,58,62,68,72,90,92,101-103,108,110,116-120
+packages/server/app/web/SortableToolbarAction.tsx
+  s_40a044c6acf2d3::t_43e68dd3ef1703 1-84
+packages/server/app/web/compact-toolbar.test.tsx
+  s_40a044c6acf2d3::t_eaefd75113a15a 8,42,44-48,50,54-55,59,63-68,71,73-74
+packages/server/app/web/console-styles.ts
+  s_40a044c6acf2d3::t_7aa9b7da645ffe 29-36
+packages/server/app/web/glass-mobile-toolbar.test.ts
+  s_40a044c6acf2d3::t_aa1bee3cffd945 9,22,27,37,42-44,46-48,55,69,71-72
+packages/server/app/web/neural-boot.css
+  s_40a044c6acf2d3::t_2c0c2231ca2b5b 1-9,16-24,30-31,34,39-40,43,50,55-56,61-62,397-399,402,408-409,418-431,435,440,443,445-456
+packages/server/app/web/page.tsx
+  s_40a044c6acf2d3::t_319c291008ffc8 10-11,17,38,739-744,748,759,761
+packages/server/app/web/toolbar-order.test.ts
+  s_40a044c6acf2d3::t_0f32c860444865 1-19
+packages/server/app/web/toolbar-order.ts
+  s_40a044c6acf2d3::t_b9ddfc8a20893f 1-10
+packages/server/lib/remote-control/application/compound-video-session.mjs
+  s_40a044c6acf2d3::t_0e9e0c5cd0a279 1-383
+packages/server/lib/remote-control/application/compound-video-session.test.ts
+  s_40a044c6acf2d3::t_358cfcd3c230fb 1-303
+packages/server/lib/remote-control/application/paced-video-sender.mjs
+  s_40a044c6acf2d3::t_a21884d49e1fd6 1-261
+packages/server/lib/remote-control/application/paced-video-sender.test.ts
+  s_40a044c6acf2d3::t_060f85910320f0 1-203
+packages/server/lib/remote-control/application/remote-hover-dispatch.mjs
+  s_40a044c6acf2d3::t_3e5b10aed45946 1,3-6,8-14,16-19,21-25
+packages/server/lib/remote-control/application/remote-hover-dispatch.test.ts
+  s_40a044c6acf2d3::t_410ed7113f5f2f 1-16
+packages/server/lib/remote-control/application/remote-video-session.mjs
+  s_40a044c6acf2d3::t_c8c3eae2ed1f31 1-2,9,14-15,20,24,29-30,39-40,52-57,63,73-74,79-84,89-116,131-135,144,151,160-162,166-183,194-195,203,216,218,223,227,236-239,247-249,251-252,254-256,259-275,278-285,291,300-301,309-315,320,323,334,342-347,349-350,357,383,388-415,423-444,468-473,477-479,483,491-493,495,499-502,515,521
+packages/server/lib/remote-control/application/remote-video-session.test.ts
+  s_40a044c6acf2d3::t_9485dfc0fe0a09 2-3,7-9,14-15,32,44-131,146-169,196,205,215-278,414-432
+packages/server/lib/remote-control/helper-manager.mjs
+  s_40a044c6acf2d3::t_f6eeddd7bb2e01 67,71-72,123-124
+packages/server/lib/remote-control/helper-manager.test.ts
+  s_40a044c6acf2d3::t_ba53e11d4ade60 195-219
+packages/server/lib/remote-control/infrastructure/compound-compression.mjs
+  s_40a044c6acf2d3::t_2c6afaeed8c024 1-20
+packages/server/lib/remote-control/infrastructure/compound-compression.test.ts
+  s_40a044c6acf2d3::t_e19600b5ac00fe 1-19
+packages/server/lib/remote-control/infrastructure/native-compound-video.mjs
+  s_40a044c6acf2d3::t_a2d280308a3817 1-44
+packages/server/lib/remote-control/infrastructure/native-compound-video.test.ts
+  s_40a044c6acf2d3::t_175deaa9c55d4f 1-38
+packages/server/lib/remote-control/infrastructure/native-video-encoder.mjs
+  s_40a044c6acf2d3::t_d1538c7f730334 1-3,8,12,14-20,28-55,57-61,63-67,71,76-82,90,96-98
+packages/server/lib/remote-control/infrastructure/native-video-encoder.test.ts
+  s_40a044c6acf2d3::t_fd02995e125aec 4-6,9-38,44-46,51,56,69-87
+packages/server/lib/remote-control/infrastructure/werift-video-feedback.mjs
+  s_40a044c6acf2d3::t_48313d6aa360dc 1-98
+packages/server/lib/remote-control/infrastructure/werift-video-feedback.test.ts
+  s_40a044c6acf2d3::t_f5352f3b6f07bc 1-78
+packages/server/lib/remote-control/infrastructure/werift-video-recovery.mjs
+  s_40a044c6acf2d3::t_069e1f2c166d4e 1-108
+packages/server/lib/remote-control/infrastructure/werift-video-recovery.test.ts
+  s_40a044c6acf2d3::t_df967caad96f41 1-147
+packages/server/lib/remote-control/infrastructure/werift-video-transport.mjs
+  s_40a044c6acf2d3::t_53a8dba045e169 3-10,44-45,50-60,63-98,103-104,111,114,121-162,166-179,183-184,186-189,194-195,205,209-238,241-242,244-245,251-263,266-290,294-297,304-316,323-350,355,358-396,399-407,409-414,417-421,425-426
+packages/server/lib/remote-control/infrastructure/werift-video-transport.test.ts
+  s_40a044c6acf2d3::t_86865ad4d557df 2-5,9-14,16-178,229-230,242-254,260-312,314-383
+packages/server/lib/remote-control/remote-authorization.mjs
+  s_40a044c6acf2d3::t_dff0b724a49a01 10,64,70-80,90-98,101-110,540-547,572-573,576,611
+packages/server/lib/remote-control/remote-authorization.test.ts
+  s_40a044c6acf2d3::t_2f44ce63227589 9,22-57,840-869
+packages/server/lib/remote-control/remote-video-signal.mjs
+  s_40a044c6acf2d3::t_ecd4a59f5d27a2 74-91,93,129,141-142,158,174,176
+packages/server/lib/remote-control/remote-video-signal.test.ts
+  s_40a044c6acf2d3::t_3e9ad6de927c92 6-35,95-101
+packages/server/lib/remote-control/webrtc-video.mjs
+  s_40a044c6acf2d3::t_fa3aa57686aacc 18-19,25
+packages/server/lib/remote-control/webrtc-video.test.ts
+  s_40a044c6acf2d3::t_4d45bd6c2d3be7 1,7-11
+packages/server/lib/remote-control/windows-helper.mjs
+  s_40a044c6acf2d3::t_85bb8ea07cfcbc 10-11,13,17-18,61-64,82-83
+packages/server/lib/remote-control/windows-helper.test.ts
+  s_40a044c6acf2d3::t_3972d69054d304 18-25
+packages/server/native/remote-helper-windows/algorithms-test.cpp
+  s_40a044c6acf2d3::t_029bf8f758dcbd 3-23
+packages/server/native/remote-helper-windows/algorithms.hpp
+  s_40a044c6acf2d3::t_4b2802768950ae 9-10,13-35,39,42-44
+packages/server/native/remote-helper-windows/capture.cpp
+  s_40a044c6acf2d3::t_89ae282094e45a 39,76,81,105,108-109
+packages/server/native/remote-helper-windows/compound.cpp
+  s_40a044c6acf2d3::t_155026a713a771 1-153
+packages/server/native/remote-helper-windows/main.cpp
+  s_40a044c6acf2d3::t_39e1b7e05cedf3 10,23-24,52-54,59,68,72-73,80-81,92
+packages/server/native/remote-helper-windows/remote.hpp
+  s_40a044c6acf2d3::t_d10c7841f2ccdc 29-30,43,54,57-58,71,76-77,80-81,83-104
+packages/server/native/remote-helper-windows/video-pipeline.cpp
+  s_40a044c6acf2d3::t_1723f3ddb4a2be 1-109
+packages/server/native/remote-helper-windows/video.cpp
+  s_40a044c6acf2d3::t_08f654f521a254 4-13,22,24,35,45,76,78-83,88
+packages/server/native/remote-helper/main.swift
+  s_40a044c6acf2d3::t_de2bfb133fa1a0 151-162,168-170,214-218,261-279,281-286,301-303,359,377,410,414,417,453-454,458-459,461,473-475,486,535,537-555,557-558,566-570,572,578-579,585-590
+packages/server/native/remote-helper/service/CompoundVideo.swift
+  s_40a044c6acf2d3::t_ced4f4009b97d9 1-401
+packages/server/native/remote-helper/service/Cursor.swift
+  s_40a044c6acf2d3::t_6a87b9cd0ba51f 1-92
+packages/server/native/remote-helper/service/VideoCompression.swift
+  s_40a044c6acf2d3::t_6ab21b929ded54 1-165
+packages/server/native/remote-helper/service/VideoEncoder.swift
+  s_40a044c6acf2d3::t_1fd2ff56db10fa 9-11,26-34,41,46-63,74,78-79,84,87-89,93-94,96-100,131-133,143,147-154,157-169,171-173,175-185,187-201,204-214,216,243,246-278,281-351,355-375
+packages/server/package.json
+  s_40a044c6acf2d3::t_91281ca6b96544 37-38
+packages/server/tsconfig.json
+  s_40a044c6acf2d3::t_90aecb64062183 15-17,45-46
+packages/webapp/src/infrastructure/client-error-reporter.ts
+  s_40a044c6acf2d3::t_b546093c395ed8 47
+packages/webapp/src/presentation/browser-composer.test.ts
+  s_40a044c6acf2d3::t_8949c68d44bdbb 44-51
+packages/webapp/src/presentation/web.css
+  s_40a044c6acf2d3::t_6e45b2899bf5c9 462-474,804-805,808,814,819,823,827,830,835,838,841-842,848
+scripts/build-cli-remote-helper.mjs
+  s_40a044c6acf2d3::t_36138ca9e987c2 62
+scripts/build-windows-remote-helper.mjs
+  s_40a044c6acf2d3::t_b623b539db3abd 31
+scripts/verify-windows-remote-helper.mjs
+  s_40a044c6acf2d3::t_c54d34d460d09e 19-20,40,43-60,63
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "49607786c07ab6e95c661048d252c3b38766c127",
+  "prompts": {},
+  "sessions": {
+    "s_40a044c6acf2d3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1c52e-2f48-7b92-93fa-9415096d3477",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
