@@ -15,7 +15,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-14, windows-2022]
+        os: [macos-15, windows-2022]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 25
     env:
@@ -34,5 +34,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           CANDIDATE_TAG: ${{ inputs.tag }}
         run: gh release download "$CANDIDATE_TAG" --repo "$GITHUB_REPOSITORY" --dir dist/cli-release
+      - name: Verify all downloaded package and installer checksums
+        run: node scripts/publish-agentroam-release.mjs preflight --manifest dist/cli-release/release-manifest.json
       - name: Verify runtime APIs, native components, pairing and private Node installation
         run: node scripts/verify-cli-install.mjs --artifacts dist/cli-release --bootstrap-script

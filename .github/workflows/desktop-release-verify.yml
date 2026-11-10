@@ -66,6 +66,29 @@ jobs:
             $manifest | ConvertTo-Json -Depth 10 | Set-Content $manifestPath
             Write-Output 'Candidate integration test: installed CLI bundle replaced; original installer acceptance still required'
           }
+      - name: Download and verify all release assets
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          $assetDir = "$env:RUNNER_TEMP/release-assets"
+          gh release download $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --pattern '*.dmg' --pattern '*.apk' --pattern SHA256SUMS --dir $assetDir
+          if ($LASTEXITCODE -ne 0) { throw 'Release asset download failed' }
+          $verified = 0
+          foreach ($line in Get-Content "$assetDir/SHA256SUMS") {
+            if ($line -notmatch '^([a-f0-9]{64})  ([^/\\]+)$') { throw 'Invalid release checksum entry' }
+            $expected = $Matches[1]
+            $name = $Matches[2]
+            $path = Join-Path $assetDir $name
+            if (!(Test-Path $path)) { $path = Join-Path "$env:RUNNER_TEMP/installer" $name }
+            if (!(Test-Path $path)) { throw "Missing release asset: $name" }
+            if ((Get-FileHash $path -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expected) { throw "Release checksum mismatch: $name" }
+            $verified++
+            Write-Output "Verified complete release asset: $name"
+          }
+          $expectedCount = if ($env:DESKTOP_EXECUTABLE -eq 'AgentRoam Lite.exe') { 2 } else { 3 }
+          if ($verified -ne $expectedCount) { throw 'Unexpected release asset count' }
       - name: Start the installed first-launch worker
         shell: pwsh
         run: |
