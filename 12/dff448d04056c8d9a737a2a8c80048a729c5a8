@@ -1,0 +1,104 @@
+scripts/prepare-wecom-inject-app.py
+  s_b92f814ec314a9::t_ce18d3499059a5 1-69
+packages/messaging/assets/wecom/native_inject_test_host.m
+  s_b92f814ec314a9::t_ccfeb910b824fb 60-61
+  s_b92f814ec314a9::t_ac8288c5ae1592 105
+  s_b92f814ec314a9::t_40f17db054efa0 29-44
+  s_b92f814ec314a9::t_90ebff7da71a3f 1-28,45-59,62-104,106-108
+scripts/probe-wecom-inject-app.py
+  s_b92f814ec314a9::t_b9e7b858db8dc5 137
+  s_b92f814ec314a9::t_7decd09845e716 50
+  s_b92f814ec314a9::t_6a1b0d80a00c69 128-130
+  s_b92f814ec314a9::t_1e3ef2189579d7 93-94
+  s_b92f814ec314a9::t_95d36873b009f0 103-110,114,116-117
+  s_b92f814ec314a9::t_3065749e0ee620 139-144
+  s_b92f814ec314a9::t_e46d8f36e259d3 23-28
+  s_b92f814ec314a9::t_7952500486582b 156-157
+  s_b92f814ec314a9::t_8bb3c33374e9a9 1-22,29-44,51-68,70,72-92,95-102,111-113,115,118-127,131-136,138,145-155,158-167
+  s_b92f814ec314a9::t_314a280da364e2 45-49
+  s_b92f814ec314a9::t_0acc2b57070b61 69,71
+scripts/test-wecom-inject-helper.mjs
+  s_b92f814ec314a9::t_036d11b1d0e2a0 1-16
+packages/messaging/build.mjs
+  s_b92f814ec314a9::t_0c8e97bfb50291 10
+packages/messaging/assets/wecom/NativeInjectBridge.m
+  s_b92f814ec314a9::t_9284b4e4b734c0 1-14,16-51,56-76,78-79,87,89-305,307-312,314-327,330-336
+  s_b92f814ec314a9::t_7d365bdc426058 15
+  s_b92f814ec314a9::t_20038f517aa9ce 313
+  s_b92f814ec314a9::t_67c19b1e0679fb 52-55
+  s_b92f814ec314a9::t_97e0e584f277bf 328-329
+  s_b92f814ec314a9::t_5d5bc63037f949 306
+  s_b92f814ec314a9::t_51b5cf2084f84c 77,80-86,88
+packages/messaging/assets/wecom/native_sender.py
+  s_b92f814ec314a9::t_294fd585b9d6f5 531
+  s_b92f814ec314a9::t_b27edfa9ddf32c 532
+  s_b92f814ec314a9::t_5829c8a54521e3 123
+  s_b92f814ec314a9::t_5a70143c203a47 142
+  s_b92f814ec314a9::t_3c0f35699b8588 143
+  s_b92f814ec314a9::t_1643994b3ee29f 401
+  s_b92f814ec314a9::t_b682b2b362d305 182
+  s_b92f814ec314a9::t_13a2baa52f9221 115-121
+  s_b92f814ec314a9::t_7a9e670eb4cc14 2
+  s_b92f814ec314a9::t_a32bd9e9134319 63-82,86-93,95-112,128-132,136,141,146-153,155-170,172-177,181,184-185,187-203,206,209,213-220,226-227,229-231,235,237-241,243
+  s_b92f814ec314a9::t_88be0bbe7d573b 171
+  s_b92f814ec314a9::t_c0572dd560c060 221-225
+  s_b92f814ec314a9::t_3cf5e1a7e74606 122
+  s_b92f814ec314a9::t_37672fa10a3b98 94
+  s_b92f814ec314a9::t_0d14bb28594268 207-208,211-212
+  s_b92f814ec314a9::t_c3acb31db74db9 83-85
+  s_b92f814ec314a9::t_908235a8300212 236,242,244-245
+  s_b92f814ec314a9::t_77ea6674731c80 57-58
+  s_b92f814ec314a9::t_9d192dc8e1303c 4,15
+  s_b92f814ec314a9::t_8dc894e9dccb35 113-114
+  s_b92f814ec314a9::t_db74657f120f77 179-180,183
+  s_b92f814ec314a9::t_0b47aacc7074c9 291
+  s_b92f814ec314a9::t_070fabcb751e83 493-494,499-508
+  s_b92f814ec314a9::t_7830d72f004637 522,525
+  s_b92f814ec314a9::t_8862f6b7eb9a2f 124-127
+  s_b92f814ec314a9::t_690cedaea0bd66 178
+  s_b92f814ec314a9::t_3055e850ac9883 480-489
+  s_b92f814ec314a9::t_b67fda57ccd8e8 246-247
+packages/messaging/src/channels/wecom/native-delivery.ts
+  s_b92f814ec314a9::t_5d91f1fd854a12 66-69
+scripts/build-wecom-inject-helper.mjs
+  s_b92f814ec314a9::t_3eaed938a05505 1-25
+packages/messaging/src/channels/wecom/native-delivery.test.ts
+  s_b92f814ec314a9::t_46eeaaa2700f7b 12
+  s_b92f814ec314a9::t_5b6f86ab28b838 59-69
+packages/messaging/assets/wecom/native_sender_test.py
+  s_b92f814ec314a9::t_9895ce27e3590e 112-120
+  s_b92f814ec314a9::t_96b8248fb53124 310,314,318,325-327,329-357,361-368,377-378
+  s_b92f814ec314a9::t_5f74e0e00806df 358-360,369-376
+  s_b92f814ec314a9::t_9897b4640a78e3 380-399,411-438,440-457,459-472,474-475,485,488,493,500,516
+  s_b92f814ec314a9::t_59595c82fe8046 405-410
+  s_b92f814ec314a9::t_b3e89705045c9e 532-533
+  s_b92f814ec314a9::t_86e6e15e2d5db6 553-558
+  s_b92f814ec314a9::t_2de699b45478fc 5,7,10,16-18
+  s_b92f814ec314a9::t_0b34bc5a5f3bce 40-41,43-58
+  s_b92f814ec314a9::t_a856e0d156a4e6 11
+  s_b92f814ec314a9::t_059b5c329b667c 303,311-313,315-317,319-322
+  s_b92f814ec314a9::t_116d2d09772313 458
+  s_b92f814ec314a9::t_4e942e9ccebfd7 42
+  s_b92f814ec314a9::t_0263e5c6bc1e1c 473,476-477,479-484,486-487,489-492,494,496-499,501-515
+  s_b92f814ec314a9::t_12247e04b24dc7 439
+  s_b92f814ec314a9::t_4d0e1c7bd5483f 478,495
+  s_b92f814ec314a9::t_ff521b72d7c3d3 400-404
+  s_b92f814ec314a9::t_fd73cf79a3b061 544-547,549-552,562-565
+  s_b92f814ec314a9::t_52450099354db8 277-302,304-309,323-324,328,379,517-531,534-543,548,559-561,566-567
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "12dff448d04056c8d9a737a2a8c80048a729c5a8",
+  "prompts": {},
+  "sessions": {
+    "s_b92f814ec314a9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cd96da70-8deb-4c94-b9aa-316b8ba4bbf4",
+        "model": "unknown"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
