@@ -7,5 +7,5 @@ execFileSync("bun", ["build", "./src/index.ts", "--outdir", "./dist", "--target"
 await mkdir(new URL("./dist/assets/wecom/", import.meta.url), { recursive: true });
 await cp(new URL("./assets/wecom/", import.meta.url), new URL("./dist/assets/wecom/", import.meta.url), {
   recursive: true,
-  filter: path => !path.endsWith("_test.py") && !path.includes("__pycache__") && !path.endsWith(".pyc"),
+  filter: path => !path.endsWith("_test.py") && !path.endsWith("_test_host.m") && !path.includes("__pycache__") && !path.endsWith(".pyc"),
 });

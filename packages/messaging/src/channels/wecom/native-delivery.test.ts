@@ -9,6 +9,7 @@ const source = messageFixture({ channel: "wecom", connectionId: "wecom:99", conv
 const delivery: DeliveryRecord = { id: "native-one", messageId: "message", eventId: "reply:message", event: "completed", purpose: "reply",
   target: { kind: "origin", address: "12", label: source.conversationName }, text: "你好", status: "pending", attempts: 0, nextAttemptAt: 0, createdAt: "", updatedAt: "" };
 const receipt = { transport: "local-accessibility", evidence: "native-outgoing-record", conversationId: "12", senderId: "99", rid: "202", seq: "11", flag: 0 };
+const injectionReceipt = { ...receipt, transport: "local-injection" };
 const options = () => ({ platform: "darwin" as const, baseDir: "/tmp/test-native", settings: () => ({ database: "/Profiles/own/Messages1/Info.db", accountId: "99" }),
   refresh: vi.fn().mockResolvedValue(undefined), wait: vi.fn().mockResolvedValue(undefined), invoke: vi.fn() });
 
@@ -53,6 +54,17 @@ it("does not accept a claimed success with a missing or wrong-account receipt", 
   const deps = options(); deps.invoke.mockResolvedValueOnce({ status: "sent" }).mockResolvedValueOnce({ status: "sent", receipt: { ...receipt, senderId: "other" } });
   expect((await sendWecomNative(delivery, source, "你好", deps)).status).toBe("unknown");
   expect((await sendWecomNative(delivery, source, "你好", deps)).status).toBe("unknown");
+});
+
+it("accepts strict injection receipts but rejects unknown transports and altered receipt guards", async () => {
+  const deps = options();
+  deps.invoke.mockResolvedValueOnce({ status: "sent", receipt: injectionReceipt });
+  expect(await sendWecomNative(delivery, source, "你好", deps)).toEqual({ status: "sent", receipt: JSON.stringify(injectionReceipt) });
+  for (const invalid of [{ ...receipt, transport: "legacy-name-only" }, { ...receipt, evidence: "claimed" },
+    { ...receipt, conversationId: "13" }, { ...receipt, senderId: "other" }, { ...receipt, rid: "0" }, { ...receipt, seq: "-1" }, { ...receipt, flag: 1 }]) {
+    const guarded = options(); guarded.invoke.mockResolvedValue({ status: "sent", receipt: invalid });
+    expect((await sendWecomNative(delivery, source, "你好", guarded)).status).toBe("unknown");
+  }
 });
 
 it("preserves pre-submission blocks without a receipt polling loop", async () => {

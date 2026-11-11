@@ -63,8 +63,10 @@ export async function sendWecomNative(delivery: DeliveryRecord, source: ChannelM
   }
   if (result.status === "sent") {
     const receipt = result.receipt;
-    if (!receipt || receipt.transport !== "local-accessibility" || receipt.evidence !== "native-outgoing-record"
-      || receipt.conversationId !== source.conversationId || receipt.senderId !== settings.accountId
+    const transport = receipt?.transport;
+    // Old AX ledger entries and strict protocol v2 injections both require an exact outgoing receipt.
+    if (!receipt || (transport !== "local-injection" && transport !== "local-accessibility")
+      || receipt.evidence !== "native-outgoing-record" || receipt.conversationId !== source.conversationId || receipt.senderId !== settings.accountId
       || !/^[1-9]\d*$/.test(String(receipt.rid)) || !/^[1-9]\d*$/.test(String(receipt.seq)) || receipt.flag !== 0)
       return { status: "unknown" as const, error: "发送组件缺少匹配账号和会话的有效回执；不会自动重发" };
   }

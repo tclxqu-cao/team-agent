@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Send through the original WeCom UI; verify using the receiver's existing mirror."""
+"""Submit through the local WeCom client; verify using the receiver's existing mirror."""
 import contextlib
+import ctypes
 import datetime
 import fcntl
 import hashlib
@@ -11,6 +12,7 @@ import re
 import shutil
 import socket
 import sqlite3
+import stat
 import subprocess
 import sys
 import tempfile
@@ -52,76 +54,195 @@ class NativeBridge:
 
 
 # ---------------------------------------------------------------------------
-# 非 GUI 发送后端：通过 Unix socket 连到注入版企微里的 WeWorkInject.dylib。
-# dylib 在进程内复用 WEWInputViewController 触发企微自己的发送，不走 AX/辅助功能。
+# 进程内发送后端：通过 Unix socket 连到实验副本里的 NativeInjectBridge.dylib。
+# dylib 直接调用 WEWInputViewController 的内部方法，不走 AX，但仍依赖当前聊天控制器。
 # 保留与 NativeBridge 相同的 call() 接口，process() 无需区分后端。
 # ---------------------------------------------------------------------------
 INJECT_SOCKET = (os.environ.get("AGENT_WECOM_INJECT_SOCKET")
                  or str(Path.home() / "Library/Containers/com.tencent.WeWorkMac/Data/tmp/wework-inject.sock"))
+PROTOCOL = 2
+APP_VERSION = "5.0.13"
+APP_BUILD = "95049"
+SOURCE_SHA256 = "079eabdc95281c62b4daf7f431124dff53caf5d11ccbe1f8715b2b2f56a4daf2"
+MAX_BRIDGE_RESPONSE = 65_536
+RESPONSE_FIELDS = ("ok", "protocol", "instanceId", "pid", "appVersion", "appBuild", "sourceSha256",
+                   "bridgeSourceSha256", "sendingEnabled", "state", "detail")
+
+
+def socket_peer_identity(client):
+    """Return the owning UID and PID of a connected AF_UNIX socket on macOS."""
+    if sys.platform != "darwin":
+        raise Blocked("注入发送桥仅支持 macOS 的本地进程身份校验")
+    try:
+        libc = ctypes.CDLL(None, use_errno=True)
+        libc.getpeereid.argtypes = (ctypes.c_int, ctypes.POINTER(ctypes.c_uint), ctypes.POINTER(ctypes.c_uint))
+        libc.getpeereid.restype = ctypes.c_int
+        uid, gid = ctypes.c_uint(), ctypes.c_uint()
+        if libc.getpeereid(client.fileno(), ctypes.byref(uid), ctypes.byref(gid)) != 0:
+            raise OSError(ctypes.get_errno(), "getpeereid 失败")
+        # LOCAL_PEERPID is SOL_LOCAL (0) / 2 on Darwin and returns a 32-bit PID.
+        credentials = client.getsockopt(0, 2, ctypes.sizeof(ctypes.c_uint))
+        peer_pid = ctypes.c_uint.from_buffer_copy(credentials).value
+        if uid.value != os.getuid() or not isinstance(peer_pid, int) or peer_pid <= 0:
+            raise Blocked("注入发送桥的本地进程身份不可信")
+        return uid.value, peer_pid
+    except (AttributeError, OSError, ValueError) as error:
+        raise Blocked("无法校验注入发送桥的本地进程身份：" + str(error))
+
+
+def validate_bridge_response(response, expected_operation=None, expected_pid=None,
+                             expected_instance=None, identity=None, expected_bridge_source=None):
+    """Validate protocol v2 responses and the socket peer's process identity."""
+    if not isinstance(response, dict) or any(field not in response for field in RESPONSE_FIELDS):
+        raise Blocked("注入发送桥返回了不完整的协议 v2 响应")
+    if response["protocol"] != PROTOCOL or type(response["protocol"]) is not int \
+            or type(response["ok"]) is not bool or type(response["pid"]) is not int or response["pid"] <= 0 \
+            or not isinstance(response["instanceId"], str) or not response["instanceId"] \
+            or response["appVersion"] != APP_VERSION or response["appBuild"] != APP_BUILD \
+            or response["sourceSha256"] != SOURCE_SHA256 \
+            or not isinstance(response["bridgeSourceSha256"], str) \
+            or not re.fullmatch(r"[0-9a-f]{64}", response["bridgeSourceSha256"]) \
+            or type(response["sendingEnabled"]) is not bool \
+            or response["state"] not in ("ready", "blocked", "submitted", "unknown") \
+            or not isinstance(response["detail"], str):
+        raise Blocked("注入发送桥协议、版本或来源校验失败")
+    if expected_pid is not None and response["pid"] != expected_pid:
+        raise Blocked("注入发送桥响应中的进程身份不匹配")
+    if expected_instance is not None and response["instanceId"] != expected_instance:
+        raise Blocked("注入发送桥实例在预检和发送之间发生变化")
+    if expected_bridge_source is not None and response["bridgeSourceSha256"] != expected_bridge_source:
+        raise Blocked("注入发送桥构建来源在请求之间发生变化")
+    if expected_operation == "status" and response["ok"] and response["state"] != "ready":
+        raise Blocked("注入发送桥未就绪")
+    if expected_operation == "preflight" and response["ok"] and response["state"] != "ready":
+        raise Blocked("注入发送桥预检未返回就绪状态")
+    if expected_operation == "send" and response["ok"] and response["state"] != "submitted":
+        raise Blocked("注入发送桥未返回已提交状态")
+    if expected_operation in ("preflight", "send") and not response["sendingEnabled"]:
+        raise Blocked("注入发送桥未启用发送")
+    if identity is not None and response["ok"] and expected_operation in ("preflight", "send"):
+        for field in ("accountId", "conversationId"):
+            if response.get(field) != identity[field]:
+                raise Blocked("注入发送桥回显的账号或会话身份不匹配")
+    return response
+
+
+def delivery_identity(request):
+    return {"accountId": str(request["accountId"]),
+            "conversationId": str(request["target"]["conversationId"])}
 
 
 class InjectBridge:
-    """通过本地 socket 让注入 dylib 在企微进程内发送（零 GUI、零辅助功能权限）。"""
+    """严格协议 v2 客户端；只连接当前用户、权限 0600、可校验 peer UID/PID 的本地 socket。"""
 
     def __init__(self, socket_path=INJECT_SOCKET, timeout=25.0):
         self.socket_path = socket_path
         self.timeout = timeout
+        self._peer_pid = None
+        self._instance_id = None
+        self._bridge_source = None
 
     def _request(self, payload):
-        if not os.path.exists(self.socket_path):
-            raise Blocked("注入版企业微信未运行（socket 不存在）：" + self.socket_path)
+        path = self.socket_path
         try:
-            client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-            client.settimeout(self.timeout)
-            client.connect(self.socket_path)
-            client.sendall((json.dumps(payload, ensure_ascii=False) + "\n").encode("utf-8"))
-            buf = b""
-            while b"\n" not in buf:
-                chunk = client.recv(4096)
-                if not chunk:
-                    break
-                buf += chunk
-            client.close()
-            if not buf.strip():
-                raise Blocked("注入发送桥未返回结果（企微可能已重启）")
-            return json.loads(buf.split(b"\n", 1)[0].decode("utf-8", "replace"))
-        except (OSError, json.JSONDecodeError) as error:
+            info = os.lstat(path)
+            if not stat.S_ISSOCK(info.st_mode) or stat.S_ISLNK(info.st_mode) \
+                    or info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != 0o600:
+                raise Blocked("注入发送桥 socket 必须属于当前用户且权限为 0600")
+        except OSError as error:
+            raise Blocked("注入发送桥 socket 不可用：" + str(error))
+        try:
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+                client.settimeout(self.timeout)
+                client.connect(path)
+                _, peer_pid = socket_peer_identity(client)
+                if self._peer_pid is not None and self._peer_pid != peer_pid:
+                    raise Blocked("注入发送桥进程身份在请求之间发生变化")
+                client.sendall((json.dumps(payload, ensure_ascii=False) + "\n").encode("utf-8"))
+                buf = b""
+                while b"\n" not in buf:
+                    chunk = client.recv(4096)
+                    if not chunk:
+                        break
+                    buf += chunk
+                    if len(buf.split(b"\n", 1)[0]) > MAX_BRIDGE_RESPONSE:
+                        raise Blocked("注入发送桥响应超过长度上限")
+                line = buf.split(b"\n", 1)[0]
+                if b"\n" not in buf or not line or len(line) > MAX_BRIDGE_RESPONSE:
+                    raise Blocked("注入发送桥未返回有效的一行 JSON 响应")
+                try:
+                    response = json.loads(line.decode("utf-8"))
+                except (UnicodeDecodeError, json.JSONDecodeError) as error:
+                    raise Blocked("注入发送桥返回了无效 JSON：" + str(error))
+                validate_bridge_response(response, expected_operation=payload.get("cmd"),
+                                         expected_pid=peer_pid, identity=payload,
+                                         expected_instance=self._instance_id,
+                                         expected_bridge_source=self._bridge_source)
+                self._peer_pid = peer_pid
+                self._instance_id = response["instanceId"]
+                self._bridge_source = response["bridgeSourceSha256"]
+                return response
+        except (OSError, socket.timeout) as error:
             raise Blocked("注入发送桥通信失败：" + str(error))
+        except (Blocked, ValueError):
+            raise
+
+    def preflight(self, request):
+        """先 status 再 preflight：两次响应的 PID/instance/来源都被严格校验。"""
+        status = self._request({"cmd": "status"})
+        if not status["ok"]:
+            raise Blocked("注入发送桥未就绪：" + status["detail"])
+        identity = delivery_identity(request)
+        payload = {"cmd": "preflight", "pid": status["pid"], "instanceId": status["instanceId"],
+                   "deliveryId": request["deliveryId"], "text": request["text"],
+                   "clientDatabase": request["clientDatabase"], **identity}
+        result = self._request(payload)
+        if not result["ok"]:
+            raise Blocked("注入发送预检未通过：" + result["detail"])
+        verify_client_database(result["pid"], request["clientDatabase"])
+        return {"pid": result["pid"], "instanceId": result["instanceId"], **identity}
 
     def call(self, operation, pid=None, **arguments):
-        # operation 在注入后端里只有 "send" / "verify" 两种语义
+        if operation == "preflight":
+            if "request" not in arguments:
+                raise Blocked("不支持旧版按名称发送的企微注入桥，请使用协议 v2")
+            return self.preflight(arguments["request"])
         if operation == "send":
-            request = {
-                "cmd": "send",
-                "conv_name": arguments.get("chatTitle") or arguments.get("target", {}).get("name", ""),
-                "text": arguments.get("text", ""),
-                "dry_run": 0,
-                # 会话校验由 process() 里的镜库 verify_target 完成，
-                # dylib 侧 conv_name 只做尽力校验（strict=0，见 dylib 实现）。
-                "strict": 0,
-            }
-            # 先让 dylib 在进程内选中目标会话（非 GUI），再发送；
-            # 会话一致性由上游 verify_target（镜库）保证。
-            conv_name = request.get("conv_name") or ""
-            if conv_name:
-                opened = self._request({"cmd": "open_conv", "conv_name": conv_name})
-                if not opened.get("ok"):
-                    raise Blocked("目标会话未打开，请先在企微窗口点开一次会话：" +
-                                  str(opened.get("detail") or opened.get("error") or ""))
-            result = self._request(request)
-            if not result.get("ok"):
-                raise Blocked("注入发送失败：" + str(result.get("detail") or result.get("error") or "未知原因"))
-            # 契约对齐：submitted 表示已提交企微，等待接收侧核验本人发送记录
-            return {"status": "submitted"}
+            if "request" not in arguments or "pinned" not in arguments:
+                raise Blocked("不支持旧版按名称发送的企微注入桥，请使用协议 v2")
+            request = arguments["request"]
+            pinned = arguments["pinned"]
+            payload = {"cmd": "send", "pid": pinned["pid"], "instanceId": pinned["instanceId"],
+                       "deliveryId": request["deliveryId"], "text": request["text"],
+                       "clientDatabase": request["clientDatabase"],
+                       "accountId": pinned["accountId"], "conversationId": pinned["conversationId"]}
+            result = self._request(payload)
+            if not result["ok"]:
+                # A definite bridge rejection before submission is retryable; an unknown result keeps the intent.
+                if result["state"] == "blocked":
+                    return {"status": "blocked", "error": result["detail"] or "注入发送被明确拒绝"}
+                return {"status": "unknown", "submitted": True,
+                        "error": result["detail"] or "注入发送结果未确认，请核对原会话；不会自动重发"}
+            # submitted 仅表示企微已接受提交；交付回执由接收侧本人发送记录确认。
+            return {"status": "unknown", "submitted": True}
         if operation == "verify":
-            # 回执靠本地库（receipt()），这里只探活
-            try:
-                self._request({"cmd": "status"})
-                return {"status": "ready"}
-            except Blocked:
-                return {"status": "blocked", "error": "注入发送桥不可用"}
-        # inspect / selectConversation / paste / submit 在注入后端都不需要
+            # 回执只从本地镜库读取；绝不因为验证而再次调用 socket。
+            return {"status": "ready"}
+        # 非 GUI 路径无需 inspect / selectConversation / paste / submit。
         return {"status": "ready"}
+
+
+def probe_inject_socket(socket_path=INJECT_SOCKET):
+    """An available endpoint selects strict validation; only absent/refused sockets retain AX."""
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as probe:
+            probe.settimeout(1.0)
+            probe.connect(socket_path)
+        return True
+    except (FileNotFoundError, ConnectionRefusedError):
+        return False
+    except OSError as error:
+        raise Blocked("注入发送桥探测失败，未回退辅助功能发送：" + str(error))
 
 
 def private_json(path, value):
@@ -167,7 +288,7 @@ def verify_client_database(pid, expected):
     if not isinstance(expected, str) or not expected:
         raise Blocked("缺少已配置的企微账号数据库路径")
     output = subprocess.run(["/usr/sbin/lsof", "-nP", "-a", "-p", str(pid), "-Fn"],
-                            check=True, capture_output=True, text=True, timeout=10).stdout
+                            check=True, capture_output=True, text=True, errors="replace", timeout=10).stdout
     # Inspect file names held by this client, without reading the protected source database.
     paths = {line[1:] for line in output.splitlines() if line.startswith("n")
              and re.search(r"/Profiles/[^/]+/Messages[0-9]*/Info\.db$", line[1:])}
@@ -277,7 +398,7 @@ def receipt(request, ledger):
         if len(matches) != 1 or int(matches[0]["RID"] or 0) <= 0 or int(matches[0]["seq"] or 0) <= 0 or matches[0]["flag"] != 0:
             return None
         row = matches[0]
-        return {"transport": "local-accessibility", "evidence": "native-outgoing-record", "conversationId": request["target"]["conversationId"],
+        return {"transport": ledger.get("transport", "local-accessibility"), "evidence": "native-outgoing-record", "conversationId": request["target"]["conversationId"],
                 "senderId": str(row["sender_id"]), "lid": str(row["LID"]), "rid": str(row["RID"]), "seq": str(row["seq"]),
                 "sendTime": str(row["send_time"]), "flag": row["flag"]}
 
@@ -318,21 +439,6 @@ def resolve_request(request):
 
 
 def process(request, operation="send", bridge=None, pid=None):
-    def inject_available():
-        try:
-            probe = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-            probe.settimeout(1.0)
-            probe.connect(INJECT_SOCKET)
-            probe.close()
-            return True
-        except OSError:
-            return False
-
-    prefer_inject = os.environ.get("AGENT_WECOM_SENDER") == "inject" or (
-        os.environ.get("AGENT_WECOM_SENDER") != "gui" and inject_available())
-    if prefer_inject and bridge is None:
-        bridge = InjectBridge()
-    bridge = bridge or NativeBridge(request.get("app", DEFAULT_APP))
     delivery_id, body = request.get("deliveryId"), request.get("text")
     if not isinstance(delivery_id, str) or not delivery_id or len(delivery_id) > 200 \
             or not isinstance(body, str) or not body.strip() or len(body.encode()) > 20_000:
@@ -371,15 +477,35 @@ def process(request, operation="send", bridge=None, pid=None):
                 return {"status": "blocked", "error": "上一次准备中断，请核对企微草稿；未自动重新输入"}
         if operation == "verify":
             return {"status": "blocked", "error": "没有已提交的本地发送记录"}
+        # Resolve the backend only for a new attempt, never while checking an existing intent.
+        mode = os.environ.get("AGENT_WECOM_SENDER")
+        if bridge is None:
+            if mode == "inject" or (mode != "gui" and probe_inject_socket()):
+                bridge = InjectBridge()
+            else:
+                bridge = NativeBridge(request.get("app", DEFAULT_APP))
+        if getattr(bridge, "nameOnly", False) or getattr(bridge, "legacyNameOnly", False) \
+                or getattr(bridge, "protocol", PROTOCOL) != PROTOCOL:
+            raise Blocked("不支持旧版按名称发送的企微注入桥，请使用协议 v2")
         baseline = verify_target(request)
         use_inject = isinstance(bridge, InjectBridge)
         ledger = {"deliveryId": delivery_id, "fingerprint": fingerprint, "status": "preparing", "baselineLid": baseline,
-                  "createdAt": datetime.datetime.now(datetime.timezone.utc).isoformat(), "conversationId": request["target"]["conversationId"]}
+                  "createdAt": datetime.datetime.now(datetime.timezone.utc).isoformat(), "conversationId": request["target"]["conversationId"],
+                  "transport": "local-injection" if use_inject else "local-accessibility"}
         private_json(path, ledger)
         window = None
         target = None
         header = None
-        if not use_inject:
+        pinned = None
+        if use_inject:
+            # Status + read-only preflight must both succeed before any submission intent is recorded.
+            try:
+                pinned = bridge.call("preflight", request=request)
+            except Exception as error:
+                ledger.update(status="blocked", error=str(error))
+                private_json(path, ledger)
+                return {"status": "blocked", "error": str(error)}
+        else:
             # 草稿/会话校验必须在 try 之外抛 Blocked，保持与原有 GUI 流程一致的语义
             pid = pid or request.get("pid") or client_pid(bridge)
             verify_client_database(pid, request.get("clientDatabase"))
@@ -393,18 +519,17 @@ def process(request, operation="send", bridge=None, pid=None):
                 raise Blocked("目标会话已有草稿，未覆盖")
         try:
             if use_inject:
-                # 非 GUI 路径：一次 socket 调用让注入 dylib 在企微进程内发送。
-                # 目标会话/原消息/账号均已由 verify_target + native-delivery.ts 校验。
-                inject_bridge = bridge if isinstance(bridge, InjectBridge) else InjectBridge()
+                # 一次发送调用，携带预检时锁定的进程、实例、账号和会话身份。
                 ledger.update(status="submitting", submittedAt=time.time())
                 private_json(path, ledger)
-                result = inject_bridge.call("send", text=body,
-                                           chatTitle=request["target"]["name"], target=request["target"])
+                result = bridge.call("send", request=request, pinned=pinned)
                 if result.get("status") == "blocked":
                     ledger.update(status="blocked", error=str(result.get("error") or "注入发送被拒绝"))
                     ledger.pop("submittedAt", None)
                     private_json(path, ledger)
                     return {"status": "blocked", "error": ledger["error"]}
+                if result.get("status") not in ("blocked", "unknown"):
+                    raise Blocked("注入发送未返回可核验的提交结果")
             else:
                 accepted(bridge.call("paste", pid, **control_args(window, target), text=body, chatTitle=request["target"]["name"], headerPath=header["path"]))
                 window = main_window(bridge.call("inspect", pid, compact=True))
