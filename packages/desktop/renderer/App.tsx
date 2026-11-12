@@ -22,6 +22,7 @@ import type { SessionHistorySeed } from "./lib/session-history";
 import type { AgentRailSessions } from "./lib/agent-rail-sessions";
 import { isAgentType } from "../../core/src/domain/agent/agent-type";
 import { readSessionDashboardIntent, SESSION_DASHBOARD_NAVIGATE, SESSION_DASHBOARD_CHAT_READY, SESSION_DASHBOARD_APPLIED, type SessionDashboardIntent } from "../../core/src/domain/web-console/SessionDashboardBridge";
+import { fetchEngineThreadIndex, type EngineThreadIndex } from "./lib/engine-thread-index";
 import CollaborationPage from "./components/collaboration/CollaborationPage";
 import DesktopWorkspaceTabs from "./components/collaboration/DesktopWorkspaceTabs";
 import type { CollaborationGroup } from "@agent/core/domain/collaboration/types";
@@ -302,6 +303,15 @@ export default function App() {
   const [createdSessionReceipt, setCreatedSessionReceipt] = useState<Session | null>(null);
   const createdSessionReceiptRef = useRef<Session | null>(null);
   createdSessionReceiptRef.current = createdSessionReceipt;
+  // Engine threads: sessions that were joined by an in-session engine switch
+  // fold under one conversation in the sidebar and open with merged history.
+  const [engineThreadIndex, setEngineThreadIndex] = useState<EngineThreadIndex | null>(null);
+  const engineThreadIndexRef = useRef<EngineThreadIndex | null>(null);
+  engineThreadIndexRef.current = engineThreadIndex;
+  const refreshEngineThreadIndex = useCallback(async () => {
+    try { setEngineThreadIndex(await fetchEngineThreadIndex()); } catch { /* keep previous index */ }
+  }, []);
+  useEffect(() => { void refreshEngineThreadIndex(); }, [refreshEngineThreadIndex]);
   const selectedProjectIdRef = useRef(selectedProjectId);
   const selectedSessionIdRef = useRef(selectedSessionId);
   selectedProjectIdRef.current = selectedProjectId;
@@ -804,6 +814,47 @@ export default function App() {
       )
     : orderedPinnedRootSessions;
   const allKnownSessions = searchSessions;
+
+  // Engine-switch threads fold: switch-created engine sessions hide from the
+  // flat roots and nest under the thread's origin conversation (T3-style: one
+  // conversation visible, engine sessions are refs). Business operations
+  // (delete, pin, pagination) keep operating on the raw state.
+  const displaySessionsByProject = useMemo(() => {
+    if (!engineThreadIndex || engineThreadIndex.size === 0) return sessionsByProject;
+    const next: typeof sessionsByProject = {};
+    for (const [projectId, sessions] of Object.entries(sessionsByProject)) {
+      next[projectId] = sessions.filter((session) => {
+        const entry = engineThreadIndex.get(session.id);
+        return !entry || entry.originSessionId === session.id;
+      });
+    }
+    return next;
+  }, [sessionsByProject, engineThreadIndex]);
+  const displayChildSessionsByParent = useMemo(() => {
+    if (!engineThreadIndex || engineThreadIndex.size === 0) return childSessionsByParent;
+    const next: typeof childSessionsByParent = { ...childSessionsByParent };
+    for (const [memberId, entry] of engineThreadIndex) {
+      if (memberId === entry.originSessionId) continue;
+      const originId = entry.originSessionId;
+      const children = next[originId] ?? [];
+      if (children.some((child) => child.id === memberId)) continue;
+      const real = searchSessions.find((session) => session.id === memberId);
+      const meta = entry.members.find((member) => member.id === memberId);
+      const label = meta?.agentType ?? real?.agentType ?? "agent";
+      next[originId] = [...children, {
+        ...(real ?? {}),
+        id: memberId,
+        agentType: meta?.agentType ?? real?.agentType ?? "codex",
+        cwd: meta?.cwd ?? real?.cwd ?? "",
+        parentSessionId: originId,
+        // Cross-engine children come from the thread ledger, not this rail's
+        // discovery, so the row title names the engine that produced them.
+        title: `⟲ ${label}`,
+        status: (meta?.status as Session["status"]) ?? real?.status ?? "idle",
+      } as Session];
+    }
+    return next;
+  }, [childSessionsByParent, engineThreadIndex, searchSessions]);
   const sessionQueryTrim = sessionQuery.trim().toLowerCase();
   const searchResults = sessionQueryTrim
     ? orderedVisibleSessions.filter((s) =>
@@ -813,6 +864,9 @@ export default function App() {
   const selectedSession = selectedSessionId
     ? allKnownSessions.find((session) => session.id === selectedSessionId)
       ?? (createdSessionReceipt?.id === selectedSessionId ? createdSessionReceipt : undefined)
+      // Thread members may live in another rail's discovery; the folded
+      // sidebar rows carry enough metadata to open them with merged history.
+      ?? Object.values(displayChildSessionsByParent).flat().find((session) => session.id === selectedSessionId)
     : undefined;
   const selectedSessionTitle = selectedSession?.title;
   const selectedWorkspacePath = selectedSession?.cwd
@@ -1006,6 +1060,32 @@ export default function App() {
     setSessionDashboardOpen(false); setCollaborationDashboardOpen(false); setActiveCollaboration(null);
     if (mobileDrawer) setSidebarDrawerOpen(false);
   };
+  const fetchThreadHistorySeed = useCallback(async (sessionId: string): Promise<SessionHistorySeed | undefined> => {
+    try {
+      const shared = typeof window !== "undefined" ? window.sharedServiceApi : undefined;
+      let status: number;
+      let raw: string;
+      if (shared?.request) {
+        const response = await shared.request(`/api/sessions/${encodeURIComponent(sessionId)}/thread-history`, "GET");
+        status = response.status;
+        raw = response.body;
+      } else {
+        const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/thread-history`, { credentials: "same-origin" });
+        status = response.status;
+        raw = await response.text();
+      }
+      if (status !== 200) return undefined;
+      const body = JSON.parse(raw || "{}") as { messages?: unknown[] };
+      if (!Array.isArray(body.messages)) return undefined;
+      return {
+        sessionId,
+        detail: {
+          messages: body.messages as Array<{ historyId?: string; role?: string; content?: string }>,
+          events: [],
+        },
+      } as SessionHistorySeed;
+    } catch { return undefined; }
+  }, []);
   dashboardNavigation.current = intent => {
     setMessagingOpen(false);
     if (webShell && window.parent !== window && ["dashboard", "groups", "group"].includes(intent.kind)) {
@@ -1053,7 +1133,8 @@ export default function App() {
         && useAgentStore.getState().getMessagesForSession(intent.session.id).length > 0
         ? getCachedDashboardSession(intent.session, snapshot) : undefined;
       if (retained) {
-        setInitialSessionHistory(undefined);
+        setInitialSessionHistory(engineThreadIndexRef.current?.has(intent.session.id)
+          ? await fetchThreadHistorySeed(intent.session.id) : undefined);
         navigationHistory.current = { controller, sessionId: retained.session.id };
         openAgentSession(retained.session, retained.snapshot, true);
         setPendingSessionNavigation(null);
@@ -1061,7 +1142,9 @@ export default function App() {
       }
       const result = await resolveDashboardSession(window.agentApi, intent.session, controller.signal, snapshot);
       if (!controller.signal.aborted) {
-        setInitialSessionHistory(result.initialHistory);
+        setInitialSessionHistory(engineThreadIndexRef.current?.has(intent.session.id)
+          ? await fetchThreadHistorySeed(intent.session.id) ?? result.initialHistory
+          : result.initialHistory);
         openAgentSession(result.session, result.snapshot, true);
         navigationHistory.current = { controller, sessionId: result.session.id, seed: result.initialHistory };
       }
@@ -1300,6 +1383,9 @@ export default function App() {
         activeProjectId === projectId
         && activeSessionId
         && createdSessionReceiptRef.current?.id !== activeSessionId
+        // Engine-switch thread members live in other rails' discovery; never
+        // clear the selection just because this rail's page lacks them.
+        && !engineThreadIndexRef.current?.has(activeSessionId)
         && !list.some((session) => session.id === activeSessionId)
         && !roots.some((session) => session.id === activeSessionId)
       ) {
@@ -1669,7 +1755,7 @@ export default function App() {
   const renderRootSession = (session: Session, projectId: string) => {
     const isActiveSession = selectedSessionId === session.id;
     const visualState = getSidebarSessionVisualState(sessionActivity(session, projectId));
-    const children = childSessionsByParent[session.id] ?? [];
+    const children = displayChildSessionsByParent[session.id] ?? [];
     const expanded = !collapsedParents.has(session.id);
 
     return (
@@ -2073,7 +2159,7 @@ export default function App() {
               const hasLoadedProject = loadedProjectIds.has(project.id);
               const isProjectLoading = loadingProjectIds.has(project.id);
               const projectSessionError = projectSessionErrors[project.id];
-              const projectSessions = sessionsByProject[project.id] ?? [];
+              const projectSessions = displaySessionsByProject[project.id] ?? [];
               const unpinnedProjectSessions = projectSessions.filter(
                 (session) => !pinnedSessionIdSet.has(session.id),
               );
@@ -2500,6 +2586,9 @@ export default function App() {
             sessionTitle={selectedSessionTitle}
             sessionSummary={selectedSession}
             onThreadHistorySeed={(seed) => setInitialSessionHistory(seed)}
+            getSessionThreadSeed={(sessionId) => engineThreadIndexRef.current?.has(sessionId)
+              ? fetchThreadHistorySeed(sessionId)
+              : Promise.resolve(undefined)}
             initialSessionHistory={initialSessionHistory}
             onSessionHistorySettled={handleSessionHistorySettled}
             workspacePath={selectedWorkspacePath}
@@ -2574,6 +2663,7 @@ export default function App() {
               // resumed) target session resolves before the next discovery pass.
               if (summary) setCreatedSessionReceipt(summary as unknown as Session);
               setSelectedSessionId(sessionId);
+              void refreshEngineThreadIndex();
             }}
             onParallelSessionSelected={session => {
               navigationRequest.current?.abort();

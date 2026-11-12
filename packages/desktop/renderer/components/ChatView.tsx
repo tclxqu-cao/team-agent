@@ -496,6 +496,8 @@ interface ChatViewProps {
   onSelectSession?: (sessionId: string, summary?: UnifiedSessionSummary) => void;
   /** Engine switch: seed ChatView with the logical thread's merged history. */
   onThreadHistorySeed?: (seed: SessionHistorySeed) => void;
+  /** Resolves the merged thread history for a session, when it belongs to an engine-switch thread. */
+  getSessionThreadSeed?: (sessionId: string) => Promise<SessionHistorySeed | undefined>;
   onParallelSessionSelected?: (session: UnifiedSessionSummary) => void | Promise<void>;
   /** Fired when a sub-agent session starts, completes, or errors — used for toast notifications */
   onSubAgentEvent?: (ev: { type: 'started' | 'completed' | 'failed'; agentName: string; task: string; subSessionId?: string }) => void;
@@ -603,6 +605,7 @@ export default function ChatView({
   sessionTitle,
   sessionSummary,
   initialSessionHistory,
+  getSessionThreadSeed,
   onThreadHistorySeed,
   onSessionHistorySettled,
   workspacePath = null,
@@ -768,6 +771,7 @@ export default function ChatView({
   // Multi-agent composers never expose this: the picker only receives
   // onSwitchEngine for a single existing native session.
   const [switchingEngine, setSwitchingEngine] = useState(false);
+  const threadSeedCacheRef = useRef(new Map<string, SessionHistorySeed | null>());
   const switchEngine = useCallback(async (targetAgentType: AgentType) => {
     const sessionId = sessionSummary?.id ?? viewSessionId;
     if (!sessionId || switchingEngine) return;
@@ -1950,6 +1954,17 @@ export default function ChatView({
           const seed = initialSessionHistory?.sessionId === targetSid
             && consumedNavigationHistoryRef.current !== initialSessionHistory
             ? initialSessionHistory : undefined;
+          // Thread members (engine-switch) always open on the merged view.
+          let effectiveSeed = seed;
+          if (!effectiveSeed && getSessionThreadSeed) {
+            const cached = threadSeedCacheRef.current.get(targetSid);
+            if (cached !== undefined) {
+              effectiveSeed = cached ?? undefined;
+            } else {
+              effectiveSeed = (await getSessionThreadSeed(targetSid)) ?? undefined;
+              threadSeedCacheRef.current.set(targetSid, effectiveSeed ?? null);
+            }
+          }
           await loadProgressiveSessionHistoryPage(
             agentApi,
             targetSid,
@@ -2023,9 +2038,9 @@ export default function ChatView({
               setShowInitialHistoryLoading(false);
             },
             () => isCurrentLoad() && isCurrentSnapshot(),
-            seed ? async () => {
-              consumedNavigationHistoryRef.current = seed;
-              return seed.detail;
+            effectiveSeed ? async () => {
+              consumedNavigationHistoryRef.current = effectiveSeed;
+              return effectiveSeed.detail;
             } : undefined,
           );
           return true;
@@ -2053,7 +2068,7 @@ export default function ChatView({
         initialHistoryLoadingSessionRef.current = null;
       }
     };
-  }, [activeAgentType, getMessagesForSession, getSessionHistoryWindow, historyAgentType, initialSessionHistory, isWorkspaceWelcome, observeNativeRun, prefetchOlderHistory, selectedSessionId, sessionReloadGeneration, setContextUsage, setHistoryMode, setMessages, setSessionId, syncToolResultScope, updateAgentActivity]);
+  }, [activeAgentType, getMessagesForSession, getSessionHistoryWindow, getSessionThreadSeed, historyAgentType, initialSessionHistory, isWorkspaceWelcome, observeNativeRun, prefetchOlderHistory, selectedSessionId, sessionReloadGeneration, setContextUsage, setHistoryMode, setMessages, setSessionId, syncToolResultScope, updateAgentActivity]);
 
   const loadSessionQueryIndex = useCallback(async (targetSid: string) => {
     const agentApi = window.agentApi;
