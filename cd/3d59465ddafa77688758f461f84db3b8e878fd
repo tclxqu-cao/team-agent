@@ -1,0 +1,14 @@
+packages/server/app/api/sessions/[id]/thread-history/route.ts
+  h_b0bf4228a0b7ec 57-62,65-66,68-69,78
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cd3d59465ddafa77688758f461f84db3b8e878fd",
+  "prompts": {},
+  "humans": {
+    "h_b0bf4228a0b7ec": {
+      "author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
