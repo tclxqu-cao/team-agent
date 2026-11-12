@@ -300,6 +300,8 @@ export default function App() {
     useUIStore.getState().navigationLayout === "all-sessions" ? null : initialPartition.selectedSessionId,
   );
   const [createdSessionReceipt, setCreatedSessionReceipt] = useState<Session | null>(null);
+  const createdSessionReceiptRef = useRef<Session | null>(null);
+  createdSessionReceiptRef.current = createdSessionReceipt;
   const selectedProjectIdRef = useRef(selectedProjectId);
   const selectedSessionIdRef = useRef(selectedSessionId);
   selectedProjectIdRef.current = selectedProjectId;
@@ -1297,6 +1299,7 @@ export default function App() {
       if (
         activeProjectId === projectId
         && activeSessionId
+        && createdSessionReceiptRef.current?.id !== activeSessionId
         && !list.some((session) => session.id === activeSessionId)
         && !roots.some((session) => session.id === activeSessionId)
       ) {
@@ -2496,6 +2499,7 @@ export default function App() {
             selectedSessionId={selectedSessionId}
             sessionTitle={selectedSessionTitle}
             sessionSummary={selectedSession}
+            onThreadHistorySeed={(seed) => setInitialSessionHistory(seed)}
             initialSessionHistory={initialSessionHistory}
             onSessionHistorySettled={handleSessionHistorySettled}
             workspacePath={selectedWorkspacePath}
@@ -2565,7 +2569,10 @@ export default function App() {
             onSubSessionCreated={async (parentSessionId) => {
               await loadChildSessions(parentSessionId);
             }}
-            onSelectSession={(sessionId) => {
+            onSelectSession={(sessionId, summary) => {
+              // Engine switch hands over a receipt so the freshly created (or
+              // resumed) target session resolves before the next discovery pass.
+              if (summary) setCreatedSessionReceipt(summary as unknown as Session);
               setSelectedSessionId(sessionId);
             }}
             onParallelSessionSelected={session => {

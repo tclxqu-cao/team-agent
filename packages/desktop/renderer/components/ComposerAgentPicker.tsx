@@ -27,6 +27,14 @@ interface ComposerAgentPickerProps {
   value: AgentType;
   health?: RuntimeHealth[];
   onChange: (agentType: AgentType) => void;
+  /**
+   * Single-agent sessions only: picking another native engine switches this
+   * logical conversation onto it (context handoff) instead of changing the
+   * composer agent. Multi-agent composers must not pass this.
+   */
+  onSwitchEngine?: (agentType: AgentType) => void;
+  /** True while a switch request is in flight. */
+  switching?: boolean;
   values?: readonly AgentType[];
   onValuesChange?: (agentTypes: AgentType[]) => void;
   allowedAgentTypes?: readonly AgentType[];
@@ -35,7 +43,7 @@ interface ComposerAgentPickerProps {
   defaultOpen?: boolean;
 }
 
-export default function ComposerAgentPicker({ value, health = [], onChange, values, onValuesChange, allowedAgentTypes, purpose = "participants", defaultOpen = false }: ComposerAgentPickerProps) {
+export default function ComposerAgentPicker({ value, health = [], onChange, onSwitchEngine, switching = false, values, onValuesChange, allowedAgentTypes, purpose = "participants", defaultOpen = false }: ComposerAgentPickerProps) {
   const [open, setOpen] = useState(defaultOpen);
   const multiple = values !== undefined && onValuesChange !== undefined;
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -66,7 +74,10 @@ export default function ComposerAgentPicker({ value, health = [], onChange, valu
     items[(current + step + items.length) % items.length]?.focus();
   };
 
-  const items = agentPickerItems(health).filter(item => !allowedAgentTypes || allowedAgentTypes.includes(item.agentType));
+  const switchable = !multiple && onSwitchEngine !== undefined;
+  const items = agentPickerItems(health)
+    .filter(item => !allowedAgentTypes || allowedAgentTypes.includes(item.agentType))
+    .filter(item => !switchable || item.agentType !== "customer-agent");
   const committed = values ?? [value];
   const label = !multiple || committed.length === 1 ? AGENT_LABELS[committed[0] ?? value]
     : purpose === "participants" ? `Agent · ${committed.length}`
@@ -79,8 +90,8 @@ export default function ComposerAgentPicker({ value, health = [], onChange, valu
         className="composer-agent-picker-button"
         aria-haspopup="menu"
         aria-expanded={open}
-        aria-label={multiple ? `${purpose === "recipients" ? "发送对象" : "参与 Agent"}：${label}` : `Agent：${AGENT_LABELS[value]}，点击切换`}
-        title={multiple ? `${menuLabel}：${committed.map(type => AGENT_LABELS[type]).join("、")}` : `Agent：${AGENT_LABELS[value]}（点击切换）`}
+        aria-label={multiple ? `${purpose === "recipients" ? "发送对象" : "参与 Agent"}：${label}` : `Agent：${AGENT_LABELS[value]}，${switchable ? "点击切换引擎" : "点击切换"}`}
+        title={multiple ? `${menuLabel}：${committed.map(type => AGENT_LABELS[type]).join("、")}` : `Agent：${AGENT_LABELS[value]}（${switchable ? "点击切换引擎，保留上下文" : "点击切换"}）`}
         onClick={() => setOpen((next) => !next)}
       >
         <AgentBrandIcon agentType={committed[0] ?? value} size={16} />
@@ -91,6 +102,9 @@ export default function ComposerAgentPicker({ value, health = [], onChange, valu
         <div className="composer-agent-picker-menu" role="menu" aria-label={menuLabel} style={{ maxHeight }} onKeyDown={handleMenuKeyDown}>
           {multiple && <div className="composer-agent-picker-heading">
             <span>{menuLabel}</span><small>点名称单选，勾选框多选 · 立即生效</small>
+          </div>}
+          {switchable && <div className="composer-agent-picker-heading">
+            <span>切换引擎</span><small>{switching ? "正在交接上下文…" : "保留当前会话上下文，工具调用只作历史记录"}</small>
           </div>}
           {multiple && purpose === "recipients" && <button type="button" role="menuitem"
             onClick={() => onValuesChange(items.map(item => item.agentType))}>
@@ -139,7 +153,11 @@ export default function ComposerAgentPicker({ value, health = [], onChange, valu
                 className={className}
                 onClick={() => {
                   if (blocked) return;
-                  onChange(item.agentType);
+                  if (switchable && item.agentType !== value) {
+                    onSwitchEngine!(item.agentType);
+                  } else {
+                    onChange(item.agentType);
+                  }
                   setOpen(false);
                 }}
               >

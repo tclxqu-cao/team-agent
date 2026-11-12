@@ -438,7 +438,7 @@ import AskUserCard from "./AskUserCard";
 import ContextUsageBar from "./ContextUsageBar";
 import HarnessModeControl from "./HarnessModeControl";
 import SessionRunActivity from "./SessionRunActivity";
-import { reconcileCodexUnphasedMessages } from "../lib/codex-execution-trace";
+import { reconcileCodexExecutionSegments } from "../lib/codex-execution-trace";
 import { resolveChatSessionId } from "../lib/session-search";
 import ReasoningSummary from "./ReasoningSummary";
 import CodexExecutionTrace from "./CodexExecutionTrace";
@@ -493,7 +493,9 @@ interface ChatViewProps {
   /** Called when a sub-session is created by agent_dispatch, with the parent session ID */
   onSubSessionCreated?: (parentSessionId: string) => void | Promise<void>;
   /** Navigate to a specific session (e.g., click a sub-session link) */
-  onSelectSession?: (sessionId: string) => void;
+  onSelectSession?: (sessionId: string, summary?: UnifiedSessionSummary) => void;
+  /** Engine switch: seed ChatView with the logical thread's merged history. */
+  onThreadHistorySeed?: (seed: SessionHistorySeed) => void;
   onParallelSessionSelected?: (session: UnifiedSessionSummary) => void | Promise<void>;
   /** Fired when a sub-agent session starts, completes, or errors — used for toast notifications */
   onSubAgentEvent?: (ev: { type: 'started' | 'completed' | 'failed'; agentName: string; task: string; subSessionId?: string }) => void;
@@ -601,6 +603,7 @@ export default function ChatView({
   sessionTitle,
   sessionSummary,
   initialSessionHistory,
+  onThreadHistorySeed,
   onSessionHistorySettled,
   workspacePath = null,
   workspaceSource,
@@ -760,6 +763,100 @@ export default function ChatView({
   const [compatibilityFailure, setCompatibilityFailure] = useState<string | null>(null);
   const composerRoute = resolveSessionComposerRoute(selectedSessionId, sessionSummary, isNewSessionComposer ? newSessionViewingAgent : activeAgentType);
   const composerAgentType = composerRoute.agentType;
+
+  // ── In-session engine switch (single-agent sessions only) ───────────────
+  // Multi-agent composers never expose this: the picker only receives
+  // onSwitchEngine for a single existing native session.
+  const [switchingEngine, setSwitchingEngine] = useState(false);
+  const switchEngine = useCallback(async (targetAgentType: AgentType) => {
+    const sessionId = sessionSummary?.id ?? viewSessionId;
+    if (!sessionId || switchingEngine) return;
+    setSwitchingEngine(true);
+    try {
+      const path = `/api/sessions/${encodeURIComponent(sessionId)}/switch-engine`;
+      const payload = JSON.stringify({ targetAgentType });
+      let status: number;
+      let rawBody: string;
+      const shared = typeof window !== "undefined" ? window.sharedServiceApi : undefined;
+      if (shared?.request) {
+        const response = await shared.request(path, "POST", payload);
+        status = response.status;
+        rawBody = response.body;
+      } else {
+        const response = await fetch(path, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: payload,
+          credentials: "same-origin",
+        });
+        status = response.status;
+        rawBody = await response.text();
+      }
+      let body: {
+        targetSession?: { id?: string; agentType?: AgentType; title?: string; cwd?: string; projectId?: string };
+        handoff?: { strategy?: "delta" | "full" } | null;
+        error?: string;
+      } = {};
+      try { body = JSON.parse(rawBody) as typeof body; } catch { /* keep empty */ }
+      if (status !== 202 || !body.targetSession?.id) {
+        throw new Error(body.error || `切换失败（HTTP ${status}）`);
+      }
+      const target = body.targetSession;
+      const summary: UnifiedSessionSummary = {
+        id: target.id,
+        agentType: target.agentType ?? targetAgentType,
+        nativeSessionId: target.id,
+        title: target.title || (AGENT_LABELS[targetAgentType] ?? targetAgentType),
+        cwd: target.cwd || sessionSummary?.cwd || "",
+        ...((target.projectId ?? sessionSummary?.projectId) ? { projectId: target.projectId ?? sessionSummary?.projectId } : {}),
+        created: new Date().toISOString(),
+        updated: new Date().toISOString(),
+        status: "idle",
+        occupancy: "available",
+        sourceLabel: AGENT_LABELS[targetAgentType] ?? targetAgentType,
+        canResume: true,
+        canDelete: true,
+      } as UnifiedSessionSummary;
+      // Seed the view with the logical thread's merged history so the past
+      // conversation stays visible across the engine boundary.
+      try {
+        const sharedForHistory = typeof window !== "undefined" ? window.sharedServiceApi : undefined;
+        let historyStatus: number;
+        let historyRaw: string;
+        if (sharedForHistory?.request) {
+          const historyResponse = await sharedForHistory.request(
+            `/api/sessions/${encodeURIComponent(summary.id)}/thread-history`, "GET");
+          historyStatus = historyResponse.status;
+          historyRaw = historyResponse.body;
+        } else {
+          const historyResponse = await fetch(
+            `/api/sessions/${encodeURIComponent(summary.id)}/thread-history`,
+            { credentials: "same-origin" });
+          historyStatus = historyResponse.status;
+          historyRaw = await historyResponse.text();
+        }
+        const historyBody = JSON.parse(historyRaw || "{}") as { messages?: unknown[] };
+        if (historyStatus === 200 && Array.isArray(historyBody.messages)) {
+          onThreadHistorySeed?.({
+            sessionId: summary.id,
+            detail: {
+              agentType: summary.agentType,
+              status: "idle",
+              occupancy: "available",
+              messages: historyBody.messages as Array<Record<string, unknown>>,
+              events: [],
+            } as unknown as SessionHistoryDetail,
+          });
+        }
+      } catch { /* merged view is best-effort; the session still opens */ }
+      onSelectSession?.(summary.id, summary);
+    } catch (switchError) {
+      setError(switchError instanceof Error ? switchError.message : "切换引擎失败");
+    } finally {
+      setSwitchingEngine(false);
+    }
+  }, [sessionSummary?.id, sessionSummary?.cwd, sessionSummary?.projectId, viewSessionId, switchingEngine, onSelectSession]);
+
   const isNativeRuntime = composerRoute.ready
     && isNativeRuntimeSelection(sessionSummary, composerRoute.agentType);
 
@@ -1171,7 +1268,7 @@ export default function ChatView({
       syncToolResultScope(targetSid, loaded.revision);
       const restoredTrace = restoreCodexExecutionTrace(detail);
       const current = getMessagesForSession(targetSid);
-      const reconciled = reconcileCodexUnphasedMessages(current, restoredTrace);
+      const reconciled = reconcileCodexExecutionSegments(current, restoredTrace);
       if (reconciled.some((message, index) => message !== current[index]) || reconciled.length !== current.length) setMessages(reconciled, targetSid);
       void prefetchOlderHistory(targetSid, historyCursorRef.current);
       return restoredTrace;
@@ -5956,6 +6053,23 @@ export default function ChatView({
               onValuesChange={types => parallel.setRecipients(parallel.group!.members.filter(member => types.includes(member.agentType)).map(member => member.id))} />
             <span className="parallel-composer-directory" title={parallel.group.cwd}>{parallel.group.cwd.split(/[\\/]/).filter(Boolean).at(-1)}</span>
           </div>}
+          {!isNewSessionComposer && !parallel.group && sessionSummary
+            && sessionSummary.agentType !== "customer-agent" && (
+            <div className="composer-context-row" role="group" aria-label="会话 Agent">
+              <ComposerAgentPicker
+                value={composerAgentType}
+                health={runtimeHealth}
+                onChange={() => undefined}
+                onSwitchEngine={(agentType) => void switchEngine(agentType)}
+                switching={switchingEngine}
+              />
+              {sessionSummary.cwd && (
+                <span className="parallel-composer-directory" title={sessionSummary.cwd}>
+                  {sessionSummary.cwd.split(/[\\/]/).filter(Boolean).at(-1)}
+                </span>
+              )}
+            </div>
+          )}
           {/* Inner input row */}
           <div className="composer-input-row" style={{
             display: "flex",
