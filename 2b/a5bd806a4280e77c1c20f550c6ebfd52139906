@@ -1,0 +1,36 @@
+packages/core/src/application/engine-switch/EngineSwitchLedger.ts
+  h_b0bf4228a0b7ec 1-48
+packages/core/src/application/engine-switch/SwitchEngineUseCase.test.ts
+  h_b0bf4228a0b7ec 1-287
+packages/core/src/application/engine-switch/SwitchEngineUseCase.ts
+  h_b0bf4228a0b7ec 1-293
+packages/core/src/application/engine-switch/index.ts
+  h_b0bf4228a0b7ec 1-2
+packages/core/src/domain/engine-switch/EngineSwitchRepository.ts
+  h_b0bf4228a0b7ec 1-39
+packages/core/src/domain/engine-switch/EngineSwitchRuntime.ts
+  h_b0bf4228a0b7ec 1-24
+packages/core/src/domain/engine-switch/entities.ts
+  h_b0bf4228a0b7ec 1-94
+packages/core/src/domain/engine-switch/handoff-renderer.test.ts
+  h_b0bf4228a0b7ec 1-121
+packages/core/src/domain/engine-switch/handoff-renderer.ts
+  h_b0bf4228a0b7ec 1-190
+packages/core/src/domain/engine-switch/index.ts
+  h_b0bf4228a0b7ec 1-4
+packages/core/src/infrastructure/SQLiteDatabase.ts
+  h_b0bf4228a0b7ec 331,473-520
+packages/core/src/infrastructure/SQLiteEngineSwitchRepository.ts
+  h_b0bf4228a0b7ec 1-193
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2ba5bd806a4280e77c1c20f550c6ebfd52139906",
+  "prompts": {},
+  "humans": {
+    "h_b0bf4228a0b7ec": {
+      "author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
