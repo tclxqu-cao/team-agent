@@ -12,6 +12,7 @@ import { ensurePushHook } from "../../../../lib/push-hook";
 import { businessCatalog } from "../../../../lib/business-catalog";
 import { sharedSettings } from "../../../../lib/shared-settings";
 import { toolExecutionPolicies } from "../../../../lib/tool-execution-policies";
+import { getEngineSwitchContainer } from "../../../../lib/engine-switch/container";
 
 export async function POST(request: Request) {
   try {
@@ -54,12 +55,30 @@ export async function POST(request: Request) {
     if (body.sessionId && isNativeSessionId(body.sessionId)) {
       const sessionId = body.sessionId;
       const service = getNativeRuntimeService();
+      // T3-style engine switch: if a context handoff is pending for this
+      // session (its logical thread just moved here from another engine),
+      // inject the auditable historical-context preamble into the first turn.
+      let input = body.input;
+      const { ledger } = getEngineSwitchContainer();
+      const pendingHandoff = ledger.pendingHandoff(sessionId);
+      if (pendingHandoff && pendingHandoff.summaryText) {
+        input = `${pendingHandoff.summaryText}\n\n---\n\n${body.input}`;
+      }
       // Reserve the broker run before replacing any replay state. A rejected
       // duplicate send must leave the live turn and the renderer draft intact.
-      const admission = await service.startRun(sessionId, body.input, body.images, "web", {
+      const admission = await service.startRun(sessionId, input, body.images, "web", {
         ...(body.nativeModel?.id ? { model: body.nativeModel } : {}),
         ...(body.nativeReasoningEffort ? { reasoningEffort: body.nativeReasoningEffort } : {}),
       });
+      if (pendingHandoff && pendingHandoff.status === "pending") {
+        ledger.markHandoffConsumed(pendingHandoff.id);
+        agentHost.publishExternal(sessionId, {
+          type: "context_handoff_consumed",
+          handoffId: pendingHandoff.id,
+          strategy: pendingHandoff.strategy,
+          sourceSessionId: pendingHandoff.fromSessionId,
+        } as unknown as AgentEvent);
+      }
       agentHost.resetExternalStream(sessionId);
       agentHost.publishExternal(sessionId, {
         type: "run_admitted",
