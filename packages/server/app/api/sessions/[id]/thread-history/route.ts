@@ -54,16 +54,19 @@ export async function GET(
       try {
         const detail = await native.get(sessionId, { limit: phaseLimit * 2, view: "core" });
         const all = detail.messages ?? [];
-        // Newest-first: keep until we hit an already-shown message.
+        // Newest-first: keep until we hit an already-shown message. Keys are
+        // session-scoped (historyIds like "seq-0" collide across sessions).
+        const keyOf = (index: number): string => {
+          const message = all[index];
+          return `${sessionId}:${message.historyId ?? index}`;
+        };
         const fresh: Message[] = [];
         for (let index = all.length - 1; index >= 0; index--) {
-          const message = all[index];
-          const key = message.historyId ?? `${sessionId}:${index}`;
-          if (seen.has(key)) break;
-          fresh.unshift(message);
+          if (seen.has(keyOf(index))) break;
+          fresh.unshift(all[index]);
         }
-        for (const message of fresh) {
-          seen.add(message.historyId ?? "");
+        for (let index = all.length - fresh.length; index < all.length; index++) {
+          seen.add(keyOf(index));
         }
         if (fresh.length === 0 && !isLast) return; // nothing new from this phase
         const omitted = Math.max(0, fresh.length - phaseLimit);
@@ -72,9 +75,7 @@ export async function GET(
           agentType: detail.agentType,
           sessionId,
           messages: tail,
-          omitted: omitted + (all.length > fresh.length
-            ? all.length - fresh.length - omitted
-            : 0),
+          omitted,
         });
       } catch { /* member session unavailable — skip its phase */ }
     };
