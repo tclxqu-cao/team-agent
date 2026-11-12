@@ -1,0 +1,24 @@
+packages/core/src/application/engine-switch/EngineSwitchLedger.ts
+  h_b0bf4228a0b7ec 21-29
+packages/core/src/application/engine-switch/SwitchEngineUseCase.test.ts
+  h_b0bf4228a0b7ec 34
+packages/core/src/domain/engine-switch/EngineSwitchRepository.ts
+  h_b0bf4228a0b7ec 20
+packages/core/src/infrastructure/SQLiteEngineSwitchRepository.ts
+  h_b0bf4228a0b7ec 92-96
+packages/server/app/api/engine-threads/route.ts
+  h_b0bf4228a0b7ec 1-58
+packages/server/app/api/sessions/[id]/thread-history/route.ts
+  h_b0bf4228a0b7ec 7,9-14,16-28,30,34-39,47-51,53-80,83,86,88-93,102-109,112,115,121-122
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5fa20bc00935ac0052e4b6efcb353e4ea115eb2a",
+  "prompts": {},
+  "humans": {
+    "h_b0bf4228a0b7ec": {
+      "author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
