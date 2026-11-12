@@ -1,0 +1,19 @@
+packages/desktop/renderer/components/ChatView.tsx
+  s_10a7d58066ca1c::t_19c5551172acd1 441,496-498,606,766-859,1271
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5dcef3fb991c254dd75e9be48d250a818ebd1bde",
+  "prompts": {},
+  "sessions": {
+    "s_10a7d58066ca1c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1c5d8-29a3-7fe2-a5d1-c132cc98acb1",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
