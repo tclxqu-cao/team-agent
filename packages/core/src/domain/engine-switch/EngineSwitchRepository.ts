@@ -17,6 +17,7 @@ export interface EngineSwitchRepository {
     ensure(thread: EngineSwitchThread): void;
     get(threadKey: string): EngineSwitchThread | null;
     setSession(threadKey: string, currentSessionId: string, currentAgentType: AgentType): void;
+    list(): EngineSwitchThread[];
   };
   records: {
     append(record: EngineSwitchRecord): void;

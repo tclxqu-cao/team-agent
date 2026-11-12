@@ -18,6 +18,15 @@ export class EngineSwitchLedger {
     private readonly now: () => string = () => new Date().toISOString(),
   ) {}
 
+  /** All threads, newest activity first. */
+  listThreads(): EngineSwitchThread[] {
+    return this.repository.threads.list();
+  }
+
+  recordsFor(threadKey: string): EngineSwitchRecord[] {
+    return this.repository.records.list(threadKey);
+  }
+
   threadFor(sessionId: string): EngineSwitchThread | null {
     const threadKey = this.repository.records.threadOfSession(sessionId);
     return threadKey ? this.repository.threads.get(threadKey) : null;

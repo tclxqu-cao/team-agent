@@ -31,6 +31,7 @@ class InMemoryEngineSwitchRepository implements EngineSwitchRepository {
       const thread = this.threadStore.get(threadKey);
       if (thread) this.threadStore.set(threadKey, { ...thread, currentSessionId, currentAgentType });
     },
+    list: (): EngineSwitchThread[] => [...this.threadStore.values()],
   };
 
   readonly records = {

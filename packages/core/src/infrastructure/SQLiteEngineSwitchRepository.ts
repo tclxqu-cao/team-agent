@@ -89,6 +89,11 @@ export class SQLiteEngineSwitchRepository implements EngineSwitchRepository {
         WHERE thread_key = ?
       `).run(currentSessionId, currentAgentType, new Date().toISOString(), threadKey);
     },
+    list: (): EngineSwitchThread[] =>
+      this.db
+        .prepare("SELECT * FROM engine_switch_threads ORDER BY updated DESC")
+        .all()
+        .map((row) => threadRowToEntity(row as Row)),
   };
 
   readonly records = {
