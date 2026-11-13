@@ -1,0 +1,19 @@
+packages/desktop/renderer/components/AllSessionsSidebar.tsx
+  s_28864dc692733f::t_e224df7513707d 158
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4ea4a8584a1011012b34789292acb7e4730f42d0",
+  "prompts": {},
+  "sessions": {
+    "s_28864dc692733f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1d04d-38ed-7b90-b153-3ffcbc66a1b9",
+        "model": "chat-gpt-omhk9/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
