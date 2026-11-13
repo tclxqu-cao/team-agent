@@ -139,7 +139,6 @@ export default function AllSessionsSidebar(props: Props) {
         if (node.scrollTop > 0 && node.scrollHeight - node.scrollTop - node.clientHeight < 120) void load(false);
       }}>
       {error && <div role="alert" className="sidebar-load-error"><span>{error}</span><button onClick={() => void load(true)}>重试</button></div>}
-      {showingCache && <p className="sidebar-cache-state" role="status">{loading ? "显示缓存，正在后台更新…" : "当前显示缓存"}</p>}
       {loading && !sessions.length && !showingCache && <p className="all-sessions-empty" role="status">正在加载所有会话…</p>}
       {(!loading || showingCache) && !error && !visible.length && <p className="all-sessions-empty">{normalized ? "没有匹配的会话" : "暂无会话，开始一个新任务吧"}</p>}
       {visible.map(session => {
@@ -156,6 +155,7 @@ export default function AllSessionsSidebar(props: Props) {
           onDelete={anchor => props.onDelete(session, anchor)} />;
       })}
       {nextCursor && <button className="all-sessions-more" disabled={loading} onClick={() => void load(false)}>{loading ? "正在加载…" : "加载更早的会话"}</button>}
+      {showingCache && <p className="sidebar-cache-state" role="status">{loading ? "显示缓存，正在后台更新…" : "当前显示缓存"}</p>}
     </div>
   </>;
 }
