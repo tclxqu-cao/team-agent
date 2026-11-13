@@ -1,0 +1,275 @@
+packages/desktop/renderer/lib/dashboard-session-navigation.ts
+  s_28864dc692733f::t_13835c0656f48e 29,31-32
+  s_28864dc692733f::t_65eec2dd234a39 30
+packages/server/lib/engine-switch/history-artifact.ts
+  s_28864dc692733f::t_bf94a2ad0626e5 1-29
+packages/core/src/application/engine-switch/SwitchEngineUseCase.test.ts
+  s_28864dc692733f::t_69c4cec29de7d7 20-30,97-98,203-204,241,243,289
+  s_28864dc692733f::t_93d64c74fa81a3 367-378
+  s_28864dc692733f::t_eb0e1421248650 1,303-366
+packages/desktop/renderer/components/AllSessionsSidebar.tsx
+  s_28864dc692733f::t_e224df7513707d 39,63-84
+  s_28864dc692733f::t_6a63a16381778a 112
+packages/server/lib/engine-switch/native-runtime-gateway.ts
+  s_28864dc692733f::t_bf94a2ad0626e5 9,19,37-52,62-68,92-96
+  s_28864dc692733f::t_d1c96d0d713eb0 32-36,70-71
+packages/native-runtime/src/agent-runtime/native-runtime-broker.ts
+  s_28864dc692733f::t_a6747de8c33b43 1691
+  s_28864dc692733f::t_6730ab58e4a672 2445
+  s_28864dc692733f::t_a6808177a76e40 1237-1238,1240-1241,1243-1245
+  s_28864dc692733f::t_21de1acf9c274c 1689,1693-1694
+  s_28864dc692733f::t_22c8b3d6285c3b 1249
+  s_28864dc692733f::t_cb2ad445648eb2 32-34,306,315,741-743,749-750,755,928,1247-1248,1250-1251,2143,2157
+  s_28864dc692733f::t_b033f36a0e5878 79,1688,1690,1692,2642
+  s_28864dc692733f::t_b0d7783144ffc4 2158-2159
+  s_28864dc692733f::t_fe27b234c42278 2643-2645
+  s_28864dc692733f::t_a053081b6910e4 1239,1242
+packages/desktop/renderer/styles/composer.css
+  s_28864dc692733f::t_6d678e55be6128 635-652,658-660,662-665
+  s_28864dc692733f::t_4189e9615c11b4 653
+  s_28864dc692733f::t_1b30524bc7dbd9 654-657,661
+packages/core/src/domain/session/SessionHistory.ts
+  s_28864dc692733f::t_334b5344de9cc9 27,54-55
+packages/server/lib/engine-switch/container.ts
+  s_28864dc692733f::t_a6808177a76e40 5,24
+packages/desktop/renderer/components/ChatHeaderActions.tsx
+  s_28864dc692733f::t_6d678e55be6128 54,76,160
+packages/desktop/renderer/stores/agentStore.ts
+  s_10a7d58066ca1c::t_19c5551172acd1 143-144
+packages/server/app/api/sessions/[id]/switch-engine/route.ts
+  s_28864dc692733f::t_cc89010f5b626e 5,74-75,82
+  s_28864dc692733f::t_bf94a2ad0626e5 4,24,62-64,80
+packages/server/lib/engine-switch/state.test.ts
+  s_28864dc692733f::t_b0808fa57cc040 1-19
+packages/native-runtime/src/agent-runtime/codex-runtime-adapter.test.ts
+  s_28864dc692733f::t_a6747de8c33b43 2740-2752,2761,2768-2770,2774
+  s_28864dc692733f::t_ab53387e1fc8d9 2738-2739,2753-2760,2762-2767,2771-2773,2775-2778
+packages/server/lib/engine-switch/wire.ts
+  s_28864dc692733f::t_bf94a2ad0626e5 1,12,14,19-22
+  s_28864dc692733f::t_a6eb6a0f80e6af 23
+packages/server/lib/engine-switch/state.ts
+  s_28864dc692733f::t_5c192a6e9f16fd 11,13-14
+  s_28864dc692733f::t_a6808177a76e40 1-10,12,15-17
+packages/desktop/renderer/lib/engine-thread-index.test.ts
+  s_28864dc692733f::t_fa352e8d752420 1,3-36,57
+  s_28864dc692733f::t_c651d97a60aa5d 2,50-56
+  s_28864dc692733f::t_ab53387e1fc8d9 37-49
+packages/desktop/renderer/components/AllSessionsSidebar.test.tsx
+  s_28864dc692733f::t_df0218003d30d5 5
+  s_28864dc692733f::t_ca1e8be14fd5fc 8
+packages/server/lib/native-runtime-service.ts
+  s_28864dc692733f::t_d8ce53d1259081 30,103,314-317
+  s_28864dc692733f::t_a053081b6910e4 685
+  s_28864dc692733f::t_f383892b58a94e 318-319
+packages/server/lib/session-catalog.ts
+  s_28864dc692733f::t_e42ee104055e0c 12,19,21-29,31-38,44-52
+packages/core/src/application/engine-switch/index.ts
+  s_28864dc692733f::t_cb2ad445648eb2 3
+packages/desktop/renderer/lib/session-history.test.ts
+  s_28864dc692733f::t_1072aa295c7e9d 874-882
+packages/desktop/renderer/components/CodexExecutionTrace.tsx
+  s_10a7d58066ca1c::t_719ced873b521a 78-82
+packages/core/src/domain/engine-switch/EngineSwitchRepository.ts
+  s_28864dc692733f::t_c9d6c3dc707e52 16-26
+  s_28864dc692733f::t_8b7f73b6966612 35
+packages/native-runtime/src/agent-runtime/types.ts
+  s_28864dc692733f::t_b033f36a0e5878 102-110
+  s_28864dc692733f::t_a053081b6910e4 309
+packages/desktop/renderer/lib/dashboard-session-navigation.test.ts
+  s_28864dc692733f::t_c651d97a60aa5d 147-156
+packages/core/src/infrastructure/SQLiteEngineSwitchRepository.test.ts
+  s_28864dc692733f::t_5c7b6a533dc2bc 22-32
+  s_28864dc692733f::t_fa352e8d752420 1-21,33-66
+packages/core/src/domain/engine-switch/thread-history.test.ts
+  s_28864dc692733f::t_eb0e1421248650 1-42
+packages/desktop/renderer/lib/engine-thread-index.ts
+  s_28864dc692733f::t_6b2f4272d6e433 1,9,12,15,43,45,47,54-60,67-78
+  s_28864dc692733f::t_b033f36a0e5878 19-20,33-40
+  s_28864dc692733f::t_13835c0656f48e 61-66,79
+packages/server/app/api/agent/run/route.ts
+  s_28864dc692733f::t_a6808177a76e40 59
+packages/core/src/domain/engine-switch/EngineSwitchRuntime.ts
+  s_28864dc692733f::t_c9d6c3dc707e52 2,19
+packages/core/src/application/engine-switch/SwitchEngineUseCase.ts
+  s_28864dc692733f::t_d1c96d0d713eb0 174-175
+  s_28864dc692733f::t_70bcb4c8d471b9 19,36-37,95-101,104-106,108-166,168-173,176-183,186-188
+packages/server/app/api/sessions/[id]/route.ts
+  s_28864dc692733f::t_f207fda6a0c1d9 21,49-50
+  s_28864dc692733f::t_dc9aab6f10fde5 59
+  s_28864dc692733f::t_4206b6dfa84bd9 57
+packages/server/lib/engine-switch/history.test.ts
+  s_28864dc692733f::t_b8d53624c84590 64,81-112,123-124,167
+  s_28864dc692733f::t_89246e19f367ec 195-197
+  s_28864dc692733f::t_5c7b6a533dc2bc 39,68,79,149,170,179,200-206,225-239,244
+  s_28864dc692733f::t_b95b8a2eea264e 207-224
+  s_28864dc692733f::t_2aef4c2c55ae26 115-118,198-199
+  s_28864dc692733f::t_2a127c4506e2c6 36-38
+  s_28864dc692733f::t_544ecb2099abe5 40-42,61-63
+  s_28864dc692733f::t_05a9820c878497 65-67
+  s_28864dc692733f::t_d923da5292edc9 69-71,76-78
+  s_28864dc692733f::t_4b661d8f8bdf5e 80
+  s_28864dc692733f::t_ee6b093ba17971 113-114
+  s_28864dc692733f::t_77a0bdf9ca0256 119-122
+  s_28864dc692733f::t_897d477cb1f88b 125-127,146-148
+  s_28864dc692733f::t_c21dd0ba27929a 150-152,164-166
+  s_28864dc692733f::t_a2f28fa0d9132e 168-169
+  s_28864dc692733f::t_a3c280726f7a91 171-173,176-178
+  s_28864dc692733f::t_3397a0c2d60066 180-182,192-194
+  s_28864dc692733f::t_1d5b7fb0a6dbeb 240-243
+  s_28864dc692733f::t_b003a9802bc510 245
+  s_28864dc692733f::t_e21cd85d904252 1-35,43-60,72-75,128-145,153-163,174-175,183-191
+packages/desktop/renderer/lib/codex-execution-trace.test.ts
+  s_10a7d58066ca1c::t_2096d955fbbb4d 11,20-57,124
+  s_10a7d58066ca1c::t_dafdb35e6719b7 92,97,106,118-120
+  s_10a7d58066ca1c::t_4fd8ad59ad7bac 98-105,107-117,121-122
+  s_10a7d58066ca1c::t_c17c1f79044c30 123
+  s_10a7d58066ca1c::t_2eb451dce2e0cd 125
+packages/server/lib/engine-switch/history.ts
+  s_28864dc692733f::t_2c70587376f59f 1-6,11-12,16-37,39,41-61,63-68,70-77,92,94-107,109-114,117-162,164-168,170-175,178-201,203-213,216,218,221-223,226-256,276-287,300-302
+  s_28864dc692733f::t_dca94fb376a9e5 13-14,78-80,93
+  s_28864dc692733f::t_b95b8a2eea264e 169
+  s_28864dc692733f::t_0fe2f5ad33b5db 115-116,214-215,217,219-220
+  s_28864dc692733f::t_89246e19f367ec 303-310
+  s_28864dc692733f::t_334b5344de9cc9 7-8,10,38,40,69,108,163,311
+  s_28864dc692733f::t_4206b6dfa84bd9 15,257-274
+  s_28864dc692733f::t_d8f297bed2f6ce 176,275
+  s_28864dc692733f::t_184c0cb348f8fb 202
+  s_28864dc692733f::t_97c16e1127b931 62,81-91,177,292
+  s_28864dc692733f::t_f207fda6a0c1d9 9,224-225,288-291,293-299
+packages/server/app/api/sessions/[id]/query-index/route.test.ts
+  s_28864dc692733f::t_f207fda6a0c1d9 4
+  s_28864dc692733f::t_b0d7783144ffc4 5
+packages/server/lib/engine-switch/history-store.ts
+  s_28864dc692733f::t_94141e59f38ae9 1-31,36-45,47-52,55-70,76-151
+  s_28864dc692733f::t_97c16e1127b931 32-35
+  s_28864dc692733f::t_dca94fb376a9e5 46,53-54,71-75
+packages/core/src/domain/engine-switch/handoff-renderer.ts
+  s_28864dc692733f::t_65eec2dd234a39 54
+  s_28864dc692733f::t_4cdd7a175a202e 5,8-9,15-16,20-40,42-43,45-51,53,56-58,60-66,68-69,72-77,79-81,84-87
+  s_28864dc692733f::t_28d69fb6a780b5 55,59
+  s_28864dc692733f::t_a528706eaf7673 70-71
+packages/core/src/domain/engine-switch/index.ts
+  s_28864dc692733f::t_87eef827b66993 5
+packages/server/lib/session-catalog.test.ts
+  s_28864dc692733f::t_333bcd1b1369a9 16,51,60-63,70-80,105
+  s_28864dc692733f::t_42c91bba3cc20b 82-94
+  s_28864dc692733f::t_b4e01f1787ba44 81
+packages/desktop/renderer/components/CodexExecutionTrace.test.tsx
+  s_10a7d58066ca1c::t_719ced873b521a 151-173
+  s_10a7d58066ca1c::t_b98a71fdd4f21b 174-175
+packages/core/src/application/engine-switch/EngineSwitchLedger.ts
+  s_28864dc692733f::t_28d69fb6a780b5 12-13
+  s_28864dc692733f::t_d1c96d0d713eb0 35,40
+  s_28864dc692733f::t_8b7f73b6966612 27
+packages/core/src/domain/engine-switch/handoff-renderer.test.ts
+  s_28864dc692733f::t_dc9aab6f10fde5 84-85,121-142
+packages/server/app/api/sessions/[id]/engine-switches/route.ts
+  s_28864dc692733f::t_bf94a2ad0626e5 3,25
+packages/server/app/api/sessions/[id]/tool-result/route.test.ts
+  s_28864dc692733f::t_49c6cb2bbb0d93 3
+packages/native-runtime/src/agent-runtime/native-runtime-broker.test.ts
+  s_28864dc692733f::t_28d69fb6a780b5 3190
+  s_28864dc692733f::t_c651d97a60aa5d 3204-3205,3207
+  s_28864dc692733f::t_4118212038345b 5,3153-3189,3191-3203,3206,3208-3214
+  s_28864dc692733f::t_2015e101d1e9d4 3215
+packages/core/src/domain/engine-switch/thread-history.ts
+  s_28864dc692733f::t_70bcb4c8d471b9 23
+  s_28864dc692733f::t_28d69fb6a780b5 53,91,98
+  s_28864dc692733f::t_83e3af42314165 54-61,64,66-68
+  s_28864dc692733f::t_22c8b3d6285c3b 15
+  s_28864dc692733f::t_87eef827b66993 1-14,16-22,24-52,69-90,92-97,99-115
+  s_28864dc692733f::t_6c040315862cfc 62-63,65
+packages/server/app/api/sessions/[id]/thread-history/route.ts
+  s_28864dc692733f::t_711d7326cddfb3 2,5,8-9,11-16,18,20-23,26-28,33
+  s_28864dc692733f::t_f207fda6a0c1d9 3,10,19,25
+  s_28864dc692733f::t_4206b6dfa84bd9 31-32
+packages/desktop/renderer/lib/session-history.ts
+  s_10a7d58066ca1c::t_2096d955fbbb4d 294
+  s_28864dc692733f::t_49c6cb2bbb0d93 126
+packages/server/app/api/engine-threads/route.ts
+  s_28864dc692733f::t_b033f36a0e5878 4,29-31,33,35
+  s_28864dc692733f::t_b157d8a455e7e2 27
+packages/server/app/api/native-runtime.test.ts
+  s_28864dc692733f::t_b0d7783144ffc4 5-6
+  s_28864dc692733f::t_2d4413e465b537 610-612
+packages/desktop/renderer/lib/codex-execution-trace.ts
+  s_10a7d58066ca1c::t_2096d955fbbb4d 74-76,86-88
+  s_10a7d58066ca1c::t_dafdb35e6719b7 25,44-47,270,272,294,297-299
+  s_10a7d58066ca1c::t_19c5551172acd1 58-73,77-85,89-107,290-291,303,425-430
+  s_10a7d58066ca1c::t_851cc7839149e0 289,295-296,300-302,304-305,330
+  s_10a7d58066ca1c::t_b9da240cddebd2 26
+  s_10a7d58066ca1c::t_b085bacc58f913 431
+packages/native-runtime/src/agent-runtime/codex-runtime-adapter.ts
+  s_28864dc692733f::t_b033f36a0e5878 534-542
+packages/core/src/infrastructure/SQLiteEngineSwitchRepository.ts
+  s_28864dc692733f::t_b0d7783144ffc4 238
+  s_28864dc692733f::t_d1c96d0d713eb0 38-39,152-153,167-168,173
+  s_28864dc692733f::t_22c8b3d6285c3b 204-206
+  s_28864dc692733f::t_a6808177a76e40 67-81
+  s_28864dc692733f::t_596b60ac9e2acf 36-37,43,82-110,165-166,181,189,197,210-211,226
+  s_28864dc692733f::t_8b7f73b6966612 171,174
+packages/core/src/infrastructure/SQLiteDatabase.ts
+  s_28864dc692733f::t_d1c96d0d713eb0 527-528
+  s_28864dc692733f::t_8b7f73b6966612 500-501
+  s_28864dc692733f::t_596b60ac9e2acf 520-522,524-526,529-533
+packages/server/app/api/sessions/[id]/tool-result/route.ts
+  s_28864dc692733f::t_f207fda6a0c1d9 3-4,27,37
+packages/core/src/domain/session/SessionQueryIndex.ts
+  s_28864dc692733f::t_334b5344de9cc9 21,29
+packages/desktop/renderer/components/ChatView.tsx
+  s_28864dc692733f::t_184c0cb348f8fb 1975
+  s_28864dc692733f::t_13835c0656f48e 132,772-773,1939-1940
+  s_28864dc692733f::t_9e700e321815ac 695
+  s_28864dc692733f::t_6d678e55be6128 764-765,4478-4485,6041-6042
+  s_28864dc692733f::t_a053081b6910e4 771,776-777,830
+  s_28864dc692733f::t_6b2f4272d6e433 800,813,819-820,822-824,2003-2005,2033
+  s_28864dc692733f::t_cc89010f5b626e 810,817-818
+  s_28864dc692733f::t_49c6cb2bbb0d93 4611
+packages/server/app/api/sessions/[id]/query-index/route.ts
+  s_28864dc692733f::t_f207fda6a0c1d9 4,16,26-27,33,35
+packages/core/src/domain/session/index.ts
+  s_28864dc692733f::t_dca94fb376a9e5 21
+packages/desktop/renderer/components/ComposerAgentPicker.tsx
+  s_28864dc692733f::t_6d678e55be6128 2,42,47,51-52,89,92,100-104
+  s_28864dc692733f::t_a053081b6910e4 95
+packages/core/src/application/engine-switch/EngineSwitchDelivery.ts
+  s_28864dc692733f::t_cb2ad445648eb2 1-29
+packages/core/src/domain/engine-switch/entities.ts
+  s_28864dc692733f::t_d1c96d0d713eb0 41-43,93-94
+  s_28864dc692733f::t_c9d6c3dc707e52 39-40,44-45,59-62,88-91,111-115
+packages/desktop/renderer/lib/use-composer-picker-height.ts
+  s_28864dc692733f::t_6d678e55be6128 3,12-16,30
+packages/desktop/renderer/App.tsx
+  s_28864dc692733f::t_13835c0656f48e 1087
+  s_28864dc692733f::t_cc89010f5b626e 908-913
+  s_28864dc692733f::t_b033f36a0e5878 324-330
+  s_28864dc692733f::t_dc9aab6f10fde5 1081,1083
+  s_28864dc692733f::t_8b7f73b6966612 310,313,316
+  s_28864dc692733f::t_6b2f4272d6e433 25,314-315,317-320,322-323,331-343,847-849,859-860,1086,1088-1091,1114,1122,1733
+packages/server/lib/engine-switch/history-artifact.test.ts
+  s_28864dc692733f::t_f78c904f943a9b 1-19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "81cbc28468a2526cab9338fb962c3391af08390d",
+  "prompts": {},
+  "sessions": {
+    "s_10a7d58066ca1c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1c5d8-29a3-7fe2-a5d1-c132cc98acb1",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_28864dc692733f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1d04d-38ed-7b90-b153-3ffcbc66a1b9",
+        "model": "group/free-model"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
