@@ -328,6 +328,7 @@ export class SQLiteDatabase {
     this.migrateLSPServers();
     this.migratePinnedCommands();
     this.migrateCommandHistoryExitCode();
+    this.migrateEngineSwitch();
   }
 
   /** exit_code arrived after the first command_history release; NULL = captured before exit codes existed. */
@@ -466,6 +467,69 @@ export class SQLiteDatabase {
     const cols = this.db.prepare("PRAGMA table_info(messages)").all() as Array<{ name: string }>;
     if (!cols.some((column) => column.name === "presentation")) {
       this.db.exec("ALTER TABLE messages ADD COLUMN presentation TEXT");
+    }
+  }
+
+  /**
+   * Engine-switch ledger: one logical thread spanning several engine sessions,
+   * auditable switch records, and materialized context handoffs.
+   */
+  private migrateEngineSwitch(): void {
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS engine_switch_threads (
+        thread_key TEXT PRIMARY KEY,
+        current_session_id TEXT NOT NULL,
+        current_agent_type TEXT NOT NULL,
+        created TEXT NOT NULL,
+        updated TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS engine_switch_records (
+        id TEXT PRIMARY KEY,
+        thread_key TEXT NOT NULL,
+        from_session TEXT NOT NULL,
+        from_agent_type TEXT NOT NULL,
+        to_session TEXT NOT NULL,
+        to_agent_type TEXT NOT NULL,
+        strategy TEXT NOT NULL,
+        handoff_id TEXT,
+        covered_through_history TEXT,
+        at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS engine_switch_records_by_thread ON engine_switch_records (thread_key, at);
+      CREATE INDEX IF NOT EXISTS engine_switch_records_by_source ON engine_switch_records (from_session);
+      CREATE INDEX IF NOT EXISTS engine_switch_records_by_target ON engine_switch_records (to_session);
+
+      CREATE TABLE IF NOT EXISTS context_handoffs (
+        id TEXT PRIMARY KEY,
+        thread_key TEXT NOT NULL,
+        from_session TEXT NOT NULL,
+        from_agent_type TEXT NOT NULL,
+        to_session TEXT NOT NULL,
+        to_agent_type TEXT NOT NULL,
+        strategy TEXT NOT NULL,
+        summary_text TEXT NOT NULL,
+        omitted_history TEXT NOT NULL DEFAULT '[]',
+        status TEXT NOT NULL DEFAULT 'pending',
+        created_by TEXT NOT NULL DEFAULT 'system',
+        created TEXT NOT NULL,
+        consumed_at TEXT
+      );
+      CREATE INDEX IF NOT EXISTS context_handoffs_by_session ON context_handoffs (to_session, status);
+      CREATE INDEX IF NOT EXISTS context_handoffs_by_thread ON context_handoffs (thread_key, created);
+      CREATE TABLE IF NOT EXISTS engine_switch_locks (
+        thread_key TEXT PRIMARY KEY, owner TEXT NOT NULL, expires_at INTEGER NOT NULL
+      );
+    `);
+    for (const [table, column, definition] of [
+      ["engine_switch_records", "source_snapshot", "TEXT"],
+      ["engine_switch_records", "phase_messages", "TEXT"],
+      ["engine_switch_records", "source_history_count", "INTEGER"],
+      ["engine_switch_records", "source_history_last_id", "TEXT"],
+      ["context_handoffs", "payload", "TEXT NOT NULL DEFAULT '{}'"],
+    ]) {
+      const columns = this.db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+      if (!columns.some((entry) => entry.name === column)) this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
     }
   }
 

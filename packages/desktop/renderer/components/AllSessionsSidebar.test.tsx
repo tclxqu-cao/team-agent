@@ -2,8 +2,10 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ALL_SESSIONS_CACHE_KEY } from "../lib/all-sessions-cache";
+import { collaborationRequest } from "./collaboration/client";
 
 vi.mock("../lib/page-activity", () => ({ usePageActive: () => true, isPageActive: () => true }));
+vi.mock("./collaboration/client", () => ({ collaborationRequest: vi.fn(async () => ({ data: [], nextCursor: null, total: 0 })) }));
 import AllSessionsSidebar from "./AllSessionsSidebar";
 
 afterEach(() => vi.unstubAllGlobals());

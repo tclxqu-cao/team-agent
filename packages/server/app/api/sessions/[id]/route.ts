@@ -18,6 +18,7 @@ import {
 } from "../../../../lib/native-runtime-service";
 import { RuntimeSessionError } from "@agent/native-runtime";
 import { rebuildMessagesFromEvents } from "../../../../lib/session-history-source";
+import { loadEngineThreadHistory } from "../../../../lib/engine-switch/history";
 
 export async function GET(
   request: Request,
@@ -45,15 +46,17 @@ export async function GET(
     : undefined;
   if (isNativeSessionId(params.id)) {
     try {
+      const thread = await loadEngineThreadHistory(params.id, historyQuery);
+      if (thread) return NextResponse.json(thread);
       const detail = await getNativeRuntimeService().get(params.id, historyQuery);
       return NextResponse.json(detail);
     } catch (err) {
       return NextResponse.json(
         {
           error: err instanceof Error ? err.message : "Internal error",
-          ...(err instanceof RuntimeSessionError ? { code: err.code } : {}),
+          ...(err instanceof RuntimeSessionError || err instanceof StaleSessionAnchorError ? { code: err.code } : {}),
         },
-        { status: runtimeErrorStatus(err) },
+        { status: err instanceof StaleSessionAnchorError ? 409 : runtimeErrorStatus(err) },
       );
     }
   }

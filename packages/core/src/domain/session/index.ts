@@ -18,6 +18,7 @@ export {
   buildSessionQueryIndex,
   computeSessionHistoryRevision,
   decodeSessionHistoryAnchor,
+  encodeSessionHistoryAnchor,
   sessionHistoryMessageId,
 } from './SessionQueryIndex.js';
 export { SessionQueryIndexCache } from './SessionQueryIndexCache.js';

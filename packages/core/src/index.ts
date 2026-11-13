@@ -3,6 +3,7 @@
 
 // Domain interfaces
 export * from './domain/agent/index.js';
+export * from './domain/engine-switch/index.js';
 export * from './domain/model/index.js';
 export * from './domain/tool/index.js';
 export * from './domain/mcp/index.js';
@@ -66,6 +67,7 @@ export * from './domain/goal/index.js';
 export * from './application/goal/ThreadGoalService.js';
 export * from './application/goal/ThreadGoalTools.js';
 export * from './application/agent-run/index.js';
+export * from './application/engine-switch/index.js';
 export * from './application/file-workspace/index.js';
 export * from './application/notification/index.js';
 export * from './domain/collaboration/types.js';

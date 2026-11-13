@@ -871,6 +871,15 @@ describe("mergeRefreshedSessionHistory", () => {
 });
 
 describe("loadProgressiveSessionHistoryPage", () => {
+  it("keeps frozen Codex traces lazy when another engine owns a mixed thread", async () => {
+    const getSession = vi.fn(async () => ({ messages: [], history: { revision: "thread-rev", delivery: "core" as const } }));
+    const pages: string[] = [];
+    await loadProgressiveSessionHistoryPage({ getSession }, "runtime:opencode:active", "opencode", { limit: 50 },
+      (_detail, phase) => pages.push(phase), () => true);
+    expect(pages).toEqual(["core"]);
+    expect(getSession).toHaveBeenCalledOnce();
+    expect(getSession).toHaveBeenCalledWith("runtime:opencode:active", { limit: 50 });
+  });
   it("commits Codex core messages without requesting page-wide trace data", async () => {
     const getSession = vi.fn(async () => ({
       messages: [{ role: "user", content: "question" }],

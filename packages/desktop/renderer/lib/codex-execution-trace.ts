@@ -22,6 +22,8 @@ export function reconcileCodexUnphasedMessages(
     const source = sources.get(message.id)!;
     const turnId = source.presentation!.executionTrace!.turnId;
     const itemId = message.id.slice(`codex-trace:${turnId}:agent:`.length);
+    const originalIndex = current.indexOf(message);
+    const user = current.slice(0, originalIndex).reverse().find((entry) => entry.role === "user" && !entry.isQueued);
     const existing = messages.some((entry) => entry.executionTrace?.liveMessages?.some(
       (live) => live.id === message.id,
     ));
@@ -39,7 +41,10 @@ export function reconcileCodexUnphasedMessages(
     } : entry);
     const updated = applyCodexLiveExecutionEvent(messages, turnId, {
       type: "text_chunk", text: message.content, turnId, itemId, messagePhase: "commentary",
-    }, message.timestamp);
+    }, message.timestamp, {
+      segmentIndex: source.presentation!.executionTrace!.segmentIndex,
+      userId: user?.id,
+    });
     return updated.map((entry) => entry.executionTrace?.turnId === turnId ? {
       ...entry,
       executionTrace: {
@@ -48,6 +53,56 @@ export function reconcileCodexUnphasedMessages(
       },
     } : entry);
   }, retained);
+}
+
+/** Route replayed items by native identity before merging them with each segment. */
+export function reconcileCodexExecutionSegments(
+  current: readonly ChatMessage[],
+  traceMessages: readonly ChatMessage[],
+): ChatMessage[] {
+  const reconciled = reconcileCodexUnphasedMessages(current, traceMessages);
+  const scope = (turnId: string, segmentIndex = 0) => JSON.stringify([turnId, segmentIndex]);
+  const traces = new Set(reconciled.flatMap((message) => message.executionTrace
+    ? [scope(message.executionTrace.turnId, message.executionTrace.segmentIndex)] : []));
+  const historyByScope = new Map<string, ChatMessage[]>();
+  const scopeByKey = new Map<string, string>();
+  for (const message of traceMessages) {
+    const owner = message.presentation?.executionTrace;
+    if (!owner) continue;
+    const key = scope(owner.turnId, owner.segmentIndex);
+    if (!traces.has(key)) continue;
+    const history = historyByScope.get(key) ?? [];
+    history.push(message);
+    historyByScope.set(key, history);
+    for (const itemKey of executionKeys(message)) scopeByKey.set(itemKey, key);
+  }
+  const liveByScope = new Map<string, ChatMessage[]>();
+  for (const message of reconciled) {
+    const trace = message.executionTrace;
+    if (!trace) continue;
+    const originalScope = scope(trace.turnId, trace.segmentIndex);
+    for (const live of trace.liveMessages ?? []) {
+      const owner = executionKeys(live).map((key) => scopeByKey.get(key)).find(Boolean) ?? originalScope;
+      const items = liveByScope.get(owner) ?? [];
+      items.push(live);
+      liveByScope.set(owner, items);
+    }
+  }
+  return reconciled.map((message) => {
+    const trace = message.executionTrace;
+    if (!trace) return message;
+    const key = scope(trace.turnId, trace.segmentIndex);
+    const history = historyByScope.get(key);
+    const live = deduplicateExecutionMessages(liveByScope.get(key) ?? []);
+    return {
+      ...message,
+      executionTrace: {
+        ...trace,
+        ...(history ? { historyItemKeys: history.flatMap(executionKeys) } : {}),
+        liveMessages: orderMergedExecutionMessages(live, history ?? [], live),
+      },
+    };
+  });
 }
 
 export function groupCodexExecutionTrace(
@@ -212,7 +267,9 @@ export function applyCodexLiveExecutionEvent(
   turnId: string,
   event: CodexLiveExecutionEvent,
   timestamp = Date.now(),
+  target?: { segmentIndex?: number; userId?: string },
 ): ChatMessage[] {
+  const targetSegmentIndex = target?.segmentIndex;
   if (event.type === "tool_call") {
     const pending = messages.filter((message) => (
       message.role === "assistant"
@@ -229,11 +286,23 @@ export function applyCodexLiveExecutionEvent(
   }
   const matchingEventTraceIndex = messages.findLastIndex((message) => (
     message.executionTrace?.turnId === turnId
-    && traceContainsEvent(message.executionTrace.liveMessages ?? [], event)
+    && (targetSegmentIndex === undefined || (message.executionTrace.segmentIndex ?? 0) === targetSegmentIndex)
+    && (traceContainsEvent(message.executionTrace.liveMessages ?? [], event)
+      || executionEventKeys(turnId, event).some((key) => message.executionTrace?.historyItemKeys?.includes(key)))
   ));
   const latestTraceIndex = messages.findLastIndex((message) => message.executionTrace?.turnId === turnId);
-  const latestUserIndex = messages.findLastIndex((message) => message.role === "user" && !message.isQueued);
-  const traceIndex = matchingEventTraceIndex >= 0
+  const segmentUserIndex = messages.findLastIndex((message) => message.role === "user" && !message.isQueued
+    && (targetSegmentIndex === undefined || (message.presentation?.executionTrace?.turnId === turnId
+      && (message.presentation.executionTrace.segmentIndex ?? 0) === targetSegmentIndex)));
+  const latestUserIndex = segmentUserIndex >= 0
+    ? segmentUserIndex
+    : messages.findIndex((message) => message.role === "user" && message.id === target?.userId);
+  // A history read can classify an older item after another same-turn input.
+  // Its persisted segment owns the item even when a newer live trace exists.
+  const traceIndex = targetSegmentIndex !== undefined
+    ? messages.findIndex((message) => message.executionTrace?.turnId === turnId
+      && (message.executionTrace.segmentIndex ?? 0) === targetSegmentIndex)
+    : matchingEventTraceIndex >= 0
     ? matchingEventTraceIndex
     : latestTraceIndex > latestUserIndex || (latestTraceIndex >= 0 && !messages[latestUserIndex]?.isSteered)
       ? latestTraceIndex
@@ -258,7 +327,7 @@ export function applyCodexLiveExecutionEvent(
   if (nextLive === currentLive) return [...messages];
   const userIndex = latestUserIndex;
   if (userIndex < 0) return [...messages];
-  const segmentIndex = messages.reduce((latest, message) => (
+  const segmentIndex = targetSegmentIndex ?? messages.reduce((latest, message) => (
     message.executionTrace?.turnId === turnId
       ? Math.max(latest, message.executionTrace.segmentIndex ?? 0)
       : latest
@@ -351,6 +420,13 @@ function executionKeys(message: ChatMessage): string[] {
     ),
     ...(message.toolCalls ?? []).map((toolCall) => `tool:${toolCall.id}`),
   ];
+}
+
+function executionEventKeys(turnId: string, event: CodexLiveExecutionEvent): string[] {
+  if (event.type === "text_chunk") return event.itemId ? [`agent:codex-trace:${turnId}:agent:${event.itemId}`] : [];
+  if (event.type === "reasoning_summary_delta") return [`reasoning:${event.itemId}:${event.sectionIndex}`];
+  const toolCallId = event.type === "tool_call" ? event.toolCall.id : event.result.toolCallId;
+  return toolCallId ? [`tool:${toolCallId}`] : [];
 }
 
 function isFallbackCommentaryMatch(left: ChatMessage, right: ChatMessage): boolean {

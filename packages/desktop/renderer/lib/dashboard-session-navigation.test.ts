@@ -144,3 +144,13 @@ it("provides a distinct history seed when the same session is reopened", async (
   expect(repeated.initialHistory.sessionId).toBe(first.initialHistory.sessionId);
   expect(repeated.initialHistory).not.toBe(first.initialHistory);
 });
+
+
+it("resolves a switched thread's current engine even before the sidebar index has loaded", async () => {
+  const { api, getSession, listAgentWorkspaces } = fixture();
+  getSession.mockResolvedValue({ ...target, id: "current-engine", agentType: "claude-code", threadKey: "t", activeSessionId: "current-engine", projectId: "project" } as unknown as Awaited<ReturnType<typeof getSession>>);
+  listAgentWorkspaces.mockResolvedValue({ data: [{ ...workspace, agentType: "claude-code" }], nextCursor: null, watermark: null } as unknown as Awaited<ReturnType<typeof listAgentWorkspaces>>);
+  const result = await resolveDashboardSession(api, target, new AbortController().signal);
+  expect(result.session).toMatchObject({ id: "current-engine", agentType: "claude-code" });
+  expect(getSession).toHaveBeenCalledTimes(1);
+});

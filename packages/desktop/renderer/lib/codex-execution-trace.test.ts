@@ -8,6 +8,7 @@ import {
   groupCodexExecutionTrace,
   isCodexExecutionCarrier,
   mergeCodexExecutionMessages,
+  reconcileCodexExecutionSegments,
   reconcileCodexUnphasedMessages,
 } from "./codex-execution-trace";
 
@@ -16,6 +17,44 @@ function message(value: Partial<ChatMessage> & Pick<ChatMessage, "id" | "role">)
 }
 
 describe("Codex execution trace projection", () => {
+  it("redistributes a resumed stream across native input segments and routes later replay by item identity", () => {
+    const user = (id: string, segmentIndex: number) => message({
+      id, role: "user", presentation: { executionTrace: { turnId: "turn-1", segmentIndex } },
+    });
+    const commentary = (id: string, content: string, segmentIndex: number) => message({
+      id: `codex-trace:turn-1:agent:${id}`, role: "assistant", content,
+      presentation: { agentMessagePhase: "commentary", executionTrace: { turnId: "turn-1", segmentIndex } },
+    });
+    const history = [commentary("original-reply", "Original progress", 0), message({
+      id: "history-tool", role: "assistant",
+      presentation: { executionTrace: { turnId: "turn-1", segmentIndex: 0 } },
+      toolCalls: [{ id: "old-tool", name: "exec", arguments: {} }],
+    }), commentary("follow-up-reply", "Follow-up progress", 1)];
+    let current = groupCodexExecutionTrace([user("original", 0), user("follow-up", 1)], "rev");
+    for (const [itemId, text] of [["original-reply", "Original progress"], ["follow-up-reply", "Follow-up progress"]]) {
+      current = applyCodexLiveExecutionEvent(current, "turn-1", {
+        type: "text_chunk", text, itemId, messagePhase: "commentary",
+      });
+    }
+
+    const reconciled = reconcileCodexExecutionSegments(current, history);
+    expect(reconciled[1].executionTrace?.liveMessages?.map(entry => entry.content)).toEqual(["Original progress"]);
+    expect(reconciled[3].executionTrace?.liveMessages?.map(entry => entry.content)).toEqual(["Follow-up progress"]);
+    expect(reconcileCodexExecutionSegments(reconciled, history)).toEqual(reconciled);
+
+    const continued = applyCodexLiveExecutionEvent(reconciled, "turn-1", {
+      type: "tool_call", toolCall: { id: "old-tool", name: "exec", arguments: {} },
+    });
+    const completed = applyCodexLiveExecutionEvent(continued, "turn-1", {
+      type: "tool_result", result: { toolCallId: "old-tool", content: "done" },
+    });
+    expect(completed[1].executionTrace?.liveMessages?.flatMap(entry => entry.toolCalls ?? []))
+      .toEqual([expect.objectContaining({ id: "old-tool", result: "done" })]);
+    expect(completed[3].executionTrace?.liveMessages?.flatMap(entry => entry.toolCalls ?? [])).toEqual([]);
+    expect(mergeCodexExecutionMessages(history.slice(0, 2), completed[1].executionTrace?.liveMessages ?? [])
+      .filter(entry => entry.content === "Original progress")).toHaveLength(1);
+  });
+
   it("keeps unphased text before the following tool without waiting for history", () => {
     const id = "codex-trace:turn-1:agent:msg-first";
     const current = [message({ id: "user", role: "user", timestamp: 1 }),
@@ -50,7 +89,37 @@ describe("Codex execution trace projection", () => {
     const reconciled = reconcileCodexUnphasedMessages(current, history);
     expect(reconciled.some(entry => entry.id === id)).toBe(false);
     const live = reconciled.flatMap(entry => entry.executionTrace?.liveMessages ?? []);
+    expect(live.map(entry => entry.id)).toEqual([id]);
     expect(mergeCodexExecutionMessages(history, live).filter(entry => entry.content === "Checking files")).toHaveLength(1);
+    expect(reconcileCodexUnphasedMessages(reconciled, history)).toEqual(reconciled);
+  });
+
+  it.each([true, false])("keeps late-classified commentary before a same-turn follow-up (existing trace: %s)", (existingTrace) => {
+    const commentary = message({
+      id: "codex-trace:turn-1:agent:before-follow-up",
+      role: "assistant",
+      content: "Checking the original request",
+      timestamp: 2,
+    });
+    const current = [
+      message({ id: "original", role: "user", presentation: { executionTrace: { turnId: "turn-1", segmentIndex: 0 } } }),
+      ...(existingTrace ? [message({ id: "trace-0", role: "assistant", executionTrace: { turnId: "turn-1", revision: "rev", segmentIndex: 0 } })] : []),
+      commentary,
+      message({ id: "follow-up", role: "user", isSteered: true, presentation: { executionTrace: { turnId: "turn-1", segmentIndex: 1 } } }),
+      message({ id: "trace-1", role: "assistant", executionTrace: { turnId: "turn-1", revision: "rev", segmentIndex: 1 } }),
+    ];
+    const history = [{ ...commentary, presentation: {
+      agentMessagePhase: "commentary" as const,
+      executionTrace: { turnId: "turn-1", segmentIndex: 0 },
+    } }];
+
+    const reconciled = reconcileCodexUnphasedMessages(current, history);
+
+    expect(reconciled.map(entry => entry.id)).toEqual([
+      "original", existingTrace ? "trace-0" : "codex-execution-trace:turn-1", "follow-up", "trace-1",
+    ]);
+    expect(reconciled[1].executionTrace?.liveMessages?.map(entry => entry.id)).toEqual([commentary.id]);
+    expect(reconciled[3].executionTrace?.liveMessages ?? []).toEqual([]);
     expect(reconcileCodexUnphasedMessages(reconciled, history)).toEqual(reconciled);
   });
 

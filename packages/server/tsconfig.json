@@ -24,7 +24,9 @@
     "allowJs": true,
     "noEmit": true,
     "incremental": true,
-    "isolatedModules": true
+    "isolatedModules": true,
+    "declaration": false,
+    "declarationMap": false
   },
   "include": [
     "app",
@@ -43,6 +45,7 @@
     ".next-invalid-workspace-check/types/**/*.ts",
     ".next-remote-desktop-20261019/types/**/*.ts",
     ".next-slider-20261022/types/**/*.ts",
-    ".next-remote-original-acceptance/types/**/*.ts"
+    ".next-remote-original-acceptance/types/**/*.ts",
+    ".next-3700/types/**/*.ts"
   ]
 }

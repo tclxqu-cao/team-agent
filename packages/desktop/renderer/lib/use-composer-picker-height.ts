@@ -1,6 +1,6 @@
 import { useEffect, useState, type RefObject } from "react";
 
-export function useComposerPickerHeight(open: boolean, anchorRef: RefObject<HTMLElement>): number {
+export function useComposerPickerHeight(open: boolean, anchorRef: RefObject<HTMLElement>, direction: "above" | "below" = "above"): number {
   const [maxHeight, setMaxHeight] = useState(420);
 
   useEffect(() => {
@@ -9,7 +9,11 @@ export function useComposerPickerHeight(open: boolean, anchorRef: RefObject<HTML
     const updateHeight = () => {
       const anchor = anchorRef.current;
       if (!anchor) return;
-      const availableHeight = anchor.getBoundingClientRect().top - (viewport?.offsetTop ?? 0) - 24;
+      const rect = anchor.getBoundingClientRect();
+      const viewportTop = viewport?.offsetTop ?? 0;
+      const availableHeight = direction === "below"
+        ? viewportTop + (viewport?.height ?? window.innerHeight) - rect.bottom - 24
+        : rect.top - viewportTop - 24;
       setMaxHeight(Math.max(0, Math.min(420, Math.floor(availableHeight))));
     };
     updateHeight();
@@ -23,7 +27,7 @@ export function useComposerPickerHeight(open: boolean, anchorRef: RefObject<HTML
       viewport?.removeEventListener("resize", updateHeight);
       viewport?.removeEventListener("scroll", updateHeight);
     };
-  }, [open, anchorRef]);
+  }, [open, anchorRef, direction]);
 
   return maxHeight;
 }

@@ -75,7 +75,11 @@ export default function CodexExecutionTrace({
     })) ?? null);
   }, [trace.revision]);
 
-  const liveMessages = trace.liveMessages ?? [];
+  // A resumed stream starts at the run's beginning. Wait for native ownership
+  // before showing replayed items beneath a later input in the same turn.
+  const liveMessages = messages === null && segmentIndex > 0
+    && trace.historyItemKeys === undefined && !trace.revision.startsWith("live:")
+    ? [] : trace.liveMessages ?? [];
   const persistedMessages = useMemo(
     () => codexExecutionSegmentMessages(messages ?? [], segmentIndex),
     [messages, segmentIndex],

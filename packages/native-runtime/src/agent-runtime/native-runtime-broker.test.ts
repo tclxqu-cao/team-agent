@@ -2,7 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { reduceRuntimeProgress, SQLiteDatabase, type AgentEvent } from "@agent/core";
+import { reduceRuntimeProgress, SQLiteDatabase, SQLiteEngineSwitchRepository, type AgentEvent } from "@agent/core";
 import { encodeUnifiedSessionId } from "./session-id";
 import type { CodexDiskSessionCatalogEntry, CodexSessionCatalogRepository } from "./codex-session-disk-catalog";
 import {
@@ -3148,5 +3148,68 @@ describe("NativeRuntimeBrokerHost native paged get", () => {
     expect(runtime.getUnpaginatedCachePreferences).toEqual([false]);
     expect(detail.messages).toEqual(runtime.messages ?? detail.messages);
     await host.stop();
+  });
+});
+
+
+describe("single-agent engine handoff at broker admission", () => {
+  function seed(path: string) {
+    const db = new SQLiteDatabase(path);
+    const repository = new SQLiteEngineSwitchRepository(db.db);
+    const source = encodeUnifiedSessionId("claude-code", "old-engine");
+    repository.threads.ensure({ threadKey: "switch-thread", currentSessionId: sessionId, currentAgentType: "codex", created: "now", updated: "now" });
+    repository.records.append({ id: "switch-record", threadKey: "switch-thread", fromSessionId: source, fromAgentType: "claude-code", toSessionId: sessionId, toAgentType: "codex", strategy: "create", handoffId: "handoff", coveredThroughHistoryId: null, at: "now" });
+    repository.handoffs.insert({ id: "handoff", threadKey: "switch-thread", fromSessionId: source, fromAgentType: "claude-code", toSessionId: sessionId, toAgentType: "codex", strategy: "full", summaryText: "ORIGINAL_CONTEXT", images: ["data:image/png;base64,aGVsbG8="], omittedHistoryIds: [], includedHistoryIds: ["original"], status: "pending", createdBy: "system", created: "now", consumedAt: null });
+    return { db, repository, source };
+  }
+
+  it.each(["direct", "goal", "message"] as const)("delivers context and images through %s without changing the user's objective", async kind => {
+    const path = await directory(), runtime = new FakeNativeRuntime();
+    runtime.immediateTerminal = true;
+    const host = new NativeRuntimeBrokerHost(path, runtime as unknown as UnifiedSessionService);
+    const fixture = seed(path);
+    try {
+      if (kind === "direct") await host.startRun(sessionId, "continue");
+      else if (kind === "goal") await host.enqueueGoal(sessionId, "continue", "goal-input");
+      else await host.enqueueMessage(sessionId, { sourceMessageId: "message-input", content: "continue" });
+      await waitFor(() => expect(fixture.repository.handoffs.pendingForSession(sessionId)).toBeNull());
+      expect(runtime.runInputs[0].input).toContain("ORIGINAL_CONTEXT");
+      expect(runtime.runInputs[0].input).toContain("[agentroam:current-user-message]\ncontinue");
+      expect(runtime.runInputs[0].images).toEqual(["data:image/png;base64,aGVsbG8="]);
+      if (kind === "goal") await expect(host.getGoals(sessionId, "web", false)).resolves.toMatchObject({ history: [expect.objectContaining({ objective: "continue" })] });
+    } finally { fixture.db.close(); await host.stop(); }
+  });
+
+  it("retains pending context on startup failure and delivers it again on retry", async () => {
+    const path = await directory(), runtime = new FakeNativeRuntime();
+    runtime.runFailure = { type: "error", message: "failed before prompt acceptance" };
+    const host = new NativeRuntimeBrokerHost(path, runtime as unknown as UnifiedSessionService);
+    const fixture = seed(path);
+    try {
+      await host.startRun(sessionId, "continue");
+      await waitFor(() => expect(host.snapshot(sessionId).events.at(-1)?.event.type).toBe("error"));
+      expect(fixture.repository.handoffs.pendingForSession(sessionId)?.id).toBe("handoff");
+      runtime.runFailure = null; runtime.immediateTerminal = true;
+      await host.startRun(sessionId, "retry");
+      await waitFor(() => expect(fixture.repository.handoffs.pendingForSession(sessionId)).toBeNull());
+      expect(runtime.runInputs[1].input).toContain("ORIGINAL_CONTEXT");
+    } finally { fixture.db.close(); await host.stop(); }
+  });
+
+  it("rejects old thread members and switch leases while ordinary runs stay unchanged", async () => {
+    const path = await directory(), runtime = new FakeNativeRuntime(); runtime.immediateTerminal = true;
+    const host = new NativeRuntimeBrokerHost(path, runtime as unknown as UnifiedSessionService);
+    const fixture = seed(path);
+    try {
+      await expect(host.startRun(fixture.source, "wrong engine")).rejects.toMatchObject({ code: "STALE_THREAD" });
+      await expect(host.enqueueMessage(fixture.source, { sourceMessageId: "wrong", content: "wrong engine" })).rejects.toMatchObject({ code: "STALE_THREAD" });
+      fixture.repository.acquire("switch-thread", "switcher", Date.now() + 60_000);
+      await expect(host.startRun(sessionId, "during switch")).rejects.toMatchObject({ code: "STALE_THREAD" });
+      fixture.repository.release("switch-thread", "switcher");
+      const ordinary = encodeUnifiedSessionId("codex", "ordinary");
+      await host.startRun(ordinary, "UNCHANGED", ["current-image"]);
+      await waitFor(() => expect(runtime.runInputs).toHaveLength(1));
+      expect(runtime.runInputs[0]).toMatchObject({ input: "UNCHANGED", images: ["current-image"] });
+    } finally { fixture.db.close(); await host.stop(); }
   });
 });

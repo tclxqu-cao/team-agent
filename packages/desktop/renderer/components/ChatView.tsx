@@ -129,6 +129,7 @@ import {
 } from "../lib/native-runtime-progress";
 import { createChatAutoFollowController } from "../lib/chat-auto-follow";
 import { createSessionForWorkspace, resolveSessionComposerRoute } from "../lib/session-composer-routing";
+import { historyThreadRedirect } from "../lib/engine-thread-index";
 import { resolveSessionEventTarget } from "../lib/session-event-routing";
 import {
   isActiveNativeSession,
@@ -438,7 +439,7 @@ import AskUserCard from "./AskUserCard";
 import ContextUsageBar from "./ContextUsageBar";
 import HarnessModeControl from "./HarnessModeControl";
 import SessionRunActivity from "./SessionRunActivity";
-import { reconcileCodexUnphasedMessages } from "../lib/codex-execution-trace";
+import { reconcileCodexExecutionSegments } from "../lib/codex-execution-trace";
 import { resolveChatSessionId } from "../lib/session-search";
 import ReasoningSummary from "./ReasoningSummary";
 import CodexExecutionTrace from "./CodexExecutionTrace";
@@ -493,7 +494,7 @@ interface ChatViewProps {
   /** Called when a sub-session is created by agent_dispatch, with the parent session ID */
   onSubSessionCreated?: (parentSessionId: string) => void | Promise<void>;
   /** Navigate to a specific session (e.g., click a sub-session link) */
-  onSelectSession?: (sessionId: string) => void;
+  onSelectSession?: (sessionId: string, summary?: UnifiedSessionSummary) => void;
   onParallelSessionSelected?: (session: UnifiedSessionSummary) => void | Promise<void>;
   /** Fired when a sub-agent session starts, completes, or errors — used for toast notifications */
   onSubAgentEvent?: (ev: { type: 'started' | 'completed' | 'failed'; agentName: string; task: string; subSessionId?: string }) => void;
@@ -691,7 +692,7 @@ export default function ChatView({
     [activeAgentType, sessionSummary?.agentType, goalState.queued, visibleMessages],
   );
   const latestCodexExecutionTurnId = useMemo(
-    () => renderedMessages.findLast((message) => message.executionTrace)?.executionTrace?.turnId,
+    () => renderedMessages.findLast((message) => message.executionTrace && !message.executionTrace.turnId.startsWith("engine-frozen:"))?.executionTrace?.turnId,
     [renderedMessages],
   );
   const { isConfigured, profiles, activeProfileId, switchActiveProfile, loadFromSystem, contextWindow, reasoningEffort, taskNotifications, setField, saveToSystem } = useSettingsStore();
@@ -760,6 +761,77 @@ export default function ChatView({
   const [compatibilityFailure, setCompatibilityFailure] = useState<string | null>(null);
   const composerRoute = resolveSessionComposerRoute(selectedSessionId, sessionSummary, isNewSessionComposer ? newSessionViewingAgent : activeAgentType);
   const composerAgentType = composerRoute.agentType;
+  const canSwitchSessionEngine = !isNewSessionComposer && !isParallelComposer
+    && Boolean(sessionSummary && sessionSummary.agentType !== "customer-agent");
+
+  // ── In-session engine switch (single-agent sessions only) ───────────────
+  // Multi-agent composers never expose this: the picker only receives
+  // onSwitchEngine for a single existing native session.
+  const [switchingEngine, setSwitchingEngine] = useState(false);
+  const switchingEngineRef = useRef(false);
+  const selectSessionRef = useRef(onSelectSession);
+  selectSessionRef.current = onSelectSession;
+  const switchEngine = useCallback(async (targetAgentType: AgentType) => {
+    const sessionId = sessionSummary?.id ?? viewSessionId;
+    if (!sessionId || switchingEngineRef.current) return;
+    switchingEngineRef.current = true;
+    setSwitchingEngine(true);
+    try {
+      const path = `/api/sessions/${encodeURIComponent(sessionId)}/switch-engine`;
+      const payload = JSON.stringify({ targetAgentType });
+      let status: number;
+      let rawBody: string;
+      const shared = typeof window !== "undefined" ? window.sharedServiceApi : undefined;
+      if (shared?.request) {
+        const response = await shared.request(path, "POST", payload);
+        status = response.status;
+        rawBody = response.body;
+      } else {
+        const response = await fetch(path, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: payload,
+          credentials: "same-origin",
+        });
+        status = response.status;
+        rawBody = await response.text();
+      }
+      let body: {
+        targetSession?: UnifiedSessionSummary;
+        handoff?: { strategy?: "delta" | "full" } | null;
+        error?: string;
+      } = {};
+      try { body = JSON.parse(rawBody) as typeof body; } catch { /* keep empty */ }
+      if (status !== 202 || !body.targetSession?.id) {
+        throw new Error(body.error || `切换失败（HTTP ${status}）`);
+      }
+      const target = body.targetSession;
+      const summary: UnifiedSessionSummary = {
+        ...target,
+        id: target.id,
+        agentType: target.agentType ?? targetAgentType,
+        nativeSessionId: target.nativeSessionId ?? target.id,
+        title: target.title || (AGENT_LABELS[targetAgentType] ?? targetAgentType),
+        cwd: target.cwd || sessionSummary?.cwd || "",
+        ...((target.projectId ?? sessionSummary?.projectId) ? { projectId: target.projectId ?? sessionSummary?.projectId } : {}),
+        created: target.created ?? new Date().toISOString(),
+        updated: target.updated ?? new Date().toISOString(),
+        status: target.status,
+        occupancy: target.occupancy,
+        sourceLabel: AGENT_LABELS[targetAgentType] ?? targetAgentType,
+        canResume: target.canResume,
+        canDelete: target.canDelete,
+        readOnly: target.readOnly,
+      } as UnifiedSessionSummary;
+      onSelectSession?.(summary.id, summary);
+    } catch (switchError) {
+      setError(switchError instanceof Error ? switchError.message : "切换引擎失败");
+    } finally {
+      switchingEngineRef.current = false;
+      setSwitchingEngine(false);
+    }
+  }, [sessionSummary?.id, sessionSummary?.cwd, sessionSummary?.projectId, viewSessionId, switchingEngine, onSelectSession]);
+
   const isNativeRuntime = composerRoute.ready
     && isNativeRuntimeSelection(sessionSummary, composerRoute.agentType);
 
@@ -1171,7 +1243,7 @@ export default function ChatView({
       syncToolResultScope(targetSid, loaded.revision);
       const restoredTrace = restoreCodexExecutionTrace(detail);
       const current = getMessagesForSession(targetSid);
-      const reconciled = reconcileCodexUnphasedMessages(current, restoredTrace);
+      const reconciled = reconcileCodexExecutionSegments(current, restoredTrace);
       if (reconciled.some((message, index) => message !== current[index]) || reconciled.length !== current.length) setMessages(reconciled, targetSid);
       void prefetchOlderHistory(targetSid, historyCursorRef.current);
       return restoredTrace;
@@ -1864,6 +1936,8 @@ export default function ChatView({
             },
             (detail, phase) => {
               if (!isCurrentLoad() || !isCurrentSnapshot()) return;
+              const redirect = historyThreadRedirect(detail, targetSid);
+              if (redirect) { selectSessionRef.current?.(redirect.id, redirect); return; }
               observeNativeRun(targetSid, detail);
               const permissionDetail = detail as (SessionHistoryDetail & {
                 permissionMode?: unknown;
@@ -1898,7 +1972,7 @@ export default function ChatView({
               // The current turn's trace owns the first native read after core.
               // Older history remains available on scroll and is prefetched once
               // that trace has loaded.
-              if (historyAgentType(targetSid) !== "codex" || !nextMessages.some(message => message.executionTrace)) {
+              if (historyAgentType(targetSid) !== "codex" || !nextMessages.some(message => message.executionTrace && !message.executionTrace.turnId.startsWith("engine-frozen:"))) {
                 prefetchOlderHistory(targetSid, restoredWindow.window.olderCursor);
               }
               setRuntimeProgress(restoredRuntimeProgress, targetSid);
@@ -4401,6 +4475,14 @@ export default function ChatView({
             onReleaseCodex={sessionSummary?.agentType === "codex" && sessionSummary.occupancy !== "owned-externally"
               ? () => { void handleCodexRelease(); }
               : undefined}
+            mobileEngineSwitcher={canSwitchSessionEngine ? <ComposerAgentPicker
+              value={composerAgentType}
+              health={runtimeHealth}
+              placement="header"
+              onChange={() => undefined}
+              onSwitchEngine={(agentType) => void switchEngine(agentType)}
+              switching={switchingEngine}
+            /> : undefined}
             onOpenHub={onOpenHub}
             onOpenCollaborationDashboard={onOpenCollaborationDashboard}
             onOpenSessionDashboard={onOpenSessionDashboard}
@@ -4526,7 +4608,7 @@ export default function ChatView({
                 refreshSignal={chatMsg.executionTrace.turnId === latestCodexExecutionTurnId
                   ? codexTraceRefreshSignal
                   : 0}
-                autoLoad={historyWindowMode === "latest" && chatMsg.executionTrace.turnId === latestCodexExecutionTurnId}
+                autoLoad={historyWindowMode === "latest" && !chatMsg.executionTrace.turnId.startsWith("engine-frozen:") && chatMsg.executionTrace.turnId === latestCodexExecutionTurnId}
               />
             );
           }
@@ -5956,6 +6038,22 @@ export default function ChatView({
               onValuesChange={types => parallel.setRecipients(parallel.group!.members.filter(member => types.includes(member.agentType)).map(member => member.id))} />
             <span className="parallel-composer-directory" title={parallel.group.cwd}>{parallel.group.cwd.split(/[\\/]/).filter(Boolean).at(-1)}</span>
           </div>}
+          {canSwitchSessionEngine && sessionSummary && (
+            <div className="composer-context-row composer-context-row--engine-switch" role="group" aria-label="会话 Agent">
+              <ComposerAgentPicker
+                value={composerAgentType}
+                health={runtimeHealth}
+                onChange={() => undefined}
+                onSwitchEngine={(agentType) => void switchEngine(agentType)}
+                switching={switchingEngine}
+              />
+              {sessionSummary.cwd && (
+                <span className="parallel-composer-directory" title={sessionSummary.cwd}>
+                  {sessionSummary.cwd.split(/[\\/]/).filter(Boolean).at(-1)}
+                </span>
+              )}
+            </div>
+          )}
           {/* Inner input row */}
           <div className="composer-input-row" style={{
             display: "flex",

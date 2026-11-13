@@ -22,6 +22,7 @@ import type { SessionHistorySeed } from "./lib/session-history";
 import type { AgentRailSessions } from "./lib/agent-rail-sessions";
 import { isAgentType } from "../../core/src/domain/agent/agent-type";
 import { readSessionDashboardIntent, SESSION_DASHBOARD_NAVIGATE, SESSION_DASHBOARD_CHAT_READY, SESSION_DASHBOARD_APPLIED, type SessionDashboardIntent } from "../../core/src/domain/web-console/SessionDashboardBridge";
+import { fetchEngineThreadIndex, activeThreadSession, foldEngineThreadSessions, type EngineThreadIndex } from "./lib/engine-thread-index";
 import CollaborationPage from "./components/collaboration/CollaborationPage";
 import DesktopWorkspaceTabs from "./components/collaboration/DesktopWorkspaceTabs";
 import type { CollaborationGroup } from "@agent/core/domain/collaboration/types";
@@ -300,6 +301,46 @@ export default function App() {
     useUIStore.getState().navigationLayout === "all-sessions" ? null : initialPartition.selectedSessionId,
   );
   const [createdSessionReceipt, setCreatedSessionReceipt] = useState<Session | null>(null);
+  const createdSessionReceiptRef = useRef<Session | null>(null);
+  createdSessionReceiptRef.current = createdSessionReceipt;
+  // Engine threads: sessions that were joined by an in-session engine switch
+  // fold under one conversation in the sidebar and open with merged history.
+  const [engineThreadIndex, setEngineThreadIndex] = useState<EngineThreadIndex | null>(null);
+  const engineThreadIndexRef = useRef<EngineThreadIndex | null>(null);
+  const engineThreadRequestRef = useRef(0);
+  engineThreadIndexRef.current = engineThreadIndex;
+  const refreshEngineThreadIndex = useCallback(async () => {
+    const requestId = ++engineThreadRequestRef.current;
+    try {
+      const index = await fetchEngineThreadIndex();
+      if (requestId !== engineThreadRequestRef.current) return engineThreadIndexRef.current;
+      engineThreadIndexRef.current = index;
+      setEngineThreadIndex(index);
+      return index;
+    } catch { return engineThreadIndexRef.current; }
+  }, []);
+  useEffect(() => {
+    void refreshEngineThreadIndex();
+    let requestInFlight = false;
+    const refresh = () => {
+      if (!isPageActive() || requestInFlight) return;
+      requestInFlight = true;
+      void refreshEngineThreadIndex().finally(() => { requestInFlight = false; });
+    };
+    const timer = window.setInterval(refresh, 30_000);
+    window.addEventListener("focus", refresh);
+    return () => { window.clearInterval(timer); window.removeEventListener("focus", refresh); };
+  }, [refreshEngineThreadIndex]);
+  useEffect(() => {
+    if (!selectedSessionId) return;
+    const entry = engineThreadIndex?.get(selectedSessionId);
+    if (!entry || entry.currentSessionId === selectedSessionId) return;
+    const active = activeThreadSession(entry);
+    if (!active) return;
+    setCreatedSessionReceipt(active as unknown as Session);
+    setInitialSessionHistory(undefined);
+    setSelectedSessionId(active.id);
+  }, [engineThreadIndex, selectedSessionId]);
   const selectedProjectIdRef = useRef(selectedProjectId);
   const selectedSessionIdRef = useRef(selectedSessionId);
   selectedProjectIdRef.current = selectedProjectId;
@@ -802,6 +843,10 @@ export default function App() {
       )
     : orderedPinnedRootSessions;
   const allKnownSessions = searchSessions;
+
+  const displaySessionsByProject = useMemo(() => Object.fromEntries(
+    Object.entries(sessionsByProject).map(([projectId, sessions]) => [projectId, foldEngineThreadSessions(sessions, engineThreadIndex)]),
+  ), [sessionsByProject, engineThreadIndex]);
   const sessionQueryTrim = sessionQuery.trim().toLowerCase();
   const searchResults = sessionQueryTrim
     ? orderedVisibleSessions.filter((s) =>
@@ -811,6 +856,8 @@ export default function App() {
   const selectedSession = selectedSessionId
     ? allKnownSessions.find((session) => session.id === selectedSessionId)
       ?? (createdSessionReceipt?.id === selectedSessionId ? createdSessionReceipt : undefined)
+      ?? (engineThreadIndex?.get(selectedSessionId)
+        ? activeThreadSession(engineThreadIndex.get(selectedSessionId)!) as Session | undefined : undefined)
     : undefined;
   const selectedSessionTitle = selectedSession?.title;
   const selectedWorkspacePath = selectedSession?.cwd
@@ -858,6 +905,12 @@ export default function App() {
   }, [flowStudioOpening]);
 
   const applySidebarSelection = (selection: SidebarSelection) => {
+    const entry = selection.sessionId ? engineThreadIndexRef.current?.get(selection.sessionId) : undefined;
+    const active = entry ? activeThreadSession(entry) : undefined;
+    if (active) {
+      selection = { ...selection, sessionId: active.id };
+      setCreatedSessionReceipt(active as unknown as Session);
+    }
     selectedProjectIdRef.current = selection.projectId;
     selectedSessionIdRef.current = selection.sessionId;
     setSelectedProjectId(selection.projectId);
@@ -1025,9 +1078,16 @@ export default function App() {
       if (intent.kind === "groups") { openCollaborationDashboard(); return; }
       if (intent.kind === "new-session") { enterNewSessionComposer(); return; }
       if (intent.kind === "group") {
+        const discussionId = intent.discussionId;
         const group = await collaborationRequest<CollaborationGroup>({ action: "group", groupId: intent.groupId });
-        setInitialDiscussions(current => ({ ...current, [group.id]: intent.discussionId }));
+        setInitialDiscussions(current => ({ ...current, [group.id]: discussionId }));
         openCollaboration(group); return;
+      }
+      if (intent.kind === "session") {
+        const index = engineThreadIndexRef.current;
+        const entry = index?.get(intent.session.id);
+        const active = entry ? activeThreadSession(entry) : undefined;
+        if (active) intent = { ...intent, session: { ...intent.session, ...active } };
       }
       const targetAgent = intent.kind === "agent" ? intent.agentType : intent.session.agentType;
       const health = runtimeHealth.some(runtime => runtime.agentType === targetAgent)
@@ -1297,6 +1357,10 @@ export default function App() {
       if (
         activeProjectId === projectId
         && activeSessionId
+        && createdSessionReceiptRef.current?.id !== activeSessionId
+        // Engine-switch thread members live in other rails' discovery; never
+        // clear the selection just because this rail's page lacks them.
+        && !engineThreadIndexRef.current?.has(activeSessionId)
         && !list.some((session) => session.id === activeSessionId)
         && !roots.some((session) => session.id === activeSessionId)
       ) {
@@ -2070,7 +2134,7 @@ export default function App() {
               const hasLoadedProject = loadedProjectIds.has(project.id);
               const isProjectLoading = loadingProjectIds.has(project.id);
               const projectSessionError = projectSessionErrors[project.id];
-              const projectSessions = sessionsByProject[project.id] ?? [];
+              const projectSessions = displaySessionsByProject[project.id] ?? [];
               const unpinnedProjectSessions = projectSessions.filter(
                 (session) => !pinnedSessionIdSet.has(session.id),
               );
@@ -2565,8 +2629,12 @@ export default function App() {
             onSubSessionCreated={async (parentSessionId) => {
               await loadChildSessions(parentSessionId);
             }}
-            onSelectSession={(sessionId) => {
+            onSelectSession={(sessionId, summary) => {
+              // Engine switch hands over a receipt so the freshly created (or
+              // resumed) target session resolves before the next discovery pass.
+              if (summary) setCreatedSessionReceipt(summary as unknown as Session);
               setSelectedSessionId(sessionId);
+              void refreshEngineThreadIndex();
             }}
             onParallelSessionSelected={session => {
               navigationRequest.current?.abort();

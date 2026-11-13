@@ -99,6 +99,15 @@ export interface UnifiedSessionSummary {
   migratedFrom?: string;
 }
 
+/** Session metadata for indexes; transcript and queue payloads are excluded. */
+export type EngineThreadSessionSummary = Omit<
+  UnifiedSessionSummary,
+  "messages" | "events" | "goalState" | "messageQueueVersion"
+> & {
+  goalState?: UnifiedSessionSummary["goalState"];
+  messageQueueVersion?: UnifiedSessionSummary["messageQueueVersion"];
+};
+
 export interface UnifiedSessionDetail extends UnifiedSessionSummary {
   messages: Message[];
   events: AgentEvent[];
@@ -297,6 +306,7 @@ export class RuntimeSessionError extends Error {
       | "QUESTION_ANSWER_FAILED"
       | "CODEX_SESSION_VERSION_INCOMPATIBLE"
       | "STALE_SESSION_ANCHOR"
+      | "STALE_THREAD"
       | "NATIVE_GOAL_CONFLICT"
       | "NATIVE_PROTOCOL_ERROR",
   ) {

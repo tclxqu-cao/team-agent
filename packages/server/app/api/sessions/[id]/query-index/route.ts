@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import {
   SessionQueryIndexCache,
+  StaleSessionAnchorError,
   isInternalGoalMessage,
   type Message,
 } from "@agent/core";
@@ -12,6 +13,7 @@ import {
 } from "../../../../../lib/native-runtime-service";
 import { rebuildMessagesFromEvents } from "../../../../../lib/session-history-source";
 import { RuntimeSessionError } from "@agent/native-runtime";
+import { loadEngineThreadQueryIndex } from "../../../../../lib/engine-switch/history";
 
 const localIndexCache = new SessionQueryIndexCache();
 
@@ -21,14 +23,16 @@ export async function GET(
 ) {
   if (isNativeSessionId(params.id)) {
     try {
+      const thread = await loadEngineThreadQueryIndex(params.id);
+      if (thread) return NextResponse.json(thread);
       return NextResponse.json(await getNativeRuntimeService().getQueryIndex(params.id));
     } catch (error) {
       return NextResponse.json(
         {
           error: error instanceof Error ? error.message : "Internal error",
-          ...(error instanceof RuntimeSessionError ? { code: error.code } : {}),
+          ...(error instanceof RuntimeSessionError || error instanceof StaleSessionAnchorError ? { code: error.code } : {}),
         },
-        { status: runtimeErrorStatus(error) },
+        { status: error instanceof StaleSessionAnchorError ? 409 : runtimeErrorStatus(error) },
       );
     }
   }

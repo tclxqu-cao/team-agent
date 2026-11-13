@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { GET } from "./route";
 
+vi.mock("../../../../../lib/engine-switch/history", () => ({ loadEngineThreadQueryIndex: async () => null }));
+
 const state = vi.hoisted(() => ({
   nativeIndex: {
     sessionId: "runtime:codex:bW9jaw",

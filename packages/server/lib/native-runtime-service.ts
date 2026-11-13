@@ -27,6 +27,7 @@ import {
   type BrokerRunEvent,
   type BrokerRunStart,
   type CreateRuntimeSessionOptions,
+  type EngineThreadSessionSummary,
   type ImportAgentWorkspaceResult,
   type NativeReasoningEffort,
   type NativeGoalMutation,
@@ -99,6 +100,7 @@ export interface NativeRuntimePort {
   fork(id: string, point?: SessionForkPoint): Promise<UnifiedSessionSummary>;
   delete(id: string): Promise<void>;
   get(id: string, query?: SessionHistoryQuery): Promise<UnifiedSessionDetail>;
+  getSummary?(id: string): Promise<EngineThreadSessionSummary>;
   getSessionToolResult(
     id: string,
     ref: Pick<SessionToolResultRef, "turnId" | "itemId" | "revision">,
@@ -307,6 +309,12 @@ export class NativeRuntimeService implements NativeRuntimePort {
       } : { ...pending, messages: [], events: [] };
     }
     return associateLocalProject(detail, await this.listProjects(), this.platform);
+  }
+
+  async getSummary(id: string): Promise<EngineThreadSessionSummary> {
+    if (this.runtime.getSummary) return this.runtime.getSummary(id);
+    const { messages: _messages, events: _events, ...metadata } = await this.get(id, { limit: 1 });
+    return metadata;
   }
 
   async getQueryIndex(id: string): Promise<SessionQueryIndex> {
@@ -674,6 +682,7 @@ export function runtimeErrorStatus(err: unknown): number {
       case "APPROVAL_EXPIRED":
       case "CODEX_SESSION_VERSION_INCOMPATIBLE":
       case "STALE_SESSION_ANCHOR":
+      case "STALE_THREAD":
       case "NATIVE_GOAL_CONFLICT":
         return 409;
       default:

@@ -29,6 +29,9 @@ import {
   sessionQueueItemKind,
   sessionHistoryMessageId,
   SQLiteDatabase,
+  SQLiteEngineSwitchRepository,
+  EngineSwitchDelivery,
+  cleanEngineHistory,
   SessionQueryIndexCache,
   StaleSessionAnchorError,
   updateQueuedSessionMessage,
@@ -73,6 +76,7 @@ import type {
   AgentType,
   AgentWorkspace,
   CreateRuntimeSessionOptions,
+  EngineThreadSessionSummary,
   ImportedAgentWorkspace,
   ImportedAgentWorkspaceRepository,
   ImportAgentWorkspaceResult,
@@ -299,6 +303,7 @@ interface SnapshotProjection {
 class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, CodexSessionCatalogRepository {
   private readonly database: SQLiteDatabase;
   private closed = false;
+  readonly engineSwitch: SQLiteEngineSwitchRepository;
 
   constructor(
     directory: string,
@@ -307,6 +312,7 @@ class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, Code
     mkdirSync(directory, { recursive: true, mode: 0o700 });
     try { chmodSync(directory, 0o700); } catch { /* Best effort on filesystems without POSIX modes. */ }
     this.database = new SQLiteDatabase(directory);
+    this.engineSwitch = new SQLiteEngineSwitchRepository(this.database.db);
     this.database.db.exec(`
       CREATE TABLE IF NOT EXISTS native_runtime_message_receipt (
         session_id TEXT NOT NULL, source_message_id TEXT NOT NULL, queue_item_id TEXT NOT NULL,
@@ -732,17 +738,21 @@ class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, Code
   }
 
   enqueueGoal(sessionId: string, objective: string, sourceMessageId?: string): SessionGoalState {
-    return this.updateGoalState(sessionId, (state) => enqueueSessionGoal(state, {
+    return this.database.db.transaction(() => {
+      this.assertEngineThreadRunnable(sessionId);
+      return this.updateGoalState(sessionId, (state) => enqueueSessionGoal(state, {
       id: randomUUID(),
       sessionId,
       objective,
       sourceMessageId,
       now: this.now(),
-    }));
+      }));
+    })();
   }
 
   enqueueMessage(sessionId: string, input: BrokerQueuedMessageInput): SessionGoalState {
     return this.database.db.transaction(() => {
+      this.assertEngineThreadRunnable(sessionId);
       const state = this.getGoalState(sessionId);
       const receipt = this.database.db.prepare(
         "SELECT item,status FROM native_runtime_message_receipt WHERE session_id=? AND source_message_id=?"
@@ -915,6 +925,7 @@ class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, Code
     goalId?: string;
   }): BrokerRunAdmission {
     const create = this.database.db.transaction(() => {
+      this.assertEngineThreadRunnable(input.sessionId);
       if (input.goalId && this.database.db.prepare(
         "SELECT 1 FROM native_runtime_message_receipt WHERE session_id=? AND queue_item_id=? AND run_id IS NOT NULL"
       ).get(input.sessionId, input.goalId)) throw new RuntimeSessionError("This message has already been admitted", "SESSION_ALREADY_RUNNING");
@@ -1223,7 +1234,21 @@ class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, Code
     };
   }
 
+  assertEngineThreadRunnable(sessionId: string): void {
+    const key = this.engineSwitch.records.threadOfSession(sessionId) ?? `engine-thread:${sessionId}`;
+    if (this.engineSwitch.isLocked(key)) throw new RuntimeSessionError("会话正在切换引擎，请稍后重试", "STALE_THREAD");
+    const thread = this.engineSwitch.threads.get(key);
+    if (thread && thread.currentSessionId !== sessionId) {
+      throw new RuntimeSessionError("此线程已切换到另一个引擎，请从当前会话继续", "STALE_THREAD");
+    }
+  }
+
   applyDetail(detail: UnifiedSessionDetail, options: { mergeProjection?: boolean; includePendingQuestions?: boolean; windowed?: boolean } = {}): UnifiedSessionDetail {
+    const threadKey = this.engineSwitch.records.threadOfSession(detail.id);
+    if (threadKey) {
+      const handoffs = this.engineSwitch.handoffs.summariesForThread(threadKey);
+      detail = { ...detail, messages: cleanEngineHistory(detail.messages, handoffs) };
+    }
     const summary = this.applySummary(detail);
     const projection = this.projection(detail.id);
     // Windowed pages that exclude the session tail must not merge the retained
@@ -1658,6 +1683,13 @@ export class NativeRuntimeBrokerHost {
           }) }
         : projected);
     }
+  }
+
+  async getSummary(id: string): Promise<EngineThreadSessionSummary> {
+    this.state.assertSessionVisible(id);
+    const summary = this.state.applySummary(await this.runtime.getRunSummary(id));
+    const { messages: _messages, events: _events, ...metadata } = summary as UnifiedSessionSummary & Partial<UnifiedSessionDetail>;
+    return metadata;
   }
 
   async getQueryIndex(id: string): Promise<SessionQueryIndex> {
@@ -2108,6 +2140,7 @@ export class NativeRuntimeBrokerHost {
     let terminalSeen = false;
     let completed = false;
     try {
+      const delivery = new EngineSwitchDelivery(this.state.engineSwitch).prepare(run.sessionId, run.input, images);
       const activeItem = run.goalId ? this.state.getGoalState(run.sessionId).active : null;
       const options: RuntimeRunOptions = {
         permissionMode: run.permissionMode,
@@ -2121,7 +2154,9 @@ export class NativeRuntimeBrokerHost {
           },
         } : {}),
       };
-      for await (const event of this.runtime.run(run.sessionId, run.input, images, agentIds, agentName, options)) {
+      for await (const event of this.runtime.run(run.sessionId, delivery.input, delivery.images, agentIds, agentName, options)) {
+        try { delivery.confirm(event); }
+        catch (error) { logGlobal("warn", "native-broker", "Failed to persist context delivery; retained for retry", error, { runId: run.runId }); }
         if (event.type === "error" && event.code === "CANCEL_CONFIRMATION_TIMEOUT") {
           this.cancellationConfirmationTimeouts.add(run.sessionId);
         }
@@ -2407,6 +2442,7 @@ export class NativeRuntimeBrokerHost {
       case "forkAt": return this.fork(requireSessionId(sessionId), parseSessionForkPoint(request.params.point));
       case "delete": return this.delete(requireSessionId(sessionId));
       case "get": return this.get(requireSessionId(sessionId), queryParam(request.params));
+      case "getSummary": return this.getSummary(requireSessionId(sessionId));
       case "getToolResult": return this.getSessionToolResult(
         requireSessionId(sessionId),
         toolResultRefParam(request.params),
@@ -2601,6 +2637,10 @@ export class NativeRuntimeBrokerClient {
 
   async get(id: string, query?: SessionHistoryQuery): Promise<UnifiedSessionDetail> {
     return this.request("get", { sessionId: id, ...(query ?? {}) });
+  }
+
+  async getSummary(id: string): Promise<EngineThreadSessionSummary> {
+    return this.request("getSummary", { sessionId: id });
   }
 
   async getQueryIndex(id: string): Promise<SessionQueryIndex> {

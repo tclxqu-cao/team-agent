@@ -13,6 +13,7 @@ function session(index: number): UnifiedSessionSummary {
 beforeEach(() => {
   vi.resetAllMocks();
   delete (globalThis as typeof globalThis & { __liveNativeSessionCatalog?: unknown }).__liveNativeSessionCatalog;
+  (globalThis as typeof globalThis & { __sessionCatalogSnapshots?: Map<string, unknown> }).__sessionCatalogSnapshots?.clear();
   mocks.ca.mockResolvedValue([]); mocks.summaries.mockResolvedValue([]); mocks.projects.mockResolvedValue([]);
   const sessions = Array.from({ length: 45 }, (_, index) => session(index));
   mocks.list.mockResolvedValue(sessions); mocks.refresh.mockResolvedValue(sessions);
@@ -47,7 +48,7 @@ describe("shared session catalog", () => {
     const response = await GET(new Request("http://localhost/api/sessions"));
     const body = await response.json(); expect(Array.isArray(body)).toBe(true); expect(body.map((session: { id: string }) => session.id)).toEqual(["codex:1"]);
   });
-  it("refreshes live status so an externally started third Codex session appears on the next poll", async () => {
+  it("returns cached sessions immediately and applies background refresh on the next request", async () => {
     vi.useFakeTimers();
     const stale = [{ ...session(0), status: "running" as const }, { ...session(1), status: "running" as const }, { ...session(2), status: "idle" as const }];
     mocks.list.mockResolvedValue(stale);
@@ -56,11 +57,40 @@ describe("shared session catalog", () => {
     expect(first.data.filter(session => session.status === "running")).toHaveLength(2);
     mocks.refresh.mockResolvedValue(stale.map(session => session.id === "codex:2" ? { ...session, status: "running", updated: "2026-10-28T05:47:02Z" } : session));
     await vi.advanceTimersByTimeAsync(15_001);
+    const cached = await querySessionCatalog({});
+    expect(cached.data.filter(session => session.status === "running")).toHaveLength(2);
+    expect(mocks.refresh).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(0);
     const next = await querySessionCatalog({});
     expect(next.data.filter(session => session.status === "running")).toHaveLength(3);
     expect(mocks.list).not.toHaveBeenCalled();
     expect(mocks.refresh).toHaveBeenCalledTimes(2);
     expect(first.data.find(session => session.id === "codex:2")?.status).toBe("idle");
+  });
+  it("does not wait for a slow native refresh when cached sessions exist", async () => {
+    vi.useFakeTimers();
+    await querySessionCatalog({});
+    let release!: (sessions: UnifiedSessionSummary[]) => void;
+    mocks.refresh.mockReturnValue(new Promise<UnifiedSessionSummary[]>(resolve => { release = resolve; }));
+    await vi.advanceTimersByTimeAsync(15_001);
+    const page = await querySessionCatalog({});
+    expect(page.total).toBe(45);
+    expect(mocks.refresh).toHaveBeenCalledTimes(2);
+    release(Array.from({ length: 45 }, (_, index) => session(index)));
+    await vi.advanceTimersByTimeAsync(0);
+  });
+  it("retains cached native sessions when a background refresh fails", async () => {
+    vi.useFakeTimers();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    await querySessionCatalog({});
+    mocks.refresh.mockRejectedValueOnce(new Error("temporary background refresh failure"));
+    await vi.advanceTimersByTimeAsync(15_001);
+    const page = await querySessionCatalog({});
+    expect(page.total).toBe(45);
+    await vi.advanceTimersByTimeAsync(0);
+    expect((await querySessionCatalog({})).total).toBe(45);
+    expect(warn).toHaveBeenCalledWith("Native session catalog refresh failed; serving cached sessions:", expect.any(Error));
+    warn.mockRestore();
   });
   it("reuses discovery across nearby list and search requests until the next visible poll", async () => {
     vi.useFakeTimers();
@@ -72,6 +102,7 @@ describe("shared session catalog", () => {
     expect(mocks.refresh).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(1);
     await querySessionCatalog({});
+    await vi.advanceTimersByTimeAsync(0);
     expect(mocks.refresh).toHaveBeenCalledTimes(2);
   });
   it("coalesces simultaneous live discovery requests and retries a failed discovery", async () => {
