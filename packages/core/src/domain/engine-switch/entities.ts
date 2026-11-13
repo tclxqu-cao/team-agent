@@ -36,6 +36,13 @@ export interface EngineSwitchRecord {
   handoffId: string | null;
   /** Cursor in the source session's own history space (last bridged historyId). */
   coveredThroughHistoryId: string | null;
+  /** Exact source snapshot at the switch boundary; absent on legacy records. */
+  sourceSnapshot?: Message[];
+  /** Native paging boundary; its ordinal space can differ from a full transcript. */
+  sourceHistoryItemCount?: number;
+  sourceHistoryLastId?: string;
+  /** Only messages produced in this phase, with thread-scoped identities. */
+  phaseMessages?: Message[];
   at: string;
 }
 
@@ -49,6 +56,10 @@ export interface ContextHandoff {
   strategy: HandoffStrategy;
   /** Deterministic, budget-bounded historical context (never an instruction). */
   summaryText: string;
+  /** Readable full history and attachments, including budget omissions. */
+  historyFile?: string;
+  includedHistoryIds?: string[];
+  images?: string[];
   /**
    * historyIds of source items that did not fit the budget. Kept in full for
    * audit and on-demand re-read; wire responses trim the list.
@@ -74,7 +85,13 @@ export interface EngineSwitchSessionView {
   status: "idle" | "running" | "completed" | "failed";
   occupancy: string;
   canResume?: boolean;
+  readOnly?: boolean;
+  canDelete?: boolean;
+  switchBlockReason?: string;
+  workStateText?: string;
   messages: Message[];
+  historyItemCount?: number;
+  historyLastId?: string;
 }
 
 export interface EngineSwitchHealth {
@@ -91,4 +108,9 @@ export interface EngineSwitchCreatedSession {
   title: string;
   cwd: string;
   projectId?: string;
+  status?: EngineSwitchSessionView["status"];
+  occupancy?: string;
+  canResume?: boolean;
+  readOnly?: boolean;
+  canDelete?: boolean;
 }

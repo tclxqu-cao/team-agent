@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown } from "lucide-react";
+import { ArrowRightLeft, ChevronDown, LoaderCircle } from "lucide-react";
 import type { AgentType, RuntimeHealth } from "../global";
 import { AGENT_TYPES } from "../../../core/src/domain/agent/agent-type";
 import { AGENT_LABELS } from "../lib/agent-catalog";
@@ -39,15 +39,17 @@ interface ComposerAgentPickerProps {
   onValuesChange?: (agentTypes: AgentType[]) => void;
   allowedAgentTypes?: readonly AgentType[];
   purpose?: "participants" | "recipients";
+  placement?: "composer" | "header";
   /** Test-only hook so the menu can be asserted without a click; production stays collapsed. */
   defaultOpen?: boolean;
 }
 
-export default function ComposerAgentPicker({ value, health = [], onChange, onSwitchEngine, switching = false, values, onValuesChange, allowedAgentTypes, purpose = "participants", defaultOpen = false }: ComposerAgentPickerProps) {
+export default function ComposerAgentPicker({ value, health = [], onChange, onSwitchEngine, switching = false, values, onValuesChange, allowedAgentTypes, purpose = "participants", placement = "composer", defaultOpen = false }: ComposerAgentPickerProps) {
   const [open, setOpen] = useState(defaultOpen);
   const multiple = values !== undefined && onValuesChange !== undefined;
   const wrapRef = useRef<HTMLDivElement>(null);
-  const maxHeight = useComposerPickerHeight(open, wrapRef);
+  const inHeader = placement === "header";
+  const maxHeight = useComposerPickerHeight(open, wrapRef, inHeader ? "below" : "above");
   useEffect(() => {
     if (!open) return;
     const closeOnPointer = (event: PointerEvent) => {
@@ -84,19 +86,22 @@ export default function ComposerAgentPicker({ value, health = [], onChange, onSw
     : committed.length === items.length ? `全部（${committed.length}）` : `已选 ${committed.length}/${items.length}`;
   const menuLabel = purpose === "recipients" ? "这条消息发给谁" : "选择 Agent";
   return (
-    <div className="composer-agent-picker" ref={wrapRef} data-composer-agent-picker={value}>
+    <div className={`composer-agent-picker${inHeader ? " composer-agent-picker--header" : ""}`} ref={wrapRef} data-composer-agent-picker={value}>
       <button
         type="button"
-        className="composer-agent-picker-button"
+        className={inHeader ? "ui-icon-button chat-header-action composer-agent-picker-button composer-agent-picker-button--icon" : "composer-agent-picker-button"}
         aria-haspopup="menu"
         aria-expanded={open}
+        disabled={switching}
         aria-label={multiple ? `${purpose === "recipients" ? "发送对象" : "参与 Agent"}：${label}` : `Agent：${AGENT_LABELS[value]}，${switchable ? "点击切换引擎" : "点击切换"}`}
         title={multiple ? `${menuLabel}：${committed.map(type => AGENT_LABELS[type]).join("、")}` : `Agent：${AGENT_LABELS[value]}（${switchable ? "点击切换引擎，保留上下文" : "点击切换"}）`}
         onClick={() => setOpen((next) => !next)}
       >
-        <AgentBrandIcon agentType={committed[0] ?? value} size={16} />
-        <span className="composer-picker-label">{label}</span>
-        <ChevronDown className="composer-picker-chevron" size={14} strokeWidth={2} aria-hidden="true" />
+        {inHeader
+          ? switching ? <LoaderCircle size={17} className="spin" aria-hidden="true" /> : <ArrowRightLeft size={17} aria-hidden="true" />
+          : <><AgentBrandIcon agentType={committed[0] ?? value} size={16} />
+            <span className="composer-picker-label">{label}</span>
+            <ChevronDown className="composer-picker-chevron" size={14} strokeWidth={2} aria-hidden="true" /></>}
       </button>
       {open && (
         <div className="composer-agent-picker-menu" role="menu" aria-label={menuLabel} style={{ maxHeight }} onKeyDown={handleMenuKeyDown}>

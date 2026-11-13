@@ -51,6 +51,7 @@ interface ChatHeaderActionsProps {
   codexReleaseState?: "idle" | "releasing" | "released";
   onHideToBackground: () => void;
   onReleaseCodex?: () => void;
+  mobileEngineSwitcher?: React.ReactNode;
   onOpenHub?: () => void;
   onOpenCollaborationDashboard?: () => void;
   onOpenSessionDashboard?: () => void;
@@ -72,6 +73,7 @@ export default function ChatHeaderActions({
   codexReleaseState = "idle",
   onHideToBackground,
   onReleaseCodex,
+  mobileEngineSwitcher,
   onOpenHub,
   onOpenCollaborationDashboard,
   onOpenSessionDashboard,
@@ -155,6 +157,7 @@ export default function ChatHeaderActions({
           <FolderOpen size={15} aria-hidden="true" />
         </button>
       )}
+      {mobileEngineSwitcher && <div className="chat-header-engine-switcher">{mobileEngineSwitcher}</div>}
       {onReleaseCodex && (
         <button
           type="button"

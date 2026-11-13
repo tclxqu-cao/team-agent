@@ -9,8 +9,8 @@ import type { EngineSwitchRepository } from "../../domain/engine-switch/EngineSw
  * Query/state transitions around the switch ledger and handoff artifacts.
  *
  * Kept separate from the command use case: the run pipeline needs to read the
- * pending handoff before admitting a turn and mark it consumed after
- * admission, without going through the switch decision.
+ * pending handoff and record native acceptance, without going through the
+ * switch decision. Broker admission alone never confirms delivery.
  */
 export class EngineSwitchLedger {
   constructor(
@@ -24,7 +24,7 @@ export class EngineSwitchLedger {
   }
 
   recordsFor(threadKey: string): EngineSwitchRecord[] {
-    return this.repository.records.list(threadKey);
+    return this.repository.records.list(threadKey, false);
   }
 
   threadFor(sessionId: string): EngineSwitchThread | null {
@@ -32,12 +32,12 @@ export class EngineSwitchLedger {
     return threadKey ? this.repository.threads.get(threadKey) : null;
   }
 
-  ledger(sessionId: string): { thread: EngineSwitchThread | null; records: EngineSwitchRecord[] } {
+  ledger(sessionId: string, includeHistory = true): { thread: EngineSwitchThread | null; records: EngineSwitchRecord[] } {
     const threadKey = this.repository.records.threadOfSession(sessionId);
     if (!threadKey) return { thread: null, records: [] };
     return {
       thread: this.repository.threads.get(threadKey),
-      records: this.repository.records.list(threadKey),
+      records: this.repository.records.list(threadKey, includeHistory),
     };
   }
 

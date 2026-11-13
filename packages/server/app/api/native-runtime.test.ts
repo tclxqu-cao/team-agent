@@ -2,6 +2,8 @@ import { rmSync } from "node:fs";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { flushGlobal, getDatabase, type AgentEvent } from "@agent/core";
 
+vi.mock("../../lib/engine-switch/history", () => ({ loadEngineThreadHistory: async () => null }));
+
 const isolatedAgentData = vi.hoisted(() => {
   const previous = process.env.AGENT_DATA_DIR;
   const directory = `${process.env.TMPDIR || "/tmp"}/agentroam-native-runtime-test-${process.pid}-${crypto.randomUUID()}`;
@@ -605,7 +607,9 @@ describe("native runtime routing", () => {
     await settled;
 
     expect(events[0]).toMatchObject({ type: "run_admitted", _nativeRunId: "mock-native-run" });
-    expect(events.slice(1)).toEqual(state.runEvents);
+    expect(events.slice(1)).toEqual(state.runEvents.map((event, index) => ({
+      ...event, _nativeRunId: "mock-native-run", _nativeSequence: index + 1,
+    })));
     expect(state.started).toEqual({ id: sessionId, input: "hi", images: undefined, controller: "web" });
     await expect(agentHost.getSessionStore().get(sessionId)).resolves.toBeNull();
   });

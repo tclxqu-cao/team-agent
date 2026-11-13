@@ -16,6 +16,7 @@
 //   - a switch only happens at a turn boundary (no in-flight turn).
 
 import type { AgentType } from "../../domain/agent/agent-type.js";
+import { cleanEngineHistory, engineThreadPhases } from "../../domain/engine-switch/thread-history.js";
 import { renderContextHandoff } from "../../domain/engine-switch/handoff-renderer.js";
 import type {
   ContextHandoff,
@@ -23,7 +24,6 @@ import type {
   EngineSwitchRecord,
   EngineSwitchSessionView,
   EngineSwitchThread,
-  HandoffStrategy,
 } from "../../domain/engine-switch/entities.js";
 import type { EngineSwitchRepository } from "../../domain/engine-switch/EngineSwitchRepository.js";
 import type { EngineSwitchRuntime } from "../../domain/engine-switch/EngineSwitchRuntime.js";
@@ -33,7 +33,8 @@ export type EngineSwitchErrorCode =
   | "SOURCE_NOT_FOUND"
   | "TARGET_NOT_NATIVE"
   | "RUNTIME_UNAVAILABLE"
-  | "SESSION_OCCUPIED";
+  | "SESSION_OCCUPIED"
+  | "STALE_THREAD";
 
 export class EngineSwitchError extends Error {
   constructor(readonly code: EngineSwitchErrorCode, message: string) {
@@ -91,203 +92,100 @@ export class SwitchEngineUseCase {
   async execute(command: SwitchEngineCommand): Promise<SwitchEngineResult> {
     const { runtime, repository } = this.deps;
     const { sourceSessionId, targetAgentType } = command;
-
-    if (targetAgentType === "customer-agent" || !NATIVE_ONLY.has(targetAgentType)) {
-      throw new EngineSwitchError("TARGET_NOT_NATIVE", "目标必须是原生引擎");
+    if (!NATIVE_ONLY.has(targetAgentType)) throw new EngineSwitchError("TARGET_NOT_NATIVE", "目标必须是原生引擎");
+    const existingKey = repository.records.threadOfSession(sourceSessionId);
+    const threadKey = existingKey || `engine-thread:${sourceSessionId}`;
+    if (command.threadKey && command.threadKey !== threadKey) throw new EngineSwitchError("INVALID_SESSION_ID", "会话不属于指定线程");
+    const owner = this.newId();
+    if (!repository.acquire(threadKey, owner, Date.now() + 300_000)) {
+      throw new EngineSwitchError("SESSION_OCCUPIED", "此会话正在切换引擎，请稍后重试");
     }
-
-    // Availability gate: fail before mutating any state.
-    const health = await runtime.health();
-    const targetHealth = health.find((entry) => entry.agentType === targetAgentType);
-    if (targetHealth && !targetHealth.available) {
-      throw new EngineSwitchError(
-        "RUNTIME_UNAVAILABLE",
-        `目标引擎 ${targetAgentType} 不可用：${targetHealth.error ?? "unknown"}`,
-      );
-    }
-
-    let source: EngineSwitchSessionView;
     try {
-      source = await runtime.getSession(sourceSessionId);
-    } catch {
-      throw new EngineSwitchError("SOURCE_NOT_FOUND", "源会话不存在或无法读取");
-    }
-
-    // Turn boundary: never switch mid-turn.
-    if (source.status === "running" || source.occupancy === "owned-externally") {
-      throw new EngineSwitchError("SESSION_OCCUPIED", "源会话正在运行，请等待回合结束后再切换");
-    }
-
-    const threadKey = command.threadKey?.trim()
-      || repository.records.threadOfSession(sourceSessionId)
-      || `engine-thread:${sourceSessionId}`;
-    const now = this.now();
-    repository.threads.ensure({
-      threadKey,
-      currentSessionId: sourceSessionId,
-      currentAgentType: source.agentType,
-      created: repository.threads.get(threadKey)?.created ?? now,
-      updated: now,
-    });
-
-    // Decide strategy: has this target engine participated in the thread before?
-    const previous = command.clean
-      ? null
-      : repository.records.latestInvolving(threadKey, targetAgentType);
-    const previousSessionId = previous
-      ? previous.toAgentType === targetAgentType
-        ? previous.toSessionId
-        : previous.fromAgentType === targetAgentType
-          ? previous.fromSessionId
-          : null
-      : null;
-
-    let strategy: "resume" | "create" = previousSessionId ? "resume" : "create";
-    let targetSession: EngineSwitchCreatedSession;
-    if (strategy === "resume" && previousSessionId) {
-      const resumed = await this.tryResume(runtime, previousSessionId, targetAgentType);
-      if (resumed) {
-        targetSession = resumed;
-      } else {
-        strategy = "create";
-        targetSession = await this.createTarget(runtime, source, targetAgentType, threadKey);
+      const existing = repository.threads.get(threadKey);
+      if (existing && existing.currentSessionId !== sourceSessionId) {
+        throw new EngineSwitchError("STALE_THREAD", `请从当前活动会话 ${existing.currentSessionId} 切换引擎`);
       }
-    } else {
-      targetSession = await this.createTarget(runtime, source, targetAgentType, threadKey);
-    }
-
-    // Delta cursor lives in the source session's own history space: the last
-    // time this exact session was bridged to the target agent. Only a handoff
-    // the target actually consumed counts as "seen" — a pending or superseded
-    // artifact must be re-rendered, otherwise repeated switches would drop
-    // history that never reached the target.
-    const priorBridge = strategy === "resume"
-      ? repository.records.latestFromTo(sourceSessionId, targetAgentType)
-      : null;
-    const priorHandoff = priorBridge ? repository.handoffs.byRecord(priorBridge.id) : null;
-    const sinceHistoryId = priorBridge && priorHandoff?.status === "consumed"
-      ? priorBridge.coveredThroughHistoryId
-      : null;
-    const sourceMessages = sinceHistoryId
-      ? source.messages.filter((message) => isAfterHistoryId(message, sinceHistoryId))
-      : source.messages;
-    const rendered = renderContextHandoff(
-      sourceMessages,
-      `${source.agentType} 会话 ${sourceSessionId}`,
-      targetAgentType,
-      { budgetTokens: command.budgetTokens },
-    );
-
-    const handoffStrategy: HandoffStrategy = strategy === "resume" ? "delta" : "full";
-    const handoff: ContextHandoff = {
-      id: this.newId(),
-      threadKey,
-      fromSessionId: sourceSessionId,
-      fromAgentType: source.agentType,
-      toSessionId: targetSession.id,
-      toAgentType: targetAgentType,
-      strategy: handoffStrategy,
-      summaryText: rendered.summaryText,
-      omittedHistoryIds: rendered.omittedHistoryIds,
-      status: rendered.summaryText ? "pending" : "consumed",
-      createdBy: "system",
-      created: now,
-      consumedAt: rendered.summaryText ? null : now,
-    };
-
-    const coveredThrough = source.messages[source.messages.length - 1]?.historyId ?? null;
-    const record: EngineSwitchRecord = {
-      id: this.newId(),
-      threadKey,
-      fromSessionId: sourceSessionId,
-      fromAgentType: source.agentType,
-      toSessionId: targetSession.id,
-      toAgentType: targetAgentType,
-      strategy,
-      handoffId: handoff.status === "pending" ? handoff.id : null,
-      coveredThroughHistoryId: coveredThrough,
-      at: now,
-    };
-
-    // One logical write: record + artifact + thread pointer. A thread has
-    // exactly one active engine, so a newer handoff supersedes every pending
-    // one in the thread — otherwise stale preambles could fire on the next run
-    // of a member the thread already left.
-    repository.records.append(record);
-    if (handoff.status === "pending") {
-      repository.handoffs.supersedePendingForThread(threadKey, now);
-      repository.handoffs.insert(handoff);
-    }
-    repository.threads.setSession(threadKey, targetSession.id, targetAgentType);
-
-    return {
-      thread: repository.threads.get(threadKey) ?? {
-        threadKey,
-        currentSessionId: targetSession.id,
-        currentAgentType: targetAgentType,
-        created: now,
-        updated: now,
-      },
-      record,
-      handoff: handoff.status === "pending" ? handoff : null,
-      targetSession,
-      strategy,
-    };
-  }
-
-  private async tryResume(
-    runtime: EngineSwitchRuntime,
-    sessionId: string,
-    targetAgentType: AgentType,
-  ): Promise<EngineSwitchCreatedSession | null> {
-    try {
-      const view = await runtime.getSession(sessionId);
-      if (view.agentType !== targetAgentType) return null;
-      return {
-        id: view.id,
-        agentType: view.agentType,
-        title: view.title,
-        cwd: view.cwd,
-        ...(view.projectId ? { projectId: view.projectId } : {}),
+      const health = await runtime.health();
+      const targetHealth = health.find((entry) => entry.agentType === targetAgentType);
+      if (targetHealth && !targetHealth.available) throw new EngineSwitchError("RUNTIME_UNAVAILABLE", `目标引擎不可用：${targetHealth.error ?? targetAgentType}`);
+      let source: EngineSwitchSessionView;
+      try { source = await runtime.getSession(sourceSessionId); }
+      catch { throw new EngineSwitchError("SOURCE_NOT_FOUND", "源会话不存在或无法读取"); }
+      this.assertIdle(source);
+      if (source.agentType === targetAgentType && !command.clean) throw new EngineSwitchError("INVALID_SESSION_ID", "当前会话已在使用该引擎");
+      const records = repository.records.list(threadKey);
+      const handoffs = records.flatMap((record) => {
+        const handoff = repository.handoffs.byRecord(record.id);
+        return handoff ? [handoff] : [];
+      });
+      const legacy = new Map<string, EngineSwitchSessionView>();
+      for (const record of records) {
+        if (record.sourceSnapshot || legacy.has(record.fromSessionId)) continue;
+        try { legacy.set(record.fromSessionId, await runtime.getSession(record.fromSessionId)); }
+        catch { throw new EngineSwitchError("SOURCE_NOT_FOUND", "旧版线程历史无法读取，未执行切换"); }
+      }
+      const phases = engineThreadPhases(records, source, legacy, handoffs);
+      const allMessages = phases.flatMap((phase) => phase.messages);
+      const previous = command.clean ? null : repository.records.latestInvolving(threadKey, targetAgentType);
+      const previousSessionId = previous
+        ? previous.toAgentType === targetAgentType ? previous.toSessionId : previous.fromSessionId : null;
+      let target: EngineSwitchCreatedSession | null = null;
+      if (previousSessionId) {
+        let view: EngineSwitchSessionView | null = null;
+        try { view = await runtime.getSession(previousSessionId); } catch { /* deleted native session */ }
+        if (view && view.agentType === targetAgentType) {
+          this.assertIdle(view);
+          if (view.canResume !== false && !view.readOnly && view.cwd === source.cwd) target = view;
+        }
+      }
+      const strategy = target ? "resume" : "create";
+      if (!target) target = await runtime.createSession({ agentType: targetAgentType, cwd: source.cwd,
+        ...(source.projectId ? { projectId: source.projectId } : {}), title: source.title?.trim() || "接续会话" });
+      if (target.agentType !== targetAgentType) throw new EngineSwitchError("RUNTIME_UNAVAILABLE", "目标引擎身份不匹配");
+      const known = new Set<string>();
+      if (strategy === "resume") {
+        for (const phase of phases) if (phase.sessionId === target.id) {
+          for (const message of phase.messages) if (message.historyId) known.add(message.historyId);
+        }
+        for (const handoff of handoffs) if (handoff.toSessionId === target.id && handoff.status === "consumed") {
+          for (const id of handoff.includedHistoryIds ?? []) known.add(id);
+        }
+      }
+      const candidates = allMessages.filter((message) => !message.historyId || !known.has(message.historyId));
+      const id = this.newId();
+      const workStateText = `工作目录：${source.cwd}\n${source.workStateText || "源会话当前没有运行中的回合。"}`;
+      const historyFile = await runtime.materializeHistory({ id, messages: allMessages, workStateText });
+      const rendered = renderContextHandoff(candidates, `${source.agentType} 会话 ${sourceSessionId}`, targetAgentType,
+        { budgetTokens: command.budgetTokens, historyFile, workStateText });
+      const now = this.now();
+      const handoff: ContextHandoff = {
+        id, threadKey, fromSessionId: sourceSessionId, fromAgentType: source.agentType,
+        toSessionId: target.id, toAgentType: targetAgentType, strategy: strategy === "resume" ? "delta" : "full",
+        summaryText: rendered.summaryText, historyFile, images: rendered.images,
+        includedHistoryIds: rendered.includedHistoryIds, omittedHistoryIds: rendered.omittedHistoryIds,
+        status: "pending", createdBy: "system", created: now, consumedAt: null,
       };
-    } catch {
-      return null;
-    }
+      const snapshot = cleanEngineHistory(source.messages, handoffs);
+      const record: EngineSwitchRecord = {
+        id: this.newId(), threadKey, fromSessionId: sourceSessionId, fromAgentType: source.agentType,
+        toSessionId: target.id, toAgentType: targetAgentType, strategy, handoffId: id,
+        coveredThroughHistoryId: source.messages.at(-1)?.historyId ?? null,
+        sourceSnapshot: snapshot, phaseMessages: phases.at(-1)?.messages ?? [], at: now,
+        sourceHistoryItemCount: source.historyItemCount,
+        sourceHistoryLastId: source.historyLastId,
+      };
+      const thread: EngineSwitchThread = { threadKey, currentSessionId: target.id, currentAgentType: targetAgentType,
+        created: existing?.created ?? now, updated: now };
+      // No durable pointer or handoff changes until every external operation succeeds.
+      try { repository.commit({ thread, expectedSessionId: existing?.currentSessionId ?? null, owner, record, handoff }); }
+      catch { throw new EngineSwitchError("STALE_THREAD", "线程状态已变化，请刷新后重试"); }
+      return { thread, record, handoff, targetSession: target, strategy };
+    } finally { repository.release(threadKey, owner); }
   }
 
-  private async createTarget(
-    runtime: EngineSwitchRuntime,
-    source: EngineSwitchSessionView,
-    targetAgentType: AgentType,
-    threadKey: string,
-  ): Promise<EngineSwitchCreatedSession> {
-    const created = await runtime.createSession({
-      agentType: targetAgentType,
-      cwd: source.cwd,
-      ...(source.projectId ? { projectId: source.projectId } : {}),
-      // Human-facing title: no thread keys or engine internals in the UI.
-      title: source.title?.trim() ? `⤵ ${source.title.trim()}` : "⤵ 接续会话",
-    });
-    if (created.agentType !== targetAgentType) {
-      throw new EngineSwitchError("RUNTIME_UNAVAILABLE", `Expected ${targetAgentType} session`);
+  private assertIdle(view: EngineSwitchSessionView): void {
+    if (view.status === "running" || view.occupancy === "owned-externally" || view.switchBlockReason) {
+      throw new EngineSwitchError("SESSION_OCCUPIED", view.switchBlockReason || "会话仍在运行或由其他客户端占用，请结束任务后切换");
     }
-    return created;
   }
-}
-
-/**
- * historyIds are allocated monotonically by a source session (for example
- * `turn-3`). A message is "after" the cursor when its trailing sequence is
- * greater. Unparseable ids are included (fail toward more context).
- */
-function isAfterHistoryId(message: { historyId?: string }, cursor: string): boolean {
-  const cursorSeq = parseSeq(cursor);
-  const seq = message.historyId ? parseSeq(message.historyId) : null;
-  if (seq === null || cursorSeq === null) return true;
-  return seq > cursorSeq;
-}
-
-function parseSeq(historyId: string): number | null {
-  const match = /(?:^[-:]|[-_])(\d+)$/.exec(historyId);
-  return match ? Number(match[1]) : null;
 }

@@ -123,7 +123,7 @@ export async function loadProgressiveSessionHistoryPage(
     const detail = coreLoader
       ? await coreLoader()
       : await api.getSession(sessionId, query) as SessionHistoryDetail | null;
-    if (isCurrent()) onPage(detail, "full");
+    if (isCurrent()) onPage(detail, detail?.history?.delivery === "core" ? "core" : "full");
     return;
   }
 
@@ -291,6 +291,7 @@ function mergeCoreSessionHistory(
       timestamp: currentHistory[currentTraceIndex].timestamp,
       executionTrace: {
         ...refreshedTrace.executionTrace!,
+        ...(currentTrace?.historyItemKeys ? { historyItemKeys: currentTrace.historyItemKeys } : {}),
         ...(currentTrace?.liveMessages ? { liveMessages: currentTrace.liveMessages } : {}),
       },
     };

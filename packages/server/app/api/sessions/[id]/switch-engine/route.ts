@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { EngineSwitchError, type AgentType } from "@agent/core";
 import { getEngineSwitchContainer } from "../../../../../lib/engine-switch/container";
-import { handoffForWire } from "../../../../../lib/engine-switch/wire";
+import { handoffForWire, switchRecordForWire } from "../../../../../lib/engine-switch/wire";
+import { getNativeRuntimeService } from "../../../../../lib/native-runtime-service";
 
 const NATIVE_AGENT_TYPES: readonly AgentType[] = [
   "codex",
@@ -20,6 +21,7 @@ function errorStatus(error: unknown): number {
       case "SOURCE_NOT_FOUND":
         return 404;
       case "SESSION_OCCUPIED":
+      case "STALE_THREAD":
         return 409;
       case "RUNTIME_UNAVAILABLE":
         return 503;
@@ -57,6 +59,9 @@ export async function POST(
     if (body?.budgetTokens !== undefined && (!Number.isInteger(body.budgetTokens) || body.budgetTokens < 1_024 || body.budgetTokens > 64_000)) {
       return NextResponse.json({ error: "budgetTokens must be an integer between 1024 and 64000" }, { status: 400 });
     }
+    if (body?.threadKey !== undefined && typeof body.threadKey !== "string") {
+      return NextResponse.json({ error: "Invalid threadKey" }, { status: 400 });
+    }
 
     const { useCase } = getEngineSwitchContainer();
     const result = await useCase.execute({
@@ -66,19 +71,15 @@ export async function POST(
       ...(body?.clean ? { clean: true } : {}),
       ...(body?.budgetTokens !== undefined ? { budgetTokens: body.budgetTokens } : {}),
     });
+    const targetSession = await getNativeRuntimeService().getSummary(result.targetSession.id)
+      .catch(() => result.targetSession);
 
     return NextResponse.json({
       threadKey: result.thread.threadKey,
       strategy: result.strategy,
-      record: result.record,
+      record: switchRecordForWire(result.record),
       handoff: result.handoff ? handoffForWire(result.handoff) : null,
-      targetSession: {
-        id: result.targetSession.id,
-        agentType: result.targetSession.agentType,
-        title: result.targetSession.title,
-        cwd: result.targetSession.cwd,
-        ...(result.targetSession.projectId ? { projectId: result.targetSession.projectId } : {}),
-      },
+      targetSession,
     }, { status: 202 });
   } catch (error) {
     return NextResponse.json(

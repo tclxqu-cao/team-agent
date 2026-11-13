@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { getNativeRuntimeService, isNativeSessionId, runtimeErrorStatus } from "../../../../../lib/native-runtime-service";
+import { StaleSessionAnchorError } from "@agent/core";
+import { loadEngineThreadToolResult } from "../../../../../lib/engine-switch/history";
 
 export async function GET(
   request: Request,
@@ -22,7 +24,7 @@ export async function GET(
     );
   }
   try {
-    const result = await getNativeRuntimeService().getSessionToolResult(params.id, {
+    const result = await loadEngineThreadToolResult(params.id, { turnId, itemId, revision }) ?? await getNativeRuntimeService().getSessionToolResult(params.id, {
       turnId,
       itemId,
       revision,
@@ -32,7 +34,7 @@ export async function GET(
     const code = typeof error === "object" && error !== null && typeof (error as { code?: unknown }).code === "string"
       ? (error as { code: string }).code
       : undefined;
-    const status = runtimeErrorStatus(error);
+    const status = error instanceof StaleSessionAnchorError ? 409 : runtimeErrorStatus(error);
     return NextResponse.json(
       {
         error: error instanceof Error ? error.message : "Unable to load tool result",

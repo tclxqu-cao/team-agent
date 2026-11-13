@@ -18,6 +18,7 @@ export function buildSessionQueryIndex(
   sessionId: string,
   messages: readonly Message[],
   revision = computeSessionHistoryRevision(messages),
+  preserveHistoryIds = false,
 ): SessionQueryIndex {
   const visible = visibleSessionMessages(messages);
   let ordinal = 0;
@@ -25,7 +26,7 @@ export function buildSessionQueryIndex(
     if (!isIndexedUserMessage(message)) return [];
     ordinal += 1;
     return [{
-      messageId: sessionHistoryMessageId(visibleIndex, message),
+      messageId: preserveHistoryIds && message.historyId ? message.historyId : sessionHistoryMessageId(visibleIndex, message),
       ordinal,
       preview: queryPreview(message),
       pageToken: encodeSessionHistoryAnchor(revision, visibleIndex),

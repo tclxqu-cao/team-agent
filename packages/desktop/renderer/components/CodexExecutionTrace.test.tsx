@@ -148,3 +148,28 @@ describe("CodexExecutionTrace", () => {
     expect(html).toContain('aria-busy="true"');
   });
 });
+
+describe("Codex resumed execution display", () => {
+  const live = {
+    id: "codex-trace:turn-1:agent:progress", role: "assistant" as const,
+    content: "Original request progress", timestamp: 1,
+    presentation: { agentMessagePhase: "commentary" as const },
+  };
+  const render = (segmentIndex: number, revision: string, historyItemKeys?: string[]) => renderToStaticMarkup(
+    <CodexExecutionTrace trace={{ turnId: "turn-1", revision, segmentIndex, historyItemKeys, liveMessages: [live] }}
+      loadTrace={vi.fn().mockResolvedValue([])} loadToolResult={vi.fn()} renderContent={text => text}
+      runtimeProgress={[]} nativeSubagents={{}} autoLoad />,
+  );
+
+  it("waits for native ownership before displaying a run replay beneath a follow-up", () => {
+    const html = render(1, "rev");
+    expect(html).toContain("正在加载会话");
+    expect(html).not.toContain(live.content);
+    expect(render(1, "rev", ["agent:" + live.id])).toContain(live.content);
+  });
+
+  it("shows an initial segment and a fresh live turn immediately", () => {
+    expect(render(0, "rev")).toContain(live.content);
+    expect(render(1, "live:turn-1")).toContain(live.content);
+  });
+});

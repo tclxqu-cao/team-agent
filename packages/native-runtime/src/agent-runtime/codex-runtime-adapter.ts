@@ -531,6 +531,15 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     };
   }
 
+  async getSessionSummary(nativeSessionId: string): Promise<UnifiedSessionSummary> {
+    this.ensureAvailable();
+    const response = await this.client.request<{ thread: CodexThread }>("thread/read", {
+      threadId: nativeSessionId,
+      includeTurns: false,
+    });
+    return this.toSummary(response.thread, new Set());
+  }
+
   /**
    * Source-paginated history over the native turn protocol.
    *

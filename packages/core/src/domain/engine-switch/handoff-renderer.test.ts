@@ -81,8 +81,8 @@ describe("renderContextHandoff", () => {
     expect(rendered.omittedHistoryIds.length).toBeLessThan(50);
     // Newest user message always wins a slot.
     expect(rendered.summaryText).toContain("历史消息 49");
-    // Oldest items are the ones omitted; ids are listed oldest-last.
-    expect(rendered.omittedHistoryIds).toContain("seq-0");
+    // Preserve the original user constraints as well as recent work.
+    expect(rendered.summaryText).toContain("历史消息 0");
     expect(rendered.summaryText).toContain("omitted");
   });
 
@@ -117,5 +117,27 @@ describe("renderContextHandoff", () => {
     const rendered = renderContextHandoff(messages, "codex 会话 s1", "opencode");
     expect(rendered.summaryText).not.toContain("内部系统提示");
     expect(rendered.summaryText).toContain("你好");
+  });
+
+  it("preserves original order, full long text, and image-only messages", () => {
+    const text = "需求".repeat(1_000) + "TAIL_CONSTRAINT";
+    const image = "data:image/png;base64,aGVsbG8=";
+    const rendered = renderContextHandoff([
+      user(text, 0), assistant("first reply", 1), user("follow up", 2), assistant("last reply", 3),
+      { role: "user", content: "", images: [image], historyId: "image" },
+    ], "A", "B", { historyFile: "/full/history.json" });
+    expect(rendered.summaryText).toContain("TAIL_CONSTRAINT");
+    expect(rendered.summaryText.indexOf("follow up")).toBeLessThan(rendered.summaryText.indexOf("last reply"));
+    expect(rendered.includedHistoryIds).toContain("image");
+    expect(rendered.images).toEqual([image]);
+  });
+
+  it("omits oversized items whole and names the full-history recovery file", () => {
+    const rendered = renderContextHandoff([user("x".repeat(40_000) + "TAIL", 0), user("latest", 1)], "A", "B",
+      { budgetTokens: 1_024, historyFile: "/full/history.json" });
+    expect(rendered.omittedHistoryIds).toEqual(["seq-0"]);
+    expect(rendered.summaryText).not.toContain("xxxx");
+    expect(rendered.summaryText).toContain("/full/history.json");
+    expect(rendered.tokenEstimate).toBeLessThanOrEqual(1_024);
   });
 });

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getEngineSwitchContainer } from "../../../../../lib/engine-switch/container";
-import { handoffForWire } from "../../../../../lib/engine-switch/wire";
+import { handoffForWire, switchRecordForWire } from "../../../../../lib/engine-switch/wire";
 
 /**
  * GET /api/sessions/[id]/engine-switches
@@ -22,7 +22,7 @@ export async function GET(
         // `handoffForRecord` takes the record id and joins through handoff_id.
         const handoff = ledger.handoffForRecord(record.id);
         return {
-          ...record,
+          ...switchRecordForWire(record),
           handoff: handoff ? handoffForWire(handoff) : undefined,
         };
       }),

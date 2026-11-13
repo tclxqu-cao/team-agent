@@ -2735,6 +2735,47 @@ describe("Codex occupied-session takeover", () => {
   });
 });
 
+describe("Codex metadata summaries", () => {
+  it("reads engine-thread metadata without requesting transcript turns", async () => {
+    const thread = {
+      id: "cx-metadata",
+      parentThreadId: null,
+      preview: "metadata",
+      name: "metadata",
+      createdAt: 1_788_220_800,
+      updatedAt: 1_788_220_800,
+      status: { type: "idle" },
+      path: "C:\\project\\.codex\\rollout.jsonl",
+      cwd: "C:\\project",
+      source: "desktop",
+      turns: [{ id: "must-not-be-used", items: [] }],
+    };
+    const requests: Array<{ method: string; params: any }> = [];
+    const adapter = new CodexRuntimeAdapter({
+      client: {
+        onNotification: () => () => undefined,
+        onExit: () => () => undefined,
+        setServerRequestHandler: () => undefined,
+        request: async (method: string, params: any) => {
+          requests.push({ method, params });
+          return { thread };
+        },
+      } as never,
+      platform: "win32",
+      sessionRoot: "C:\\Users\\test\\.codex\\sessions",
+    });
+
+    await expect(adapter.getSessionSummary(thread.id)).resolves.toMatchObject({
+      id: `runtime:codex:${Buffer.from(thread.id).toString("base64url")}`,
+      title: "metadata",
+    });
+    expect(requests).toEqual([{
+      method: "thread/read",
+      params: { threadId: thread.id, includeTurns: false },
+    }]);
+  });
+});
+
 describe("Codex native paged history", () => {
   const turn = (id: string, index: number, withTool = false) => ({
     id,

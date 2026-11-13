@@ -1,4 +1,4 @@
-import type { ContextHandoff } from "@agent/core";
+import type { ContextHandoff, EngineSwitchRecord } from "@agent/core";
 
 /** Newest ids worth listing on the wire; the stored artifact keeps them all. */
 export const WIRE_OMITTED_LIST_LIMIT = 20;
@@ -9,9 +9,15 @@ export const WIRE_OMITTED_LIST_LIMIT = 20;
  * the wire shape lists only the newest handful plus the full count.
  */
 export function handoffForWire(handoff: ContextHandoff): ContextHandoff & { omittedCount: number } {
+  const { images: _images, ...metadata } = handoff;
   return {
-    ...handoff,
+    ...metadata,
     omittedHistoryIds: handoff.omittedHistoryIds.slice(-WIRE_OMITTED_LIST_LIMIT),
     omittedCount: handoff.omittedHistoryIds.length,
   };
+}
+
+export function switchRecordForWire(record: EngineSwitchRecord) {
+  const { sourceSnapshot: _snapshot, phaseMessages: _messages, ...metadata } = record;
+  return metadata;
 }

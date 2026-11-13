@@ -24,7 +24,7 @@ export function paginateSessionHistory(
   messages: Message[],
   events: AgentEvent[],
   query: SessionHistoryQuery = {},
-  options: { includePendingQuestions?: boolean } = {},
+  options: { includePendingQuestions?: boolean; preserveHistoryIds?: boolean } = {},
 ): SessionHistoryPage {
   const pageSize = normalizePageSize(query.limit);
   const visibleMessages = messages.filter(
@@ -51,7 +51,8 @@ export function paginateSessionHistory(
     const message = selected[offset];
     pageMessages.push({
       ...message,
-      historyId: sessionHistoryMessageId(start + offset, message),
+      historyId: options.preserveHistoryIds && message.historyId
+        ? message.historyId : sessionHistoryMessageId(start + offset, message),
     });
     for (const toolCall of message.toolCalls ?? []) {
       selectedToolCallIds.add(toolCall.id);

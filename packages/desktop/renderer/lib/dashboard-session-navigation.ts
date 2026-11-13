@@ -26,6 +26,10 @@ export async function resolveDashboardSession(api: AgentApi, target: MonitoredSe
     ? { limit: 1, view: "core" }
     : { limit: SESSION_HISTORY_PAGE_SIZE }) as UnifiedSessionSummary & SessionHistoryDetail;
   signal.throwIfAborted();
+  const switched = detail as typeof detail & { threadKey?: string; activeSessionId?: string };
+  if (switched?.threadKey && switched.activeSessionId === detail.id) {
+    target = { ...target, id: detail.id, agentType: detail.agentType };
+  }
   if (!detail?.id || detail.id !== target.id || detail.agentType !== target.agentType) throw new Error("原会话身份不匹配，请刷新看板后重试");
   const snapshot: AgentRailSessions = {
     workspaces: cached?.workspaces.filter(workspace => workspace.agentType === target.agentType) ?? [],

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { GET } from "./route";
+vi.mock("../../../../../lib/engine-switch/history", () => ({ loadEngineThreadToolResult: async () => null }));
 
 const state = vi.hoisted(() => ({
   getSessionToolResult: vi.fn(),

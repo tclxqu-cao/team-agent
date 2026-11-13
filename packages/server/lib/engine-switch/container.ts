@@ -1,10 +1,8 @@
 import {
   EngineSwitchLedger,
-  SQLiteEngineSwitchRepository,
   SwitchEngineUseCase,
-  getDatabase,
 } from "@agent/core";
-import { getServerBaseDir } from "../server-data-dir";
+import { getEngineSwitchRepository } from "./state";
 import { createNativeRuntimeEngineSwitchGateway } from "./native-runtime-gateway";
 
 /**
@@ -23,7 +21,7 @@ export interface EngineSwitchContainer {
 export function getEngineSwitchContainer(): EngineSwitchContainer {
   const globalRef = globalThis as Record<string, unknown>;
   if (!globalRef.__engineSwitchContainer) {
-    const repository = new SQLiteEngineSwitchRepository(getDatabase(getServerBaseDir()).db);
+    const repository = getEngineSwitchRepository();
     const runtime = createNativeRuntimeEngineSwitchGateway();
     globalRef.__engineSwitchContainer = {
       useCase: new SwitchEngineUseCase({ runtime, repository }),

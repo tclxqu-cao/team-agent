@@ -36,6 +36,7 @@ export default function AllSessionsSidebar(props: Props) {
   const requestQuery = useRef("");
   const refreshedRevision = useRef(`${props.revision}:${props.runningSessionId}`);
   const snapshot = useRef({ query: "", rows: initialCache?.data ?? [], cursor: null as string | null });
+  const firstPageRequest = useRef<{ query: string; promise: Promise<SessionCatalogPage> } | null>(null);
   const scroll = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -59,10 +60,28 @@ export default function AllSessionsSidebar(props: Props) {
       setShowingCache(cached !== null);
     }
     try {
-      const page = await readSessionCatalogPage(
-        cursor => collaborationRequest<SessionCatalogPage>({ action: "sessionCatalog", query: search, limit: 20, cursor }),
-        controller.signal, reset ? undefined : previous.cursor ?? undefined,
-      );
+      let page: SessionCatalogPage;
+      if (reset) {
+        const pending = firstPageRequest.current;
+        if (pending?.query === search) {
+          page = await pending.promise;
+        } else {
+          const promise = collaborationRequest<SessionCatalogPage>({ action: "sessionCatalog", query: search, limit: 20 });
+          const entry = { query: search, promise };
+          firstPageRequest.current = entry;
+          try {
+            page = await promise;
+          } finally {
+            if (firstPageRequest.current === entry) firstPageRequest.current = null;
+          }
+        }
+        if (controller.signal.aborted) return;
+      } else {
+        page = await readSessionCatalogPage(
+          cursor => collaborationRequest<SessionCatalogPage>({ action: "sessionCatalog", query: search, limit: 20, cursor }),
+          controller.signal, previous.cursor ?? undefined,
+        );
+      }
       const rows = reset ? page.data : mergeCatalogSessions(previous.rows, page.data);
       snapshot.current = { query: search, rows, cursor: page.nextCursor };
       setSessions(rows); setTotal(page.total); setNextCursor(page.nextCursor);
@@ -90,6 +109,7 @@ export default function AllSessionsSidebar(props: Props) {
     window.addEventListener("focus", refreshIfIdle);
     return () => {
       request.current?.abort();
+      firstPageRequest.current = null;
       window.clearInterval(timer);
       window.removeEventListener("focus", refreshIfIdle);
     };

@@ -129,6 +129,7 @@ import {
 } from "../lib/native-runtime-progress";
 import { createChatAutoFollowController } from "../lib/chat-auto-follow";
 import { createSessionForWorkspace, resolveSessionComposerRoute } from "../lib/session-composer-routing";
+import { historyThreadRedirect } from "../lib/engine-thread-index";
 import { resolveSessionEventTarget } from "../lib/session-event-routing";
 import {
   isActiveNativeSession,
@@ -494,10 +495,6 @@ interface ChatViewProps {
   onSubSessionCreated?: (parentSessionId: string) => void | Promise<void>;
   /** Navigate to a specific session (e.g., click a sub-session link) */
   onSelectSession?: (sessionId: string, summary?: UnifiedSessionSummary) => void;
-  /** Engine switch: seed ChatView with the logical thread's merged history. */
-  onThreadHistorySeed?: (seed: SessionHistorySeed) => void;
-  /** Resolves the merged thread history for a session, when it belongs to an engine-switch thread. */
-  getSessionThreadSeed?: (sessionId: string) => Promise<SessionHistorySeed | undefined>;
   onParallelSessionSelected?: (session: UnifiedSessionSummary) => void | Promise<void>;
   /** Fired when a sub-agent session starts, completes, or errors — used for toast notifications */
   onSubAgentEvent?: (ev: { type: 'started' | 'completed' | 'failed'; agentName: string; task: string; subSessionId?: string }) => void;
@@ -605,8 +602,6 @@ export default function ChatView({
   sessionTitle,
   sessionSummary,
   initialSessionHistory,
-  getSessionThreadSeed,
-  onThreadHistorySeed,
   onSessionHistorySettled,
   workspacePath = null,
   workspaceSource,
@@ -697,7 +692,7 @@ export default function ChatView({
     [activeAgentType, sessionSummary?.agentType, goalState.queued, visibleMessages],
   );
   const latestCodexExecutionTurnId = useMemo(
-    () => renderedMessages.findLast((message) => message.executionTrace)?.executionTrace?.turnId,
+    () => renderedMessages.findLast((message) => message.executionTrace && !message.executionTrace.turnId.startsWith("engine-frozen:"))?.executionTrace?.turnId,
     [renderedMessages],
   );
   const { isConfigured, profiles, activeProfileId, switchActiveProfile, loadFromSystem, contextWindow, reasoningEffort, taskNotifications, setField, saveToSystem } = useSettingsStore();
@@ -766,15 +761,20 @@ export default function ChatView({
   const [compatibilityFailure, setCompatibilityFailure] = useState<string | null>(null);
   const composerRoute = resolveSessionComposerRoute(selectedSessionId, sessionSummary, isNewSessionComposer ? newSessionViewingAgent : activeAgentType);
   const composerAgentType = composerRoute.agentType;
+  const canSwitchSessionEngine = !isNewSessionComposer && !isParallelComposer
+    && Boolean(sessionSummary && sessionSummary.agentType !== "customer-agent");
 
   // ── In-session engine switch (single-agent sessions only) ───────────────
   // Multi-agent composers never expose this: the picker only receives
   // onSwitchEngine for a single existing native session.
   const [switchingEngine, setSwitchingEngine] = useState(false);
-  const threadSeedCacheRef = useRef(new Map<string, SessionHistorySeed | null>());
+  const switchingEngineRef = useRef(false);
+  const selectSessionRef = useRef(onSelectSession);
+  selectSessionRef.current = onSelectSession;
   const switchEngine = useCallback(async (targetAgentType: AgentType) => {
     const sessionId = sessionSummary?.id ?? viewSessionId;
-    if (!sessionId || switchingEngine) return;
+    if (!sessionId || switchingEngineRef.current) return;
+    switchingEngineRef.current = true;
     setSwitchingEngine(true);
     try {
       const path = `/api/sessions/${encodeURIComponent(sessionId)}/switch-engine`;
@@ -797,7 +797,7 @@ export default function ChatView({
         rawBody = await response.text();
       }
       let body: {
-        targetSession?: { id?: string; agentType?: AgentType; title?: string; cwd?: string; projectId?: string };
+        targetSession?: UnifiedSessionSummary;
         handoff?: { strategy?: "delta" | "full" } | null;
         error?: string;
       } = {};
@@ -807,56 +807,27 @@ export default function ChatView({
       }
       const target = body.targetSession;
       const summary: UnifiedSessionSummary = {
+        ...target,
         id: target.id,
         agentType: target.agentType ?? targetAgentType,
-        nativeSessionId: target.id,
+        nativeSessionId: target.nativeSessionId ?? target.id,
         title: target.title || (AGENT_LABELS[targetAgentType] ?? targetAgentType),
         cwd: target.cwd || sessionSummary?.cwd || "",
         ...((target.projectId ?? sessionSummary?.projectId) ? { projectId: target.projectId ?? sessionSummary?.projectId } : {}),
-        created: new Date().toISOString(),
-        updated: new Date().toISOString(),
-        status: "idle",
-        occupancy: "available",
+        created: target.created ?? new Date().toISOString(),
+        updated: target.updated ?? new Date().toISOString(),
+        status: target.status,
+        occupancy: target.occupancy,
         sourceLabel: AGENT_LABELS[targetAgentType] ?? targetAgentType,
-        canResume: true,
-        canDelete: true,
+        canResume: target.canResume,
+        canDelete: target.canDelete,
+        readOnly: target.readOnly,
       } as UnifiedSessionSummary;
-      // Seed the view with the logical thread's merged history so the past
-      // conversation stays visible across the engine boundary.
-      try {
-        const sharedForHistory = typeof window !== "undefined" ? window.sharedServiceApi : undefined;
-        let historyStatus: number;
-        let historyRaw: string;
-        if (sharedForHistory?.request) {
-          const historyResponse = await sharedForHistory.request(
-            `/api/sessions/${encodeURIComponent(summary.id)}/thread-history`, "GET");
-          historyStatus = historyResponse.status;
-          historyRaw = historyResponse.body;
-        } else {
-          const historyResponse = await fetch(
-            `/api/sessions/${encodeURIComponent(summary.id)}/thread-history`,
-            { credentials: "same-origin" });
-          historyStatus = historyResponse.status;
-          historyRaw = await historyResponse.text();
-        }
-        const historyBody = JSON.parse(historyRaw || "{}") as { messages?: unknown[] };
-        if (historyStatus === 200 && Array.isArray(historyBody.messages)) {
-          onThreadHistorySeed?.({
-            sessionId: summary.id,
-            detail: {
-              agentType: summary.agentType,
-              status: "idle",
-              occupancy: "available",
-              messages: historyBody.messages as Array<Record<string, unknown>>,
-              events: [],
-            } as unknown as SessionHistoryDetail,
-          });
-        }
-      } catch { /* merged view is best-effort; the session still opens */ }
       onSelectSession?.(summary.id, summary);
     } catch (switchError) {
       setError(switchError instanceof Error ? switchError.message : "切换引擎失败");
     } finally {
+      switchingEngineRef.current = false;
       setSwitchingEngine(false);
     }
   }, [sessionSummary?.id, sessionSummary?.cwd, sessionSummary?.projectId, viewSessionId, switchingEngine, onSelectSession]);
@@ -1954,17 +1925,6 @@ export default function ChatView({
           const seed = initialSessionHistory?.sessionId === targetSid
             && consumedNavigationHistoryRef.current !== initialSessionHistory
             ? initialSessionHistory : undefined;
-          // Thread members (engine-switch) always open on the merged view.
-          let effectiveSeed = seed;
-          if (!effectiveSeed && getSessionThreadSeed) {
-            const cached = threadSeedCacheRef.current.get(targetSid);
-            if (cached !== undefined) {
-              effectiveSeed = cached ?? undefined;
-            } else {
-              effectiveSeed = (await getSessionThreadSeed(targetSid)) ?? undefined;
-              threadSeedCacheRef.current.set(targetSid, effectiveSeed ?? null);
-            }
-          }
           await loadProgressiveSessionHistoryPage(
             agentApi,
             targetSid,
@@ -1976,6 +1936,8 @@ export default function ChatView({
             },
             (detail, phase) => {
               if (!isCurrentLoad() || !isCurrentSnapshot()) return;
+              const redirect = historyThreadRedirect(detail, targetSid);
+              if (redirect) { selectSessionRef.current?.(redirect.id, redirect); return; }
               observeNativeRun(targetSid, detail);
               const permissionDetail = detail as (SessionHistoryDetail & {
                 permissionMode?: unknown;
@@ -2010,7 +1972,7 @@ export default function ChatView({
               // The current turn's trace owns the first native read after core.
               // Older history remains available on scroll and is prefetched once
               // that trace has loaded.
-              if (historyAgentType(targetSid) !== "codex" || !nextMessages.some(message => message.executionTrace)) {
+              if (historyAgentType(targetSid) !== "codex" || !nextMessages.some(message => message.executionTrace && !message.executionTrace.turnId.startsWith("engine-frozen:"))) {
                 prefetchOlderHistory(targetSid, restoredWindow.window.olderCursor);
               }
               setRuntimeProgress(restoredRuntimeProgress, targetSid);
@@ -2038,9 +2000,9 @@ export default function ChatView({
               setShowInitialHistoryLoading(false);
             },
             () => isCurrentLoad() && isCurrentSnapshot(),
-            effectiveSeed ? async () => {
-              consumedNavigationHistoryRef.current = effectiveSeed;
-              return effectiveSeed.detail;
+            seed ? async () => {
+              consumedNavigationHistoryRef.current = seed;
+              return seed.detail;
             } : undefined,
           );
           return true;
@@ -2068,7 +2030,7 @@ export default function ChatView({
         initialHistoryLoadingSessionRef.current = null;
       }
     };
-  }, [activeAgentType, getMessagesForSession, getSessionHistoryWindow, getSessionThreadSeed, historyAgentType, initialSessionHistory, isWorkspaceWelcome, observeNativeRun, prefetchOlderHistory, selectedSessionId, sessionReloadGeneration, setContextUsage, setHistoryMode, setMessages, setSessionId, syncToolResultScope, updateAgentActivity]);
+  }, [activeAgentType, getMessagesForSession, getSessionHistoryWindow, historyAgentType, initialSessionHistory, isWorkspaceWelcome, observeNativeRun, prefetchOlderHistory, selectedSessionId, sessionReloadGeneration, setContextUsage, setHistoryMode, setMessages, setSessionId, syncToolResultScope, updateAgentActivity]);
 
   const loadSessionQueryIndex = useCallback(async (targetSid: string) => {
     const agentApi = window.agentApi;
@@ -4513,6 +4475,14 @@ export default function ChatView({
             onReleaseCodex={sessionSummary?.agentType === "codex" && sessionSummary.occupancy !== "owned-externally"
               ? () => { void handleCodexRelease(); }
               : undefined}
+            mobileEngineSwitcher={canSwitchSessionEngine ? <ComposerAgentPicker
+              value={composerAgentType}
+              health={runtimeHealth}
+              placement="header"
+              onChange={() => undefined}
+              onSwitchEngine={(agentType) => void switchEngine(agentType)}
+              switching={switchingEngine}
+            /> : undefined}
             onOpenHub={onOpenHub}
             onOpenCollaborationDashboard={onOpenCollaborationDashboard}
             onOpenSessionDashboard={onOpenSessionDashboard}
@@ -4638,7 +4608,7 @@ export default function ChatView({
                 refreshSignal={chatMsg.executionTrace.turnId === latestCodexExecutionTurnId
                   ? codexTraceRefreshSignal
                   : 0}
-                autoLoad={historyWindowMode === "latest" && chatMsg.executionTrace.turnId === latestCodexExecutionTurnId}
+                autoLoad={historyWindowMode === "latest" && !chatMsg.executionTrace.turnId.startsWith("engine-frozen:") && chatMsg.executionTrace.turnId === latestCodexExecutionTurnId}
               />
             );
           }
@@ -6068,9 +6038,8 @@ export default function ChatView({
               onValuesChange={types => parallel.setRecipients(parallel.group!.members.filter(member => types.includes(member.agentType)).map(member => member.id))} />
             <span className="parallel-composer-directory" title={parallel.group.cwd}>{parallel.group.cwd.split(/[\\/]/).filter(Boolean).at(-1)}</span>
           </div>}
-          {!isNewSessionComposer && !parallel.group && sessionSummary
-            && sessionSummary.agentType !== "customer-agent" && (
-            <div className="composer-context-row" role="group" aria-label="会话 Agent">
+          {canSwitchSessionEngine && sessionSummary && (
+            <div className="composer-context-row composer-context-row--engine-switch" role="group" aria-label="会话 Agent">
               <ComposerAgentPicker
                 value={composerAgentType}
                 health={runtimeHealth}

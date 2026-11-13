@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getEngineSwitchContainer } from "../../../lib/engine-switch/container";
 import { getNativeRuntimeService } from "../../../lib/native-runtime-service";
+import type { EngineThreadSessionSummary } from "@agent/native-runtime";
 
 /**
  * GET /api/engine-threads
@@ -23,16 +24,15 @@ export async function GET() {
           if (!memberIds.includes(sessionId)) memberIds.push(sessionId);
         }
       }
-      const members: Array<{ id: string; agentType?: string; title?: string; status?: string; cwd?: string }> = [];
-      for (const sessionId of memberIds) {
+      const members = await Promise.all(memberIds.map(async (sessionId): Promise<Partial<EngineThreadSessionSummary> & { id: string }> => {
         try {
-          const detail = await native.get(sessionId);
-          const summary = { agentType: detail.agentType, title: detail.title, status: detail.status, cwd: detail.cwd };
-          members.push({ id: sessionId, agentType: summary.agentType, title: summary.title, status: summary.status, cwd: summary.cwd });
+          const summary = await native.getSummary?.(sessionId);
+          if (!summary) throw new Error("Runtime session summaries are unavailable");
+          return summary as EngineThreadSessionSummary;
         } catch {
-          members.push({ id: sessionId });
+          return { id: sessionId };
         }
-      }
+      }));
       // Title anchors on the thread's origin session (the first source), so the
       // sidebar shows a human name instead of internal thread keys.
       const originId = records[0]?.fromSessionId;

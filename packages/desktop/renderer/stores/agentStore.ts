@@ -140,6 +140,8 @@ export interface ChatMessage {
     turnId: string;
     revision: string;
     segmentIndex?: number;
+    /** Native item identities used to route a resumed stream to its original input. */
+    historyItemKeys?: string[];
     liveMessages?: ChatMessage[];
   };
   /** True when this user message is queued and waiting for the current run to finish */

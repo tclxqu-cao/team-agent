@@ -497,6 +497,8 @@ export class SQLiteDatabase {
         at TEXT NOT NULL
       );
       CREATE INDEX IF NOT EXISTS engine_switch_records_by_thread ON engine_switch_records (thread_key, at);
+      CREATE INDEX IF NOT EXISTS engine_switch_records_by_source ON engine_switch_records (from_session);
+      CREATE INDEX IF NOT EXISTS engine_switch_records_by_target ON engine_switch_records (to_session);
 
       CREATE TABLE IF NOT EXISTS context_handoffs (
         id TEXT PRIMARY KEY,
@@ -515,7 +517,20 @@ export class SQLiteDatabase {
       );
       CREATE INDEX IF NOT EXISTS context_handoffs_by_session ON context_handoffs (to_session, status);
       CREATE INDEX IF NOT EXISTS context_handoffs_by_thread ON context_handoffs (thread_key, created);
+      CREATE TABLE IF NOT EXISTS engine_switch_locks (
+        thread_key TEXT PRIMARY KEY, owner TEXT NOT NULL, expires_at INTEGER NOT NULL
+      );
     `);
+    for (const [table, column, definition] of [
+      ["engine_switch_records", "source_snapshot", "TEXT"],
+      ["engine_switch_records", "phase_messages", "TEXT"],
+      ["engine_switch_records", "source_history_count", "INTEGER"],
+      ["engine_switch_records", "source_history_last_id", "TEXT"],
+      ["context_handoffs", "payload", "TEXT NOT NULL DEFAULT '{}'"],
+    ]) {
+      const columns = this.db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+      if (!columns.some((entry) => entry.name === column)) this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+    }
   }
 
   /** Preserve failed tool results so a later model turn can diagnose and retry them. */

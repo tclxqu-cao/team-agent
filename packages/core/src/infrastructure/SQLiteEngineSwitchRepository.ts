@@ -33,9 +33,14 @@ const recordRowToEntity = (row: Row): EngineSwitchRecord => ({
   handoffId: row.handoff_id == null ? null : String(row.handoff_id),
   coveredThroughHistoryId: row.covered_through_history == null ? null : String(row.covered_through_history),
   at: String(row.at),
+  ...(row.source_snapshot == null ? {} : { sourceSnapshot: JSON.parse(String(row.source_snapshot)) }),
+  ...(row.phase_messages == null ? {} : { phaseMessages: JSON.parse(String(row.phase_messages)) }),
+  ...(row.source_history_count == null ? {} : { sourceHistoryItemCount: Number(row.source_history_count) }),
+  ...(row.source_history_last_id == null ? {} : { sourceHistoryLastId: String(row.source_history_last_id) }),
 });
 
 const handoffRowToEntity = (row: Row): ContextHandoff => ({
+  ...JSON.parse(String(row.payload || "{}")),
   id: String(row.id),
   threadKey: String(row.thread_key),
   fromSessionId: String(row.from_session),
@@ -58,6 +63,50 @@ const handoffRowToEntity = (row: Row): ContextHandoff => ({
 
 export class SQLiteEngineSwitchRepository implements EngineSwitchRepository {
   constructor(private readonly db: Database) {}
+
+  /** Copy legacy server-owned ledgers once, without overwriting broker state. */
+  importLegacy(legacy: SQLiteEngineSwitchRepository): void {
+    this.db.transaction(() => {
+      for (const thread of legacy.threads.list()) {
+        if (this.threads.get(thread.threadKey)) continue;
+        this.threads.ensure(thread);
+        for (const record of legacy.records.list(thread.threadKey)) {
+          this.records.append(record);
+          const handoff = legacy.handoffs.byRecord(record.id);
+          if (handoff) this.handoffs.insert(handoff);
+        }
+      }
+    })();
+  }
+
+  acquire(threadKey: string, owner: string, expiresAt: number): boolean {
+    return this.db.prepare(`INSERT INTO engine_switch_locks (thread_key, owner, expires_at) VALUES (?, ?, ?)
+      ON CONFLICT(thread_key) DO UPDATE SET owner=excluded.owner, expires_at=excluded.expires_at
+      WHERE engine_switch_locks.expires_at < ?`).run(threadKey, owner, expiresAt, Date.now()).changes > 0;
+  }
+
+  release(threadKey: string, owner: string): void {
+    this.db.prepare("DELETE FROM engine_switch_locks WHERE thread_key=? AND owner=?").run(threadKey, owner);
+  }
+
+  isLocked(threadKey: string): boolean {
+    return !!this.db.prepare("SELECT 1 FROM engine_switch_locks WHERE thread_key=? AND expires_at>=?")
+      .get(threadKey, Date.now());
+  }
+
+  commit(input: Parameters<EngineSwitchRepository["commit"]>[0]): void {
+    this.db.transaction(() => {
+      const lock = this.db.prepare("SELECT owner, expires_at FROM engine_switch_locks WHERE thread_key=?")
+        .get(input.thread.threadKey) as { owner: string; expires_at: number } | undefined;
+      const current = this.threads.get(input.thread.threadKey);
+      if (lock?.owner !== input.owner || lock.expires_at < Date.now()
+        || (current?.currentSessionId ?? null) !== input.expectedSessionId) throw new Error("Thread changed while switching engines");
+      this.threads.ensure(input.thread);
+      this.records.append(input.record);
+      this.handoffs.supersedePendingForThread(input.thread.threadKey, input.thread.updated);
+      if (input.handoff) this.handoffs.insert(input.handoff);
+    })();
+  }
 
   readonly threads = {
     ensure: (thread: EngineSwitchThread): void => {
@@ -100,8 +149,8 @@ export class SQLiteEngineSwitchRepository implements EngineSwitchRepository {
     append: (record: EngineSwitchRecord): void => {
       this.db.prepare(`
         INSERT INTO engine_switch_records
-          (id, thread_key, from_session, from_agent_type, to_session, to_agent_type, strategy, handoff_id, covered_through_history, at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          (id, thread_key, from_session, from_agent_type, to_session, to_agent_type, strategy, handoff_id, covered_through_history, at, source_snapshot, phase_messages, source_history_count, source_history_last_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         record.id,
         record.threadKey,
@@ -113,18 +162,23 @@ export class SQLiteEngineSwitchRepository implements EngineSwitchRepository {
         record.handoffId,
         record.coveredThroughHistoryId,
         record.at,
+        record.sourceSnapshot ? JSON.stringify(record.sourceSnapshot) : null,
+        record.phaseMessages ? JSON.stringify(record.phaseMessages) : null,
+        record.sourceHistoryItemCount ?? null,
+        record.sourceHistoryLastId ?? null,
       );
     },
-    list: (threadKey: string): EngineSwitchRecord[] =>
+    list: (threadKey: string, includeHistory = true): EngineSwitchRecord[] =>
       this.db
-        .prepare("SELECT * FROM engine_switch_records WHERE thread_key = ? ORDER BY at ASC")
+        .prepare(`SELECT ${includeHistory ? "*" : "id, thread_key, from_session, from_agent_type, to_session, to_agent_type, strategy, handoff_id, covered_through_history, at, source_history_count, source_history_last_id"}
+          FROM engine_switch_records WHERE thread_key = ? ORDER BY rowid ASC`)
         .all(threadKey)
         .map((row) => recordRowToEntity(row as Row)),
     latestInvolving: (threadKey: string, agentType: AgentType): EngineSwitchRecord | null => {
       const row = this.db.prepare(`
         SELECT * FROM engine_switch_records
         WHERE thread_key = ? AND (to_agent_type = ? OR from_agent_type = ?)
-        ORDER BY at DESC LIMIT 1
+        ORDER BY rowid DESC LIMIT 1
       `).get(threadKey, agentType, agentType) as Row | undefined;
       return row ? recordRowToEntity(row) : null;
     },
@@ -132,7 +186,7 @@ export class SQLiteEngineSwitchRepository implements EngineSwitchRepository {
       const row = this.db.prepare(`
         SELECT * FROM engine_switch_records
         WHERE from_session = ? AND to_agent_type = ?
-        ORDER BY at DESC LIMIT 1
+        ORDER BY rowid DESC LIMIT 1
       `).get(fromSessionId, toAgentType) as Row | undefined;
       return row ? recordRowToEntity(row) : null;
     },
@@ -140,18 +194,21 @@ export class SQLiteEngineSwitchRepository implements EngineSwitchRepository {
       const row = this.db.prepare(`
         SELECT thread_key FROM engine_switch_records
         WHERE from_session = ? OR to_session = ?
-        ORDER BY at DESC LIMIT 1
+        ORDER BY rowid DESC LIMIT 1
       `).get(sessionId, sessionId) as Row | undefined;
       return row ? String(row.thread_key) : null;
     },
   };
 
   readonly handoffs = {
+    summariesForThread: (threadKey: string): Array<{ summaryText: string }> =>
+      this.db.prepare("SELECT summary_text FROM context_handoffs WHERE thread_key = ?")
+        .all(threadKey).map((row) => ({ summaryText: String((row as Row).summary_text) })),
     insert: (handoff: ContextHandoff): void => {
       this.db.prepare(`
         INSERT INTO context_handoffs
-          (id, thread_key, from_session, from_agent_type, to_session, to_agent_type, strategy, summary_text, omitted_history, status, created_by, created, consumed_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          (id, thread_key, from_session, from_agent_type, to_session, to_agent_type, strategy, summary_text, omitted_history, status, created_by, created, consumed_at, payload)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         handoff.id,
         handoff.threadKey,
@@ -166,6 +223,7 @@ export class SQLiteEngineSwitchRepository implements EngineSwitchRepository {
         handoff.createdBy,
         handoff.created,
         handoff.consumedAt,
+        JSON.stringify({ historyFile: handoff.historyFile, includedHistoryIds: handoff.includedHistoryIds, images: handoff.images }),
       );
     },
     pendingForSession: (toSessionId: string): ContextHandoff | null => {
@@ -177,7 +235,7 @@ export class SQLiteEngineSwitchRepository implements EngineSwitchRepository {
       return row ? handoffRowToEntity(row) : null;
     },
     markConsumed: (id: string, consumedAt: string): void => {
-      this.db.prepare("UPDATE context_handoffs SET status = 'consumed', consumed_at = ? WHERE id = ?")
+      this.db.prepare("UPDATE context_handoffs SET status = 'consumed', consumed_at = ? WHERE id = ? AND status = 'pending'")
         .run(consumedAt, id);
     },
     supersedePendingForThread: (threadKey: string, at: string): void => {

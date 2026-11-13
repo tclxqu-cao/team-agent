@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { AgentType } from "../../domain/agent/agent-type.js";
 import type { Message } from "../../domain/model/entities.js";
 import type {
@@ -17,6 +17,17 @@ import { EngineSwitchLedger } from "./EngineSwitchLedger.js";
 // ── Fakes (in-memory repository + scripted runtime) ─────────────────────────
 
 class InMemoryEngineSwitchRepository implements EngineSwitchRepository {
+  private locks = new Map<string, string>();
+  acquire(key: string, owner: string): boolean { if (this.locks.has(key)) return false; this.locks.set(key, owner); return true; }
+  release(key: string, owner: string): void { if (this.locks.get(key) === owner) this.locks.delete(key); }
+  isLocked(key: string): boolean { return this.locks.has(key); }
+  commit(input: Parameters<EngineSwitchRepository["commit"]>[0]): void {
+    if ((this.threads.get(input.thread.threadKey)?.currentSessionId ?? null) !== input.expectedSessionId) throw new Error("stale");
+    this.threads.ensure(input.thread);
+    this.records.append(input.record);
+    this.handoffs.supersedePendingForThread(input.thread.threadKey, input.thread.updated);
+    if (input.handoff) this.handoffs.insert(input.handoff);
+  }
   private readonly threadStore = new Map<string, EngineSwitchThread>();
   private readonly recordStore: EngineSwitchRecord[] = [];
   private readonly handoffStore: ContextHandoff[] = [];
@@ -82,6 +93,8 @@ class FakeEngineSwitchRuntime implements EngineSwitchRuntime {
   sessions = new Map<string, EngineSwitchSessionView>();
   healthEntries: EngineSwitchHealth[] = [];
   createCalls: AgentType[] = [];
+
+  async materializeHistory(): Promise<string> { return "/tmp/handoff/history.json"; }
 
   async health(): Promise<readonly EngineSwitchHealth[]> {
     return this.healthEntries;
@@ -187,8 +200,8 @@ describe("SwitchEngineUseCase", () => {
   it("clean=true forces a fresh session even when a previous one exists", async () => {
     const { useCase, runtime } = wiring();
     runtime.sessions.set("runtime:codex:c1", sessionView("runtime:codex:c1", "codex"));
-    await useCase.execute({ sourceSessionId: "runtime:codex:c1", targetAgentType: "claude-code" });
-    const clean = await useCase.execute({ sourceSessionId: "runtime:codex:c1", targetAgentType: "claude-code", clean: true });
+    const first = await useCase.execute({ sourceSessionId: "runtime:codex:c1", targetAgentType: "claude-code" });
+    const clean = await useCase.execute({ sourceSessionId: first.targetSession.id, targetAgentType: "claude-code", clean: true });
     expect(clean.strategy).toBe("create");
     expect(runtime.createCalls).toEqual(["claude-code", "claude-code"]);
   });
@@ -225,8 +238,9 @@ describe("SwitchEngineUseCase", () => {
     const { useCase, runtime } = wiring();
     runtime.sessions.set("runtime:codex:c1", sessionView("runtime:codex:c1", "codex"));
     const first = await useCase.execute({ sourceSessionId: "runtime:codex:c1", targetAgentType: "claude-code" });
+    const back = await useCase.execute({ sourceSessionId: first.targetSession.id, targetAgentType: "codex" });
     runtime.sessions.delete(first.targetSession.id);
-    const again = await useCase.execute({ sourceSessionId: "runtime:codex:c1", targetAgentType: "claude-code" });
+    const again = await useCase.execute({ sourceSessionId: back.targetSession.id, targetAgentType: "claude-code" });
     expect(again.strategy).toBe("create");
     expect(runtime.createCalls).toEqual(["claude-code", "claude-code"]);
   });
@@ -272,6 +286,7 @@ describe("SwitchEngineUseCase", () => {
     const first = await useCase.execute({ sourceSessionId: "runtime:codex:c1", targetAgentType: "claude-code" });
     const target = first.targetSession.id;
     // Switch again without consuming the first handoff.
+    await useCase.execute({ sourceSessionId: first.targetSession.id, targetAgentType: "codex" });
     const second = await useCase.execute({ sourceSessionId: "runtime:codex:c1", targetAgentType: "claude-code" });
     expect(second.handoff).not.toBeNull();
     const pending = repository.handoffs.pendingForSession(target);
@@ -285,4 +300,80 @@ describe("SwitchEngineUseCase", () => {
     expect(error.code).toBe("SESSION_OCCUPIED");
     expect(error.name).toBe("EngineSwitchError");
   });
+  it("bridges the whole thread through an engine that has not had a turn", async () => {
+    const { useCase, runtime } = wiring();
+    runtime.sessions.set("a", sessionView("a", "codex", { messages: [message("user", "ORIGINAL", "opaque-9")] }));
+    const ab = await useCase.execute({ sourceSessionId: "a", targetAgentType: "claude-code" });
+    const bc = await useCase.execute({ sourceSessionId: ab.targetSession.id, targetAgentType: "opencode" });
+    expect(bc.handoff?.summaryText).toContain("ORIGINAL");
+    expect(bc.record.phaseMessages).toEqual([]);
+  });
+
+  it("does not parse native item suffixes when returning to a previous engine", async () => {
+    const { useCase, runtime, repository } = wiring();
+    runtime.sessions.set("a", sessionView("a", "codex", { messages: [message("assistant", "OLD", "turn1-item-9")] }));
+    const ab = await useCase.execute({ sourceSessionId: "a", targetAgentType: "claude-code" });
+    new EngineSwitchLedger(repository).markHandoffConsumed(ab.handoff!.id);
+    await useCase.execute({ sourceSessionId: ab.targetSession.id, targetAgentType: "codex" });
+    runtime.sessions.get("a")!.messages.push(message("assistant", "NEW", "turn2-item-1"));
+    const again = await useCase.execute({ sourceSessionId: "a", targetAgentType: "claude-code" });
+    expect(again.handoff?.summaryText).toContain("NEW");
+    expect(again.handoff?.summaryText).not.toContain("OLD");
+  });
+
+  it("rejects stale members and preserves the pointer when target creation fails", async () => {
+    const { useCase, runtime, repository } = wiring();
+    runtime.sessions.set("a", sessionView("a", "codex"));
+    const ab = await useCase.execute({ sourceSessionId: "a", targetAgentType: "claude-code" });
+    await expect(useCase.execute({ sourceSessionId: "a", targetAgentType: "opencode" })).rejects.toMatchObject({ code: "STALE_THREAD" });
+    vi.spyOn(runtime, "createSession").mockRejectedValue(new Error("unavailable"));
+    await expect(useCase.execute({ sourceSessionId: ab.targetSession.id, targetAgentType: "opencode" })).rejects.toThrow("unavailable");
+    expect(repository.threads.get(ab.thread.threadKey)?.currentSessionId).toBe(ab.targetSession.id);
+    expect(repository.records.list(ab.thread.threadKey)).toHaveLength(1);
+    expect(repository.isLocked(ab.thread.threadKey)).toBe(false);
+  });
+
+  it("refuses occupied targets and recreates targets that cannot resume", async () => {
+    const { useCase, runtime } = wiring();
+    runtime.sessions.set("a", sessionView("a", "codex"));
+    const ab = await useCase.execute({ sourceSessionId: "a", targetAgentType: "claude-code" });
+    runtime.sessions.get("a")!.status = "running";
+    await expect(useCase.execute({ sourceSessionId: ab.targetSession.id, targetAgentType: "codex" })).rejects.toMatchObject({ code: "SESSION_OCCUPIED" });
+    Object.assign(runtime.sessions.get("a")!, { status: "idle", canResume: false });
+    const back = await useCase.execute({ sourceSessionId: ab.targetSession.id, targetAgentType: "codex" });
+    expect(back.strategy).toBe("create");
+    expect(back.targetSession.id).not.toBe("a");
+  });
+
+  it("blocks unfinished work and concurrent switches without mutating history", async () => {
+    const { useCase, runtime, repository } = wiring();
+    runtime.sessions.set("a", sessionView("a", "codex", { switchBlockReason: "background work" }));
+    await expect(useCase.execute({ sourceSessionId: "a", targetAgentType: "claude-code" })).rejects.toMatchObject({ code: "SESSION_OCCUPIED" });
+    runtime.sessions.get("a")!.switchBlockReason = undefined;
+    let finish!: () => void;
+    const original = runtime.createSession.bind(runtime);
+    vi.spyOn(runtime, "createSession").mockImplementation(async (options) => {
+      await new Promise<void>((resolve) => { finish = resolve; });
+      return original(options);
+    });
+    const first = useCase.execute({ sourceSessionId: "a", targetAgentType: "claude-code" });
+    await vi.waitFor(() => expect(finish).toBeTypeOf("function"));
+    await expect(useCase.execute({ sourceSessionId: "a", targetAgentType: "opencode" })).rejects.toMatchObject({ code: "SESSION_OCCUPIED" });
+    finish();
+    const result = await first;
+    expect(repository.records.list(result.thread.threadKey)).toHaveLength(1);
+  });
+
+  it("keeps prior engines' work on a clean switch without recursively rendering old preambles", async () => {
+    const { useCase, runtime } = wiring();
+    runtime.sessions.set("a", sessionView("a", "codex", { messages: [message("user", "ORIGINAL_REQUIREMENT", "a-uuid")] }));
+    const ab = await useCase.execute({ sourceSessionId: "a", targetAgentType: "claude-code" });
+    runtime.sessions.get(ab.targetSession.id)!.messages = [message("user", `${ab.handoff!.summaryText}\n\n[agentroam:current-user-message]\nB_WORK`, "b-uuid")];
+    const fresh = await useCase.execute({ sourceSessionId: ab.targetSession.id, targetAgentType: "codex", clean: true });
+    expect(fresh.handoff?.summaryText).toContain("B_WORK");
+    expect(fresh.handoff?.summaryText.split("ORIGINAL_REQUIREMENT")).toHaveLength(2);
+    expect(fresh.record.phaseMessages?.[0].content).toBe("B_WORK");
+    expect(fresh.targetSession.id).not.toBe("a");
+  });
+
 });

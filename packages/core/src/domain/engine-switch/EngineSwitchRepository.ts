@@ -13,6 +13,17 @@ import type {
  * native session ids are never matched globally.
  */
 export interface EngineSwitchRepository {
+  /** Cross-process switch lease. Run admission checks the same lease. */
+  acquire(threadKey: string, owner: string, expiresAt: number): boolean;
+  release(threadKey: string, owner: string): void;
+  isLocked(threadKey: string): boolean;
+  commit(input: {
+    thread: EngineSwitchThread;
+    expectedSessionId: string | null;
+    owner: string;
+    record: EngineSwitchRecord;
+    handoff: ContextHandoff | null;
+  }): void;
   threads: {
     ensure(thread: EngineSwitchThread): void;
     get(threadKey: string): EngineSwitchThread | null;
@@ -21,7 +32,7 @@ export interface EngineSwitchRepository {
   };
   records: {
     append(record: EngineSwitchRecord): void;
-    list(threadKey: string): EngineSwitchRecord[];
+    list(threadKey: string, includeHistory?: boolean): EngineSwitchRecord[];
     /** Most recent record that involved `agentType` (as source or target), or null. */
     latestInvolving(threadKey: string, agentType: AgentType): EngineSwitchRecord | null;
     /** Most recent record bridging this exact source session to `toAgentType`. */

@@ -9,28 +9,48 @@ interface LiveNativeCatalog {
   promise: Promise<UnifiedSessionSummary[]>;
   pending: boolean;
   expiresAt: number;
+  sessions?: UnifiedSessionSummary[];
 }
 const liveHost = globalThis as typeof globalThis & { __liveNativeSessionCatalog?: LiveNativeCatalog };
 const LIVE_NATIVE_CATALOG_TTL_MS = 15_000;
 
 /** Runtime list() is explicitly cached until invalidated. Live views must refresh
  * discovery; coalesce viewers and searches without turning every poll into a scan. */
-function liveNativeSessions(): Promise<UnifiedSessionSummary[]> {
+function liveNativeSessions(): Promise<UnifiedSessionSummary[]> | UnifiedSessionSummary[] {
   const existing = liveHost.__liveNativeSessionCatalog;
-  if (existing && (existing.pending || existing.expiresAt > Date.now())) return existing.promise;
+  if (existing?.sessions) {
+    if (!existing.pending && existing.expiresAt <= Date.now()) {
+      existing.pending = true;
+      existing.promise = refreshLiveNativeCatalog(existing);
+      void existing.promise.catch(() => undefined);
+    }
+    return existing.sessions;
+  }
+  if (existing) return existing.promise;
   const entry: LiveNativeCatalog = { promise: Promise.resolve([]), pending: true, expiresAt: 0 };
-  entry.promise = getNativeRuntimeService().refresh().then(sessions => {
-    entry.pending = false;
+  entry.promise = refreshLiveNativeCatalog(entry);
+  liveHost.__liveNativeSessionCatalog = entry;
+  return entry.promise;
+}
+
+function refreshLiveNativeCatalog(entry: LiveNativeCatalog): Promise<UnifiedSessionSummary[]> {
+  return getNativeRuntimeService().refresh().then(sessions => {
+    entry.sessions = sessions;
     // Match the visible list's polling interval so nearby viewers, searches
     // and run-state updates reuse discovery instead of repeatedly scanning it.
     entry.expiresAt = Date.now() + LIVE_NATIVE_CATALOG_TTL_MS;
     return sessions;
   }, error => {
-    if (liveHost.__liveNativeSessionCatalog === entry) delete liveHost.__liveNativeSessionCatalog;
-    throw error;
+    if (!entry.sessions) {
+      if (liveHost.__liveNativeSessionCatalog === entry) delete liveHost.__liveNativeSessionCatalog;
+      throw error;
+    }
+    entry.expiresAt = Date.now() + LIVE_NATIVE_CATALOG_TTL_MS;
+    console.warn("Native session catalog refresh failed; serving cached sessions:", error);
+    return entry.sessions;
+  }).finally(() => {
+    entry.pending = false;
   });
-  liveHost.__liveNativeSessionCatalog = entry;
-  return entry.promise;
 }
 
 /** Shared source for existing chat lists, the selector, and the running Dashboard. */

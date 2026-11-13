@@ -22,7 +22,7 @@ import type { SessionHistorySeed } from "./lib/session-history";
 import type { AgentRailSessions } from "./lib/agent-rail-sessions";
 import { isAgentType } from "../../core/src/domain/agent/agent-type";
 import { readSessionDashboardIntent, SESSION_DASHBOARD_NAVIGATE, SESSION_DASHBOARD_CHAT_READY, SESSION_DASHBOARD_APPLIED, type SessionDashboardIntent } from "../../core/src/domain/web-console/SessionDashboardBridge";
-import { fetchEngineThreadIndex, type EngineThreadIndex } from "./lib/engine-thread-index";
+import { fetchEngineThreadIndex, activeThreadSession, foldEngineThreadSessions, type EngineThreadIndex } from "./lib/engine-thread-index";
 import CollaborationPage from "./components/collaboration/CollaborationPage";
 import DesktopWorkspaceTabs from "./components/collaboration/DesktopWorkspaceTabs";
 import type { CollaborationGroup } from "@agent/core/domain/collaboration/types";
@@ -307,11 +307,40 @@ export default function App() {
   // fold under one conversation in the sidebar and open with merged history.
   const [engineThreadIndex, setEngineThreadIndex] = useState<EngineThreadIndex | null>(null);
   const engineThreadIndexRef = useRef<EngineThreadIndex | null>(null);
+  const engineThreadRequestRef = useRef(0);
   engineThreadIndexRef.current = engineThreadIndex;
   const refreshEngineThreadIndex = useCallback(async () => {
-    try { setEngineThreadIndex(await fetchEngineThreadIndex()); } catch { /* keep previous index */ }
+    const requestId = ++engineThreadRequestRef.current;
+    try {
+      const index = await fetchEngineThreadIndex();
+      if (requestId !== engineThreadRequestRef.current) return engineThreadIndexRef.current;
+      engineThreadIndexRef.current = index;
+      setEngineThreadIndex(index);
+      return index;
+    } catch { return engineThreadIndexRef.current; }
   }, []);
-  useEffect(() => { void refreshEngineThreadIndex(); }, [refreshEngineThreadIndex]);
+  useEffect(() => {
+    void refreshEngineThreadIndex();
+    let requestInFlight = false;
+    const refresh = () => {
+      if (!isPageActive() || requestInFlight) return;
+      requestInFlight = true;
+      void refreshEngineThreadIndex().finally(() => { requestInFlight = false; });
+    };
+    const timer = window.setInterval(refresh, 30_000);
+    window.addEventListener("focus", refresh);
+    return () => { window.clearInterval(timer); window.removeEventListener("focus", refresh); };
+  }, [refreshEngineThreadIndex]);
+  useEffect(() => {
+    if (!selectedSessionId) return;
+    const entry = engineThreadIndex?.get(selectedSessionId);
+    if (!entry || entry.currentSessionId === selectedSessionId) return;
+    const active = activeThreadSession(entry);
+    if (!active) return;
+    setCreatedSessionReceipt(active as unknown as Session);
+    setInitialSessionHistory(undefined);
+    setSelectedSessionId(active.id);
+  }, [engineThreadIndex, selectedSessionId]);
   const selectedProjectIdRef = useRef(selectedProjectId);
   const selectedSessionIdRef = useRef(selectedSessionId);
   selectedProjectIdRef.current = selectedProjectId;
@@ -815,46 +844,9 @@ export default function App() {
     : orderedPinnedRootSessions;
   const allKnownSessions = searchSessions;
 
-  // Engine-switch threads fold: switch-created engine sessions hide from the
-  // flat roots and nest under the thread's origin conversation (T3-style: one
-  // conversation visible, engine sessions are refs). Business operations
-  // (delete, pin, pagination) keep operating on the raw state.
-  const displaySessionsByProject = useMemo(() => {
-    if (!engineThreadIndex || engineThreadIndex.size === 0) return sessionsByProject;
-    const next: typeof sessionsByProject = {};
-    for (const [projectId, sessions] of Object.entries(sessionsByProject)) {
-      next[projectId] = sessions.filter((session) => {
-        const entry = engineThreadIndex.get(session.id);
-        return !entry || entry.originSessionId === session.id;
-      });
-    }
-    return next;
-  }, [sessionsByProject, engineThreadIndex]);
-  const displayChildSessionsByParent = useMemo(() => {
-    if (!engineThreadIndex || engineThreadIndex.size === 0) return childSessionsByParent;
-    const next: typeof childSessionsByParent = { ...childSessionsByParent };
-    for (const [memberId, entry] of engineThreadIndex) {
-      if (memberId === entry.originSessionId) continue;
-      const originId = entry.originSessionId;
-      const children = next[originId] ?? [];
-      if (children.some((child) => child.id === memberId)) continue;
-      const real = searchSessions.find((session) => session.id === memberId);
-      const meta = entry.members.find((member) => member.id === memberId);
-      const label = meta?.agentType ?? real?.agentType ?? "agent";
-      next[originId] = [...children, {
-        ...(real ?? {}),
-        id: memberId,
-        agentType: meta?.agentType ?? real?.agentType ?? "codex",
-        cwd: meta?.cwd ?? real?.cwd ?? "",
-        parentSessionId: originId,
-        // Cross-engine children come from the thread ledger, not this rail's
-        // discovery, so the row title names the engine that produced them.
-        title: `⟲ ${label}`,
-        status: (meta?.status as Session["status"]) ?? real?.status ?? "idle",
-      } as Session];
-    }
-    return next;
-  }, [childSessionsByParent, engineThreadIndex, searchSessions]);
+  const displaySessionsByProject = useMemo(() => Object.fromEntries(
+    Object.entries(sessionsByProject).map(([projectId, sessions]) => [projectId, foldEngineThreadSessions(sessions, engineThreadIndex)]),
+  ), [sessionsByProject, engineThreadIndex]);
   const sessionQueryTrim = sessionQuery.trim().toLowerCase();
   const searchResults = sessionQueryTrim
     ? orderedVisibleSessions.filter((s) =>
@@ -864,9 +856,8 @@ export default function App() {
   const selectedSession = selectedSessionId
     ? allKnownSessions.find((session) => session.id === selectedSessionId)
       ?? (createdSessionReceipt?.id === selectedSessionId ? createdSessionReceipt : undefined)
-      // Thread members may live in another rail's discovery; the folded
-      // sidebar rows carry enough metadata to open them with merged history.
-      ?? Object.values(displayChildSessionsByParent).flat().find((session) => session.id === selectedSessionId)
+      ?? (engineThreadIndex?.get(selectedSessionId)
+        ? activeThreadSession(engineThreadIndex.get(selectedSessionId)!) as Session | undefined : undefined)
     : undefined;
   const selectedSessionTitle = selectedSession?.title;
   const selectedWorkspacePath = selectedSession?.cwd
@@ -914,6 +905,12 @@ export default function App() {
   }, [flowStudioOpening]);
 
   const applySidebarSelection = (selection: SidebarSelection) => {
+    const entry = selection.sessionId ? engineThreadIndexRef.current?.get(selection.sessionId) : undefined;
+    const active = entry ? activeThreadSession(entry) : undefined;
+    if (active) {
+      selection = { ...selection, sessionId: active.id };
+      setCreatedSessionReceipt(active as unknown as Session);
+    }
     selectedProjectIdRef.current = selection.projectId;
     selectedSessionIdRef.current = selection.sessionId;
     setSelectedProjectId(selection.projectId);
@@ -1060,32 +1057,6 @@ export default function App() {
     setSessionDashboardOpen(false); setCollaborationDashboardOpen(false); setActiveCollaboration(null);
     if (mobileDrawer) setSidebarDrawerOpen(false);
   };
-  const fetchThreadHistorySeed = useCallback(async (sessionId: string): Promise<SessionHistorySeed | undefined> => {
-    try {
-      const shared = typeof window !== "undefined" ? window.sharedServiceApi : undefined;
-      let status: number;
-      let raw: string;
-      if (shared?.request) {
-        const response = await shared.request(`/api/sessions/${encodeURIComponent(sessionId)}/thread-history`, "GET");
-        status = response.status;
-        raw = response.body;
-      } else {
-        const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/thread-history`, { credentials: "same-origin" });
-        status = response.status;
-        raw = await response.text();
-      }
-      if (status !== 200) return undefined;
-      const body = JSON.parse(raw || "{}") as { messages?: unknown[] };
-      if (!Array.isArray(body.messages)) return undefined;
-      return {
-        sessionId,
-        detail: {
-          messages: body.messages as Array<{ historyId?: string; role?: string; content?: string }>,
-          events: [],
-        },
-      } as SessionHistorySeed;
-    } catch { return undefined; }
-  }, []);
   dashboardNavigation.current = intent => {
     setMessagingOpen(false);
     if (webShell && window.parent !== window && ["dashboard", "groups", "group"].includes(intent.kind)) {
@@ -1107,9 +1078,16 @@ export default function App() {
       if (intent.kind === "groups") { openCollaborationDashboard(); return; }
       if (intent.kind === "new-session") { enterNewSessionComposer(); return; }
       if (intent.kind === "group") {
+        const discussionId = intent.discussionId;
         const group = await collaborationRequest<CollaborationGroup>({ action: "group", groupId: intent.groupId });
-        setInitialDiscussions(current => ({ ...current, [group.id]: intent.discussionId }));
+        setInitialDiscussions(current => ({ ...current, [group.id]: discussionId }));
         openCollaboration(group); return;
+      }
+      if (intent.kind === "session") {
+        const index = engineThreadIndexRef.current;
+        const entry = index?.get(intent.session.id);
+        const active = entry ? activeThreadSession(entry) : undefined;
+        if (active) intent = { ...intent, session: { ...intent.session, ...active } };
       }
       const targetAgent = intent.kind === "agent" ? intent.agentType : intent.session.agentType;
       const health = runtimeHealth.some(runtime => runtime.agentType === targetAgent)
@@ -1133,8 +1111,7 @@ export default function App() {
         && useAgentStore.getState().getMessagesForSession(intent.session.id).length > 0
         ? getCachedDashboardSession(intent.session, snapshot) : undefined;
       if (retained) {
-        setInitialSessionHistory(engineThreadIndexRef.current?.has(intent.session.id)
-          ? await fetchThreadHistorySeed(intent.session.id) : undefined);
+        setInitialSessionHistory(undefined);
         navigationHistory.current = { controller, sessionId: retained.session.id };
         openAgentSession(retained.session, retained.snapshot, true);
         setPendingSessionNavigation(null);
@@ -1142,9 +1119,7 @@ export default function App() {
       }
       const result = await resolveDashboardSession(window.agentApi, intent.session, controller.signal, snapshot);
       if (!controller.signal.aborted) {
-        setInitialSessionHistory(engineThreadIndexRef.current?.has(intent.session.id)
-          ? await fetchThreadHistorySeed(intent.session.id) ?? result.initialHistory
-          : result.initialHistory);
+        setInitialSessionHistory(result.initialHistory);
         openAgentSession(result.session, result.snapshot, true);
         navigationHistory.current = { controller, sessionId: result.session.id, seed: result.initialHistory };
       }
@@ -1755,7 +1730,7 @@ export default function App() {
   const renderRootSession = (session: Session, projectId: string) => {
     const isActiveSession = selectedSessionId === session.id;
     const visualState = getSidebarSessionVisualState(sessionActivity(session, projectId));
-    const children = displayChildSessionsByParent[session.id] ?? [];
+    const children = childSessionsByParent[session.id] ?? [];
     const expanded = !collapsedParents.has(session.id);
 
     return (
@@ -2585,10 +2560,6 @@ export default function App() {
             selectedSessionId={selectedSessionId}
             sessionTitle={selectedSessionTitle}
             sessionSummary={selectedSession}
-            onThreadHistorySeed={(seed) => setInitialSessionHistory(seed)}
-            getSessionThreadSeed={(sessionId) => engineThreadIndexRef.current?.has(sessionId)
-              ? fetchThreadHistorySeed(sessionId)
-              : Promise.resolve(undefined)}
             initialSessionHistory={initialSessionHistory}
             onSessionHistorySettled={handleSessionHistorySettled}
             workspacePath={selectedWorkspacePath}
