@@ -113,7 +113,12 @@ export function createDevicePairingGateway({ dataDir, desktop, owner, consoleSto
         const device = store.authenticate(token);
         const test = testNoPairing && !store.isLocked() && !device && !local && !path.startsWith("/api/pairing/");
         if (path === "/api/web-auth/status" && req.method === "GET") {
-          json(res, 200, { needsSetup: false, authenticated: !!device || test, pairingRequired: !device && !test, locked: store.isLocked() }); return true;
+          json(res, 200, {
+            needsSetup: false,
+            authenticated: !!device || local || test,
+            pairingRequired: !device && !local && !test,
+            locked: store.isLocked(),
+          }); return true;
         }
         if (path.startsWith("/api/pairing/admin/")) {
           if (!local) throw error("Local CLI authorization required");

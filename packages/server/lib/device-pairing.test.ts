@@ -124,6 +124,7 @@ describe("gateway pairing integration", () => {
     const response = await f.request("/web", { headers: { accept: "text/html" } });
     expect(response.status).toBe(200); expect(await response.text()).toContain("配对并进入");
     expect(await (await f.request("/api/web-auth/status")).json()).toMatchObject({ authenticated: false, needsSetup: false });
+    expect(await (await f.request("/api/web-auth/status", { headers: f.desktop.headers() })).json()).toMatchObject({ authenticated: true, pairingRequired: false });
     expect((await f.request("/api/settings", { headers: { "x-agentroam-device-id": "forged", "x-forwarded-for": "127.0.0.1" } })).status).toBe(401);
   });
   it("allows two devices sharing history with isolated device state, denies CSRF and untrusted admin calls", async () => {

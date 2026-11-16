@@ -1,7 +1,7 @@
 import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 import { resolve } from "path";
-import { devMobilePairing } from "../../scripts/dev-mobile-pairing.mjs";
+import { devLocalWebAuthorization, devMobilePairing } from "../../scripts/dev-mobile-pairing.mjs";
 
 // Web shell for the desktop renderer UI (mobile-adapted). Reuses:
 // - presentation:  @desktop/renderer components (imported from source)
@@ -11,7 +11,11 @@ export default defineConfig(({ mode }) => {
   const env = { ...loadEnv(mode, __dirname, "AGENT_"), ...process.env };
   const backend = env.AGENT_DEV_BACKEND_URL || "http://127.0.0.1:3000";
   return {
-  plugins: [react(), devMobilePairing({ backend, accessUrl: env.AGENT_MOBILE_ACCESS_URL })],
+  plugins: [
+    react(),
+    devLocalWebAuthorization({ backend }),
+    devMobilePairing({ backend, accessUrl: env.AGENT_MOBILE_ACCESS_URL }),
+  ],
   base: "./",
   // The renderer's PcmStreamPlayer loads ./pcm-audio-worklet.js relative to
   // the page — reuse the desktop renderer's public assets.
@@ -37,6 +41,8 @@ export default defineConfig(({ mode }) => {
       .map((origin) => new URL(origin.includes("://") ? origin : `http://${origin}`).hostname),
     proxy: {
       "/app": { target: backend, changeOrigin: false },
+      "/web": { target: backend, changeOrigin: false },
+      "/_next": { target: backend, changeOrigin: false },
       "/pair": { target: backend, changeOrigin: false },
       "/pwa": { target: backend, changeOrigin: false },
       "/manifest.webmanifest": { target: backend, changeOrigin: false },
