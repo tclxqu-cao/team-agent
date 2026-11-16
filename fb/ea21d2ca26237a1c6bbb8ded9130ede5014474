@@ -1,0 +1,44 @@
+packages/desktop/renderer/components/ChatHistoryStyle.test.ts
+  s_4051421ec36e36::t_9f20a0b39d9eab 117,119-121
+packages/desktop/renderer/components/ExecutionTrace.tsx
+  s_4051421ec36e36::t_5d915ee32591ba 3,5-6,9,68-94,107-109,126,136-141
+packages/desktop/renderer/lib/execution-activity-blocks.ts
+  s_4051421ec36e36::t_9f20a0b39d9eab 3,44-45,51-53,57,73
+  s_4051421ec36e36::t_47d0170767946f 8-9
+  s_4051421ec36e36::t_5d915ee32591ba 1-2,4-7,10-43,46-50,54-56,58-72,74-79
+packages/desktop/renderer/components/ChatView.tsx
+  s_4051421ec36e36::t_5d915ee32591ba 437-438,462,693,4980-4984,4990
+packages/desktop/renderer/lib/execution-activity-blocks.test.ts
+  s_4051421ec36e36::t_47d0170767946f 45-46
+  s_4051421ec36e36::t_9f20a0b39d9eab 1-44,47-49,51-52
+  s_4051421ec36e36::t_5f86c5b670d0c4 50
+packages/desktop/renderer/components/SessionExecutionTrace.test.tsx
+  s_4051421ec36e36::t_5f86c5b670d0c4 22,88
+  s_4051421ec36e36::t_9f20a0b39d9eab 41,58,60-62,85,89-90
+packages/desktop/renderer/lib/tool-call-presentation.ts
+  s_4051421ec36e36::t_2c8a9ed7093a5d 124-133
+packages/desktop/renderer/lib/tool-call-groups.test.ts
+  s_4051421ec36e36::t_9f20a0b39d9eab 24-30
+packages/desktop/renderer/components/CodexExecutionTrace.test.tsx
+  s_4051421ec36e36::t_9f20a0b39d9eab 126
+packages/desktop/renderer/lib/tool-call-groups.ts
+  s_4051421ec36e36::t_5d915ee32591ba 40-43,46,48-50
+packages/desktop/renderer/styles/global.css
+  s_4051421ec36e36::t_2c8a9ed7093a5d 3635-3694
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fbea21d2ca26237a1c6bbb8ded9130ede5014474",
+  "prompts": {},
+  "sessions": {
+    "s_4051421ec36e36": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cac9-1b4d-7871-932c-4020e9ae7bd4",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
