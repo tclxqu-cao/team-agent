@@ -1,0 +1,21 @@
+docs/research/bot-landscape-and-comparison.md
+  s_c180ae29f7de44::t_ba84aaf6a10743 1-695
+docs/research/bots-only-landscape.md
+  s_c180ae29f7de44::t_2532fe881146c7 1-279
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "235517d532a1fc0c0a71ff3a8c64539970ac52d2",
+  "prompts": {},
+  "sessions": {
+    "s_c180ae29f7de44": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1e333-4d68-7972-878e-056da492fc99",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
