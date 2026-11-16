@@ -1,0 +1,19 @@
+.agent/skills/wiki-query/log.md
+  s_d2ead08de4e28d::t_c0244362b82456 1-14
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "640f8d7fd55c24f3394992cdb4f4e1147dc22c1b",
+  "prompts": {},
+  "sessions": {
+    "s_d2ead08de4e28d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a133ce-eef2-7cd2-8e64-5b7eeec719f1",
+        "model": "unknown"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
