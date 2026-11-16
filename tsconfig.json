@@ -20,7 +20,6 @@
     "paths": {
       "@agent/core": ["./packages/core/src"],
       "@agent/core/*": ["./packages/core/src/*"],
-      "@agent/messaging": ["./packages/messaging/src"],
       "@agent/computer-use": ["./packages/computer-use/src"],
       "@agent/computer-use/*": ["./packages/computer-use/src/*"],
       "@agent/native-runtime": ["./packages/native-runtime/src"],

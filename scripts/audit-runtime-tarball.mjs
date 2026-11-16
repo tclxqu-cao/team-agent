@@ -12,6 +12,8 @@ if (!process.argv[2]) throw new Error("usage: audit-runtime-tarball.mjs <package
 
 const tarball = resolve(process.argv[2]);
 const list = execFileSync("tar", ["-tzf", tarball], { encoding: "utf8", maxBuffer: 32 * 1024 * 1024 }).trim().split("\n");
+const retired = list.filter(file => /(?:^|\/)node_modules\/@agent\/messaging(?:\/|$)|(?:^|\/)WeComSendBridge\.app(?:\/|$)/.test(file));
+if (retired.length) throw new Error(`retired messaging runtime artifacts:\n${retired.slice(0, 50).join("\n")}`);
 const packageJson = JSON.parse(execFileSync("tar", ["-xOf", tarball, "package/package.json"], { encoding: "utf8" }));
 const manifest = JSON.parse(execFileSync("tar", ["-xOf", tarball, "package/manifest.json"], { encoding: "utf8" }));
 const expected = {
@@ -73,11 +75,6 @@ for (const required of [
   "package/runtime/.next/BUILD_ID",
   "package/runtime/node_modules/node-pty/package.json",
   "package/runtime/node_modules/better-sqlite3/package.json",
-  "package/runtime/node_modules/@agent/messaging/dist/index.js",
-  "package/runtime/node_modules/@agent/messaging/dist/assets/wecom/reader.py",
-  "package/runtime/node_modules/@agent/messaging/dist/assets/wecom/codec.py",
-  "package/runtime/node_modules/@agent/messaging/dist/assets/wecom/native_sender.py",
-  "package/runtime/node_modules/@agent/messaging/dist/assets/wecom/NativeAXBridge.swift",
 ]) {
   if (!list.includes(required)) throw new Error(`missing runtime file: ${required}`);
 }
@@ -86,8 +83,6 @@ if (manifest.target === 'darwin-arm64') {
   const payload = 'package/runtime/native/Support.noindex/AgentRoam Remote Desktop.app';
   if (!list.includes(`${payload}/Contents/Resources/agentroam-component.json`)) throw new Error('missing remote helper version metadata');
   if (list.some(path => path.startsWith('package/runtime/native/AgentRoam Remote Desktop.app/'))) throw new Error('remote helper payload must be inside Support.noindex');
-  if (!list.includes('package/runtime/native/Support.noindex/WeComSendBridge.app/Contents/MacOS/NativeAXBridge')) throw new Error('missing local WeCom sender helper');
-  if (!list.includes('package/runtime/node_modules/@agent/messaging/dist/assets/wecom/native_sender.py')) throw new Error('missing local WeCom sender controller');
 }
 
 if (manifest.target === "windows-amd64") {

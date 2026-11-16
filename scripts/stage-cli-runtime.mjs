@@ -11,7 +11,6 @@ const server = resolve(root, "packages/server");
 const core = resolve(root, "packages/core");
 const computerUse = resolve(root, "packages/computer-use");
 const nativeRuntime = resolve(root, "packages/native-runtime");
-const messaging = resolve(root, "packages/messaging");
 const targetName = readRequiredOption("--target");
 const nodeVersion = process.versions.node;
 assertSupportedNodeVersion(nodeVersion);
@@ -43,9 +42,6 @@ for (const name of ["viewer-frame-flow.mjs", "viewer-video-flow.mjs"]) {
 }
 await cp(resolve(server, "lib/remote-control"), resolve(target, "lib/remote-control"), { recursive: true, filter: (source) => !source.endsWith(".test.ts") });
 if (targetName === "darwin-arm64") {
-  execFileSync(process.execPath, [resolve(root, "scripts/build-wecom-send-helper.mjs")], { stdio: "inherit" });
-  await mkdir(resolve(target, "native/Support.noindex"), { recursive: true });
-  await cp(resolve(server, "native/WeComSendBridge.app"), resolve(target, "native/Support.noindex/WeComSendBridge.app"), { recursive: true });
   // Local builds on machines with a broken CLT Swift toolchain can reuse the
   // helper from the previous published runtime (sources unchanged) by setting
   // AGENT_REUSE_REMOTE_HELPER=1 with the .app pre-placed in server/native/.
@@ -149,7 +145,6 @@ for (const { dir, dist } of [
   { dir: core, dist: resolve(core, "dist") },
   { dir: computerUse, dist: resolve(computerUse, "dist") },
   { dir: nativeRuntime, dist: resolve(nativeRuntime, "dist") },
-  { dir: messaging, dist: resolve(messaging, "dist") },
 ]) {
   const name = JSON.parse(await readFile(resolve(dir, "package.json"), "utf8")).name;
   const destination = resolve(target, "node_modules", name);

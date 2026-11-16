@@ -6,7 +6,6 @@ export type { AgentType } from "../../core/src/domain/agent/agent-type";
 import type { RuntimeBackgroundJob, RuntimeBackgroundJobOutput, RuntimeBackgroundJobStopResult } from "../../native-runtime/src/agent-runtime/background-jobs";
 export type { RuntimeBackgroundJob, RuntimeBackgroundJobOutput, RuntimeBackgroundJobStopResult } from "../../native-runtime/src/agent-runtime/background-jobs";
 import type { CollaborationCommand } from "@agent/core/domain/collaboration/types";
-import type { MessagingCommand } from "@agent/messaging";
 export type { NativeGoalMutation, NativeGoalRef, NativeSessionGoal } from "../../native-runtime/src/agent-runtime/native-session-goal";
 import type { NativeGoalMutation, NativeSessionGoal } from "../../native-runtime/src/agent-runtime/native-session-goal";
 import type { BrowserLiveSessionView } from "../../core/src/domain/browser-live/index";
@@ -301,7 +300,6 @@ export interface AgentApi {
   run(input: string, sessionId: string, agentIds?: string[], agentName?: string, images?: string[], nativeOptions?: NativeRunOptions): Promise<unknown[]>;
   listAgentModels(agentType: AgentType): Promise<{ agentType: AgentType; models: RuntimeModelInfo[]; supported?: boolean }>;
   collaboration(command: CollaborationCommand): Promise<unknown>;
-  messaging(command: MessagingCommand): Promise<unknown>;
   steer(input: string, sessionId: string, agentName?: string): Promise<boolean>;
   abort(sessionId?: string, trigger?: "button" | "keyboard"): Promise<void>;
   answerQuestion(questionId: string, answer: string, selectedIndices?: number[]): Promise<boolean>;

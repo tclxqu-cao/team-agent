@@ -1,6 +1,5 @@
 import type { CreateParallelSessionsInput, ParallelSessionGroup, SessionForkPoint, SessionMessageRunOptions } from "@agent/core";
 import type { CollaborationCommand } from "@agent/core/domain/collaboration/types";
-import type { MessagingCommand } from "@agent/messaging";
 import type {
   AgentApi,
   AgentDefinition,
@@ -142,9 +141,6 @@ export class AgentHttpGateway {
 
   async collaboration(command: CollaborationCommand): Promise<unknown> {
     return this.http.post("/api/collaboration", command);
-  }
-  async messaging(command: MessagingCommand): Promise<unknown> {
-    return this.http.post("/api/messaging", command);
   }
 
   onEvent(callback: EventListener): Unsubscribe {

@@ -10,8 +10,7 @@
       "@agent/computer-use": ["../computer-use/src"],
       "@agent/computer-use/*": ["../computer-use/src/*"],
       "@agent/core": ["../core/src"],
-      "@agent/core/*": ["../core/src/*"],
-      "@agent/messaging": ["./packages/messaging/src"]
+      "@agent/core/*": ["../core/src/*"]
     }
   },
   "include": ["main", "renderer"],

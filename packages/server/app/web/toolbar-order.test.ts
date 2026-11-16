@@ -4,10 +4,10 @@ import { validateComputerTools } from "../../../core/src/domain/web-console/comp
 
 describe("saved toolbar order", () => {
   it("moves either direction while preserving pinned and temporarily hidden entries", () => {
-    const order = ["messaging", "refresh", "files", "remote", "theme"] as const;
-    expect(moveToolbarAction(order, "theme", "messaging")).toEqual(["theme", "messaging", "refresh", "files", "remote"]);
-    expect(moveToolbarAction(order, "messaging", "theme")).toEqual(["refresh", "files", "remote", "theme", "messaging"]);
-    expect(order[0]).toBe("messaging");
+    const order = ["dashboard", "refresh", "files", "remote", "theme"] as const;
+    expect(moveToolbarAction(order, "theme", "dashboard")).toEqual(["theme", "dashboard", "refresh", "files", "remote"]);
+    expect(moveToolbarAction(order, "dashboard", "theme")).toEqual(["refresh", "files", "remote", "theme", "dashboard"]);
+    expect(order[0]).toBe("dashboard");
   });
   it("keeps a dragged order through the same validation used on save and reload", () => {
     const reordered = moveToolbarAction(["refresh", "remote", "theme", "files"], "theme", "refresh");

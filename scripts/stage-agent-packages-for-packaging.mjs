@@ -13,7 +13,10 @@ const output = outputIndex < 0 ? undefined : process.argv[outputIndex + 1];
 if (outputIndex >= 0 && (!output || output.startsWith("--"))) throw new Error("--desktop-root requires a directory");
 const desktopRoot = output ? resolve(output) : join(repoRoot, "packages", "desktop");
 
-const packages = await Promise.all(["core", "computer-use", "native-runtime", "messaging"].map(async (directory) => {
+// A previous packaging run may have left a real copy of this retired package.
+await rm(join(desktopRoot, "node_modules/@agent/messaging"), { recursive: true, force: true });
+
+const packages = await Promise.all(["core", "computer-use", "native-runtime"].map(async (directory) => {
   const source = join(repoRoot, "packages", directory);
   const { name, files } = JSON.parse(await readFile(join(source, "package.json"), "utf8"));
   const link = join(desktopRoot, "node_modules", ...name.split("/"));

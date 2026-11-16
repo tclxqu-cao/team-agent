@@ -7,7 +7,7 @@ import SortableToolbarAction from "./SortableToolbarAction";
 
 interface ToolbarAction { id: string; content: ReactNode }
 interface ToolbarItem extends ToolbarAction { compactItems?: ToolbarAction[] }
-const labels: Record<string, string> = { refresh: "刷新页面", dashboard: "进行中的会话", messaging: "消息接入", collaboration: "群聊看板", install: "安装应用", remote: "远程桌面", "ai-hub": "AI Hub", flow: "数字人", theme: "皮肤", files: "我的文件" };
+const labels: Record<string, string> = { refresh: "刷新页面", dashboard: "进行中的会话", collaboration: "群聊看板", install: "安装应用", remote: "远程桌面", "ai-hub": "AI Hub", flow: "数字人", theme: "皮肤", files: "我的文件" };
 
 export function compactToolbarGroups(items: ToolbarItem[]): ToolbarAction[][] {
   return items.map(item => item.compactItems ?? [item]).filter(group => group.length > 0);
