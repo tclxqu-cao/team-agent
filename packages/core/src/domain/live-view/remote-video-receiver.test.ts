@@ -38,4 +38,70 @@ describe('receiver adaptation', () => {
     policy.update({ now: 0, receiver: sample });
     expect(policy.current()).not.toHaveProperty('maxEdge');
   });
+  it('escapes one-FPS original video with sustained delivery delay without lowering receiver FPS', () => {
+    const policy = new RemoteVideoReceiverPolicy();
+    const stalled = { ...sample, width: 3440, height: 1440, decodedFrames: 1, jitterBufferMs: 900 };
+    policy.observe(stalled, 'original', 5, 0);
+    expect(policy.maxEdge).toBeUndefined();
+    policy.observe({ ...stalled, sequence: 2 }, 'original', 5, 1000);
+    expect(policy.maxEdge).toBe(2560);
+    expect(policy.maxFps).toBe(30);
+    for (let n = 2; n <= 6; n++) policy.observe({ ...stalled, width: 2560, sequence: n + 1 }, 'original', 5, n * 1000);
+    expect(policy.maxEdge).toBe(1920);
+    // Healthy decoding alone cannot restore oversized frames while delivery is delayed.
+    for (let n = 7; n < 12; n++) policy.observe({ ...stalled, decodedFrames: 15, sequence: n + 1 }, 'original', 15, n * 1000);
+    expect(policy.maxEdge).toBe(1280);
+    expect(policy.maxFps).toBe(30);
+    policy.reset();
+    policy.observe({ ...sample, width: 3440, jitterBufferMs: 50 }, 'original', 30, 0);
+    expect(policy.maxEdge).toBeUndefined();
+  });
+  it('ignores missing-frame and stale delivery delays and restores after healthy playback', () => {
+    const policy = new RemoteVideoReceiverPolicy();
+    for (let n = 0; n < 8; n++) policy.observe({ ...sample, sequence: n + 1, decodedFrames: 0, jitterBufferMs: 900 }, 'original', 30, n * 1000);
+    expect(policy.maxEdge).toBeUndefined();
+    for (let n = 8; n < 10; n++) policy.observe({ ...sample, sequence: n + 1, decodedFrames: 1, jitterBufferMs: 900 }, 'original', 5, n * 1000);
+    expect(policy.maxEdge).toBe(1920);
+    for (let n = 10; n < 15; n++) policy.observe({ ...sample, sequence: n + 1, jitterBufferMs: 50 }, 'original', 30, n * 1000);
+    expect(policy.maxEdge).toBeUndefined();
+  });
+  it('applies resolution relief through the video policy under the measured original-quality backlog', () => {
+    const policy = new RemoteVideoPolicy('original', { dynamicResolution: true });
+    for (let n = 0; n < 12; n++) {
+      policy.update({ now: n * 1000, network: { rttMs: 46, lossRate: .06, availableOutgoingBitrate: 2_200_000 },
+        receiver: { ...sample, sequence: n + 1, width: 3440, decodedFrames: 1, jitterBufferMs: 900 },
+        sender: { queueDelayMs: 750, droppedFrames: 8, queuedBytes: 129_679, queuedFrames: 2,
+          pacingBitRate: 2_450_000, waitingForKeyframe: false } });
+    }
+    expect(policy.current()).toMatchObject({ quality: 'original', maxEdge: 1280, maintainResolution: false });
+    // Real loss still owns network backoff; resolution adaptation does not bypass it.
+    expect(policy.current().maxFps).toBe(5);
+    expect(policy.current().bitRate).toBe(2_000_000);
+  });
+  it('restores clarity when buffering is within the browser-required minimum', () => {
+    const policy = new RemoteVideoReceiverPolicy();
+    for (let n = 0; n < 2; n++) policy.observe({ ...sample, sequence: n + 1, width: 3440,
+      decodedFrames: 1, jitterBufferMs: 900, jitterBufferMinimumMs: 0 }, 'original', 5, n * 1000);
+    expect(policy.maxEdge).toBe(2560);
+    for (let n = 2; n < 8; n++) policy.observe({ ...sample, sequence: n + 1, width: 2560,
+      jitterBufferMs: 300, jitterBufferMinimumMs: 350 }, 'original', 30, n * 1000);
+    expect(policy.maxEdge).toBeUndefined();
+    expect(policy.maxFps).toBe(30);
+  });
+  it('recovers low cadence when presentation lateness fits its frame interval', () => {
+    const policy = new RemoteVideoReceiverPolicy();
+    for (let n = 0; n < 3; n++) policy.observe({ ...sample, sequence: n + 1, presentationDelayMs: 500 }, 'original', 30, n * 1000);
+    expect(policy.maxFps).toBe(5);
+    // Measured 5 FPS playback: 4 ms decoding, no dropped frames, 100 ms lateness.
+    // A fixed 50 ms threshold repeatedly demoted this already-low cadence.
+    for (let n = 3; n < 8; n++) policy.observe({ ...sample, sequence: n + 1, decodedFrames: 5,
+      presentationDelayMs: 100, jitterBufferMs: 36 }, 'original', 5, n * 1000);
+    expect(policy.maxFps).toBe(15);
+    for (let n = 8; n < 13; n++) policy.observe({ ...sample, sequence: n + 1,
+      presentationDelayMs: 30, jitterBufferMs: 36 }, 'original', 15, n * 1000);
+    expect(policy.maxFps).toBe(30);
+    for (let n = 13; n < 16; n++) policy.observe({ ...sample, sequence: n + 1,
+      presentationDelayMs: 100 }, 'original', 30, n * 1000);
+    expect(policy.maxFps).toBe(5);
+  });
 });

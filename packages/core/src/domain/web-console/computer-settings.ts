@@ -1,4 +1,4 @@
-export const COMPUTER_TOOLS = ["refresh", "dashboard", "collaboration", "messaging", "remote", "theme", "files", "ai-hub", "flow", "install"] as const;
+export const COMPUTER_TOOLS = ["refresh", "dashboard", "collaboration", "remote", "theme", "files", "ai-hub", "flow", "install"] as const;
 export type ComputerToolId = typeof COMPUTER_TOOLS[number];
 export const DEFAULT_COMPUTER_TOOLS: readonly ComputerToolId[] = ["refresh", "remote", "theme", "files"];
 
@@ -23,11 +23,12 @@ export function defaultComputerSettings(userId: string): ComputerSettings {
 }
 
 export function validateComputerTools(value: unknown): ComputerToolId[] {
-  if (!Array.isArray(value) || value.length > COMPUTER_TOOLS.length || value.some(id => !COMPUTER_TOOLS.includes(id))) {
+  // Old saved toolbars may contain the retired messaging entry.
+  if (!Array.isArray(value) || value.length > COMPUTER_TOOLS.length + 1 || value.some(id => id !== "messaging" && !COMPUTER_TOOLS.includes(id))) {
     throw new Error("顶部工具包含未知选项。");
   }
   if (new Set(value).size !== value.length) throw new Error("顶部工具不能重复。");
-  return [...value] as ComputerToolId[];
+  return value.filter(id => id !== "messaging") as ComputerToolId[];
 }
 
 export function validateSavedComputerPages(value: unknown): SavedComputerPage[] {

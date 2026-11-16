@@ -358,13 +358,20 @@ it('reconciles real reliable SCTP with reordered RPC fallback without repeating 
   const context = { controllerId: controller.id, epoch: 1, stream: 'input-stream-1234567890', version: 2 };
   registry.enableDirectInput(producer, 'desktop', context);
   const transport = new WeriftVideoTransport({ signal: (value: any) => signals.push(value), iceConfig: { iceServers: [] },
-    inputStream: context.stream, inputVersion: 2, onReliableInput: (value: any) => registry.directReliableInput(producer, 'desktop', context, value) });
+    inputStream: context.stream, inputVersion: 2, onReliableInput: (value: any) => registry.directReliableInput(producer, 'desktop', context, value),
+    onInput: (value: any) => registry.directPointerInput(producer, 'desktop', context, value) ? 'accepted' : 'ignored' });
   const viewer = new RTCPeerConnection({ iceServers: [], codecs: { video: [new RTCRtpCodecParameters({ mimeType: 'video/H264', clockRate: 90000, payloadType: 96,
     parameters: 'packetization-mode=1;profile-level-id=42e034;level-asymmetry-allowed=1' })] } });
-  let channel: any;
-  viewer.onDataChannel.subscribe(value => { if (value.label === 'agentroam.input.reliable.v1') { channel = value; channel.onMessage.subscribe(raw => replies.push(JSON.parse(String(raw)))); } });
+  let channel: any, hover: any;
+  viewer.onDataChannel.subscribe(value => {
+    if (value.label === 'agentroam.input.v1') hover = value;
+    if (value.label === 'agentroam.input.reliable.v1') { channel = value; channel.onMessage.subscribe(raw => replies.push(JSON.parse(String(raw)))); }
+  });
   try {
     await transport.start(); const offer = signals.find(value => value.kind === 'offer'); expect(offer.inputVersion).toBe(2);
+    // A move already in the RPC port can arrive while the offer travels to the browser.
+    await registry.input(controller, 'desktop', { kind: 'pointer', action: 'move', x: .9, y: .9 });
+    expect(registry.isDirectInputActive(producer, 'desktop', context)).toBe(true);
     await viewer.setRemoteDescription(offer.sdp); await viewer.setLocalDescription(await viewer.createAnswer()); await transport.answer(viewer.localDescription);
     await vi.waitFor(() => expect(channel?.readyState).toBe('open'), { timeout: 15_000 });
     const first = { kind: 'key', text: '中文只输入一次', action: 'down' };
@@ -375,9 +382,19 @@ it('reconciles real reliable SCTP with reordered RPC fallback without repeating 
     await vi.waitFor(() => expect(replies).toHaveLength(2));
     expect(replies.find(value => value.index === 1)).toMatchObject({ ok: true, result: fallback });
     expect(messages.filter(value => value.type === 'browser:input').map(value => value.input.text ?? value.input.action)).toEqual(['中文只输入一次', 'up']);
+    hover.send(JSON.stringify({ kind: 'move', stream: context.stream, sequence: 5, barrier: 4, x: .3, y: .4 }));
+    await vi.waitFor(() => expect(messages.filter(value => value.directMove)).toHaveLength(1));
+    for (const [index, action] of [[3, 'down'], [4, 'up']] as const) {
+      channel.send(JSON.stringify({ kind: 'request', stream: context.stream, index, sequence: index + 3,
+        input: { kind: 'pointer', action, x: .3, y: .4 } }));
+    }
+    await vi.waitFor(() => expect(replies).toHaveLength(4));
+    expect(replies.slice(2).every(value => value.ok === true)).toBe(true);
+    expect(messages.filter(value => value.type === 'browser:input').map(value => value.input.text ?? value.input.action))
+      .toEqual(['中文只输入一次', 'up', 'move', 'down', 'up']);
     registry.returnControl(controller, 'desktop');
-    channel.send(JSON.stringify({ kind: 'request', stream: context.stream, index: 3, sequence: 5, input: first }));
-    await vi.waitFor(() => expect(replies).toHaveLength(3)); expect(replies[2]).toMatchObject({ ok: false, code: 'ESTALE' });
-    expect(messages.filter(value => value.type === 'browser:input')).toHaveLength(2);
+    channel.send(JSON.stringify({ kind: 'request', stream: context.stream, index: 5, sequence: 8, input: first }));
+    await vi.waitFor(() => expect(replies).toHaveLength(5)); expect(replies[4]).toMatchObject({ ok: false, code: 'ESTALE' });
+    expect(messages.filter(value => value.type === 'browser:input')).toHaveLength(5);
   } finally { await transport.stop(); await viewer.close(); }
 }, 30_000);

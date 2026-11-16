@@ -341,6 +341,11 @@ export class LiveViewRegistry {
         return Promise.reject(domainError('输入会话已过期', 'ESTALE'));
       return lease.ledger.offer(stamp.index, stamp.sequence!, JSON.stringify(input), input);
     }
+    // Hover sent before the viewer receives its input stream can arrive after
+    // negotiation. The new stream owns movement now; do not let an unstamped
+    // position revoke its reliable ledger or cross a click/drag barrier.
+    if (session.directInput?.version === 2 && !stamp
+      && input.kind === "pointer" && input.action === "move" && !input.probe) return Promise.resolve(null);
     if (session.directInput && !session.directInput.policy.acceptReliable(stamp)) {
       // Legacy or stale reliable traffic invalidates the lossy stream; it never bypasses the reliable action.
       this.invalidateDirectInput(session);

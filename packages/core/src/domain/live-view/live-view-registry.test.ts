@@ -12,6 +12,60 @@ function publish(registry: LiveViewRegistry, producer: LiveViewPeer, availabilit
 }
 
 describe("LiveViewRegistry", () => {
+  it('discards delayed pre-negotiation hover without expiring reliable clicks or moving an active drag', async () => {
+    const registry = new LiveViewRegistry(), producer = peer('producer'), controller = peer('controller');
+    publish(registry, producer); registry.takeOver(controller, 'browser-1');
+    registry.producerState(producer, 'browser-1', 'user-controlled');
+    const context = { controllerId: controller.id, epoch: 1, stream: 'input-stream-1234567890', version: 2 };
+    registry.enableDirectInput(producer, 'browser-1', context);
+    const staleHover = { kind: 'pointer', action: 'move', x: .9, y: .9 };
+    await registry.input(controller, 'browser-1', staleHover);
+    expect(registry.isDirectInputActive(producer, 'browser-1', context)).toBe(true);
+    expect(producer.messages.filter(event => event.type === 'browser:input')).toHaveLength(0);
+    expect(registry.directPointerInput(producer, 'browser-1', context,
+      { stream: context.stream, sequence: 1, barrier: 0, x: .2, y: .4 })).toBe(true);
+
+    const down = { kind: 'pointer', action: 'down', x: .2, y: .4 };
+    const click = registry.directReliableInput(producer, 'browser-1', context,
+      { stream: context.stream, index: 1, sequence: 2, input: down });
+    const clickFallback = registry.input(controller, 'browser-1',
+      { ...down, direct: { stream: context.stream, index: 1, sequence: 2 } });
+    expect(clickFallback).toBe(click);
+    await registry.input(controller, 'browser-1', staleHover);
+    const sent = producer.messages.filter(event => event.type === 'browser:input');
+    expect(sent).toMatchObject([{ input: { action: 'move' } }, { input: { action: 'down' } }]);
+    expect(sent).toHaveLength(2);
+    registry.inputResult(producer, 'browser-1', sent[1].token, { clicked: true });
+    expect(await click).toEqual({ clicked: true });
+
+    for (const [index, action] of [[2, 'move'], [3, 'up']] as const) {
+      const pending = registry.directReliableInput(producer, 'browser-1', context,
+        { stream: context.stream, index, sequence: index + 1, input: { ...down, action, x: .3 } });
+      await Promise.resolve();
+      const event = producer.messages.filter(event => event.type === 'browser:input').at(-1)!;
+      expect(event).toMatchObject({ input: { action } });
+      registry.inputResult(producer, 'browser-1', event.token, { dispatched: action });
+      await expect(pending).resolves.toEqual({ dispatched: action });
+    }
+    expect(registry.directPointerInput(producer, 'browser-1', context,
+      { stream: context.stream, sequence: 5, barrier: 4, x: .5, y: .6 })).toBe(true);
+    expect(registry.isDirectInputActive(producer, 'browser-1', context)).toBe(true);
+  });
+
+  it.each(['down', 'up', 'probe', 'key'])('keeps unfenced %s actions as reliable barriers during v2 negotiation', async action => {
+    const registry = new LiveViewRegistry(), producer = peer('producer'), controller = peer('controller');
+    publish(registry, producer); registry.takeOver(controller, 'browser-1');
+    registry.producerState(producer, 'browser-1', 'user-controlled');
+    const context = { controllerId: controller.id, epoch: 1, stream: 'input-stream-1234567890', version: 2 };
+    registry.enableDirectInput(producer, 'browser-1', context);
+    const pending = registry.input(controller, 'browser-1', action === 'key' ? { kind: 'key', key: 'a' }
+      : { kind: 'pointer', action: action === 'probe' ? 'move' : action, x: .2, y: .4, ...(action === 'probe' ? { probe: true } : {}) });
+    const event = producer.messages.filter(event => event.type === 'browser:input').at(-1)!;
+    if (event.token) registry.inputResult(producer, 'browser-1', event.token, null);
+    await pending;
+    expect(registry.isDirectInputActive(producer, 'browser-1', context)).toBe(false);
+  });
+
   it('shares ordered native receipts between reliable input and RPC, including renegotiation', async () => {
     const registry = new LiveViewRegistry(), producer = peer('producer'), controller = peer('controller');
     publish(registry, producer); registry.takeOver(controller, 'browser-1'); registry.producerState(producer, 'browser-1', 'user-controlled');

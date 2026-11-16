@@ -65,6 +65,10 @@ export class RemoteVideoPolicy {
   private motionSamples = 0;
   private healthySamples = 0;
   private congestedSamples = 0;
+  private lastPressureKind: "network" | "sender" | "encoder" | null = null;
+  private lastPressureAt = -Infinity;
+  private lastPressureLossRate = 0;
+  private lastPressureQueueDelayMs = 0;
   private baselineRttMs: number | null = null;
   private preferredCodec: RemoteVideoH264Profile;
   private highFallbackUsed = false;
@@ -84,6 +88,10 @@ export class RemoteVideoPolicy {
     this.bitRate = REMOTE_VIDEO_PROFILES[this.quality].maxBitRate;
     this.healthySamples = 0;
     this.congestedSamples = 0;
+    this.lastPressureKind = null;
+    this.lastPressureAt = -Infinity;
+    this.lastPressureLossRate = 0;
+    this.lastPressureQueueDelayMs = 0;
     this.receiver.reset();
     return this.current("quality");
   }
@@ -103,6 +111,10 @@ export class RemoteVideoPolicy {
     this.motionSamples = 0;
     this.healthySamples = 0;
     this.congestedSamples = 0;
+    this.lastPressureKind = null;
+    this.lastPressureAt = -Infinity;
+    this.lastPressureLossRate = 0;
+    this.lastPressureQueueDelayMs = 0;
     this.highFallbackUsed = false;
     this.preferredCodec = this.capabilities.codecPreferences.includes("high") ? "high" : "baseline";
     return this.current("session-reset");
@@ -137,10 +149,21 @@ export class RemoteVideoPolicy {
     };
   }
 
-  noteInteraction(): RemoteVideoDecision {
+  noteInteraction(now = Date.now()): RemoteVideoDecision {
     this.idleSince = null;
     this.motionSamples = 0;
     this.activityFps = 30;
+    // A local sender drop can leave pressureFps at 5 even after the queue has
+    // drained. Give the click one bounded 15 FPS burst so its visual result
+    // arrives promptly. Never bypass a recent network/encoder pressure signal
+    // or a queue that is still growing; the next sample may lower it again.
+    if (this.pressureFps <= 5
+      && this.lastPressureKind === "sender"
+      && now - this.lastPressureAt <= 2_500
+      && this.lastPressureLossRate < .02
+      && this.lastPressureQueueDelayMs < 150) {
+      this.pressureFps = 15;
+    }
     return this.current("interaction");
   }
 
@@ -176,6 +199,10 @@ export class RemoteVideoPolicy {
     if (pressure.congested || senderPressure || encoderPressure) {
       this.healthySamples = 0;
       this.congestedSamples += 1;
+      this.lastPressureKind = pressure.congested ? "network" : encoderPressure ? "encoder" : "sender";
+      this.lastPressureAt = now;
+      this.lastPressureLossRate = clamp(finite(network.lossRate), 0, 1);
+      this.lastPressureQueueDelayMs = Math.max(0, finite(observation.sender?.queueDelayMs));
       if ((pressure.congested || senderPressure && !healthyNetwork) && this.capabilities.dynamicBitrate) {
         const profile = REMOTE_VIDEO_PROFILES[this.quality];
         const measuredCeiling = availableBitrate > 0 && network.applicationLimited !== true

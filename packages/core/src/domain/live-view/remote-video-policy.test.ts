@@ -68,6 +68,32 @@ describe("RemoteVideoPolicy", () => {
     expect(pressured.noteInteraction()).toMatchObject({ maxFps: 15, reason: "interaction" });
   });
 
+  it("gives local sender pressure one bounded 15 FPS click burst without bypassing congestion", () => {
+    const local = new RemoteVideoPolicy("original", nativeCapabilities);
+    for (let index = 0; index < 4; index += 1) {
+      local.update({ now: index * 2_000, network: { lossRate: 0, rttMs: 30 },
+        sender: { queueDelayMs: 0, droppedFrames: 2, queuedBytes: 0, queuedFrames: 0, pacingBitRate: 8_000_000, waitingForKeyframe: false } });
+    }
+    expect(local.current().maxFps).toBe(5);
+    expect(local.noteInteraction(8_100)).toMatchObject({ maxFps: 15, reason: "interaction" });
+
+    const growingQueue = new RemoteVideoPolicy("original", nativeCapabilities);
+    for (let index = 0; index < 4; index += 1) {
+      growingQueue.update({ now: index * 2_000, network: { lossRate: 0, rttMs: 30 },
+        sender: { queueDelayMs: 220, droppedFrames: 2, queuedBytes: 80_000, queuedFrames: 4, pacingBitRate: 8_000_000, waitingForKeyframe: false } });
+    }
+    expect(growingQueue.current().maxFps).toBe(5);
+    expect(growingQueue.noteInteraction(8_100).maxFps).toBe(5);
+
+    const congested = new RemoteVideoPolicy("original", nativeCapabilities);
+    for (let index = 0; index < 4; index += 1) {
+      congested.update({ now: index * 2_000, network: { lossRate: .12, rttMs: 280 },
+        sender: { queueDelayMs: 0, droppedFrames: 2, queuedBytes: 0, queuedFrames: 0, pacingBitRate: 8_000_000, waitingForKeyframe: false } });
+    }
+    expect(congested.current().maxFps).toBe(5);
+    expect(congested.noteInteraction(8_100).maxFps).toBe(5);
+  });
+
   it("reduces bitrate for network congestion and fps for sustained pressure", () => {
     const policy = new RemoteVideoPolicy("hd", nativeCapabilities);
     const first = policy.update({ network: { lossRate: 0.08, rttMs: 280, availableOutgoingBitrate: 4_000_000 } });

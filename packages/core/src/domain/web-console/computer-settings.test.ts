@@ -20,10 +20,11 @@ describe("computer settings contracts", () => {
     ]);
     expect(validateComputerTools(["collaboration"])).toEqual(["collaboration"]);
   });
-  it("allows the messaging entry without changing an existing toolbar selection", () => {
+  it("drops the retired messaging entry while preserving all other toolbar choices", () => {
     const defaults = defaultComputerSettings("owner").visibleTools;
     expect(validateComputerTools(defaults)).toEqual(defaults);
-    expect(validateComputerTools(["messaging", "refresh", "files"])).toEqual(["messaging", "refresh", "files"]);
+    expect(validateComputerTools(["messaging"])).toEqual([]);
+    expect(validateComputerTools(["messaging", "refresh", "files"])).toEqual(["refresh", "files"]);
   });
   it("normalizes pages and whitelists fields", () => {
     expect(validateSavedComputerPages([{ ...page, token: "secret" }])).toEqual([{ id: "docs", name: "文档", url: "https://example.com/", openMode: "current" }]);

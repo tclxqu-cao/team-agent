@@ -13,26 +13,40 @@ export class RemoteVideoReceiverPolicy {
   private pressure = 0;
   private healthy = 0;
   private scale = 1;
+  private latencyPressure = 0;
+  private sourceEdge = 0;
 
   reset(): void {
     this.maxFps = 30; this.maxEdge = undefined; this.sequence = -1;
-    this.lastSampleAt = this.sizeAt = -Infinity; this.pressure = this.healthy = 0; this.scale = 1;
+    this.lastSampleAt = this.sizeAt = -Infinity; this.pressure = this.healthy = this.latencyPressure = 0;
+    this.scale = 1; this.sourceEdge = 0;
   }
 
   observe(sample: RemoteVideoReceiverTelemetry | undefined, quality: RemoteVideoQuality, fps: number, now: number): boolean {
     if (!sample || !Number.isSafeInteger(sample.sequence) || sample.sequence <= this.sequence || !Number.isFinite(now)) return false;
     this.sequence = sample.sequence;
-    if (sample.visible !== true) { this.pressure = this.healthy = 0; return false; }
+    if (sample.visible !== true) { this.pressure = this.healthy = this.latencyPressure = 0; return false; }
     if (now - this.lastSampleAt < 750) return false;
     this.lastSampleAt = now;
     const oldFps = this.maxFps, oldEdge = this.maxEdge;
-    const evidence = sample.intervalMs !== undefined && sample.intervalMs >= 250 && sample.intervalMs <= 5000
-      && (sample.decodedFrames ?? 0) >= 3;
+    const validInterval = sample.intervalMs !== undefined && sample.intervalMs >= 250 && sample.intervalMs <= 5000;
+    const evidence = validInterval && (sample.decodedFrames ?? 0) >= 3;
+    const minimumBufferMs = Math.max(0, sample.jitterBufferMinimumMs ?? 0);
+    // A backed-up IDR stream may deliver only one frame per second. Requiring
+    // three decoded frames here prevents it from ever escaping that state.
+    const delayed = validInterval && (sample.decodedFrames ?? 0) >= 1
+      && (sample.jitterBufferMs ?? 0) >= Math.max(200, minimumBufferMs + 100);
+    this.latencyPressure = delayed ? this.latencyPressure + 1 : 0;
     const frameBudget = 1000 / clamp(fps, 5, 30);
     const overloaded = evidence && ((sample.decodeMs ?? 0) > frameBudget * .8
-      || (sample.droppedRatio ?? 0) >= .08 || (sample.presentationDelayMs ?? 0) >= 50);
-    const knownHealthy = evidence && [sample.decodeMs, sample.droppedRatio, sample.presentationDelayMs].some(Number.isFinite)
-      && (sample.decodeMs ?? 0) < 20 && (sample.droppedRatio ?? 0) < .02 && (sample.presentationDelayMs ?? 0) < 20;
+      || (sample.droppedRatio ?? 0) >= .08
+      || (sample.presentationDelayMs ?? 0) >= Math.max(50, frameBudget * .8));
+    // Browser-required buffering is not excess delivery delay. Ignoring its
+    // minimum can keep shrinking healthy playback and prevent size recovery.
+    const knownHealthy = evidence && (sample.jitterBufferMs ?? 0) < Math.max(120, minimumBufferMs + 100)
+      && [sample.decodeMs, sample.droppedRatio, sample.presentationDelayMs].some(Number.isFinite)
+      && (sample.decodeMs ?? 0) < 20 && (sample.droppedRatio ?? 0) < .02
+      && (sample.presentationDelayMs ?? 0) < Math.max(20, frameBudget * .6);
     if (overloaded) {
       this.healthy = 0; this.pressure += 1;
       if (this.pressure >= 2) this.maxFps = this.maxFps > 15 ? 15 : 5;
@@ -45,17 +59,27 @@ export class RemoteVideoReceiverPolicy {
       }
     } else { this.pressure = this.healthy = 0; }
 
+    // Relieve sustained delivery delay through frame size rather than further
+    // reducing motion cadence. Leave decoder overload's FPS protection intact.
+    if (this.latencyPressure >= 2 && now - this.sizeAt >= 5000) {
+      this.scale = Math.max(.2, this.scale * .75); this.latencyPressure = 0; this.healthy = 0;
+    }
+
     const viewport = sample.viewport;
     const width = sample.width ?? 0, height = sample.height ?? 0;
+    this.sourceEdge = Math.max(this.sourceEdge, width, height);
     const ceiling = quality === 'smooth' ? 1280 : quality === 'hd' ? 2560 : 8192;
     let demand: number | undefined;
     if (quality !== 'original' && viewport && [viewport.width, viewport.height, viewport.pixelRatio, viewport.zoom].every(Number.isFinite)
       && width > 0 && height > 0 && viewport.width > 0 && viewport.height > 0) {
       const fit = Math.min(viewport.width / width, viewport.height / height);
       demand = Math.max(width, height) * fit * clamp(viewport.pixelRatio, 1, 4) * clamp(viewport.zoom, 1, 4);
-    } else if (this.scale < 1 && width > 0 && height > 0) demand = Math.max(width, height);
+    } else if (this.scale < 1 && width > 0 && height > 0) demand = this.sourceEdge;
     // Explicit original quality ignores the viewport; pressure can still bound expensive decoding.
-    let next = demand === undefined ? undefined : Math.min(ceiling, EDGES.find(edge => edge >= clamp(demand! * this.scale, 640, ceiling)) ?? ceiling);
+    const edge = demand === undefined ? undefined : clamp(demand * this.scale, 640, ceiling);
+    const next = edge === undefined ? undefined : this.scale < 1
+      ? EDGES.filter(value => value <= edge).at(-1) ?? 640
+      : Math.min(ceiling, EDGES.find(value => value >= edge) ?? ceiling);
     if (next !== this.maxEdge && (this.sizeAt === -Infinity || now - this.sizeAt >= 5000)) {
       // Ignore small geometry jitter, but allow an explicit native-size restore.
       if (next === undefined || this.maxEdge === undefined || Math.abs(next - this.maxEdge) / this.maxEdge >= .2) {
