@@ -138,6 +138,7 @@ interface CodexTurn {
   id: string;
   status: string;
   items: CodexItem[];
+  completionDurationMs?: number;
   error?: { message?: string } | null;
 }
 
@@ -201,7 +202,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
   private readonly imageStorageRoot: string;
   private readonly rolloutActivityReader: Pick<CodexRolloutActivityReader, "readMany">;
   private readonly rolloutCommentaryReader: Pick<CodexRolloutCommentaryReader, "read">;
-  private readonly rolloutUserMessageReader: Pick<CodexRolloutUserMessageReader, "read"> & Partial<Pick<CodexRolloutUserMessageReader, "readAsyncMessages">>;
+  private readonly rolloutUserMessageReader: Pick<CodexRolloutUserMessageReader, "read"> & Partial<Pick<CodexRolloutUserMessageReader, "readAsyncMessages" | "readCompletionDurations">>;
   private readonly agentMessagePhases = new Map<string, "commentary" | "final_answer">();
   /** Flipped off permanently only when the app-server lacks the paginated turn protocol. */
   private nativePagingSupported = true;
@@ -252,7 +253,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     imageStorageRoot?: string;
     rolloutActivityReader?: Pick<CodexRolloutActivityReader, "readMany">;
     rolloutCommentaryReader?: Pick<CodexRolloutCommentaryReader, "read">;
-    rolloutUserMessageReader?: Pick<CodexRolloutUserMessageReader, "read"> & Partial<Pick<CodexRolloutUserMessageReader, "readAsyncMessages">>;
+    rolloutUserMessageReader?: Pick<CodexRolloutUserMessageReader, "read"> & Partial<Pick<CodexRolloutUserMessageReader, "readAsyncMessages" | "readCompletionDurations">>;
     codexExecutable?: string;
     environment?: NodeJS.ProcessEnv;
     homeDir?: string;
@@ -524,9 +525,10 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     const rolloutActivities = await this.rolloutActivityReader.readMany(
       this.platform === "win32" ? rolloutPaths([response.thread], this.platform) : openFiles,
     );
+    const turns = await this.withCompletionDurations(response.thread.turns, response.thread.path);
     return {
       ...this.toSummary(response.thread, openFiles, rolloutActivities),
-      messages: await codexTurnsToMessages(response.thread.turns, { nativeSessionId }),
+      messages: await codexTurnsToMessages(turns, { nativeSessionId }),
       events: [],
     };
   }
@@ -836,7 +838,16 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       const lastUserIndex = turn.items.reduce((found, item, index) => item.type === "userMessage" ? index : found, -1);
       turn.items.splice((userIndex >= 0 ? userIndex : lastUserIndex) + 1, 0, item);
     }
-    return merged;
+    return this.withCompletionDurations(merged, rolloutPath);
+  }
+
+  private async withCompletionDurations(turns: CodexTurn[], rolloutPath: string | null): Promise<CodexTurn[]> {
+    if (!rolloutPath || !this.rolloutUserMessageReader.readCompletionDurations) return turns;
+    const durations = await this.rolloutUserMessageReader.readCompletionDurations(rolloutPath);
+    return turns.map((turn) => {
+      const duration = durations.get(turn.id);
+      return duration === undefined ? turn : { ...turn, completionDurationMs: duration };
+    });
   }
 
   /**
@@ -2490,6 +2501,7 @@ function codexSummaryTurnsToMessages(
           content: normalized.content,
           presentation: {
             executionTrace: { turnId: turn.id, segmentIndex },
+            ...(turn.completionDurationMs !== undefined ? { completionDurationMs: turn.completionDurationMs } : {}),
             ...(normalized.rawContent ? { rawContent: normalized.rawContent } : {}),
             ...(imagePaths.length > 0 ? {
               attachments: imagePaths.map((path) => imageAttachments?.get(path) ?? {
@@ -2603,8 +2615,12 @@ export async function codexTurnsToMessages(
           const normalized = normalizeCodexUserText(sourceText);
           const imagePaths = codexUserImagePaths(entries);
           const attachments = await Promise.all(imagePaths.map(loadCodexImageAttachment));
-          const presentation = normalized.rawContent || attachments.length > 0
+          const presentation = normalized.rawContent || attachments.length > 0 || turn.completionDurationMs !== undefined
             ? {
+                ...(turn.completionDurationMs !== undefined ? {
+                  executionTrace: { turnId: turn.id, segmentIndex },
+                  completionDurationMs: turn.completionDurationMs,
+                } : {}),
                 ...(normalized.rawContent ? { rawContent: normalized.rawContent } : {}),
                 ...(attachments.length > 0 ? { attachments } : {}),
               }

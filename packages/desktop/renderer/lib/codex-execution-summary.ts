@@ -8,7 +8,7 @@ export function codexExecutionTurnDurations(messages: readonly ChatMessage[]): M
   for (const message of messages) {
     if (message.role === "user") turnId = message.presentation?.executionTrace?.turnId;
     if (message.executionTrace) turnId = message.executionTrace.turnId;
-    if (message.role !== "assistant" || message.executionTrace) continue;
+    if ((message.role !== "assistant" && message.role !== "user") || message.executionTrace) continue;
     const duration = validCompletionDurationMs(message.presentation?.completionDurationMs)
       ?? validCompletionDurationMs(message.presentation?.runResult?.durationMs);
     const owner = message.presentation?.executionTrace?.turnId ?? turnId;

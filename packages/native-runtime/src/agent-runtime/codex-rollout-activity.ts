@@ -55,6 +55,7 @@ interface UserMessageCacheEntry {
   turns: Map<string, CodexRolloutUserMessage[]>;
   itemIds: Set<string>;
   asyncMessages: Map<string, CodexRolloutAsyncMessage>;
+  completionDurations: Map<string, number>;
   goalKey?: string;
   pendingGoal?: { key: string; objective: string };
 }
@@ -359,6 +360,7 @@ export class CodexRolloutUserMessageReader {
             turns: new Map(),
             itemIds: new Set(),
             asyncMessages: new Map(),
+            completionDurations: new Map(),
           };
       await this.readAppended(handle, entry, metadata.size);
       entry.size = metadata.size;
@@ -377,6 +379,11 @@ export class CodexRolloutUserMessageReader {
   async readAsyncMessages(path: string): Promise<CodexRolloutAsyncMessage[]> {
     await this.read(path);
     return [...(this.cache.get(path)?.asyncMessages.values() ?? [])];
+  }
+
+  async readCompletionDurations(path: string): Promise<Map<string, number>> {
+    await this.read(path);
+    return new Map(this.cache.get(path)?.completionDurations);
   }
 
   private async readAppended(
@@ -420,6 +427,14 @@ export class CodexRolloutUserMessageReader {
     try {
       const record = JSON.parse(line) as Record<string, unknown>;
       const payload = asRecord(record.payload);
+      if (record.type === "event_msg" && TERMINAL_EVENTS.has(asString(payload.type))) {
+        const turnId = asString(payload.turn_id);
+        const duration = payload.duration_ms;
+        if (turnId && typeof duration === "number" && Number.isFinite(duration) && duration >= 0) {
+          entry.completionDurations.set(turnId, duration);
+        }
+        return;
+      }
       if (record.type === "event_msg" && payload.type === "thread_goal_updated") {
         const goal = asRecord(payload.goal);
         const objective = asString(goal.objective).trim();

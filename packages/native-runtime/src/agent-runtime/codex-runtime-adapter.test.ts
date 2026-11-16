@@ -2895,6 +2895,29 @@ describe("Codex native paged history", () => {
     ))).toBe(false);
   });
 
+  it("includes durable native timing in core pages without hydrating execution details", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "codex-completion-timing-"));
+    temporaryDirectories.push(directory);
+    const path = join(directory, "rollout.jsonl");
+    await writeFile(path, `${JSON.stringify({ type: "event_msg", payload: {
+      type: "task_complete", turn_id: "t5", duration_ms: 2967665,
+    } })}\n`);
+    const requests: Array<{ method: string; params: any }> = [];
+    const adapter = new CodexRuntimeAdapter({
+      client: pagingClientFor(requests, { threadPath: path }) as never,
+    });
+    const detail = await adapter.getSessionPaged("cx-paged", { limit: 1, view: "core" });
+    expect(detail.messages[0].presentation).toMatchObject({
+      executionTrace: { turnId: "t5", segmentIndex: 0 }, completionDurationMs: 2967665,
+    });
+    expect(detail.history).toMatchObject({ totalItems: 10, pageSize: 2, nextCursor: "history.v1.8" });
+    const older = await adapter.getSessionPaged("cx-paged", {
+      limit: 1, view: "core", before: detail.history?.nextCursor ?? undefined,
+    });
+    expect(older.messages.every(message => message.presentation?.completionDurationMs === undefined)).toBe(true);
+    expect(requests.some(request => request.params.itemsView === "full" || request.params.includeTurns === true)).toBe(false);
+  });
+
   it("shows a native goal before its answer in core and full history", async () => {
     const directory = await mkdtemp(join(tmpdir(), "codex-native-goal-history-"));
     temporaryDirectories.push(directory);

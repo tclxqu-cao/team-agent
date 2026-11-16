@@ -233,6 +233,32 @@ describe("CodexRolloutUserMessageReader", () => {
     type: "event_msg", payload: { type, ...fields },
   });
 
+  it("retains explicit terminal durations through appended partial records and file replacement", async () => {
+    const path = await temporaryRollout([
+      goalEvent("task_started", { turn_id: "first", started_at: 1 }),
+      goalEvent("task_complete", { turn_id: "first", duration_ms: 2967665 }),
+      goalEvent("turn_aborted", { turn_id: "stopped", duration_ms: 0 }),
+      goalEvent("task_complete", { turn_id: "untimed", started_at: 1, completed_at: 99 }),
+      goalEvent("task_complete", { turn_id: "negative", duration_ms: -1 }),
+      goalEvent("task_complete", { turn_id: "string", duration_ms: "1000" }),
+      "",
+    ].join("\n"));
+    const reader = new CodexRolloutUserMessageReader(31);
+    expect([...await reader.readCompletionDurations(path)]).toEqual([["first", 2967665], ["stopped", 0]]);
+
+    const completion = goalEvent("turn_complete", { turn_id: "second", duration_ms: 1200 });
+    await appendFile(path, completion.slice(0, -4));
+    expect((await reader.readCompletionDurations(path)).has("second")).toBe(false);
+    await appendFile(path, `${completion.slice(-4)}\n`);
+    const durations = await reader.readCompletionDurations(path);
+    expect(durations.get("second")).toBe(1200);
+    durations.clear();
+    expect((await reader.readCompletionDurations(path)).get("first")).toBe(2967665);
+
+    await writeFile(path, `${goalEvent("task_complete", { turn_id: "replacement", duration_ms: 250 })}\n`);
+    expect([...await reader.readCompletionDurations(path)]).toEqual([["replacement", 250]]);
+  });
+
   it("restores a native goal once, including across incremental reads and progress updates", async () => {
     const goal = { objective: "verify Windows plan", status: "active", createdAt: 10 };
     const path = await temporaryRollout(`${goalEvent("thread_goal_updated", { goal })}\n`);

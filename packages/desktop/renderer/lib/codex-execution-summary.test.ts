@@ -34,6 +34,21 @@ describe("Codex execution completion summaries", () => {
     ])]).toEqual([["original", 0]]);
   });
 
+  it("reads native completion timing and answerless run results from their owning user input", () => {
+    expect([...codexExecutionTurnDurations([
+      message("user", { role: "user", presentation: {
+        executionTrace: { turnId: "native", segmentIndex: 0 }, completionDurationMs: 2967665,
+      } }),
+      message("follow-up", { role: "user", presentation: { executionTrace: { turnId: "native", segmentIndex: 1 } } }),
+      message("failed-user", { role: "user", presentation: {
+        executionTrace: { turnId: "failed" },
+        runResult: { status: "failed", reason: "auth_required", durationMs: 2000 },
+      } }),
+      message("unowned-user", { role: "user", presentation: { completionDurationMs: 9000 } }),
+      message("untimed-user", { role: "user", presentation: { executionTrace: { turnId: "untimed" } } }),
+    ])]).toEqual([["native", 2967665], ["failed", 2000]]);
+  });
+
   it.each([
     [6_480_000, "已工作 1 时 48 分"],
     [3_600_000, "已工作 1 时 0 分"],

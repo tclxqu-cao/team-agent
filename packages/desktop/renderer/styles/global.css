@@ -2481,6 +2481,12 @@ input:focus, select:focus, textarea:focus {
   max-width: min(78%, 680px) !important;
 }
 
+.chat-view--unified-history .chat-message-bubble--user {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
 .chat-view--unified-history .chat-message-bubble--assistant.message-card {
   width: 100%;
   padding-right: 0 !important;
@@ -2764,6 +2770,7 @@ input:focus, select:focus, textarea:focus {
 
 .chat-message-image-button {
   display: block;
+  min-width: 0;
   max-width: 100%;
   padding: 0;
   border: 0;
@@ -2790,6 +2797,7 @@ input:focus, select:focus, textarea:focus {
 
 .chat-message-attachment-unavailable {
   width: min(220px, 100%);
+  min-width: 0;
   min-height: 52px;
   padding: 8px 10px;
   display: flex;
