@@ -2,11 +2,11 @@ import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
 import type { NativeSubagentActivity, RuntimeProgress, SessionToolResultRef } from "@agent/core";
 import { ChevronRight } from "lucide-react";
 import type { ChatMessage } from "../stores/agentStore";
-import { coalesceAdjacentToolCallMessages, groupAdjacentToolCallEntries } from "../lib/tool-call-groups";
+import { coalesceAdjacentToolCallMessages } from "../lib/tool-call-groups";
 import { toolRuntimeProgress } from "../lib/native-runtime-progress";
 import { formatSessionWorkDuration } from "../lib/session-execution-summary";
 import ReasoningSummary from "./ReasoningSummary";
-import ToolCallCard, { ToolCallGroup } from "./ToolCallCard";
+import { ToolCallGroup } from "./ToolCallCard";
 
 export function useExecutionTraceDisclosure(scope: string, isRunning: boolean) {
   const [expanded, setExpanded] = useState(isRunning);
@@ -102,7 +102,7 @@ export function ExecutionTraceContent({
       });
       return {
         message,
-        toolGroups: groupAdjacentToolCallEntries(toolEntries),
+        toolEntries,
       };
     });
   }, [messages, nativeSubagents, runtimeProgress]);
@@ -113,12 +113,13 @@ export function ExecutionTraceContent({
 
   return (
     <div className="execution-trace__timeline">
-      {rows.map(({ message, toolGroups }) => (
+      {rows.map(({ message, toolEntries }) => (
         <div key={message.id} className="execution-trace__item">
           {message.presentation?.reasoning?.length ? (
             <ReasoningSummary
               sections={message.presentation.reasoning}
               renderContent={renderContent}
+              variant="inline"
             />
           ) : null}
           {message.presentation?.agentMessagePhase === "commentary" && message.content.trim() ? (
@@ -126,28 +127,17 @@ export function ExecutionTraceContent({
               {renderContent(message.content.trim())}
             </div>
           ) : null}
-          {toolGroups.map((group) => group.action && group.items.length > 1 ? (
+          {toolEntries.length > 0 && (
             <ToolCallGroup
-              key={`group-${group.items[0].toolCall.id}`}
-              items={group.items}
+              key={`group-${toolEntries[0].toolCall.id}`}
+              variant="activity"
+              items={toolEntries}
               onSelectSession={onSelectSession}
               workspacePath={workspacePath}
               onOpenArtifact={onOpenArtifact}
               onLoadResult={onLoadResult}
             />
-          ) : (
-            <ToolCallCard
-              key={group.items[0].toolCall.id}
-              toolCall={group.items[0].toolCall}
-              beforeContent={group.items[0].beforeContent}
-              progress={group.items[0].progress}
-              nativeSubagent={group.items[0].nativeSubagent}
-              onSelectSession={onSelectSession}
-              workspacePath={workspacePath}
-              onOpenArtifact={onOpenArtifact}
-              onLoadResult={onLoadResult}
-            />
-          ))}
+          )}
         </div>
       ))}
     </div>

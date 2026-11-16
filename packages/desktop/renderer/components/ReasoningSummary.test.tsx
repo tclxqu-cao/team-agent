@@ -6,6 +6,21 @@ import ReasoningSummary from "./ReasoningSummary";
 const sections = [{ sectionIndex: 0, text: "**Inspecting message layout**\n\nMore detail" }];
 
 describe("ReasoningSummary", () => {
+  it("renders ordered reasoning as prose inside an execution trace", () => {
+    const html = renderToStaticMarkup(createElement(ReasoningSummary, {
+      variant: "inline",
+      sections: [
+        { sectionIndex: 1, text: "第二段，继续检查。" },
+        { sectionIndex: 0, text: "第一段，检查配置。" },
+      ],
+      renderContent: (text: string) => text,
+    }));
+    expect(html).toContain("reasoning-summary--inline");
+    expect(html).toContain("第一段，检查配置。\n\n第二段，继续检查。");
+    expect(html).not.toContain("reasoning-summary__toggle");
+    expect(html).not.toContain("reasoning-summary__preview");
+  });
+
   it("shows a clean one-line preview when collapsed", () => {
     const html = renderToStaticMarkup(createElement(ReasoningSummary, {
       sections,

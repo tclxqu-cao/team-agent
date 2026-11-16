@@ -35,14 +35,16 @@ describe("Codex execution completion summaries", () => {
   });
 
   it.each([
+    [6_480_000, "已工作 1 时 48 分"],
+    [3_600_000, "已工作 1 时 0 分"],
     [565_000, "已工作 9 分 25 秒"],
-    [60_000, "已工作 1 分 0 秒"],
+    [60_000, "已工作 1 分"],
     [12_500, "已工作 13 秒"],
     [0, "已工作 0 秒"],
-    [undefined, "执行过程"],
-    [-1, "执行过程"],
-    [Number.NaN, "执行过程"],
-    [Number.POSITIVE_INFINITY, "执行过程"],
+    [undefined, "已工作"],
+    [-1, "已工作"],
+    [Number.NaN, "已工作"],
+    [Number.POSITIVE_INFINITY, "已工作"],
   ])("formats %s without fabricating an elapsed duration", (value, expected) => {
     expect(formatSessionWorkDuration(value)).toBe(expected);
   });

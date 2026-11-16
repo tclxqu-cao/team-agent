@@ -84,7 +84,6 @@ describe("shared Codex-style message history", () => {
   });
 
   it("keeps tool execution status inside the tool row", () => {
-    expect(toolCallCard).toContain("const actionLabel = toolActivityLabel(first.name) ?? phrase.done");
     expect(toolCallCard).toContain("!isDone && <StatusIcon");
   });
 
@@ -113,11 +112,11 @@ describe("shared Codex-style message history", () => {
     expect(globalCss).not.toContain(".tool-call-shell__disclosure:hover");
   });
 
-  it("folds adjacent same-action tools in both trace and fallback rendering", () => {
+  it("folds tool details in shared traces and adjacent actions in fallback rendering", () => {
     expect(chatView).toMatch(/coalesceAdjacentToolCallMessages\(\s*presentQuestionAnswers\(\s*hideQueuedGoalMessages\(/);
     expect(chatView).toContain("groupAdjacentToolCallEntries(toolCallEntries)");
     expect(chatView).not.toContain("renderToolCallsIndividually");
-    expect(executionTrace).toContain("groupAdjacentToolCallEntries(toolEntries)");
+    expect(executionTrace).toContain('variant="activity"');
     expect(executionTrace).toContain("<ToolCallGroup");
     expect(chatView).toContain("<ToolCallGroup");
     expect(toolCallCard).toContain('className="tool-call-group__summary"');
@@ -179,7 +178,7 @@ describe("shared Codex-style message history", () => {
     expect(globalCss).toContain("padding: 5px 0 !important");
     expect(globalCss).not.toContain(".execution-trace__body");
     expect(globalCss).toContain(".chat-view--unified-history .execution-trace__timeline");
-    expect(globalCss).toMatch(/\.chat-view--unified-history \.execution-trace__commentary\s*\{[^}]*padding: 3px 0;[^}]*color: var\(--chat-history-text\);[^}]*font-size: var\(--chat-bubble-font-size\);[^}]*line-height: var\(--chat-bubble-line-height\);/s);
+    expect(globalCss).toMatch(/\.chat-view--unified-history \.execution-trace__commentary\s*\{[^}]*padding: 0;[^}]*color: var\(--chat-history-text\);[^}]*font-size: var\(--execution-trace-font-size\);[^}]*font-weight: 400;[^}]*line-height: var\(--execution-trace-line-height\);/s);
     expect(globalCss).toContain(".reasoning-summary__label");
     expect(globalCss).toContain(".chat-view--unified-history .tool-call-shell__label");
     expect(globalCss).not.toMatch(/\.reasoning-summary__label\s*\{[^}]*transform:/s);
@@ -367,7 +366,7 @@ describe("shared Codex-style message history", () => {
     expect(chatView).toContain('className="msg-completion-footer"');
     expect(chatView).toContain("<RunResultSummary result={runResult} />");
     expect(chatView).not.toContain("<span>已完成</span>");
-    expect(chatView).toContain("总耗时 {completionDuration}");
+    expect(chatView).not.toContain("总耗时 {completionDuration}");
     expect(chatView).toContain('actionPolicy.showSpeak && typeof window.agentApi?.ttsSpeak === "function"');
     expect(chatView).not.toContain("!isWebShell() && actionPolicy.showSpeak");
     expect(chatView).toContain("actionPolicy.showCopy && <button");

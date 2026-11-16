@@ -8,14 +8,31 @@ const READ_TOOLS = new Set(["Read", "read_file"]);
 const WRITE_TOOLS = new Set(["Write", "write_file"]);
 const EDIT_TOOLS = new Set(["Edit", "MultiEdit", "str_replace", "apply_patch", "NotebookEdit"]);
 
-export function toolFamily(name: string): ToolFamily {
+const TOOL_ALIASES: Readonly<Record<string, string>> = {
+  read: "Read",
+  write: "Write",
+  edit: "Edit",
+  glob: "Glob",
+  grep: "Grep",
+  websearch: "WebSearch",
+  webfetch: "WebFetch",
+  exec_command: "shell",
+};
+
+export function canonicalToolName(name: string): string {
+  return Object.hasOwn(TOOL_ALIASES, name) ? TOOL_ALIASES[name] : name;
+}
+
+export function toolFamily(rawName: string): ToolFamily {
+  const name = canonicalToolName(rawName);
   if (COMMAND_TOOLS.has(name)) return "command";
   if (FILE_TOOLS.has(name)) return "file";
   if (SEARCH_TOOLS.has(name)) return "search";
   return "generic";
 }
 
-export function toolPhrase(name: string): { done: string; doing: string } | null {
+export function toolPhrase(rawName: string): { done: string; doing: string } | null {
+  const name = canonicalToolName(rawName);
   switch (name) {
     case "shell": case "bash": case "Bash": case "execute_command": case "run_command":
       return { done: "运行了命令", doing: "运行命令中" };
@@ -53,7 +70,8 @@ export function toolCallActionKey(name: string): string | null {
   return toolPhrase(name)?.done ?? null;
 }
 
-export function toolActivityLabel(name: string): string | null {
+export function toolActivityLabel(rawName: string): string | null {
+  const name = canonicalToolName(rawName);
   if (COMMAND_TOOLS.has(name)) return "终端";
   if (READ_TOOLS.has(name)) return "查阅";
   if (WRITE_TOOLS.has(name)) return "写入";
@@ -75,7 +93,8 @@ function truncateLine(value: string, max = 60): string {
   return first.length > max ? first.slice(0, max) + "…" : first;
 }
 
-export function toolPreview(name: string, args: Record<string, unknown>): string | null {
+export function toolPreview(rawName: string, args: Record<string, unknown>): string | null {
+  const name = canonicalToolName(rawName);
   if (COMMAND_TOOLS.has(name)) return truncateLine(String(args.command ?? ""));
   if (name === "apply_patch") {
     const changes = Array.isArray(args.changes) ? args.changes as Array<Record<string, unknown>> : [];

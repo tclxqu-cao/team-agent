@@ -20,7 +20,7 @@ describe("CodexExecutionTrace", () => {
     }));
 
     expect(loadTrace).not.toHaveBeenCalled();
-    expect(html).toContain("执行过程");
+    expect(html).toContain("已工作");
     expect(html).toContain("execution-trace__summary");
     expect(html).toContain('aria-expanded="false"');
     expect(html).not.toContain("execution-trace__timeline");
@@ -81,8 +81,8 @@ describe("CodexExecutionTrace", () => {
 
     expect(loadTrace).not.toHaveBeenCalled();
     expect(html).toContain("execution-trace__timeline");
-    expect(html).toContain("终端");
-    expect(html).toContain("pwd");
+    expect(html).toContain("运行了命令");
+    expect(html).not.toContain("pwd");
     expect(html).not.toContain("查看执行过程");
   });
 
@@ -124,7 +124,7 @@ describe("CodexExecutionTrace", () => {
     }));
 
     expect(html.match(/class="tool-call-group"/g)).toHaveLength(1);
-    expect(html).toContain("终端");
+    expect(html).toContain("运行了命令");
     expect(html).toContain("2 项");
     expect(html).not.toContain("execution-trace__load");
     expect(html).not.toContain("执行过程 ·");
@@ -185,7 +185,9 @@ describe("CodexExecutionTrace", () => {
       renderContent={renderContent} runtimeProgress={[]} nativeSubagents={{}} onLoadResult={vi.fn()}
     />);
     expect(html.match(/class="execution-trace__item"/g)).toHaveLength(2);
-    expect(html).toContain("pwd");
+    expect(html).toContain("运行了命令");
+    expect(html).not.toContain("pwd");
+    expect(html).not.toContain('aria-busy="true"');
     expect(renderContent).toHaveBeenCalledWith("检查完成");
   });
 });

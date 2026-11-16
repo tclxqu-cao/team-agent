@@ -3,6 +3,7 @@ import type { NativeSubagentActivity, RuntimeProgress, SessionToolResultRef } fr
 import { fileChangeLineStats, fileChangeOperation, textLines, textLineStats, type FileLineStats } from "../../../core/src/domain/tool/file-change-summary";
 import {
   Check,
+  BookOpen,
   ChevronRight,
   CircleX,
   FileText,
@@ -17,7 +18,7 @@ import {
 } from "lucide-react";
 import { useAgentStore } from "../stores/agentStore";
 import { hasToolCallResult } from "../lib/tool-call-status";
-import { toolActivityLabel, toolFamily, toolPhrase, toolPreview } from "../lib/tool-call-presentation";
+import { canonicalToolName, toolActivityLabel, toolFamily, toolPhrase, toolPreview } from "../lib/tool-call-presentation";
 import RuntimeProgressRow from "./RuntimeProgressRow";
 import { resolveWebArtifactPath } from "../lib/artifact-links";
 import { editLineStats, multiEditLineStats, patchActivityLabel, patchChanges, patchSummary, writeLineCount } from "../lib/file-tool-presentation";
@@ -55,6 +56,7 @@ function StatusIcon({ isDone, isError, color, size = 11 }: { isDone: boolean; is
 }
 
 function ToolActionIcon({ name, color, size = 14 }: { name: string; color: string; size?: number }) {
+  const canonical = canonicalToolName(name);
   const family = toolFamily(name);
   if (family === "command") {
     return <SquareTerminal size={size} color={color} strokeWidth={1.8} aria-hidden="true" />;
@@ -63,7 +65,7 @@ function ToolActionIcon({ name, color, size = 14 }: { name: string; color: strin
     return <Search size={size} color={color} strokeWidth={1.8} aria-hidden="true" />;
   }
   if (family === "file") {
-    return name === "Read" || name === "read_file"
+    return canonical === "Read" || canonical === "read_file"
       ? <FileText size={size} color={color} strokeWidth={1.8} aria-hidden="true" />
       : <Pencil size={size} color={color} strokeWidth={1.8} aria-hidden="true" />;
   }
@@ -815,33 +817,40 @@ export interface ToolCallGroupItem {
   nativeSubagent?: NativeSubagentActivity;
 }
 
-export function ToolCallGroup({ items, onSelectSession, workspacePath, onOpenArtifact, onLoadResult }: { items: ToolCallGroupItem[]; onSelectSession?: (id: string) => void; workspacePath?: string | null; onOpenArtifact?: (path: string) => void; onLoadResult?: (ref: SessionToolResultRef) => Promise<void> }) {
+export function ToolCallGroup({ items, variant = "default", onSelectSession, workspacePath, onOpenArtifact, onLoadResult }: { items: ToolCallGroupItem[]; variant?: "default" | "activity"; onSelectSession?: (id: string) => void; workspacePath?: string | null; onOpenArtifact?: (path: string) => void; onLoadResult?: (ref: SessionToolResultRef) => Promise<void> }) {
   const [expanded, setExpanded] = useState(false);
   const first = items[0]?.toolCall;
   const phrase = first ? toolPhrase(first.name) : null;
-  if (!first || !phrase || items.length < 2) return null;
+  const activity = variant === "activity";
+  if (!first || (!activity && (!phrase || items.length < 2))) return null;
 
   const isDone = items.every(({ toolCall }) => hasToolCallResult(toolCall));
   const errorCount = items.filter(({ toolCall }) => toolCall.isError).length;
-  const statusColor = errorCount > 0 ? "var(--danger)" : isDone ? "var(--text-muted)" : "var(--accent)";
-  const actionLabel = toolActivityLabel(first.name) ?? phrase.done;
+  const statusColor = errorCount > 0 ? "var(--danger)" : activity ? "currentColor" : isDone ? "var(--text-muted)" : "var(--accent)";
+  const actionLabel = activity
+    ? [...new Set(items.map(({ toolCall }) => toolPhrase(toolCall.name)?.done ?? "调用了工具"))].join("、")
+    : toolActivityLabel(first.name) ?? phrase?.done ?? first.name;
   const disclosureLabel = `${actionLabel}，${items.length} 项，${expanded ? "收起" : "展开"}`;
+  const isReadActivity = activity && toolPhrase(first.name)?.done === "读取了文件";
 
   return (
-    <div className="tool-call-group">
+    <div className="tool-call-group" data-presentation={variant}>
       <button
         type="button"
         className="tool-call-group__summary"
         aria-expanded={expanded}
         aria-label={disclosureLabel}
+        aria-busy={!isDone || undefined}
         onClick={() => setExpanded((value) => !value)}
       >
         <span className="tool-call-group__icon" aria-hidden="true">
-          <ToolActionIcon name={first.name} color={statusColor} />
+          {isReadActivity
+            ? <BookOpen size={14} color={statusColor} strokeWidth={1.6} />
+            : <ToolActionIcon name={first.name} color={statusColor} />}
         </span>
         <span className="tool-call-group__label">{actionLabel}</span>
-        <span className="tool-call-group__count">{items.length} 项</span>
-        <span className="tool-call-group__spacer" />
+        {!activity && <span className="tool-call-group__count">{items.length} 项</span>}
+        {!activity && <span className="tool-call-group__spacer" />}
         {errorCount > 0 && <span className="tool-call-group__error">{errorCount} 项失败</span>}
         {!isDone && <StatusIcon isDone={false} color={statusColor} size={11} />}
         <ChevronRight className="tool-call-group__chevron" size={13} strokeWidth={2.2} aria-hidden="true" />

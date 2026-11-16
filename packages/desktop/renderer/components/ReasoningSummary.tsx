@@ -8,28 +8,40 @@ interface ReasoningSummaryProps {
   streaming?: boolean;
   startedAt?: number;
   renderContent: (text: string) => ReactNode;
+  variant?: "disclosure" | "inline";
 }
 
-export default function ReasoningSummary({ sections, streaming = false, startedAt, renderContent }: ReasoningSummaryProps) {
+export default function ReasoningSummary({ sections, streaming = false, startedAt, renderContent, variant = "disclosure" }: ReasoningSummaryProps) {
   const text = useMemo(() => [...sections]
     .sort((left, right) => left.sectionIndex - right.sectionIndex)
     .map((section) => section.text.trim())
     .filter(Boolean)
     .join("\n\n"), [sections]);
   const preview = useMemo(() => {
+    if (variant === "inline") return "";
     const firstLine = text.split("\n").find((line) => line.trim()) ?? "";
     return firstLine
       .replace(/^#{1,6}\s+/, "")
       .replace(/\*\*([^*]+)\*\*/g, "$1")
       .replace(/`([^`]+)`/g, "$1");
-  }, [text]);
+  }, [text, variant]);
   const [expanded, setExpanded] = useState(streaming);
 
   useEffect(() => {
     setExpanded(streaming);
   }, [streaming]);
 
+  const content = useMemo(
+    () => text && (variant === "inline" || expanded) ? renderContent(text) : null,
+    [expanded, renderContent, text, variant],
+  );
+
   if (!text) return null;
+  if (variant === "inline") {
+    return <div className="reasoning-summary reasoning-summary--inline">
+      <div className="reasoning-summary__content">{content}</div>
+    </div>;
+  }
   const label = streaming ? "思考中" : "思考";
   return (
     <div className="reasoning-summary">
@@ -52,7 +64,7 @@ export default function ReasoningSummary({ sections, streaming = false, startedA
         {streaming && <LoaderCircle className="reasoning-summary__spinner" size={13} strokeWidth={2} aria-hidden="true" />}
         <ChevronRight className="reasoning-summary__chevron" size={13} strokeWidth={2} aria-hidden="true" />
       </button>
-      {expanded && <div className="reasoning-summary__content">{renderContent(text)}</div>}
+      {expanded && <div className="reasoning-summary__content">{content}</div>}
     </div>
   );
 }

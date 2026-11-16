@@ -1,7 +1,7 @@
 import type { MessagePresentation, RunResult } from "@agent/core";
 import { classifyRunError, normalizeTokenUsage, runResultLabel } from "../../../core/src/domain/agent/run-result";
 import type { ChatMessage } from "../stores/agentStore";
-import { formatCompletionDuration, validCompletionDurationMs } from "./message-actions";
+import { validCompletionDurationMs } from "./message-actions";
 
 export interface RunResultEvent {
   type?: string;
@@ -152,13 +152,5 @@ export function terminalRunError(event: RunResultEvent): string | null {
 }
 
 export function formatRunResultSummary(result: RunResult): string {
-  const duration = formatCompletionDuration(result.durationMs);
-  const usage = normalizeTokenUsage(result.usage);
-  return [
-    runResultLabel(result),
-    duration ? `总耗时 ${duration}` : "耗时未知",
-    usage
-      ? `输入 ${usage.inputTokens} / 输出 ${usage.outputTokens} token${usage.coverage === "partial" ? "（部分统计）" : ""}`
-      : "token 未知",
-  ].join(" · ");
+  return runResultLabel(result);
 }

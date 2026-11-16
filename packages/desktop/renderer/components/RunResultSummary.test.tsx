@@ -14,21 +14,24 @@ describe("RunResultSummary", () => {
     ["failed", "quota_exceeded", "运行失败：额度不足"],
     ["cancelled", "user_cancelled", "已停止"],
     ["interrupted", "runtime_interrupted", "已中断：运行环境中断"],
-  ] as const)("renders a safe %s summary with explicit unknown usage", (status, reason, label) => {
+  ] as const)("renders a safe %s status without timing or usage", (status, reason, label) => {
     const html = render({ ...base, status, reason });
     expect(html).toContain('role="status"');
     expect(html).toContain(label);
-    expect(html).toContain("总耗时 1 秒");
-    expect(html).toContain("token 未知");
+    expect(html).not.toContain("耗时");
+    expect(html).not.toContain("token");
     expect(html).not.toContain("美元");
     expect(html).not.toContain("$");
   });
 
-  it("shows partial usage and does not display unknown provider payloads", () => {
+  it("keeps reported usage and unknown provider payloads out of the footer", () => {
     const html = render({ ...base, status: "failed", reason: "unknown_error", usage: {
       inputTokens: 120, outputTokens: 30, totalTokens: 150, coverage: "partial", source: "runtime",
     }, ...{ error: "RAW_ERROR_WITH_SECRET" } });
-    expect(html).toContain("输入 120 / 输出 30 token（部分统计）");
+    expect(html).toContain("运行失败");
+    expect(html).not.toContain("token");
+    expect(html).not.toContain("120");
+    expect(html).not.toContain("耗时");
     expect(html).not.toContain("RAW_ERROR_WITH_SECRET");
   });
 

@@ -461,7 +461,6 @@ import { extractMemoryCitations } from "../lib/memory-citations";
 import { parseRichInlineTokens } from "../lib/markdown-links";
 import { coalesceAdjacentToolCallMessages, groupAdjacentToolCallEntries } from "../lib/tool-call-groups";
 import {
-  formatCompletionDuration,
   messageActionPolicy,
   validCompletionDurationMs,
 } from "../lib/message-actions";
@@ -4650,7 +4649,6 @@ export default function ChatView({
               .some((goal) => Boolean(goal && normalizeGoalMessageText(goal.objective) === normalizeGoalMessageText(msg.content)))
           );
           const actionPolicy = messageActionPolicy(renderedMessages, i, isRunning);
-          const completionDuration = formatCompletionDuration(chatMsg.presentation?.completionDurationMs);
           const runResult = chatMsg.presentation?.runResult;
 
           // ── Compaction banner ──────────────────────────────────────────
@@ -5105,11 +5103,7 @@ export default function ChatView({
               {/* Completed assistant footer remains visible after the live run disappears. */}
               {(runResult || actionPolicy.showCompletion) && (
                 <div className="msg-completion-footer">
-                  {runResult ? <RunResultSummary result={runResult} /> : (
-                    <span className="msg-completion-status">
-                      {completionDuration && <span>总耗时 {completionDuration}</span>}
-                    </span>
-                  )}
+                  {runResult && <RunResultSummary result={runResult} />}
                   {actionPolicy.showCompletion && <span className="msg-completion-actions">
                     {viewSessionId && (completedTurnForkPoint(msg, viewSessionId) || !viewSessionId.startsWith("runtime:")) && (
                       <button

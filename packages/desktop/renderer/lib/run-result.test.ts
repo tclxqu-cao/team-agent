@@ -117,14 +117,14 @@ describe("first terminal authority", () => {
 });
 
 describe("safe run result summary", () => {
-  it("shows reported input/output without adding cache tokens a second time", () => {
-    expect(formatRunResultSummary({ ...success, usage })).toBe("已完成 · 总耗时 3 秒 · 输入 100 / 输出 20 token（部分统计）");
+  it("keeps timing and token usage out of the displayed completion status", () => {
+    expect(formatRunResultSummary({ ...success, usage })).toBe("已完成");
     expect(formatRunResultSummary({ ...success, usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 } }))
-      .toBe("已完成 · 总耗时 3 秒 · 输入 0 / 输出 0 token");
+      .toBe("已完成");
   });
 
-  it("shows unknown token usage, safe reasons, interruption and limit outcomes", () => {
-    expect(formatRunResultSummary(failed)).toBe("运行失败：额度不足 · 总耗时 1 秒 · token 未知");
+  it("keeps safe reasons, interruption and limit outcomes", () => {
+    expect(formatRunResultSummary(failed)).toBe("运行失败：额度不足");
     expect(formatRunResultSummary({ ...failed, status: "cancelled", reason: "user_cancelled" })).toContain("已停止");
     expect(formatRunResultSummary({ ...failed, status: "interrupted", reason: "runtime_interrupted" })).toContain("已中断：运行环境中断");
     expect(formatRunResultSummary({ ...success, reason: "iteration_limit" })).toContain("已结束：已达到执行轮数限制");
