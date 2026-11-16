@@ -1,0 +1,31 @@
+packages/native-runtime/src/agent-runtime/codex-rollout-activity.ts
+  s_4051421ec36e36::t_1a4d4478027af4 58,363,384-388,430-437
+packages/native-runtime/src/agent-runtime/codex-runtime-adapter.ts
+  s_4051421ec36e36::t_1a4d4478027af4 141,205,256,528,531,841-850,2504,2618,2620-2623
+packages/native-runtime/src/agent-runtime/codex-runtime-adapter.test.ts
+  s_4051421ec36e36::t_5a229fe3a1d086 2898-2920
+packages/native-runtime/src/agent-runtime/codex-rollout-activity.test.ts
+  s_4051421ec36e36::t_5a229fe3a1d086 236-261
+packages/desktop/renderer/lib/codex-execution-summary.ts
+  s_4051421ec36e36::t_1a4d4478027af4 11
+packages/desktop/renderer/styles/global.css
+  s_4051421ec36e36::t_cd568059647089 2484-2489,2773,2800
+packages/desktop/renderer/lib/codex-execution-summary.test.ts
+  s_4051421ec36e36::t_5a229fe3a1d086 37-51
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "588bf158fbddddbc928de18e2dde7f395bc45f5f",
+  "prompts": {},
+  "sessions": {
+    "s_4051421ec36e36": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cac9-1b4d-7871-932c-4020e9ae7bd4",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
