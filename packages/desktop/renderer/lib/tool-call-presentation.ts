@@ -56,6 +56,8 @@ export function toolPhrase(rawName: string): { done: string; doing: string } | n
       return { done: "搜索了网络", doing: "搜索网络中" };
     case "WebFetch":
       return { done: "读取了网页", doing: "读取网页中" };
+    case "view_image":
+      return { done: "查看了图像", doing: "查看图像中" };
     case "TodoWrite":
       return { done: "更新了任务清单", doing: "更新任务清单中" };
     case "NotebookEdit":
@@ -95,7 +97,7 @@ function truncateLine(value: string, max = 60): string {
 
 export function toolPreview(rawName: string, args: Record<string, unknown>): string | null {
   const name = canonicalToolName(rawName);
-  if (COMMAND_TOOLS.has(name)) return truncateLine(String(args.command ?? ""));
+  if (COMMAND_TOOLS.has(name)) return truncateLine(String(args.command ?? args.cmd ?? ""));
   if (name === "apply_patch") {
     const changes = Array.isArray(args.changes) ? args.changes as Array<Record<string, unknown>> : [];
     const paths = changes.map((change) => basename(String(change?.path ?? ""))).filter(Boolean);
@@ -103,7 +105,10 @@ export function toolPreview(rawName: string, args: Record<string, unknown>): str
     if (!paths.length) return fileCount ? `${fileCount} 个文件` : null;
     return fileCount <= 3 ? paths.join("、") : `${paths.slice(0, 3).join("、")} 等 ${fileCount} 个文件`;
   }
-  if (FILE_TOOLS.has(name)) return args.file_path ? basename(String(args.file_path)) : null;
+  if (FILE_TOOLS.has(name) || name === "view_image") {
+    const path = args.file_path ?? args.filePath ?? args.path ?? args.notebook_path;
+    return path ? basename(String(path)) : null;
+  }
   if (name === "Glob" || name === "glob_search") return String(args.pattern ?? "") || null;
   if (name === "Grep" || name === "grep_search") return String(args.pattern ?? args.query ?? "") || null;
   if (name === "Skill") return String(args.skill ?? "") || null;
@@ -113,4 +118,10 @@ export function toolPreview(rawName: string, args: Record<string, unknown>): str
   if (name.startsWith("mcp__")) return name.split("__").slice(1).join("/");
   if (name.includes(":")) return name.split(":").slice(1).join(":");
   return null;
+}
+
+export function toolActivityPreview(name: string, args: Record<string, unknown>): string {
+  return toolFamily(name) === "command"
+    ? truncateLine(String(args.command ?? args.cmd ?? name), 240)
+    : toolPreview(name, args) || name;
 }

@@ -3544,16 +3544,20 @@ input:focus, select:focus, textarea:focus {
   overflow-wrap: anywhere;
 }
 
-.chat-view--unified-history .execution-trace .tool-call-group[data-presentation="activity"] .tool-call-group__summary {
+.chat-view--unified-history .tool-call-group[data-presentation="activity"] {
+  color: var(--execution-trace-muted, color-mix(in srgb, var(--chat-history-text) 50%, transparent));
+}
+
+.chat-view--unified-history .tool-call-group[data-presentation="activity"] .tool-call-group__summary {
   width: fit-content;
   max-width: 100%;
   min-height: 24px;
   padding: 1px 0 !important;
-  color: var(--execution-trace-muted);
+  color: inherit;
   align-items: center;
 }
 
-.chat-view--unified-history .execution-trace .tool-call-group[data-presentation="activity"] .tool-call-group__label {
+.chat-view--unified-history .tool-call-group[data-presentation="activity"] .tool-call-group__label {
   min-width: 0;
   flex-shrink: 1;
   color: inherit;
@@ -3564,23 +3568,68 @@ input:focus, select:focus, textarea:focus {
   overflow-wrap: anywhere;
 }
 
-.chat-view--unified-history .execution-trace .tool-call-group[data-presentation="activity"] .tool-call-group__icon {
+.chat-view--unified-history .tool-call-group[data-presentation="activity"] .tool-call-group__icon {
   color: inherit;
 }
 
-.chat-view--unified-history .execution-trace .tool-call-group[data-presentation="activity"] .tool-call-group__chevron {
+.chat-view--unified-history .tool-call-group[data-presentation="activity"] .tool-call-group__chevron {
   width: 11px;
   height: 11px;
   flex-basis: 11px;
-  opacity: 0;
+  opacity: .6;
 }
 
-.chat-view--unified-history .execution-trace .tool-call-group[data-presentation="activity"] .tool-call-group__summary:is(:hover, :focus-visible, [aria-expanded="true"]) .tool-call-group__chevron {
+.chat-view--unified-history .tool-call-group[data-presentation="activity"] .tool-call-group__summary:is(:hover, :focus-visible, [aria-expanded="true"]) .tool-call-group__chevron {
   opacity: .65;
 }
 
-.chat-view--unified-history .execution-trace .tool-call-group[data-presentation="activity"] .tool-call-group__items {
-  margin-top: 8px;
+.chat-view--unified-history .tool-call-group[data-presentation="activity"] .tool-call-group__items {
+  margin: 4px 0 0 7px;
+  padding-left: 16px;
+  border-left: 1px solid color-mix(in srgb, var(--chat-history-text) 12%, transparent);
+}
+
+.chat-view--unified-history .tool-call-activity {
+  min-width: 0;
+}
+
+.chat-view--unified-history .tool-call-activity__summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  min-height: 30px;
+  padding: 4px 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: 400 13px/1.6 var(--font-body);
+  text-align: left;
+  cursor: pointer;
+}
+
+.chat-view--unified-history .tool-call-activity__summary:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.chat-view--unified-history .tool-call-activity__summary > svg {
+  flex: 0 0 auto;
+}
+
+.chat-view--unified-history .tool-call-activity__preview {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-view--unified-history .tool-call-activity__details {
+  min-width: 0;
+  margin: 6px 0 10px;
 }
 
 .chat-view--unified-history .execution-trace__empty {

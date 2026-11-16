@@ -154,7 +154,7 @@ describe("shared Codex-style message history", () => {
     expect(globalCss).toContain("background: transparent !important");
   });
 
-  it("aligns icon-led reasoning and tool rows without a timeline", () => {
+  it("keeps thinking status separate from hidden reasoning summaries", () => {
     const historyRowsCss = globalCss.slice(
       globalCss.indexOf(".chat-view--unified-history .agent-activity-indicator"),
       globalCss.indexOf(".query-navigation-rail"),
@@ -162,7 +162,8 @@ describe("shared Codex-style message history", () => {
 
     expect(chatView).not.toContain("isExecutionTraceMessage");
     expect(chatView).not.toContain("chat-message-group--trace");
-    expect(chatView).toContain('streaming={isRunning && isLastAssistant && agentActivity === "thinking"}');
+    expect(chatView).not.toContain("<ReasoningSummary");
+    expect(executionTrace).not.toContain("<ReasoningSummary");
     expect(chatView).toContain("visibleMessages.filter((message) => !message.isQueued)");
     expect(globalCss).not.toContain(".chat-message-group--trace::before");
     expect(globalCss).not.toContain(".chat-message-group--trace::after");

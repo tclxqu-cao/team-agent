@@ -2,10 +2,9 @@ import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
 import type { NativeSubagentActivity, RuntimeProgress, SessionToolResultRef } from "@agent/core";
 import { ChevronRight } from "lucide-react";
 import type { ChatMessage } from "../stores/agentStore";
-import { coalesceAdjacentToolCallMessages } from "../lib/tool-call-groups";
+import { coalesceAdjacentToolCallMessages, groupAdjacentToolCallEntries } from "../lib/tool-call-groups";
 import { toolRuntimeProgress } from "../lib/native-runtime-progress";
 import { formatSessionWorkDuration } from "../lib/session-execution-summary";
-import ReasoningSummary from "./ReasoningSummary";
 import { ToolCallGroup } from "./ToolCallCard";
 
 export function useExecutionTraceDisclosure(scope: string, isRunning: boolean) {
@@ -79,7 +78,6 @@ export function ExecutionTraceContent({
     const previousReadResults = new Map<string, string>();
     const visibleMessages = messages.filter((message) => (
       message.toolCalls?.length
-      || message.presentation?.reasoning?.some((section) => section.text.trim())
       || (message.presentation?.agentMessagePhase === "commentary" && message.content.trim())
     ));
     return coalesceAdjacentToolCallMessages(visibleMessages).map((message) => {
@@ -102,7 +100,7 @@ export function ExecutionTraceContent({
       });
       return {
         message,
-        toolEntries,
+        toolGroups: groupAdjacentToolCallEntries(toolEntries),
       };
     });
   }, [messages, nativeSubagents, runtimeProgress]);
@@ -113,31 +111,24 @@ export function ExecutionTraceContent({
 
   return (
     <div className="execution-trace__timeline">
-      {rows.map(({ message, toolEntries }) => (
+      {rows.map(({ message, toolGroups }) => (
         <div key={message.id} className="execution-trace__item">
-          {message.presentation?.reasoning?.length ? (
-            <ReasoningSummary
-              sections={message.presentation.reasoning}
-              renderContent={renderContent}
-              variant="inline"
-            />
-          ) : null}
           {message.presentation?.agentMessagePhase === "commentary" && message.content.trim() ? (
             <div className="execution-trace__commentary">
               {renderContent(message.content.trim())}
             </div>
           ) : null}
-          {toolEntries.length > 0 && (
+          {toolGroups.map((group) => (
             <ToolCallGroup
-              key={`group-${toolEntries[0].toolCall.id}`}
+              key={`group-${group.items[0].toolCall.id}`}
               variant="activity"
-              items={toolEntries}
+              items={group.items}
               onSelectSession={onSelectSession}
               workspacePath={workspacePath}
               onOpenArtifact={onOpenArtifact}
               onLoadResult={onLoadResult}
             />
-          )}
+          ))}
         </div>
       ))}
     </div>

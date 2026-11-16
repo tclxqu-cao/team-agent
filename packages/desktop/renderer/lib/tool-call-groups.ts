@@ -16,7 +16,21 @@ function isAssistantWithToolCalls(message: ChatMessage): boolean {
     && !message.widget
     && !message.askUser
     && !message.images?.length
-    && presentationKeys.every((key) => key === "executionTrace");
+    && presentationKeys.every((key) => key === "executionTrace" || key === "reasoning" || key === "agentMessagePhase");
+}
+
+function isHiddenReasoning(message: ChatMessage): boolean {
+  return message.role === "assistant" && !message.content.trim() && !message.toolCalls?.length
+    && !message.isCompactionSummary && !message.widget && !message.askUser
+    && !message.images?.length && !message.executionTrace && !message.agentName
+    && Boolean(message.presentation?.reasoning?.length)
+    && Object.keys(message.presentation ?? {}).every((key) => key === "reasoning" || key === "executionTrace");
+}
+
+function sameTraceScope(left: ChatMessage, right: ChatMessage): boolean {
+  const a = left.presentation?.executionTrace;
+  const b = right.presentation?.executionTrace;
+  return (!a && !b) || Boolean(a && b && a.turnId === b.turnId && (a.segmentIndex ?? 0) === (b.segmentIndex ?? 0));
 }
 
 function isToolOnlyAssistant(message: ChatMessage): boolean {
@@ -26,8 +40,9 @@ function isToolOnlyAssistant(message: ChatMessage): boolean {
 export function coalesceAdjacentToolCallMessages(messages: readonly ChatMessage[]): ChatMessage[] {
   const result: ChatMessage[] = [];
   for (const message of messages) {
+    if (isHiddenReasoning(message)) continue;
     const previous = result[result.length - 1];
-    if (previous && isAssistantWithToolCalls(previous) && isToolOnlyAssistant(message)) {
+    if (previous && isAssistantWithToolCalls(previous) && isToolOnlyAssistant(message) && sameTraceScope(previous, message)) {
       result[result.length - 1] = {
         ...previous,
         toolCalls: [...previous.toolCalls!, ...message.toolCalls!],

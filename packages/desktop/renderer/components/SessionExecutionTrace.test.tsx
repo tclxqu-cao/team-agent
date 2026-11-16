@@ -38,7 +38,7 @@ describe("SessionExecutionTrace", () => {
     expect(render(false)).not.toContain("秒");
   });
 
-  it("keeps prose visible and groups mixed tool vocabularies in one lazy activity row", () => {
+  it("hides reasoning and folds adjacent tools by action while preserving commentary", () => {
     const html = renderToStaticMarkup(<ExecutionTraceContent
       messages={[{
         id: "mixed", role: "assistant", content: "配置已经核对完成。", timestamp: 1,
@@ -55,11 +55,12 @@ describe("SessionExecutionTrace", () => {
       }]}
       renderContent={text => text} runtimeProgress={[]} nativeSubagents={{}} onLoadResult={vi.fn()}
     />);
-    expect(html).toContain("先核对配置与调用入口。");
+    expect(html).not.toContain("先核对配置与调用入口。");
     expect(html).toContain("配置已经核对完成。");
     expect(html).toContain('data-presentation="activity"');
-    expect(html.match(/class="tool-call-group__label">([^<]+)/)?.[1]).toBe("读取了文件、修改了文件、运行了命令");
-    expect(html.match(/class="tool-call-group"/g)).toHaveLength(1);
+    expect([...html.matchAll(/class="tool-call-group__label">([^<]+)/g)].map(match => match[1]))
+      .toEqual(["读取了文件", "修改了文件", "运行了命令"]);
+    expect(html.match(/class="tool-call-group"/g)).toHaveLength(3);
     expect(html).not.toContain("reasoning-summary__toggle");
     expect(html).not.toContain("tool-call-group__items");
     expect(html).not.toContain("tool-call-group__count");
@@ -67,6 +68,25 @@ describe("SessionExecutionTrace", () => {
     expect(html).not.toContain("large hidden result");
     expect(html).not.toContain("secret command arguments");
     expect(html).not.toContain("aria-busy");
+  });
+
+  it("merges operations separated only by hidden reasoning without crossing visible prose", () => {
+    const tool = (id: string, name: string) => ({ id, role: "assistant" as const, content: "", timestamp: 1,
+      presentation: { reasoning: [{ sectionIndex: 0, text: `hidden-${id}` }] },
+      toolCalls: [{ id, name, arguments: { command: id }, result: "" }] });
+    const html = renderToStaticMarkup(<ExecutionTraceContent messages={[
+      tool("one", "shell"),
+      { id: "thinking", role: "assistant", content: "", timestamp: 2,
+        presentation: { reasoning: [{ sectionIndex: 0, text: "hidden-separator" }] } },
+      tool("two", "exec_command"),
+      { id: "commentary", role: "assistant", content: "接下来继续核对。", timestamp: 3,
+        presentation: { agentMessagePhase: "commentary" } },
+      tool("three", "Bash"),
+    ]} renderContent={text => text} runtimeProgress={[]} nativeSubagents={{}} onLoadResult={vi.fn()} />);
+    expect(html.match(/class="tool-call-group"/g)).toHaveLength(2);
+    expect(html).toContain("2 项");
+    expect(html).toContain("接下来继续核对。");
+    expect(html).not.toContain("hidden-");
   });
 
   it("supports single unknown tools and preserves pending and failure states", () => {

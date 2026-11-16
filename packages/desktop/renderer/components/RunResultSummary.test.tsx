@@ -9,8 +9,11 @@ const render = (result: RunResult) => renderToStaticMarkup(createElement(RunResu
 const base: RunResult = { status: "completed", reason: "completed", durationMs: 1_000 };
 
 describe("RunResultSummary", () => {
+  it("omits the ordinary completed label, icon and metrics", () => {
+    expect(render(base)).toBe("");
+  });
+
   it.each([
-    ["completed", "completed", "已完成"],
     ["failed", "quota_exceeded", "运行失败：额度不足"],
     ["cancelled", "user_cancelled", "已停止"],
     ["interrupted", "runtime_interrupted", "已中断：运行环境中断"],

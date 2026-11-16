@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import ToolCallCard, { resolveToolPreviewPaths, ToolCallGroup } from "./ToolCallCard";
+import ToolCallCard, { resolveToolPreviewPaths, ToolCallActivity, ToolCallGroup } from "./ToolCallCard";
 
 const toolCallCardSource = readFileSync(new URL("./ToolCallCard.tsx", import.meta.url), "utf8");
 const globalCss = readFileSync(new URL("../styles/global.css", import.meta.url), "utf8");
@@ -19,6 +19,18 @@ function command(id: string, result?: string) {
 }
 
 describe("ToolCallGroup", () => {
+  it("keeps compact child rows light until their own details are opened", () => {
+    const onLoadResult = vi.fn();
+    const args = { cmd: "docker exec sandbox node --version", get hiddenPayload() { throw new Error("must not serialize arguments"); } };
+    const html = renderToStaticMarkup(<ToolCallActivity toolCall={{ id: "lazy", name: "exec_command", arguments: args,
+      resultRef: { turnId: "turn", itemId: "lazy", revision: "rev", byteSize: 1_000_000 } }} onLoadResult={onLoadResult} />);
+    expect(html).toContain("docker exec sandbox node --version");
+    expect(html).not.toContain("终端");
+    expect(html).not.toContain("tool-call-shell");
+    expect(html).not.toContain("tool-call-activity__details");
+    expect(onLoadResult).not.toHaveBeenCalled();
+  });
+
   it("keeps the completed action label and adds a spinner while a command is running", () => {
     const html = renderToStaticMarkup(createElement(ToolCallGroup, {
       items: [command("one", "done"), command("two")],
@@ -110,7 +122,7 @@ describe("tool activity rows", () => {
 
   it("loads a lazy body only on expansion and exposes loading and retry states", () => {
     expect(toolCallCardSource).toContain("if (next) void loadResult()");
-    expect(toolCallCardSource).toContain("toolCall.result !== undefined || loadingResult || !onLoadResult");
+    expect(toolCallCardSource).toContain("toolCall.result !== undefined || resultPendingRef.current || !onLoadResult");
     expect(toolCallCardSource).toContain("await onLoadResult(toolCall.resultRef)");
     expect(toolCallCardSource).toContain("正在加载工具结果");
     expect(toolCallCardSource).toContain("重新加载工具结果");

@@ -7,6 +7,7 @@ import {
   ChevronRight,
   CircleX,
   FileText,
+  Image as ImageIcon,
   ListTodo,
   LoaderCircle,
   Pencil,
@@ -18,7 +19,7 @@ import {
 } from "lucide-react";
 import { useAgentStore } from "../stores/agentStore";
 import { hasToolCallResult } from "../lib/tool-call-status";
-import { canonicalToolName, toolActivityLabel, toolFamily, toolPhrase, toolPreview } from "../lib/tool-call-presentation";
+import { canonicalToolName, toolActivityLabel, toolActivityPreview, toolFamily, toolPhrase, toolPreview } from "../lib/tool-call-presentation";
 import RuntimeProgressRow from "./RuntimeProgressRow";
 import { resolveWebArtifactPath } from "../lib/artifact-links";
 import { editLineStats, multiEditLineStats, patchActivityLabel, patchChanges, patchSummary, writeLineCount } from "../lib/file-tool-presentation";
@@ -34,6 +35,7 @@ export interface ToolCallData {
 
 interface ToolCallProps {
   toolCall: ToolCallData;
+  initiallyExpanded?: boolean;
   progress?: RuntimeProgress;
   nativeSubagent?: NativeSubagentActivity;
   onSelectSession?: (sessionId: string) => void;
@@ -57,6 +59,7 @@ function StatusIcon({ isDone, isError, color, size = 11 }: { isDone: boolean; is
 
 function ToolActionIcon({ name, color, size = 14 }: { name: string; color: string; size?: number }) {
   const canonical = canonicalToolName(name);
+  if (canonical === "view_image") return <ImageIcon size={size} color={color} strokeWidth={1.8} aria-hidden="true" />;
   const family = toolFamily(name);
   if (family === "command") {
     return <SquareTerminal size={size} color={color} strokeWidth={1.8} aria-hidden="true" />;
@@ -180,9 +183,11 @@ function useToolExpansion(
 ) {
   const [expanded, setExpanded] = useState(initiallyExpanded);
   const [loadingResult, setLoadingResult] = useState(false);
+  const resultPendingRef = useRef(false);
   const [resultError, setResultError] = useState<string | null>(null);
   const loadResult = async () => {
-    if (!toolCall.resultRef || toolCall.result !== undefined || loadingResult || !onLoadResult) return;
+    if (!toolCall.resultRef || toolCall.result !== undefined || resultPendingRef.current || !onLoadResult) return;
+    resultPendingRef.current = true;
     setLoadingResult(true);
     setResultError(null);
     try {
@@ -190,6 +195,7 @@ function useToolExpansion(
     } catch (error) {
       setResultError(error instanceof Error ? error.message : "工具结果加载失败");
     } finally {
+      resultPendingRef.current = false;
       setLoadingResult(false);
     }
   };
@@ -198,6 +204,9 @@ function useToolExpansion(
     setExpanded(next);
     if (next) void loadResult();
   };
+  useEffect(() => {
+    if (initiallyExpanded) void loadResult();
+  }, [initiallyExpanded, toolCall.id]);
   return { expanded, setExpanded, toggle, loadingResult, resultError, loadResult };
 }
 
@@ -321,8 +330,10 @@ function DiffBlock({ diff, maxHeight = 360 }: { diff: DiffLine[]; maxHeight?: nu
   );
 }
 
-function WriteFileCard({ toolCall, beforeContent, previewPath, onOpenArtifact, onLoadResult }: { toolCall: ToolCallData; beforeContent?: string; previewPath?: string; onOpenArtifact?: (path: string) => void; onLoadResult?: (ref: SessionToolResultRef) => Promise<void> }) {
-  const expansion = useToolExpansion(toolCall, onLoadResult);
+type FileCardProps = Pick<ToolCallProps, "toolCall" | "beforeContent" | "onOpenArtifact" | "onLoadResult" | "initiallyExpanded"> & { previewPath?: string };
+
+function WriteFileCard({ toolCall, beforeContent, previewPath, onOpenArtifact, onLoadResult, initiallyExpanded }: FileCardProps) {
+  const expansion = useToolExpansion(toolCall, onLoadResult, initiallyExpanded);
   const { expanded } = expansion;
   const [tab, setTab] = useState<"content"|"diff">("content");
   const filePath = (toolCall.arguments.file_path as string)??"";
@@ -377,8 +388,8 @@ function WriteFileCard({ toolCall, beforeContent, previewPath, onOpenArtifact, o
   );
 }
 
-function ReadFileCard({ toolCall, previewPath, onOpenArtifact, onLoadResult }: { toolCall: ToolCallData; previewPath?: string; onOpenArtifact?: (path: string) => void; onLoadResult?: (ref: SessionToolResultRef) => Promise<void> }) {
-  const expansion = useToolExpansion(toolCall, onLoadResult);
+function ReadFileCard({ toolCall, previewPath, onOpenArtifact, onLoadResult, initiallyExpanded }: FileCardProps) {
+  const expansion = useToolExpansion(toolCall, onLoadResult, initiallyExpanded);
   const { expanded } = expansion;
   const filePath = (toolCall.arguments.file_path as string)??"";
   const startLine = toolCall.arguments.startLine as number|undefined;
@@ -429,8 +440,8 @@ function ReadFileCard({ toolCall, previewPath, onOpenArtifact, onLoadResult }: {
   );
 }
 
-function StrReplaceCard({ toolCall, previewPath, onOpenArtifact, onLoadResult }: { toolCall: ToolCallData; previewPath?: string; onOpenArtifact?: (path: string) => void; onLoadResult?: (ref: SessionToolResultRef) => Promise<void> }) {
-  const expansion = useToolExpansion(toolCall, onLoadResult);
+function StrReplaceCard({ toolCall, previewPath, onOpenArtifact, onLoadResult, initiallyExpanded }: FileCardProps) {
+  const expansion = useToolExpansion(toolCall, onLoadResult, initiallyExpanded);
   const { expanded } = expansion;
   const filePath = (toolCall.arguments.file_path as string)??"";
   const oldString = (toolCall.arguments.old_string as string)??"";
@@ -623,9 +634,9 @@ function NativeAgentActivity({ activity, workspacePath, onOpenArtifact }: { acti
   );
 }
 
-function GenericToolCard({ toolCall, onSelectSession, nativeSubagent, previewPaths, workspacePath, onOpenArtifact, onLoadResult }: { toolCall: ToolCallData; onSelectSession?: (id: string) => void; nativeSubagent?: NativeSubagentActivity; previewPaths: string[]; workspacePath?: string | null; onOpenArtifact?: (path: string) => void; onLoadResult?: (ref: SessionToolResultRef) => Promise<void> }) {
+function GenericToolCard({ toolCall, onSelectSession, nativeSubagent, previewPaths, workspacePath, onOpenArtifact, onLoadResult, initiallyExpanded }: ToolCallProps & { previewPaths: string[] }) {
   const runningSessionId = useAgentStore(s => s.runningSessionId);
-  const expansion = useToolExpansion(toolCall, onLoadResult, Boolean(nativeSubagent));
+  const expansion = useToolExpansion(toolCall, onLoadResult, initiallyExpanded ?? Boolean(nativeSubagent));
   const { expanded, setExpanded } = expansion;
   const isDispatch = toolCall.name === "dispatch_agent";
   const isNativeAgent = toolCall.name === "Agent" && Boolean(nativeSubagent);
@@ -817,6 +828,27 @@ export interface ToolCallGroupItem {
   nativeSubagent?: NativeSubagentActivity;
 }
 
+export function ToolCallActivity(props: ToolCallProps) {
+  const [expanded, setExpanded] = useState(false);
+  const { toolCall } = props;
+  const preview = toolActivityPreview(toolCall.name, toolCall.arguments);
+  const isDone = hasToolCallResult(toolCall);
+  const color = toolCall.isError ? "var(--danger)" : "currentColor";
+  return (
+    <div className="tool-call-activity">
+      <button type="button" className="tool-call-activity__summary"
+        aria-expanded={expanded} aria-busy={!isDone || undefined}
+        aria-label={`${preview}，${expanded ? "收起" : "展开"}工具详情`} title={preview}
+        onClick={() => setExpanded((value) => !value)}>
+        <ToolActionIcon name={toolCall.name} color={color} size={13} />
+        <span className="tool-call-activity__preview">{preview}</span>
+        {(!isDone || toolCall.isError) && <StatusIcon isDone={isDone} isError={toolCall.isError} color={color} />}
+      </button>
+      {expanded && <div className="tool-call-activity__details"><ToolCallCard {...props} initiallyExpanded /></div>}
+    </div>
+  );
+}
+
 export function ToolCallGroup({ items, variant = "default", onSelectSession, workspacePath, onOpenArtifact, onLoadResult }: { items: ToolCallGroupItem[]; variant?: "default" | "activity"; onSelectSession?: (id: string) => void; workspacePath?: string | null; onOpenArtifact?: (path: string) => void; onLoadResult?: (ref: SessionToolResultRef) => Promise<void> }) {
   const [expanded, setExpanded] = useState(false);
   const first = items[0]?.toolCall;
@@ -828,7 +860,7 @@ export function ToolCallGroup({ items, variant = "default", onSelectSession, wor
   const errorCount = items.filter(({ toolCall }) => toolCall.isError).length;
   const statusColor = errorCount > 0 ? "var(--danger)" : activity ? "currentColor" : isDone ? "var(--text-muted)" : "var(--accent)";
   const actionLabel = activity
-    ? [...new Set(items.map(({ toolCall }) => toolPhrase(toolCall.name)?.done ?? "调用了工具"))].join("、")
+    ? canonicalToolName(first.name) === "view_image" ? `已查看 ${items.length} 张图像` : phrase?.done ?? "调用了工具"
     : toolActivityLabel(first.name) ?? phrase?.done ?? first.name;
   const disclosureLabel = `${actionLabel}，${items.length} 项，${expanded ? "收起" : "展开"}`;
   const isReadActivity = activity && toolPhrase(first.name)?.done === "读取了文件";
@@ -858,7 +890,11 @@ export function ToolCallGroup({ items, variant = "default", onSelectSession, wor
       {expanded && (
         <div className="tool-call-group__items">
           {items.map(({ toolCall, beforeContent, progress, nativeSubagent }) => (
-            <ToolCallCard
+            activity ? <ToolCallActivity
+              key={toolCall.id} toolCall={toolCall} beforeContent={beforeContent}
+              progress={progress} nativeSubagent={nativeSubagent} onSelectSession={onSelectSession}
+              workspacePath={workspacePath} onOpenArtifact={onOpenArtifact} onLoadResult={onLoadResult}
+            /> : <ToolCallCard
               key={toolCall.id}
               toolCall={toolCall}
               beforeContent={beforeContent}
@@ -887,15 +923,15 @@ export function resolveToolPreviewPaths(toolCall: ToolCallData, workspacePath?: 
     .filter((value): value is string => Boolean(value)))];
 }
 
-export default function ToolCallCard({ toolCall, onSelectSession, beforeContent, progress, nativeSubagent, workspacePath, onOpenArtifact, onLoadResult }: ToolCallProps) {
+export default function ToolCallCard({ toolCall, onSelectSession, beforeContent, progress, nativeSubagent, workspacePath, onOpenArtifact, onLoadResult, initiallyExpanded }: ToolCallProps) {
   const previewPaths = onOpenArtifact ? resolveToolPreviewPaths(toolCall, workspacePath) : [];
   const card = toolCall.name === "write_file" || toolCall.name === "Write"
-    ? <WriteFileCard toolCall={toolCall} beforeContent={beforeContent} previewPath={previewPaths[0]} onOpenArtifact={onOpenArtifact} onLoadResult={onLoadResult} />
+    ? <WriteFileCard toolCall={toolCall} beforeContent={beforeContent} previewPath={previewPaths[0]} onOpenArtifact={onOpenArtifact} onLoadResult={onLoadResult} initiallyExpanded={initiallyExpanded} />
     : toolCall.name === "read_file"
-      ? <ReadFileCard toolCall={toolCall} previewPath={previewPaths[0]} onOpenArtifact={onOpenArtifact} onLoadResult={onLoadResult} />
+      ? <ReadFileCard toolCall={toolCall} previewPath={previewPaths[0]} onOpenArtifact={onOpenArtifact} onLoadResult={onLoadResult} initiallyExpanded={initiallyExpanded} />
       : toolCall.name === "str_replace" || toolCall.name === "Edit"
-        ? <StrReplaceCard toolCall={toolCall} previewPath={previewPaths[0]} onOpenArtifact={onOpenArtifact} onLoadResult={onLoadResult} />
-        : <GenericToolCard toolCall={toolCall} onSelectSession={onSelectSession} nativeSubagent={nativeSubagent} previewPaths={previewPaths} workspacePath={workspacePath} onOpenArtifact={onOpenArtifact} onLoadResult={onLoadResult} />;
+        ? <StrReplaceCard toolCall={toolCall} previewPath={previewPaths[0]} onOpenArtifact={onOpenArtifact} onLoadResult={onLoadResult} initiallyExpanded={initiallyExpanded} />
+        : <GenericToolCard toolCall={toolCall} onSelectSession={onSelectSession} nativeSubagent={nativeSubagent} previewPaths={previewPaths} workspacePath={workspacePath} onOpenArtifact={onOpenArtifact} onLoadResult={onLoadResult} initiallyExpanded={initiallyExpanded} />;
   return (
     <div className="tool-call-with-progress">
       {card}

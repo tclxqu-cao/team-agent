@@ -125,4 +125,28 @@ describe("tool call grouping", () => {
     expect(groups).toHaveLength(2);
     expect(groups.every((group) => group.action === null && group.items.length === 1)).toBe(true);
   });
+
+  it("hides reasoning-only rows but retains timing and interactive boundaries", () => {
+    const hidden: ChatMessage = { id: "thought", role: "assistant", content: "", timestamp: 2,
+      presentation: { reasoning: [{ sectionIndex: 0, text: "hidden thought" }] } };
+    const result = coalesceAdjacentToolCallMessages([
+      toolMessage("one", toolCall("one", "shell")), hidden,
+      toolMessage("two", toolCall("two", "shell")),
+    ]);
+    expect(result).toHaveLength(1);
+    expect(result[0].toolCalls).toHaveLength(2);
+    const timed = { ...hidden, presentation: { ...hidden.presentation, completionDurationMs: 50 } };
+    expect(coalesceAdjacentToolCallMessages([timed])).toEqual([timed]);
+    const question = { ...hidden, askUser: { question: "继续吗？", options: [] } };
+    expect(coalesceAdjacentToolCallMessages([question])).toEqual([question]);
+  });
+
+  it("never joins tools from different native turns or segments", () => {
+    const scoped = (id: string, turnId: string, segmentIndex: number) => ({
+      ...toolMessage(id, toolCall(id, "shell")),
+      presentation: { executionTrace: { turnId, segmentIndex } },
+    });
+    const messages = [scoped("one", "t1", 0), scoped("two", "t1", 1), scoped("three", "t2", 0)];
+    expect(coalesceAdjacentToolCallMessages(messages)).toEqual(messages);
+  });
 });

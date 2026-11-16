@@ -434,14 +434,13 @@ export function renderAssistantText(text: string, onOpenArtifact?: (path: string
 }
 
 import { useSettingsStore } from "../stores/settingsStore";
-import ToolCallCard, { ToolCallGroup } from "./ToolCallCard";
+import { ToolCallGroup } from "./ToolCallCard";
 import AskUserCard from "./AskUserCard";
 import ContextUsageBar from "./ContextUsageBar";
 import HarnessModeControl from "./HarnessModeControl";
 import SessionRunActivity from "./SessionRunActivity";
 import { reconcileCodexExecutionSegments } from "../lib/codex-execution-trace";
 import { resolveChatSessionId } from "../lib/session-search";
-import ReasoningSummary from "./ReasoningSummary";
 import CodexExecutionTrace from "./CodexExecutionTrace";
 import SessionExecutionTrace from "./SessionExecutionTrace";
 import { groupSessionExecutionMessages, type SessionExecutionMessage } from "../lib/session-execution-trace";
@@ -4876,14 +4875,6 @@ export default function ChatView({
                 color: "var(--chat-history-text)",
                 letterSpacing: "0.01em",
               }}>
-                {msg.role === "assistant" && msg.presentation?.reasoning && (
-                  <ReasoningSummary
-                    sections={msg.presentation.reasoning}
-                    streaming={isRunning && isLastAssistant && agentActivity === "thinking"}
-                    startedAt={thinkingStartedAt}
-                    renderContent={renderMessageContent}
-                  />
-                )}
                 {/* @agent chip + message */}
                 {isUser && chatMsg.agentName ? (
                   <div>
@@ -4986,22 +4977,11 @@ export default function ChatView({
                     <pre>{chatMsg.presentation.rawContent}</pre>
                   </details>
                 )}
-                {toolCallGroups.map((group) => group.action && group.items.length > 1 ? (
+                {toolCallGroups.map((group) => (
                   <ToolCallGroup
                     key={`group-${group.items[0].toolCall.id}`}
+                    variant="activity"
                     items={group.items}
-                    onSelectSession={onSelectSession}
-                    workspacePath={workspacePath}
-                    onOpenArtifact={onOpenArtifact}
-                    onLoadResult={loadToolResult}
-                  />
-                ) : (
-                  <ToolCallCard
-                    key={group.items[0].toolCall.id}
-                    toolCall={group.items[0].toolCall}
-                    beforeContent={group.items[0].beforeContent}
-                    progress={group.items[0].progress}
-                    nativeSubagent={group.items[0].nativeSubagent}
                     onSelectSession={onSelectSession}
                     workspacePath={workspacePath}
                     onOpenArtifact={onOpenArtifact}
