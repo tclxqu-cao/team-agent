@@ -1,0 +1,35 @@
+packages/desktop/renderer/lib/session-execution-trace.test.ts
+  s_4051421ec36e36::t_79e6bb0c78004c 100-114
+  s_4051421ec36e36::t_cae72236d600a0 115-123
+packages/desktop/renderer/stores/agentStore.ts
+  s_4051421ec36e36::t_cae72236d600a0 117-118
+packages/desktop/renderer/lib/session-history.ts
+  s_4051421ec36e36::t_fd3111e915e262 346-349
+  s_4051421ec36e36::t_18ea66655658cf 350,356
+  s_4051421ec36e36::t_cae72236d600a0 48,351-355,357
+  s_4051421ec36e36::t_e57f1f5652cc72 60,407-408,430,432
+packages/desktop/renderer/lib/session-execution-trace.ts
+  s_4051421ec36e36::t_e57f1f5652cc72 51,54-57,59-64,71,92
+  s_4051421ec36e36::t_cae72236d600a0 52
+  s_4051421ec36e36::t_fd3111e915e262 53
+packages/desktop/renderer/lib/session-history.test.ts
+  s_4051421ec36e36::t_cae72236d600a0 17-26,31-32
+  s_4051421ec36e36::t_18ea66655658cf 27-30
+  s_4051421ec36e36::t_a70cf8a0c5669c 382-396
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b8dc5be9357b099c513e732f786fb60aeea160d5",
+  "prompts": {},
+  "sessions": {
+    "s_4051421ec36e36": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cac9-1b4d-7871-932c-4020e9ae7bd4",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
