@@ -18,7 +18,7 @@ import tempfile
 from codec import AES, SQLITE_HEADER, decrypt_page, derive_base_key, wal_checksum
 
 
-def fields(data):
+def fields(data, allow_zero=False):
     def varint(offset):
         value = 0
         for shift in range(0, 70, 7):
@@ -34,7 +34,7 @@ def fields(data):
     while offset < len(data):
         key, offset = varint(offset)
         number, wire = key >> 3, key & 7
-        if not number:
+        if not number and not allow_zero:
             raise ValueError("invalid protobuf field")
         if wire == 0:
             value, offset = varint(offset)
@@ -80,6 +80,128 @@ def decode_body(data, content_type=0):
                 display.append("@" + label)
             # Quote/forward/attachment payloads are kept raw, never recursively treated as mentions.
     return {"text": "".join(text), "displayText": "".join(display), "mentionTargets": mentions, "segments": segments}
+
+
+def conversation_names(connection):
+    """RID -> display name. 直聊会话的 name 即 '中文名(账号)'，RID 等于对方 VID。"""
+    names = {}
+    for row in connection.execute("SELECT RID, name, conversationtype FROM CONVERSATION"):
+        if row["RID"] is None or not row["name"]:
+            continue
+        names[str(row["RID"])] = {"name": row["name"], "conversationType": row["conversationtype"]}
+    return names
+
+
+def group_list(connection):
+    """全量群列表：conversationtype=1 视为群，exited=0 为仍在群。"""
+    groups = []
+    for row in connection.execute(
+        "SELECT RID, name, creater_id, conversationtype, exited, hidden "
+        "FROM CONVERSATION WHERE conversationtype=1 ORDER BY RID"
+    ):
+        groups.append({
+            "conversationId": str(row["RID"]),
+            "name": row["name"] or "",
+            "createrId": str(row["creater_id"]) if row["creater_id"] is not None else "",
+            "conversationType": row["conversationtype"],
+            "exited": row["exited"],
+            "hidden": row["hidden"],
+        })
+    return groups
+
+
+def session_plain(config):
+    """解密 Messages1/Session.db（与 Info.db 同 VID key）为明文镜像；带 mtime 缓存。"""
+    source = Path(config["database"]).parent / "Session.db"
+    cache = Path(config["cacheDir"])
+    out = cache / "Session.db.plain"
+    if not source.exists():
+        return None
+    if out.exists() and out.stat().st_mtime >= source.stat().st_mtime:
+        return out
+    account = int(config["accountId"])
+    aes = AES()
+    base = derive_base_key(struct.pack("<Q", account))
+    frozen_dir = cache / "frozen"
+    frozen_dir.mkdir(parents=True, exist_ok=True)
+    with frozen_source(source, str(frozen_dir)) as (snap, generation, _):
+        data = snap.read_bytes()
+    size = int.from_bytes(data[16:18], "big")
+    size = 65536 if size == 1 else size
+    temporary = out.with_suffix(".tmp")
+    temporary.write_bytes(b"".join(
+        decrypt_page(aes, data[n:n + size], base, n // size + 1) for n in range(0, len(data), size)))
+    os.replace(temporary, out)
+    return out
+
+
+def contact_directory(config):
+    """全量通讯录（Session.db USER/DEPARTMENT 表）：VID -> {name, job, departmentId, department, corpid}。"""
+    plain = session_plain(config)
+    users = {}
+    if not plain:
+        return users
+    connection = sqlite3.connect(str(plain))
+    connection.row_factory = sqlite3.Row
+    try:
+        departments = {}
+        for row in connection.execute("SELECT RID, name FROM DEPARTMENT"):
+            if row["RID"] is not None:
+                departments[str(row["RID"])] = row["name"] or ""
+        heads = {}
+        try:
+            for row in connection.execute("SELECT UID, departmentid FROM MYHEAD ORDER BY id"):
+                uid = str(row["UID"]) if row["UID"] is not None else ""
+                if uid and uid not in heads and row["departmentid"] is not None:
+                    heads[uid] = str(row["departmentid"])
+        except sqlite3.OperationalError:
+            pass
+        for row in connection.execute("SELECT RID, name, job, corpid FROM USER"):
+            if row["RID"] is None:
+                continue
+            dept_id = heads.get(str(row["RID"]), "")
+            users[str(row["RID"])] = {
+                "name": row["name"] or "", "job": row["job"] or "",
+                "departmentId": dept_id, "department": departments.get(dept_id, ""),
+                "corpid": str(row["corpid"]) if row["corpid"] is not None else "",
+            }
+    finally:
+        connection.close()
+    return users
+
+
+def group_members(connection, conv_key_prefix, users=None):
+    """解 CONV_MEMBER_DATA.member_bin：字段 1=成员 VID、2=加入时间、3=邀请人 VID。
+    conv_key 形如 '1_<RID>_0'，按开头 '1_<RID>_' 匹配。users 提供则附姓名。"""
+    prefix = "1_" + str(conv_key_prefix) + "_"
+    out = []
+    for row in connection.execute(
+        "SELECT conv_key, member_bin FROM CONV_MEMBER_DATA WHERE conv_key LIKE ?", (prefix + "%",)
+    ):
+        blob = row["member_bin"] or b""
+        members = []
+        for number, wire, segment in fields(blob, allow_zero=True):
+            # 顶层是重复的 field 0 长度块，每块一个成员
+            if wire != 2 or not segment:
+                continue
+            try:
+                inner = list(fields(segment))
+            except ValueError:
+                continue
+            vid = next((value for n, w, value in inner if n == 1 and w == 0), None)
+            if vid is None:
+                continue
+            joined = next((value for n, w, value in inner if n == 2 and w == 0), None)
+            inviter = next((value for n, w, value in inner if n == 3 and w == 0), None)
+            members.append({
+                "vid": str(vid),
+                "name": (users or {}).get(str(vid), {}).get("name") or None,
+                "joinedAt": joined,
+                "inviterVid": str(inviter) if inviter is not None else None,
+                "inviterName": (users or {}).get(str(inviter), {}).get("name") if inviter is not None else None,
+            })
+        out.append({"convKey": row["conv_key"], "members": members})
+    return out
 
 
 def committed_frames(data, page_size):
@@ -241,17 +363,41 @@ def discover():
     return {"sources": sources, "error": None if sources else "未发现支持的企微账号数据库，请确认本机版本与登录状态"}
 
 
-def read_batch(config):
+def open_mirror(config):
+    """按 config 准备明文镜像并返回只读连接；调用方负责 close()。"""
     source = Path(config["database"])
-    cursor = config.get("cursor") or {}
     cache = Path(config["cacheDir"])
     mirror, generation, immutable = prepare_mirror(source, config["accountId"], cache)
-    previous = cursor.get("generation")
-    lid = int(cursor.get("lid", 0)) if previous in (None, generation) else 0
-    since = int(cursor.get("since", datetime.datetime.now().timestamp()))
     uri = "file:" + str(mirror) + "?mode=ro" + ("&immutable=1" if immutable else "")
     connection = sqlite3.connect(uri, uri=True)
     connection.row_factory = sqlite3.Row
+    return connection, generation
+
+
+def static_queries(config, groups=False, members_for=None, contacts=False):
+    """只读静态资料查询：群列表 / 群成员 / 全量通讯录；不触碰消息表与 cursor。"""
+    connection, _ = open_mirror(config)
+    try:
+        users = contact_directory(config) if (members_for is not None or contacts) else None
+        result = {}
+        if contacts:
+            result["contacts"] = users
+        if groups:
+            result["groups"] = group_list(connection)
+        if members_for is not None:
+            result["members"] = group_members(connection, members_for, users)
+            result["conversationId"] = str(members_for)
+        return result
+    finally:
+        connection.close()
+
+
+def read_batch(config):
+    cursor = config.get("cursor") or {}
+    connection, generation = open_mirror(config)
+    previous = cursor.get("generation")
+    lid = int(cursor.get("lid", 0)) if previous in (None, generation) else 0
+    since = int(cursor.get("since", datetime.datetime.now().timestamp()))
     try:
         connection.execute("PRAGMA writable_schema=ON")
         connection.execute("BEGIN")
@@ -259,6 +405,11 @@ def read_batch(config):
             "SELECT * "
             "FROM MESSAGE WHERE LID>? AND send_time>=? ORDER BY LID LIMIT 200", (lid, since)
         ).fetchall()
+        names = conversation_names(connection)   # 一次预载，避免逐条查 CONVERSATION
+        try:
+            users = contact_directory(config)     # Session.db USER 表：全量 VID→姓名
+        except Exception:
+            users = {}
         messages = []
         for row in rows:
             local_id, rid, conversation, seq, sender, kind, sent, content, extras, refer, flag, msg_type = (
@@ -268,19 +419,22 @@ def read_batch(config):
                 decoded = decode_body(content, kind)
             except (ValueError, UnicodeDecodeError):
                 decoded = {"text": "", "displayText": "", "mentionTargets": [], "segments": [], "decodeError": "正文结构尚未识别"}
-            try:
-                named = connection.execute("SELECT * FROM CONVERSATION WHERE RID=?", (conversation,)).fetchone()
-                name = named["name"] if named else ""
-                conversation_type = named["conversationtype"] if named and "conversationtype" in named.keys() else None
-            except sqlite3.DatabaseError:
-                name = ""
-                conversation_type = None
+            named = names.get(str(conversation))
+            name = named["name"] if named else ""
+            conversation_type = named["conversationType"] if named else None
+            sender_named = names.get(str(sender))
+            # 直聊会话名即 '中文名(账号)'；USER 表（Session.db）优先——覆盖无直聊会话的群成员/机器人。
+            sender_name = sender_named["name"] if sender_named else ""
+            user_entry = users.get(str(sender))
+            if user_entry and user_entry["name"]:
+                sender_name = user_entry["name"]
             kind_name = "direct" if conversation_type == 0 else "group" if conversation_type == 1 else "unknown"
             alias = re.search(r"\(([a-zA-Z0-9_.@-]+)\)$", name or "") if kind_name == "direct" else None
             stable = "rid:" + str(rid) if rid else "seq:" + str(seq) + ":" + str(sender) + ":" + str(sent) + ":" + hashlib.sha256(content).hexdigest()
             messages.append({
                 "sourceId": stable, "connectionId": "wecom:" + str(config["accountId"]), "channel": "wecom",
                 "conversationId": str(conversation), "conversationName": name, "senderId": str(sender),
+                "senderName": sender_name or None,
                 "conversationType": kind_name, **({"peerUserId": alias.group(1)} if alias else {}),
                 "text": decoded["text"], "occurredAt": datetime.datetime.fromtimestamp(sent, datetime.timezone.utc).isoformat(),
                 "directMention": str(config["accountId"]) in decoded["mentionTargets"], "ownMessage": str(sender) == str(config["accountId"]),
@@ -299,7 +453,23 @@ def read_batch(config):
 
 if __name__ == "__main__":
     try:
-        result = discover() if "--discover" in sys.argv else read_batch(json.load(sys.stdin))
+        if "--discover" in sys.argv:
+            result = discover()
+        elif "--contacts" in sys.argv:
+            result = contact_directory(json.load(sys.stdin))
+            print(json.dumps(result, ensure_ascii=False))
+            sys.exit(0)
+        elif "--groups" in sys.argv or "--members" in sys.argv:
+            config = json.load(sys.stdin)
+            members_for = None
+            if "--members" in sys.argv:
+                index = sys.argv.index("--members")
+                if index + 1 >= len(sys.argv):
+                    raise ValueError("--members 需要群 conversationId（CONVERSATION.RID）")
+                members_for = sys.argv[index + 1]
+            result = static_queries(config, groups="--groups" in sys.argv, members_for=members_for, contacts="--contacts" in sys.argv)
+        else:
+            result = read_batch(json.load(sys.stdin))
         print(json.dumps(result, ensure_ascii=False))
     except PermissionError:
         print(json.dumps({"error": "macOS 拒绝读取企微数据目录，请为运行 AgentRoam 的应用或终端授予完全磁盘访问权限"}))

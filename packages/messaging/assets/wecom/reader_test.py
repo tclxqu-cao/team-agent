@@ -9,7 +9,7 @@ import tempfile
 import unittest
 from unittest import mock
 from codec import AES, derive_base_key, page_key, page_iv, wal_checksum
-from reader import decode_body, fields, committed_frames, prepare_mirror, read_batch, frozen_source
+from reader import decode_body, fields, committed_frames, prepare_mirror, read_batch, frozen_source, conversation_names, group_list, group_members
 
 
 def varint(value):
@@ -195,6 +195,63 @@ class ReaderTests(unittest.TestCase):
                         self.assertTrue(snapshot.is_file())
             finally:
                 connection.close()
+
+
+class StaticDirectoryTests(unittest.TestCase):
+    def setUp(self):
+        self.connection = sqlite3.connect(":memory:")
+        self.connection.row_factory = sqlite3.Row
+        self.connection.execute(
+            "CREATE TABLE CONVERSATION (RID INTEGER PRIMARY KEY, name TEXT, creater_id INTEGER, conversationtype INTEGER, exited INTEGER, hidden INTEGER)"
+        )
+        self.connection.execute("CREATE TABLE CONV_MEMBER_DATA (conv_key TEXT, member_bin BLOB)")
+        self.connection.executemany("INSERT INTO CONVERSATION VALUES (?,?,?,?,?,?)", [
+            (1688851170090734, "胡代表(daibiao.hu)", 1, 0, 0, 0),
+            (520135865, "【官方】智能现场沟通群", 1688851832858871, 1, 0, 0),
+            (79060795433440, "客服业务支持小组", 1688857114523242, 1, 1, 0),
+        ])
+
+    def tearDown(self):
+        self.connection.close()
+
+    def test_sender_name_maps_direct_conversation_rid(self):
+        names = conversation_names(self.connection)
+        self.assertEqual(names["1688851170090734"]["name"], "胡代表(daibiao.hu)")
+        self.assertEqual(names["1688851170090734"]["conversationType"], 0)
+
+    def test_group_list_includes_only_groups(self):
+        groups = group_list(self.connection)
+        self.assertEqual([g["conversationId"] for g in groups], ["520135865", "79060795433440"])
+        self.assertEqual(groups[0]["createrId"], "1688851832858871")
+
+    def test_group_members_decodes_member_bin(self):
+        member = field(1, 1688854320466571) + field(2, 1702276058) + field(3, 1688857114523242) + field(5, 0)
+        blob = varint((0 << 3) | 2) + varint(len(member)) + member
+        self.connection.execute("INSERT INTO CONV_MEMBER_DATA VALUES (?,?)", ("1_520135865_0", blob))
+        result = group_members(self.connection, "520135865")
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["members"], [{
+            "vid": "1688854320466571", "name": None, "joinedAt": 1702276058,
+            "inviterVid": "1688857114523242", "inviterName": None
+        }])
+
+    def test_group_members_with_user_names(self):
+        member = field(1, 1688854320466571) + field(2, 1702276058) + field(3, 1688857114523242)
+        blob = varint((0 << 3) | 2) + varint(len(member)) + member
+        self.connection.execute("INSERT INTO CONV_MEMBER_DATA VALUES (?,?)", ("1_520135865_0", blob))
+        result = group_members(self.connection, "520135865",
+                               users={"1688854320466571": {"name": "胡代表(daibiao.hu)"}})
+        self.assertEqual(result[0]["members"][0]["name"], "胡代表(daibiao.hu)")
+
+    def test_group_members_ignores_other_conversations(self):
+        self.connection.execute("INSERT INTO CONV_MEMBER_DATA VALUES (?,?)", ("1_999_0", b"\x02\x00"))
+        self.assertEqual(group_members(self.connection, "520135865"), [])
+
+    def test_fields_allows_zero_for_member_bin(self):
+        payload = b"\x02\x02\x08\x01"
+        self.assertEqual(list(fields(payload, allow_zero=True))[0][0], 0)
+        with self.assertRaises(ValueError):
+            list(fields(payload))
 
 
 if __name__ == "__main__":
