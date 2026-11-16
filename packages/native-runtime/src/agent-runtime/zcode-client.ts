@@ -23,6 +23,8 @@ const reasoningEfforts: readonly NativeReasoningEffort[] = ["low", "medium", "hi
 const nativeEffort = (value: unknown) => reasoningEfforts.find(effort => effort === value);
 const modelRefKey = (providerId: string | undefined, modelId: string) => JSON.stringify([providerId, modelId]);
 const desktopActivity = new ZCodeDesktopActivityReader();
+const HISTORY_BATCH_SIZE = 256;
+const HISTORY_RECONCILE_MS = 30_000;
 const nativeDate = (value: unknown): string => {
   const date = new Date(typeof value === "string" || typeof value === "number" ? value : Date.now());
   return Number.isFinite(date.getTime()) ? date.toISOString() : new Date().toISOString();
@@ -42,26 +44,27 @@ export function decodeZCodeHistory(value: unknown, sessionId = "", imageData?: R
       const image = imageData?.get(part.url) ?? (/^data:image\/(?:jpeg|png|gif|webp);base64,/.test(part.url) ? part.url : undefined);
       return image ? [image] : [];
     }) : [];
-    const reasoning = parts.filter(part => part.type === "reasoning" && typeof part.text === "string").map((part, index) => ({ itemId: String(part.id ?? `${info.id}:reasoning:${index}`), sectionIndex: 0, text: String(part.text) }));
+    const messageId = info.messageId ?? info.id;
+    const reasoning = parts.filter(part => part.type === "reasoning" && typeof part.text === "string").map((part, index) => ({ itemId: String(part.partId ?? part.id ?? `${messageId}:reasoning:${index}`), sectionIndex: 0, text: String(part.text) }));
     const questionMessages: Message[] = [];
     let hasQuestionTool = false;
     const tools = parts.filter(part => {
       if (part.type !== "tool") return false;
-      const history = zcodeQuestionHistory(part, sessionId, String(info.id ?? ""));
+      const history = zcodeQuestionHistory({ ...part, id: part.partId ?? part.id, callID: part.callId ?? part.callID }, sessionId, String(messageId ?? ""));
       if (history === null) return true;
       hasQuestionTool = true;
       questionMessages.push(...history);
       return false;
     });
-    if (!hasQuestionTool || text || reasoning.length || tools.length || info.role !== "assistant") messages.push({ role: info.role, content: text, historyId: typeof info.id === "string" ? info.id : undefined,
+    if (!hasQuestionTool || text || reasoning.length || tools.length || info.role !== "assistant") messages.push({ role: info.role, content: text, historyId: typeof messageId === "string" ? messageId : undefined,
       ...(images.length ? { images } : {}),
       ...(reasoning.length ? { presentation: { reasoning } } : {}),
-      ...(tools.length ? { toolCalls: tools.map(part => ({ id: String(part.callID ?? part.toolCallId ?? part.id), name: String(part.tool ?? part.toolName ?? "ZCode tool"), arguments: nativeRecord(nativeRecord(part.state).input ?? part.input) })) } : {}),
+      ...(tools.length ? { toolCalls: tools.map(part => ({ id: String(part.callId ?? part.callID ?? part.toolCallId ?? part.partId ?? part.id), name: String(part.tool ?? part.toolName ?? "ZCode tool"), arguments: nativeRecord(nativeRecord(part.state).input ?? part.input) })) } : {}),
     });
     for (const tool of tools) {
       const state = nativeRecord(tool.state);
       if (state.status !== "completed" && state.status !== "error") continue;
-      messages.push({ role: "tool", toolCallId: String(tool.callID ?? tool.toolCallId ?? tool.id), content: typeof state.output === "string" ? state.output : typeof state.error === "string" ? state.error : "", isError: state.status === "error" });
+      messages.push({ role: "tool", toolCallId: String(tool.callId ?? tool.callID ?? tool.toolCallId ?? tool.partId ?? tool.id), content: typeof state.output === "string" ? state.output : typeof state.error === "string" ? state.error : "", isError: state.status === "error" });
     }
     messages.push(...questionMessages);
   }
@@ -73,6 +76,8 @@ export class ZCodeClient implements NativeSessionProtocol {
   private readonly sessions = new Map<string, NativeProtocolSession>();
   private readonly loaded = new Set<string>();
   private readonly resumes = new Map<string, Promise<NativeProtocolSession>>();
+  private readonly historyReads = new Map<string, Promise<{ session: NativeProtocolSession; messages: Message[] }>>();
+  private readonly historyCache = new Map<string, { messages: NativeJsonPacket[]; reconciledAt: number }>();
   private readonly runs = new Map<string, Run>();
   private readonly questions = new Map<string, Question>();
   private readonly interactions = new Map<string, { sessionId: string; response: Promise<NativeJsonPacket> }>();
@@ -89,7 +94,7 @@ export class ZCodeClient implements NativeSessionProtocol {
     this.steering = new ZCodeSteering(rpc);
     rpc.onRequest((method, params) => this.callback(method, params));
     this.unsubscribe = [rpc.onNotification((method, params) => this.notification(method, params)), rpc.onFailure(error => {
-      this.loaded.clear(); this.resumes.clear(); this.models = []; this.modelDefaults.clear();
+      this.loaded.clear(); this.resumes.clear(); this.historyCache.clear(); this.models = []; this.modelDefaults.clear();
       for (const [id, run] of this.runs) this.finish(id, run.aborted ? { type: "turn_aborted" } : { type: "error", message: error.message, code: error.code });
     })];
   }
@@ -209,7 +214,61 @@ export class ZCodeClient implements NativeSessionProtocol {
     }
   }
 
-  async read(id: string) {
+  read(id: string): Promise<{ session: NativeProtocolSession; messages: Message[] }> {
+    const pending = this.historyReads.get(id);
+    if (pending) return pending;
+    const reading = this.readHistory(id).finally(() => {
+      if (this.historyReads.get(id) === reading) this.historyReads.delete(id);
+    });
+    this.historyReads.set(id, reading);
+    return reading;
+  }
+
+  private async historyBatches(id: string, cached = this.historyCache.get(id)): Promise<NativeJsonPacket[]> {
+    // Refresh the mutable tail on every poll. Reconcile the complete native
+    // projection periodically, and immediately if a rewind removes the cursor.
+    const reusable = cached && Date.now() - cached.reconciledAt < HISTORY_RECONCILE_MS;
+    const messages = reusable ? cached.messages.slice(0, -HISTORY_BATCH_SIZE) : [];
+    const key = (message: NativeJsonPacket) => {
+      const info = nativeRecord(message.info);
+      return info.messageId ?? info.id;
+    };
+    const seen = new Set(messages.map(key));
+    let afterMessageId = messages.length ? key(messages[messages.length - 1]) : undefined;
+    while (true) {
+      // Forward history can read persisted sessions without materializing a
+      // resident or returning the unbounded session/resume snapshot.
+      let page: NativeJsonPacket;
+      try {
+        page = await this.rpc.request("session/messages", { sessionId: id, direction: "forward", limit: HISTORY_BATCH_SIZE,
+          ...(afterMessageId ? { afterMessageId } : {}) });
+      } catch (error) {
+        if (reusable && error instanceof NativeRpcError && error.message === "Message cursor is no longer available") {
+          this.historyCache.delete(id);
+          return this.historyBatches(id, undefined);
+        }
+        throw error;
+      }
+      if (!Array.isArray(page.messages)) throw new RuntimeSessionError("ZCode returned no history page", "NATIVE_PROTOCOL_ERROR");
+      const batch = rows(page.messages);
+      for (const message of batch) {
+        const messageId = key(message);
+        if (typeof messageId !== "string" || !messageId || seen.has(messageId)) {
+          throw new RuntimeSessionError("ZCode history cursor did not advance", "NATIVE_PROTOCOL_ERROR");
+        }
+        seen.add(messageId); afterMessageId = messageId;
+        messages.push(message);
+      }
+      if (batch.length < HISTORY_BATCH_SIZE) {
+        this.historyCache.delete(id);
+        this.historyCache.set(id, { messages, reconciledAt: reusable ? cached.reconciledAt : Date.now() });
+        while (this.historyCache.size > 3) this.historyCache.delete(this.historyCache.keys().next().value!);
+        return messages;
+      }
+    }
+  }
+
+  private async readHistory(id: string) {
     const current = this.sessions.get(id) ?? (await this.list()).find(session => session.id === id);
     if (current) {
       const [observed] = await this.withDesktopActivity([current]);
@@ -218,11 +277,22 @@ export class ZCodeClient implements NativeSessionProtocol {
         return { session: { ...this.snapshot(snapshot, false), externalGuideSupported: true }, messages: decodeZCodeHistory(snapshot.messages, id, await readZCodeHistoryImages(snapshot.messages, this.imageStorageRoot)) };
       }
     }
+    try {
+      const history = await this.historyBatches(id);
+      const latest = (await this.list()).find(session => session.id === id) ?? current;
+      if (!latest) throw new RuntimeSessionError("ZCode session not found", "SESSION_NOT_FOUND");
+      return { session: latest, messages: decodeZCodeHistory(history, id, await readZCodeHistoryImages(history, this.imageStorageRoot)) };
+    } catch (error) {
+      // Older native versions require a resident for forward history. Preserve
+      // their bounded idle recovery; unrelated protocol failures stay visible.
+      if (!(error instanceof NativeRpcError) || error.nativeCode !== -32004
+        || (error.message !== `Session is not active: ${id}` && error.message !== "Session runtime is not ready")) throw error;
+    }
     return this.withActiveSession(id, async () => {
-      const snapshot = await this.rpc.request("session/read", { sessionId: id });
-      const history = await this.rpc.request("session/messages", { sessionId: id });
+      const snapshot = await this.rpc.request("session/read", { sessionId: id, messageLimit: 1 });
+      const history = await this.historyBatches(id);
       const [session] = await this.withDesktopActivity([this.snapshot(snapshot, false)]);
-      return { session: session!, messages: decodeZCodeHistory(history.messages, id, await readZCodeHistoryImages(history.messages, this.imageStorageRoot)) };
+      return { session: session!, messages: decodeZCodeHistory(history, id, await readZCodeHistoryImages(history, this.imageStorageRoot)) };
     });
   }
 

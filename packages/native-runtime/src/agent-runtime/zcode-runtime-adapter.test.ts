@@ -277,13 +277,13 @@ class ResidentZCodeFixture extends ZCodeFixture {
 
 describe.each(["Session is not active: sess_native", "Session runtime is not ready"])("ZCode resident runtime recovery (%s)", unavailableMessage => {
   it("shares the initial resume across concurrent history requests", async () => {
-    const rpc = new ResidentZCodeFixture(unavailableMessage); const client = new ZCodeClient(rpc);
+    const rpc = new ResidentZCodeFixture(unavailableMessage); const client = new ZCodeClient(rpc, { readMany: async () => new Map() });
     await Promise.all([client.read("sess_native"), client.read("sess_native")]);
     expect(rpc.calls.filter(call => call.method === "session/resume")).toHaveLength(1);
   });
 
   it("reloads persisted history after an idle resident is evicted", async () => {
-    const rpc = new ResidentZCodeFixture(unavailableMessage); const client = new ZCodeClient(rpc);
+    const rpc = new ResidentZCodeFixture(unavailableMessage); const client = new ZCodeClient(rpc, { readMany: async () => new Map() });
     await client.read("sess_native");
     rpc.resident = false;
     expect((await client.read("sess_native")).messages).toMatchObject([{ content: "native history" }]);
@@ -292,7 +292,7 @@ describe.each(["Session is not active: sess_native", "Session runtime is not rea
   });
 
   it("shares concurrent restores instead of materializing a session multiple times", async () => {
-    const rpc = new ResidentZCodeFixture(unavailableMessage); const client = new ZCodeClient(rpc);
+    const rpc = new ResidentZCodeFixture(unavailableMessage); const client = new ZCodeClient(rpc, { readMany: async () => new Map() });
     await client.read("sess_native");
     rpc.resident = false;
     const details = await Promise.all([client.read("sess_native"), client.read("sess_native"), client.read("sess_native")]);
@@ -301,7 +301,7 @@ describe.each(["Session is not active: sess_native", "Session runtime is not rea
   });
 
   it("restores before continuing an evicted session and sends the turn once", async () => {
-    const rpc = new ResidentZCodeFixture(unavailableMessage); const client = new ZCodeClient(rpc);
+    const rpc = new ResidentZCodeFixture(unavailableMessage); const client = new ZCodeClient(rpc, { readMany: async () => new Map() });
     await client.read("sess_native");
     rpc.resident = false;
     expect((await collect(client.run("sess_native", "continue"))).at(-1)).toEqual({ type: "done", finalText: "native answer" });
@@ -310,7 +310,7 @@ describe.each(["Session is not active: sess_native", "Session runtime is not rea
   });
 
   it("retries the history read when eviction occurs between snapshot and messages", async () => {
-    const rpc = new ResidentZCodeFixture(unavailableMessage); const client = new ZCodeClient(rpc);
+    const rpc = new ResidentZCodeFixture(unavailableMessage); const client = new ZCodeClient(rpc, { readMany: async () => new Map() });
     const request = rpc.request.bind(rpc);
     let evict = true;
     rpc.request = async (method, params) => {
@@ -323,7 +323,7 @@ describe.each(["Session is not active: sess_native", "Session runtime is not rea
   });
 
   it("does not reactivate an unexpectedly missing resident while a local turn is live", async () => {
-    const rpc = new ResidentZCodeFixture(unavailableMessage); const client = new ZCodeClient(rpc);
+    const rpc = new ResidentZCodeFixture(unavailableMessage); const client = new ZCodeClient(rpc, { readMany: async () => new Map() });
     rpc.prompt = async () => { rpc.emit("model.streaming", { kind: "text_delta", delta: "running" }); };
     const run = client.run("sess_native", "work")[Symbol.asyncIterator]();
     await run.next();
@@ -339,7 +339,7 @@ describe.each(["Session is not active: sess_native", "Session runtime is not rea
   });
 
   it("rechecks ownership after restoring an evicted session", async () => {
-    const rpc = new ResidentZCodeFixture(unavailableMessage); const client = new ZCodeClient(rpc);
+    const rpc = new ResidentZCodeFixture(unavailableMessage); const client = new ZCodeClient(rpc, { readMany: async () => new Map() });
     await client.read("sess_native");
     rpc.resident = false; rpc.session.status = "running";
     await expect(collect(client.run("sess_native", "continue"))).rejects.toMatchObject({ code: "SESSION_OCCUPIED" });
@@ -353,21 +353,21 @@ describe.each(["Session is not active: sess_native", "Session runtime is not rea
     new NativeRpcError("Session not found: sess_native", -32004),
     new NativeRpcError("Session is not active: other_session", -32004),
   ])("preserves unrelated native failures without retrying", async error => {
-    const rpc = new ZCodeFixture(); const client = new ZCodeClient(rpc);
+    const rpc = new ZCodeFixture(); const client = new ZCodeClient(rpc, { readMany: async () => new Map() });
     const request = rpc.request.bind(rpc);
     rpc.request = async (method, params) => {
-      if (method === "session/read") throw error;
+      if (method === "session/messages") throw error;
       return request(method, params);
     };
     await expect(client.read("sess_native")).rejects.toBe(error);
-    expect(rpc.calls.filter(call => call.method === "session/resume")).toHaveLength(1);
+    expect(rpc.calls.filter(call => call.method === "session/resume")).toHaveLength(0);
   });
 
   it("bounds recovery to one retry when native reactivation cannot repair the session", async () => {
-    const rpc = new ZCodeFixture(); const client = new ZCodeClient(rpc);
+    const rpc = new ZCodeFixture(); const client = new ZCodeClient(rpc, { readMany: async () => new Map() });
     const request = rpc.request.bind(rpc);
     rpc.request = async (method, params) => {
-      if (method === "session/read") throw new NativeRpcError(unavailableMessage, -32004);
+      if (method === "session/messages") throw new NativeRpcError(unavailableMessage, -32004);
       return request(method, params);
     };
     await expect(client.read("sess_native")).rejects.toMatchObject({ message: unavailableMessage });
@@ -375,7 +375,7 @@ describe.each(["Session is not active: sess_native", "Session runtime is not rea
   });
 
   it("does not retry a send whose acceptance is unknown", async () => {
-    const rpc = new ResidentZCodeFixture(unavailableMessage); const client = new ZCodeClient(rpc);
+    const rpc = new ResidentZCodeFixture(unavailableMessage); const client = new ZCodeClient(rpc, { readMany: async () => new Map() });
     const request = rpc.request.bind(rpc);
     rpc.request = async (method, params) => {
       if (method === "session/send") {
@@ -411,7 +411,7 @@ describe("ZCode native-visible child discovery", () => {
 
   it("retains native parent identity and marks child sessions read-only without resuming them", async () => {
     const rpc = new ChildFixture();
-    const sessions = await new ZCodeRuntimeAdapter(new ZCodeClient(rpc)).discoverSessions();
+    const sessions = await new ZCodeRuntimeAdapter(new ZCodeClient(rpc, { readMany: async () => new Map() })).discoverSessions();
     expect(sessions).toHaveLength(2);
     expect(sessions[1]).toMatchObject({ nativeSessionId: "sess_child", parentSessionId: encodeUnifiedSessionId("zcode", "sess_native"), readOnly: true, canResume: false });
     expect(rpc.calls.some(call => ["session/resume", "session/create", "session/send"].includes(call.method))).toBe(false);
@@ -419,7 +419,7 @@ describe("ZCode native-visible child discovery", () => {
 
   it("refreshes child metadata and re-discovers children when the parent changes", async () => {
     const rpc = new ChildFixture();
-    const client = new ZCodeClient(rpc);
+    const client = new ZCodeClient(rpc, { readMany: async () => new Map() });
     await client.list();
     rpc.childTitle = "Externally updated";
     expect((await client.list()).find(row => row.id === "sess_child")?.title).toBe("Externally updated");
@@ -440,14 +440,14 @@ describe("ZCode native NDJSON adapter", () => {
     rpc.request = async (method, params) => method === "session/messages"
       ? { messages: [{ info: { id: "latest", role: "assistant" }, parts: [{ type: "text", text: content }] }] }
       : request(method, params);
-    const client = new ZCodeClient(rpc);
+    const client = new ZCodeClient(rpc, { readMany: async () => new Map() });
     expect((await client.read("sess_native")).messages[0].content).toBe("Initial");
     content = "Updated in the native app";
     expect((await client.read("sess_native")).messages[0].content).toBe(content);
-    expect(rpc.calls.filter(call => call.method === "session/resume")).toHaveLength(1);
+    expect(rpc.calls.filter(call => call.method === "session/resume")).toHaveLength(0);
   });
   it("persists a real native session immediately instead of returning a lost deferred session", async () => {
-    const rpc = new ZCodeFixture(); const adapter = new ZCodeRuntimeAdapter(new ZCodeClient(rpc));
+    const rpc = new ZCodeFixture(); const adapter = new ZCodeRuntimeAdapter(new ZCodeClient(rpc, { readMany: async () => new Map() }));
     const created = await adapter.create({ title: "Owned", cwd: "/native/zcode" });
     expect(created.agentType).toBe("zcode"); expect(created.nativeSessionId).toBe("sess_native");
     expect(rpc.calls[0]).toMatchObject({ method: "session/create", params: { persistence: "immediate", workspace: { workspacePath: "/native/zcode", workspaceKey: "/native/zcode" } } });
@@ -456,7 +456,7 @@ describe("ZCode native NDJSON adapter", () => {
   });
 
   it("streams native events once per sequence and retains provider/model identity per turn", async () => {
-    const rpc = new ZCodeFixture(); const client = new ZCodeClient(rpc);
+    const rpc = new ZCodeFixture(); const client = new ZCodeClient(rpc, { readMany: async () => new Map() });
     rpc.prompt = async () => {
       rpc.emit("model.streaming", { kind: "text_delta", delta: "answer" });
       rpc.listener("session/event", { sessionId: "sess_native", seq: rpc.sequence, type: "model.streaming", payload: { kind: "text_delta", delta: "DUPLICATE" } });
@@ -474,18 +474,18 @@ describe("ZCode native NDJSON adapter", () => {
 
   it("refreshes an empty catalog from an idle native session even when it is already loaded", async () => {
     const rpc = new ZCodeFixture(); rpc.models = [];
-    const client = new ZCodeClient(rpc);
+    const client = new ZCodeClient(rpc, { readMany: async () => new Map() });
     await client.read("sess_native");
     rpc.models = [{ ref: { providerId: "native-provider", modelId: "new-model" }, label: "New native model" }];
     expect(await client.listModels()).toMatchObject([{ id: "new-model", providerID: "native-provider" }]);
-    expect(rpc.calls.filter(call => call.method === "session/resume")).toHaveLength(2);
+    expect(rpc.calls.filter(call => call.method === "session/resume")).toHaveLength(1);
     await client.read("sess_native");
     expect(await client.listModels()).toMatchObject([{ id: "new-model", providerID: "native-provider" }]);
-    expect(rpc.calls.filter(call => call.method === "session/resume")).toHaveLength(2);
+    expect(rpc.calls.filter(call => call.method === "session/resume")).toHaveLength(1);
   });
 
   it("streams retry progress once per native sequence and still waits for the actual turn result", async () => {
-    const rpc = new ZCodeFixture(); const client = new ZCodeClient(rpc);
+    const rpc = new ZCodeFixture(); const client = new ZCodeClient(rpc, { readMany: async () => new Map() });
     rpc.prompt = async () => {
       rpc.emit("session.updated", { type: "model_request_started", attempt: 1, maxAttempts: 11 });
       rpc.emit("session.updated", { type: "model_retry_scheduled", nextAttempt: 2, maxAttempts: 11, message: "Native quota limit", delayMs: 50_030 });
@@ -506,7 +506,7 @@ describe("ZCode native NDJSON adapter", () => {
   });
 
   it("keeps repeated quota retries non-terminal until ZCode reports an actual failed turn", async () => {
-    const rpc = new ZCodeFixture(); const client = new ZCodeClient(rpc);
+    const rpc = new ZCodeFixture(); const client = new ZCodeClient(rpc, { readMany: async () => new Map() });
     rpc.prompt = async () => {
       for (const nextAttempt of [2, 3]) rpc.emit("session.updated", {
         type: "model_retry_scheduled", nextAttempt, maxAttempts: 11, message: "Native five-hour quota exhausted", statusCode: 429,
@@ -522,7 +522,7 @@ describe("ZCode native NDJSON adapter", () => {
   it("preserves advertised reasoning levels and their native default through history reads", async () => {
     const rpc = new ZCodeFixture();
     rpc.models[0].reasoning = { levels: [{ value: "low" }, { value: "high" }, { value: "max" }, { value: "high" }, { value: "unknown" }], defaultLevel: "max" };
-    const client = new ZCodeClient(rpc);
+    const client = new ZCodeClient(rpc, { readMany: async () => new Map() });
     await client.read("sess_native");
     expect(await client.listModels()).toMatchObject([{ reasoningEfforts: ["low", "high", "max"] }]);
     await collect(client.run("sess_native", "request", undefined, { model: { providerID: "zcode-native", id: "native-model" } }));
@@ -534,7 +534,7 @@ describe("ZCode native NDJSON adapter", () => {
   it("keeps an explicit effort instead of the native model default", async () => {
     const rpc = new ZCodeFixture();
     rpc.models[0].reasoning = { levels: [{ value: "low" }, { value: "max" }], defaultLevel: "max" };
-    const client = new ZCodeClient(rpc);
+    const client = new ZCodeClient(rpc, { readMany: async () => new Map() });
     await collect(client.run("sess_native", "request", undefined, { model: { providerID: "zcode-native", id: "native-model" }, reasoningEffort: "low" }));
     expect(rpc.calls.find(call => call.method === "session/send")?.params).toMatchObject({ modelSelection: { options: { reasoningLevel: "low" } } });
   });
@@ -542,7 +542,7 @@ describe("ZCode native NDJSON adapter", () => {
   it.each(["unknown", "max"])("does not invent an unadvertised native default %s", defaultLevel => {
     const rpc = new ZCodeFixture();
     rpc.models[0].reasoning = { levels: [{ value: "high" }], defaultLevel };
-    const client = new ZCodeClient(rpc);
+    const client = new ZCodeClient(rpc, { readMany: async () => new Map() });
     return collect(client.run("sess_native", "request", undefined, { model: { providerID: "zcode-native", id: "native-model" } })).then(() => {
       expect(rpc.calls.find(call => call.method === "session/send")?.params.modelSelection).toEqual({ providerId: "zcode-native", modelId: "native-model" });
     });
@@ -552,26 +552,26 @@ describe("ZCode native NDJSON adapter", () => {
     const rpc = new ZCodeFixture();
     rpc.models[0].reasoning = { levels: [{ value: "max" }], defaultLevel: "max" };
     rpc.models.push({ ref: { providerId: "other-native", modelId: "native-model" }, reasoning: { levels: [{ value: "low" }], defaultLevel: "low" } });
-    const client = new ZCodeClient(rpc);
+    const client = new ZCodeClient(rpc, { readMany: async () => new Map() });
     await collect(client.run("sess_native", "request", undefined, { model: { providerID: "other-native", id: "native-model" } }));
     expect(rpc.calls.find(call => call.method === "session/send")?.params).toMatchObject({ modelSelection: { providerId: "other-native", options: { reasoningLevel: "low" } } });
   });
 
   it("does not resume a foreign active writer to discover native models", async () => {
     const rpc = new ZCodeFixture(); rpc.session.status = "running"; rpc.models = [];
-    const client = new ZCodeClient(rpc);
+    const client = new ZCodeClient(rpc, { readMany: async () => new Map() });
     expect(await client.listModels()).toEqual([]);
     expect(rpc.calls.some(call => call.method === "session/resume")).toBe(false);
   });
 
   it("preserves actual native configuration failures instead of reporting acceptance as success", async () => {
-    const rpc = new ZCodeFixture(); const client = new ZCodeClient(rpc);
+    const rpc = new ZCodeFixture(); const client = new ZCodeClient(rpc, { readMany: async () => new Map() });
     rpc.prompt = async () => rpc.emit("turn.failed", { error: { code: "CONFIGURATION_ERROR", message: "Select a model before continuing" } });
     expect(await collect(client.run("sess_native", "request"))).toEqual([{ type: "error", code: "CONFIGURATION_ERROR", message: "Select a model before continuing" }]);
   });
 
   it("waits for explicit permission selection and returns the native decision payload", async () => {
-    const rpc = new ZCodeFixture(); const client = new ZCodeClient(rpc);
+    const rpc = new ZCodeFixture(); const client = new ZCodeClient(rpc, { readMany: async () => new Map() });
     let decision: unknown;
     rpc.prompt = async () => {
       decision = await rpc.handler("interaction/requestPermission", { sessionId: "sess_native", toolName: "Write", reason: "Edit file", options: [{ optionId: "allow", name: "Allow once", response: { decision: "allow" } }, { optionId: "deny", name: "Deny", response: { decision: "deny", reason: "Rejected" } }] });
@@ -588,7 +588,7 @@ describe("ZCode native NDJSON adapter", () => {
   });
 
   it("maps native user questions without enabling native automatic resolution", async () => {
-    const rpc = new ZCodeFixture(); const client = new ZCodeClient(rpc);
+    const rpc = new ZCodeFixture(); const client = new ZCodeClient(rpc, { readMany: async () => new Map() });
     let answer: unknown;
     rpc.prompt = async () => {
       answer = await rpc.handler("interaction/requestUserInput", { sessionId: "sess_native", questions: [{ question: "Choose branch", options: [{ value: "main", label: "Main" }, { value: "feature", label: "Feature" }] }] });
@@ -603,7 +603,7 @@ describe("ZCode native NDJSON adapter", () => {
   });
 
   it("coalesces forty native reannouncements and reuses the reply after answering", async () => {
-    const rpc = new ZCodeFixture(); const client = new ZCodeClient(rpc);
+    const rpc = new ZCodeFixture(); const client = new ZCodeClient(rpc, { readMany: async () => new Map() });
     const params = { sessionId: "sess_native", requestId: "perm-question", toolCallId: "call-question", toolName: "AskUserQuestion",
       questions: [{ question: "强制改密，如何处理？", options: [{ value: "pause", label: "暂停" }] }] };
     let replies: unknown[] = [];
@@ -633,7 +633,7 @@ describe("ZCode native NDJSON adapter", () => {
   });
 
   it("cancels every waiter for a reannounced request when the run is stopped", async () => {
-    const rpc = new ZCodeFixture(); const client = new ZCodeClient(rpc);
+    const rpc = new ZCodeFixture(); const client = new ZCodeClient(rpc, { readMany: async () => new Map() });
     let replies: unknown[] = [];
     const params = { sessionId: "sess_native", requestId: "perm-question", questions: [{ question: "Continue?", options: [] }] };
     rpc.prompt = async () => { replies = await Promise.all([rpc.handler("interaction/requestUserInput", params), rpc.handler("interaction/requestUserInput", params)]); };
@@ -650,7 +650,7 @@ describe("ZCode native NDJSON adapter", () => {
   });
 
   it("renders three native questions and aggregates single-select and multi-select replies once", async () => {
-    const rpc = new ZCodeFixture(); const client = new ZCodeClient(rpc);
+    const rpc = new ZCodeFixture(); const client = new ZCodeClient(rpc, { readMany: async () => new Map() });
     const params = { sessionId: "sess_native", requestId: "multi-question", questions: [
       { question: "你想要的使用形态是什么？", options: [{ value: "digest", label: "摘要" }, { value: "both", label: "两者都要" }] },
       { question: "定时任务跑在哪里？", options: [{ value: "actions", label: "GitHub Actions" }] },
@@ -685,7 +685,7 @@ describe("ZCode native NDJSON adapter", () => {
   });
 
   it("cancels the whole native form when a run stops after a partial answer", async () => {
-    const rpc = new ZCodeFixture(); const client = new ZCodeClient(rpc);
+    const rpc = new ZCodeFixture(); const client = new ZCodeClient(rpc, { readMany: async () => new Map() });
     let reply: unknown;
     rpc.prompt = async () => { reply = await rpc.handler("interaction/requestUserInput", { sessionId: "sess_native", requestId: "multi-question", questions: [
       { question: "First?", options: [] }, { question: "Second?", options: [] },
@@ -705,7 +705,7 @@ describe("ZCode native NDJSON adapter", () => {
   });
 
   it("preserves multi-select and maps selected indices to native values", async () => {
-    const rpc = new ZCodeFixture(); const client = new ZCodeClient(rpc);
+    const rpc = new ZCodeFixture(); const client = new ZCodeClient(rpc, { readMany: async () => new Map() });
     let reply: unknown;
     rpc.prompt = async () => {
       reply = await rpc.handler("interaction/requestUserInput", { sessionId: "sess_native", requestId: "perm-question", questions: [{
@@ -724,7 +724,7 @@ describe("ZCode native NDJSON adapter", () => {
   });
 
   it("declines native account-header requests with the ZCode protocol result, without echoing credentials", async () => {
-    const rpc = new ZCodeFixture(); const client = new ZCodeClient(rpc);
+    const rpc = new ZCodeFixture(); const client = new ZCodeClient(rpc, { readMany: async () => new Map() });
     const result = await rpc.handler("interaction/requestProviderRuntimeHeaders", {
       sessionId: "sess_native", requestId: "native-account-request", privateContext: "must-not-be-reflected",
     });
@@ -738,7 +738,7 @@ describe("ZCode native NDJSON adapter", () => {
   });
 
   it("keeps a missing native account bridge a failed turn, not an approval or successful response", async () => {
-    const rpc = new ZCodeFixture(); const client = new ZCodeClient(rpc);
+    const rpc = new ZCodeFixture(); const client = new ZCodeClient(rpc, { readMany: async () => new Map() });
     rpc.prompt = async () => {
       const result = await rpc.handler("interaction/requestProviderRuntimeHeaders", { sessionId: "sess_native" }) as { headersApplied: boolean; errorMessage: string };
       rpc.emit("turn.failed", { error: { code: "MODEL_CREDENTIALS_UNAVAILABLE", message: result.errorMessage } });
@@ -750,7 +750,7 @@ describe("ZCode native NDJSON adapter", () => {
   });
 
   it("stops the native session and emits abort rather than done", async () => {
-    const rpc = new ZCodeFixture(); const client = new ZCodeClient(rpc);
+    const rpc = new ZCodeFixture(); const client = new ZCodeClient(rpc, { readMany: async () => new Map() });
     rpc.prompt = async () => rpc.emit("model.streaming", { kind: "text_delta", delta: "partial" });
     const iterator = client.run("sess_native", "long turn")[Symbol.asyncIterator]();
     expect((await iterator.next()).value.type).toBe("text_chunk"); await client.abort("sess_native");
@@ -760,7 +760,7 @@ describe("ZCode native NDJSON adapter", () => {
   });
 
   it("does not reuse fallback reasoning IDs across turns without native part or turn IDs", async () => {
-    const rpc = new ZCodeFixture(); const client = new ZCodeClient(rpc);
+    const rpc = new ZCodeFixture(); const client = new ZCodeClient(rpc, { readMany: async () => new Map() });
     rpc.prompt = async () => {
       rpc.listener("session/event", { sessionId: "sess_native", seq: ++rpc.sequence, type: "model.streaming", payload: { kind: "reasoning_delta", delta: "Check first" } });
       rpc.emit("model.streaming", { kind: "text_delta", delta: "Answer" });

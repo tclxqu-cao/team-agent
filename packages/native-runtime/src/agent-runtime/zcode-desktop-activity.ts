@@ -9,7 +9,7 @@ export interface ZCodeActivityReader {
 }
 
 interface Turn { id: string; timestamp: number; running: boolean }
-interface DeliveredTurn extends Turn { pid: number }
+interface HostTurn extends Turn { pid: number }
 interface Owner { pid: number; timestamp: number }
 interface RuntimeHost extends Owner { cwd: string }
 interface Cursor {
@@ -26,6 +26,7 @@ const CHUNK_BYTES = 64 * 1024;
 const MAX_LINE_BYTES = 128 * 1024;
 const PROCESS_STARTED = "ZCode agent process started ";
 const DELIVERY_ACKNOWLEDGED = "event delivery acknowledged ";
+const DELIVERY_SKIPPED = "event delivery skipped ";
 const RUNTIME_HEADERS_REQUESTED = "收到 ZCode provider runtime headers 请求 ";
 const TURN_EVENTS = new Set(["turn.started", "turn.completed", "turn.failed"]);
 
@@ -41,7 +42,7 @@ export class ZCodeDesktopActivityReader implements ZCodeActivityReader {
   private readonly alive: (pid: number) => boolean;
   private readonly cursors = new Map<string, Cursor>();
   private readonly turns = new Map<string, Turn>();
-  private readonly deliveredTurns = new Map<string, DeliveredTurn>();
+  private readonly hostTurns = new Map<string, Map<string, HostTurn>>();
   private readonly runtimeHosts = new Map<string, Map<string, RuntimeHost>>();
   private readonly owners = new Map<string, Map<number, Owner>>();
   private pending: Promise<void> | undefined;
@@ -67,12 +68,11 @@ export class ZCodeDesktopActivityReader implements ZCodeActivityReader {
         const turn = this.turns.get(session.id);
         if (!turn) continue;
         if (!turn.running) { result.set(session.id, false); continue; }
-        const delivered = this.deliveredTurns.get(session.id);
-        // Current desktop hosts acknowledge an exact session/turn rather than
-        // logging a workspace-owned agent process. Bind its inner host PID,
-        // never the outer Electron PID or an unrelated live workspace.
-        if (delivered?.id === turn.id) {
-          result.set(session.id, delivered.running && isAlive(delivered.pid));
+        const host = this.hostTurns.get(session.id)?.get(turn.id);
+        // Local lifecycle emission identifies the host even when optional remote
+        // delivery lacks credentials. Bind the exact native turn and inner PID.
+        if (host && host.timestamp >= turn.timestamp) {
+          result.set(session.id, host.running && isAlive(host.pid));
           continue;
         }
         const cwd = normalizeAgentWorkspacePath(session.cwd);
@@ -99,7 +99,7 @@ export class ZCodeDesktopActivityReader implements ZCodeActivityReader {
   }
 
   private reset(): void {
-    this.cursors.clear(); this.turns.clear(); this.deliveredTurns.clear(); this.runtimeHosts.clear(); this.owners.clear();
+    this.cursors.clear(); this.turns.clear(); this.hostTurns.clear(); this.runtimeHosts.clear(); this.owners.clear();
   }
 
   private async files(directory: string, kind: LogFile["kind"], pattern: RegExp): Promise<LogFile[]> {
@@ -127,6 +127,13 @@ export class ZCodeDesktopActivityReader implements ZCodeActivityReader {
         || (cursor.offset === file.size && cursor.modified !== file.modified));
     })) this.reset();
     for (const file of files) await this.read(file);
+    for (const [sessionId, hosts] of this.hostTurns) {
+      const turn = this.turns.get(sessionId);
+      for (const [id, host] of hosts) {
+        if (turn && id !== turn.id && host.timestamp < turn.timestamp) hosts.delete(id);
+      }
+      if (!hosts.size) this.hostTurns.delete(sessionId);
+    }
     for (const [sessionId, hosts] of this.runtimeHosts) {
       const turn = this.turns.get(sessionId);
       for (const [id, host] of hosts) {
@@ -176,8 +183,10 @@ export class ZCodeDesktopActivityReader implements ZCodeActivityReader {
   private line(line: string, kind: LogFile["kind"]): void {
     try {
       if (kind === "desktop") {
-        const deliveryIndex = line.indexOf(DELIVERY_ACKNOWLEDGED);
-        if (deliveryIndex >= 0) { this.delivery(line, deliveryIndex); return; }
+        for (const marker of [DELIVERY_ACKNOWLEDGED, DELIVERY_SKIPPED]) {
+          const index = line.indexOf(marker);
+          if (index >= 0) { this.delivery(line, index, marker); return; }
+        }
         const requestIndex = line.indexOf(RUNTIME_HEADERS_REQUESTED);
         if (requestIndex >= 0) { this.runtimeRequest(line, requestIndex); return; }
         const index = line.indexOf(PROCESS_STARTED);
@@ -227,19 +236,22 @@ export class ZCodeDesktopActivityReader implements ZCodeActivityReader {
     this.runtimeHosts.set(record.sessionId, hosts);
   }
 
-  private delivery(line: string, index: number): void {
+  private delivery(line: string, index: number, marker: string): void {
     const host = /\[host\] \[([^\]]+)\] \[pid:(\d+)\] \[cua-pip-session\]/.exec(line.slice(0, index));
     if (!host) return;
-    const record = JSON.parse(line.slice(index + DELIVERY_ACKNOWLEDGED.length)) as {
-      applied?: unknown; kind?: unknown; sessionId?: unknown; turnId?: unknown;
+    const record = JSON.parse(line.slice(index + marker.length)) as {
+      applied?: unknown; skipReason?: unknown; kind?: unknown; sessionId?: unknown; turnId?: unknown;
     };
     const pid = Number(host[2]);
     const timestamp = Date.parse(host[1].replace(" ", "T"));
-    if (record.applied !== true || (record.kind !== "turn-started" && record.kind !== "turn-ended")
+    const emitted = marker === DELIVERY_ACKNOWLEDGED ? record.applied === true : record.skipReason === "credentials-unavailable";
+    if (!emitted || (record.kind !== "turn-started" && record.kind !== "turn-ended")
       || typeof record.sessionId !== "string" || !record.sessionId || typeof record.turnId !== "string" || !record.turnId
       || !Number.isSafeInteger(pid) || pid < 1 || !Number.isFinite(timestamp)) return;
-    const previous = this.deliveredTurns.get(record.sessionId);
-    if (previous && (timestamp < previous.timestamp || (record.kind === "turn-ended" && previous.id !== record.turnId))) return;
-    this.deliveredTurns.set(record.sessionId, { id: record.turnId, timestamp, pid, running: record.kind === "turn-started" });
+    const hosts = this.hostTurns.get(record.sessionId) ?? new Map<string, HostTurn>();
+    const previous = hosts.get(record.turnId);
+    if (previous && timestamp < previous.timestamp) return;
+    hosts.set(record.turnId, { id: record.turnId, timestamp, pid, running: record.kind === "turn-started" });
+    this.hostTurns.set(record.sessionId, hosts);
   }
 }

@@ -2960,6 +2960,20 @@ describe("NativeRuntimeBrokerHost native paged get", () => {
     history: { nextCursor: null, hasMore: false, pageSize: 2, totalItems: 2, olderCursor: null, newerCursor: null as string | null, kind: "latest" as const },
   });
 
+  it.each(["STALE_SESSION_ANCHOR", "NATIVE_PROTOCOL_ERROR"] as const)(
+    "propagates %s without reading the full transcript",
+    async code => {
+      const runtime = new FakeNativeRuntime();
+      const failure = new RuntimeSessionError("Native page unavailable", code);
+      Object.assign(runtime, { getPagedDetail: vi.fn().mockRejectedValue(failure) });
+      const host = new NativeRuntimeBrokerHost(await directory(), runtime as unknown as UnifiedSessionService);
+      try {
+        await expect(host.get(sessionId, { view: "trace", revision: "old", turnId: "turn-1" })).rejects.toBe(failure);
+        expect(runtime.getUnpaginatedCachePreferences).toEqual([]);
+      } finally { await host.stop(); }
+    },
+  );
+
   it.each(["zcode", "qoder", "workbuddy"] as const)("restores %s questions before advancing the paged stream cursor", async agentType => {
     const runtime = new FakeNativeRuntime();
     const id = encodeUnifiedSessionId(agentType, "native-session");

@@ -20,6 +20,9 @@ const delivery = (options: { pid?: number; sessionId?: string; turnId?: string; 
   + `[${options.time ?? "2026-10-29 11:51:20.100"}] [pid:${options.pid ?? 512}] [cua-pip-session] [cua-pip-session] event delivery acknowledged `
   + JSON.stringify({ kind: options.kind ?? "turn-started", sessionId: options.sessionId ?? session.id,
     turnId: options.turnId ?? "turn-1", applied: options.applied ?? true, reason: "applied" }) + "\n";
+const skippedDelivery = (options: Parameters<typeof delivery>[0] & { skipReason?: string } = {}) =>
+  delivery(options).replace("event delivery acknowledged ", "event delivery skipped ")
+    .replace('"applied":true,"reason":"applied"', `"skipReason":${JSON.stringify(options.skipReason ?? "credentials-unavailable")}`);
 const runtimeHeaders = (options: { pid?: number; sessionId?: string; turnId?: string; cwd?: string; time?: string } = {}) =>
   `[${options.time ?? "2026-10-29 11:51:20.100"}] [info] [pid:910] [main] [host-log] (local-1) [host] `
   + `[${options.time ?? "2026-10-29 11:51:20.100"}] [pid:${options.pid ?? 512}] [zcode-agent-service][trace:example] `
@@ -59,6 +62,63 @@ describe("ZCode desktop turn discovery", () => {
     expect((await reader.readMany([session])).get(session.id)).toBe(true);
     alive.clear(); alive.add(910);
     expect((await reader.readMany([session])).get(session.id)).toBe(false);
+  });
+
+  it("recognizes the execution host when optional event delivery lacks credentials", async () => {
+    const { reader, host, alive } = await fixture();
+    await writeFile(host, skippedDelivery()); alive.clear(); alive.add(512);
+    expect((await reader.readMany([session])).get(session.id)).toBe(true);
+    alive.clear(); alive.add(910);
+    expect((await reader.readMany([session])).get(session.id)).toBe(false);
+  });
+
+  it.each([
+    { sessionId: "other-session" }, { turnId: "other-turn" }, { skipReason: "unrecognized-reason" },
+    { time: "2026-10-29 11:51:19.999" },
+  ])("does not infer running from unrelated or stale skipped delivery (%j)", async options => {
+    const { reader, host, alive } = await fixture();
+    await writeFile(host, skippedDelivery(options)); alive.add(512);
+    expect((await reader.readMany([session])).has(session.id)).toBe(false);
+  });
+
+  it.each(["turn.completed", "turn.failed"])("clears skipped-delivery activity on %s", async terminal => {
+    const { reader, host, log, alive } = await fixture();
+    await writeFile(host, skippedDelivery()); alive.add(512);
+    expect((await reader.readMany([session])).get(session.id)).toBe(true);
+    await appendFile(log, event(terminal, "turn-1", start + 200));
+    expect((await reader.readMany([session])).get(session.id)).toBe(false);
+  });
+
+  it("observes a locally emitted turn end even when delivery is skipped", async () => {
+    const { reader, host, alive } = await fixture();
+    await writeFile(host, skippedDelivery() + runtimeHeaders()); alive.add(512);
+    expect((await reader.readMany([session])).get(session.id)).toBe(true);
+    await appendFile(host, skippedDelivery({ kind: "turn-ended", time: "2026-10-29 11:51:20.200" }));
+    expect((await reader.readMany([session])).get(session.id)).toBe(false);
+  });
+
+  it("requires an inner host PID in skipped delivery records", async () => {
+    const { reader, host, alive } = await fixture();
+    await writeFile(host, skippedDelivery().replace(/\[host\] \[[^\]]+\] \[pid:512\] /, ""));
+    alive.add(910);
+    expect((await reader.readMany([session])).has(session.id)).toBe(false);
+  });
+
+  it("retains the current host when a preceding turn emits a late skipped delivery", async () => {
+    const { reader, host, log, alive } = await fixture();
+    await appendFile(log, event("turn.started", "turn-2", start + 200));
+    await writeFile(host, skippedDelivery({ turnId: "turn-2", time: "2026-10-29 11:51:20.300" })
+      + skippedDelivery({ pid: 513, time: "2026-10-29 11:51:20.400" }));
+    alive.add(512);
+    expect((await reader.readMany([session])).get(session.id)).toBe(true);
+  });
+
+  it("does not carry skipped-delivery ownership into a different turn", async () => {
+    const { reader, host, log, alive } = await fixture();
+    await writeFile(host, skippedDelivery()); alive.add(512);
+    expect((await reader.readMany([session])).get(session.id)).toBe(true);
+    await appendFile(log, event("turn.started", "turn-2", start + 200));
+    expect((await reader.readMany([session])).has(session.id)).toBe(false);
   });
 
   it.each([
@@ -257,10 +317,11 @@ describe("ZCode desktop turn discovery", () => {
     expect((await reader.readMany([session])).size).toBe(0);
   });
 
-  it.each(["legacy", "host", "request"])("projects desktop execution and completion through the client and adapter (%s)", async kind => {
+  it.each(["legacy", "host", "request", "skipped"])("projects desktop execution and completion through the client and adapter (%s)", async kind => {
     const { reader, log, host, alive } = await fixture();
     if (kind === "host") { await writeFile(host, delivery()); alive.clear(); alive.add(512); }
     if (kind === "request") { await writeFile(host, runtimeHeaders()); alive.clear(); alive.add(512); }
+    if (kind === "skipped") { await writeFile(host, skippedDelivery()); alive.clear(); alive.add(512); }
     const row = { sessionId: session.id, title: "VPN 工具聚合免费隧道与界面方案", status: "idle",
       workspace: { workspacePath: session.cwd }, createdAt: start - 1000, updatedAt: start };
     const request = vi.fn<NativeRpcConnection["request"]>(async method => {

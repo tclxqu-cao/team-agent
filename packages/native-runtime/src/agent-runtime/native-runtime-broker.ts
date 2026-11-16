@@ -1649,7 +1649,9 @@ export class NativeRuntimeBrokerHost {
       // cursors, historyIds and anchors. Only tail-inclusive pages merge the
       // retained run — the merge anchors on the run's user message and would
       // append the whole live turn to an older page that lacks it.
-      const native = await this.runtime.getPagedDetail?.(id, query).catch(() => null);
+      // The service returns null when paging is unsupported. Stale cursors and
+      // runtime failures must reach the caller, which can recover its window.
+      const native = await this.runtime.getPagedDetail?.(id, query);
       if (native) {
         const progressiveDelivery = native.history?.delivery === "core"
           || native.history?.delivery === "trace";
