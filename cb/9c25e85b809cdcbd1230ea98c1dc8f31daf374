@@ -1,0 +1,67 @@
+packages/desktop/renderer/lib/run-result.test.ts
+  s_4051421ec36e36::t_db9e134134df86 120-121,123,126-127
+packages/desktop/renderer/components/ReasoningSummary.test.tsx
+  s_4051421ec36e36::t_3507f172849426 9-23
+packages/desktop/renderer/lib/session-execution-summary.ts
+  s_4051421ec36e36::t_db9e134134df86 5,8-9,11
+packages/desktop/renderer/components/ChatView.tsx
+  s_4051421ec36e36::t_db9e134134df86 5106
+packages/desktop/renderer/components/ExecutionTrace.tsx
+  s_4051421ec36e36::t_5d271443ed5d39 5,9,105,116,122,130,132-134,140
+packages/desktop/renderer/components/ChatHistoryStyle.test.ts
+  s_4051421ec36e36::t_db9e134134df86 369
+  s_4051421ec36e36::t_caf7f930ae7848 115,119
+  s_4051421ec36e36::t_8ce0c31ceda430 181
+packages/desktop/renderer/components/SessionExecutionTrace.test.tsx
+  s_4051421ec36e36::t_db9e134134df86 37-38
+  s_4051421ec36e36::t_3507f172849426 4,22-23,39-82
+packages/desktop/renderer/components/CodexExecutionTrace.test.tsx
+  s_4051421ec36e36::t_db9e134134df86 23
+  s_4051421ec36e36::t_caf7f930ae7848 84-85,127,188-190
+packages/desktop/renderer/lib/run-result.ts
+  s_4051421ec36e36::t_db9e134134df86 4,155
+packages/desktop/renderer/lib/tool-call-presentation.ts
+  s_4051421ec36e36::t_d7819133274eb3 23
+  s_4051421ec36e36::t_5d271443ed5d39 11-22,24-27,34-35,73-74,96-97
+packages/desktop/renderer/styles/global.css
+  s_4051421ec36e36::t_d7819133274eb3 3391-3392,3400,3406-3409,3413-3414,3507-3508,3514,3516-3518,3533,3538-3539,3541-3566,3571-3584
+  s_4051421ec36e36::t_8ce0c31ceda430 3393,3502,3509
+  s_4051421ec36e36::t_82fff4656f2a9e 3396,3540
+  s_4051421ec36e36::t_4733397feb9f69 3567-3570
+  s_86279cc234ddf5::t_1b005cb068a202 3585
+packages/desktop/renderer/lib/codex-execution-summary.test.ts
+  s_4051421ec36e36::t_db9e134134df86 38-39,41,44-47
+packages/desktop/renderer/components/RunResultSummary.test.tsx
+  s_4051421ec36e36::t_db9e134134df86 17,21-22,27,31-34
+packages/desktop/renderer/components/ToolCallCard.tsx
+  s_4051421ec36e36::t_5d271443ed5d39 6,21,59,68,820,824,830-831,834,837,843,847,849,852-853
+  s_4051421ec36e36::t_d7819133274eb3 825,832
+  s_4051421ec36e36::t_8ce0c31ceda430 829,848
+packages/desktop/renderer/components/ReasoningSummary.tsx
+  s_4051421ec36e36::t_5d271443ed5d39 11,14,40-41,43-44
+  s_4051421ec36e36::t_03e5be4dd83bd9 21,27,34-38,42,67
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cb9c25e85b809cdcbd1230ea98c1dc8f31daf374",
+  "prompts": {},
+  "sessions": {
+    "s_4051421ec36e36": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cac9-1b4d-7871-932c-4020e9ae7bd4",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_86279cc234ddf5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1e353-8a55-7690-be43-eed63921cb7f",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
