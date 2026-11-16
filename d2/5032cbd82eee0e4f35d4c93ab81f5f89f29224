@@ -1,0 +1,62 @@
+packages/desktop/renderer/components/ChatHistoryStyle.test.ts
+  s_4051421ec36e36::t_e41512d6be3fc6 157,165-166
+packages/desktop/renderer/lib/tool-call-groups.ts
+  s_4051421ec36e36::t_670a5d455b12e2 19-33,43,45
+packages/desktop/renderer/components/ExecutionTrace.tsx
+  s_4051421ec36e36::t_670a5d455b12e2 5,103,114,121,123,125,131
+packages/desktop/renderer/components/ToolCallCard.tsx
+  s_4051421ec36e36::t_b2717d627d0f67 186,189-190,198
+  s_4051421ec36e36::t_eee1b3f2ec94ff 10,22,38,62,207-209,333-336,391-392,443-444,637,639,831-851,863,893-897,926,929,931,933-934
+packages/desktop/renderer/styles/global.css
+  s_4051421ec36e36::t_b7775a6f412429 3547-3551,3556,3560,3571,3575,3579,3582,3586-3632
+packages/desktop/renderer/lib/tool-call-presentation.ts
+  s_4051421ec36e36::t_670a5d455b12e2 59-60,100,108-111,122-126
+  s_2f0bd1e1df8d1b::t_95a90ef613d4df 127
+packages/desktop/renderer/components/ToolCallCard.test.tsx
+  s_4051421ec36e36::t_176243e10656f8 125
+  s_4051421ec36e36::t_3a39dec21902f9 5,22-33
+packages/desktop/renderer/components/ChatView.tsx
+  s_4051421ec36e36::t_670a5d455b12e2 437,4980,4983
+packages/desktop/renderer/lib/tool-call-groups.test.ts
+  s_4051421ec36e36::t_3a39dec21902f9 128-151
+packages/desktop/renderer/components/RunResultSummary.tsx
+  s_4051421ec36e36::t_81859b5b56e861 7
+  s_4051421ec36e36::t_8b8d7ee1d13c0d 3,8
+packages/desktop/renderer/components/SessionExecutionTrace.test.tsx
+  s_4051421ec36e36::t_3a39dec21902f9 41,58,61-63,73-89
+  s_dcf1fa4b873a9f::t_7bb254299e75fd 90-91
+packages/desktop/renderer/components/RunResultSummary.test.tsx
+  s_4051421ec36e36::t_8b8d7ee1d13c0d 12-15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d25032cbd82eee0e4f35d4c93ab81f5f89f29224",
+  "prompts": {},
+  "sessions": {
+    "s_2f0bd1e1df8d1b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1c549-c68b-7f23-9bcd-3dde8c92ca0e",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_4051421ec36e36": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cac9-1b4d-7871-932c-4020e9ae7bd4",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_dcf1fa4b873a9f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1e32c-f6fd-7102-aac5-cca1fe23d55b",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
