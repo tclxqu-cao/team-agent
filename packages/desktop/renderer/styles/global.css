@@ -1410,6 +1410,23 @@ select:focus {
   opacity: 0.72;
 }
 
+.sidebar-cache-state--action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.sidebar-cache-state--action button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .sidebar-load-error {
   margin: 4px 6px;
   padding: 7px 8px;

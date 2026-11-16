@@ -1239,10 +1239,9 @@ export default function App() {
         }
       }
     } catch (error) {
-      if (activeAgentRef.current === agentType) {
-        if (projectsRef.current.length > 0) setWorkspaceStale(true);
-        setWorkspaceError(error instanceof Error ? error.message : "目录加载失败");
-      }
+      if (activeAgentRef.current !== agentType || workspaceRequestIds.current.get(agentType) !== requestId) return;
+      if (projectsRef.current.length > 0) setWorkspaceStale(true);
+      setWorkspaceError(error instanceof Error ? error.message : "目录加载失败");
     } finally {
       if (activeAgentRef.current === agentType && workspaceRequestIds.current.get(agentType) === requestId) {
         setWorkspaceLoading(false);
@@ -2039,7 +2038,7 @@ export default function App() {
             </button>
             <SidebarRefreshButton
               loading={workspaceLoading}
-              error={workspaceError}
+              error={projects.length > 0 ? null : workspaceError}
               onRefresh={() => void loadProjects(activeAgent, { refresh: true })}
             />
             <button
@@ -2284,13 +2283,21 @@ export default function App() {
                 暂无目录
               </div>
             )}
+            {workspaceError && projects.length > 0 && (
+              <div className="sidebar-cache-state sidebar-cache-state--action" role="status" title={workspaceError}>
+                <span>当前显示缓存目录</span>
+                {!workspaceLoading && (
+                  <button type="button" onClick={() => void loadProjects(activeAgent, { refresh: true })}>重试</button>
+                )}
+              </div>
+            )}
             {workspaceStale && !workspaceError && (
               <div className="sidebar-cache-state">当前显示缓存目录</div>
             )}
-            {workspaceError && (
+            {workspaceError && projects.length === 0 && (
               <div className="sidebar-load-error" title={workspaceError}>
-                <span>{projects.length > 0 ? "目录刷新失败，当前显示缓存" : "目录加载失败"}</span>
-                <button type="button" onClick={() => void loadProjects(activeAgent, { refresh: projects.length > 0 })}>重试</button>
+                <span>目录加载失败</span>
+                <button type="button" onClick={() => void loadProjects(activeAgent, { refresh: false })}>重试</button>
               </div>
             )}
           </div>
