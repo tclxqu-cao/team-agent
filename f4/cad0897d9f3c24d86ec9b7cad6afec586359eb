@@ -1,0 +1,44 @@
+packages/desktop/renderer/components/ChatHistoryStyle.test.ts
+  s_4051421ec36e36::t_340bf560459ccd 55-56,63,90-92
+packages/desktop/renderer/styles/global.css
+  s_4051421ec36e36::t_bc13587805fdca 3677-3704
+packages/desktop/renderer/components/SessionRunActivity.tsx
+  s_4051421ec36e36::t_ccb169dd7cad72 2,4,13-16
+packages/desktop/renderer/components/ChatView.tsx
+  s_4051421ec36e36::t_bc13587805fdca 447,4613,4643,4988,5212
+  s_4051421ec36e36::t_340bf560459ccd 1131-1134
+packages/desktop/renderer/components/CodexExecutionTrace.test.tsx
+  s_4051421ec36e36::t_b67b67fad80d93 209
+  s_4051421ec36e36::t_340bf560459ccd 43,46
+packages/desktop/renderer/components/CodexExecutionTrace.tsx
+  s_4051421ec36e36::t_ccb169dd7cad72 15,30,47,176,185-186
+packages/desktop/renderer/components/SessionRunActivity.test.tsx
+  s_4051421ec36e36::t_340bf560459ccd 7,9,12-16,19,21,25-26,31,34-45,50
+packages/desktop/renderer/components/SessionExecutionTrace.test.tsx
+  s_4051421ec36e36::t_340bf560459ccd 23,94-95,97,102-105
+packages/desktop/renderer/components/ExecutionTrace.tsx
+  s_4051421ec36e36::t_ccb169dd7cad72 3,5,58,74-86,92-93,95,107,141-143,145-147,155,158
+packages/desktop/renderer/lib/session-execution-trace.ts
+  s_4051421ec36e36::t_ccb169dd7cad72 13-25
+packages/desktop/renderer/components/SessionExecutionTrace.tsx
+  s_4051421ec36e36::t_ccb169dd7cad72 8,18,28
+packages/desktop/renderer/lib/session-execution-trace.test.ts
+  s_4051421ec36e36::t_688adaaf650b29 3,17-43
+  s_4051421ec36e36::t_5aaa2aa14a8690 44
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f4cad0897d9f3c24d86ec9b7cad6afec586359eb",
+  "prompts": {},
+  "sessions": {
+    "s_4051421ec36e36": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cac9-1b4d-7871-932c-4020e9ae7bd4",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
