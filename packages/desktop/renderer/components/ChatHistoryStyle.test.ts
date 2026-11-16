@@ -114,11 +114,11 @@ describe("shared Codex-style message history", () => {
 
   it("folds tool details in shared traces and adjacent actions in fallback rendering", () => {
     expect(chatView).toMatch(/coalesceAdjacentToolCallMessages\(\s*presentQuestionAnswers\(\s*hideQueuedGoalMessages\(/);
-    expect(chatView).toContain("groupAdjacentToolCallEntries(toolCallEntries)");
+    expect(chatView).toContain("latestExecutionSummary([chatMsg])");
     expect(chatView).not.toContain("renderToolCallsIndividually");
-    expect(executionTrace).toContain('variant="activity"');
-    expect(executionTrace).toContain("<ToolCallGroup");
-    expect(chatView).toContain("<ToolCallGroup");
+    expect(executionTrace).toContain("executionActivityRows(messages)");
+    expect(executionTrace).toContain("<ExecutionActivityBlock");
+    expect(chatView).toContain("<ExecutionActivityBlock");
     expect(toolCallCard).toContain('className="tool-call-group__summary"');
     expect(toolCallCard).toContain("aria-expanded={expanded}");
     expect(toolCallCard).toContain('className="tool-call-group__items"');

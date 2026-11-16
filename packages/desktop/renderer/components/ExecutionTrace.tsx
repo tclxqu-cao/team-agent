@@ -1,11 +1,12 @@
 import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
 import type { NativeSubagentActivity, RuntimeProgress, SessionToolResultRef } from "@agent/core";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, LoaderCircle } from "lucide-react";
 import type { ChatMessage } from "../stores/agentStore";
-import { coalesceAdjacentToolCallMessages, groupAdjacentToolCallEntries } from "../lib/tool-call-groups";
+import { executionActivityRows } from "../lib/execution-activity-blocks";
+import { hasToolCallResult } from "../lib/tool-call-status";
 import { toolRuntimeProgress } from "../lib/native-runtime-progress";
 import { formatSessionWorkDuration } from "../lib/session-execution-summary";
-import { ToolCallGroup } from "./ToolCallCard";
+import { ToolCallActivity, type ToolCallGroupItem } from "./ToolCallCard";
 
 export function useExecutionTraceDisclosure(scope: string, isRunning: boolean) {
   const [expanded, setExpanded] = useState(isRunning);
@@ -64,6 +65,33 @@ interface ExecutionTraceContentProps {
   onLoadResult: (ref: SessionToolResultRef) => Promise<void>;
 }
 
+interface ExecutionActivityBlockProps extends Omit<ExecutionTraceContentProps, "messages" | "renderContent" | "runtimeProgress" | "nativeSubagents"> {
+  id: string;
+  summary?: string;
+  items: ToolCallGroupItem[];
+}
+
+export function ExecutionActivityBlock({ id, summary = "执行操作", items, ...handlers }: ExecutionActivityBlockProps) {
+  const [expanded, setExpanded] = useState(false);
+  const contentId = useId();
+  const pending = items.some(({ toolCall }) => !hasToolCallResult(toolCall));
+  const errors = items.filter(({ toolCall }) => toolCall.isError).length;
+  return <div className="execution-activity-block" data-activity-id={id}>
+    <button type="button" className="execution-activity-block__summary"
+      aria-expanded={expanded} aria-controls={contentId} aria-busy={pending || undefined}
+      aria-label={`${summary}，${items.length} 项，${expanded ? "收起" : "展开"}`} title={summary}
+      onClick={() => setExpanded((value) => !value)}>
+      <span className="execution-activity-block__preview">{summary}</span>
+      {pending && <LoaderCircle size={12} className="animate-spin" aria-hidden="true" />}
+      {errors > 0 && <span className="execution-activity-block__error">{errors} 项失败</span>}
+      <ChevronRight size={12} className="execution-activity-block__chevron" aria-hidden="true" />
+    </button>
+    {expanded && <div className="execution-activity-block__items" id={contentId}>
+      {items.map((item) => <ToolCallActivity key={item.toolCall.id} {...item} {...handlers} />)}
+    </div>}
+  </div>;
+}
+
 export function ExecutionTraceContent({
   messages,
   renderContent,
@@ -76,12 +104,9 @@ export function ExecutionTraceContent({
 }: ExecutionTraceContentProps) {
   const rows = useMemo(() => {
     const previousReadResults = new Map<string, string>();
-    const visibleMessages = messages.filter((message) => (
-      message.toolCalls?.length
-      || (message.presentation?.agentMessagePhase === "commentary" && message.content.trim())
-    ));
-    return coalesceAdjacentToolCallMessages(visibleMessages).map((message) => {
-      const toolEntries = (message.toolCalls ?? []).map((toolCall) => {
+    return executionActivityRows(messages).map((row) => {
+      if (row.kind === "commentary") return row;
+      const items = row.toolCalls.map((toolCall) => {
         const filePath = typeof toolCall.arguments.file_path === "string"
           ? toolCall.arguments.file_path
           : undefined;
@@ -98,10 +123,7 @@ export function ExecutionTraceContent({
           nativeSubagent: nativeSubagents[toolCall.id],
         };
       });
-      return {
-        message,
-        toolGroups: groupAdjacentToolCallEntries(toolEntries),
-      };
+      return { ...row, items };
     });
   }, [messages, nativeSubagents, runtimeProgress]);
 
@@ -111,26 +133,12 @@ export function ExecutionTraceContent({
 
   return (
     <div className="execution-trace__timeline">
-      {rows.map(({ message, toolGroups }) => (
-        <div key={message.id} className="execution-trace__item">
-          {message.presentation?.agentMessagePhase === "commentary" && message.content.trim() ? (
-            <div className="execution-trace__commentary">
-              {renderContent(message.content.trim())}
-            </div>
-          ) : null}
-          {toolGroups.map((group) => (
-            <ToolCallGroup
-              key={`group-${group.items[0].toolCall.id}`}
-              variant="activity"
-              items={group.items}
-              onSelectSession={onSelectSession}
-              workspacePath={workspacePath}
-              onOpenArtifact={onOpenArtifact}
-              onLoadResult={onLoadResult}
-            />
-          ))}
-        </div>
-      ))}
+      {rows.map((row) => <div key={`${row.kind}:${row.id}`} className="execution-trace__item">
+        {row.kind === "commentary"
+          ? <div className="execution-trace__commentary">{renderContent(row.content)}</div>
+          : <ExecutionActivityBlock id={row.id} summary={row.summary} items={row.items}
+              onSelectSession={onSelectSession} workspacePath={workspacePath} onOpenArtifact={onOpenArtifact} onLoadResult={onLoadResult} />}
+      </div>)}
     </div>
   );
 }

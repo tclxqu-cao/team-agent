@@ -21,6 +21,13 @@ function toolMessage(id: string, call: ChatToolCall): ChatMessage {
 }
 
 describe("tool call grouping", () => {
+  it("retains latest reasoning metadata for summary headers when requested", () => {
+    const messages = [toolMessage("one", toolCall("one", "shell")),
+      { id: "reason", role: "assistant" as const, content: "", timestamp: 1,
+        presentation: { reasoning: [{ sectionIndex: 0, text: "Latest summary" }] } },
+      toolMessage("two", toolCall("two", "Read"))];
+    expect(coalesceAdjacentToolCallMessages(messages, { preserveReasoning: true })).toEqual(messages);
+  });
   it("coalesces adjacent tool-only assistant messages", () => {
     const messages = [
       toolMessage("message-1", toolCall("call-1", "shell")),

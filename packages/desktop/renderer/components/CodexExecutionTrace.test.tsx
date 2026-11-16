@@ -123,7 +123,7 @@ describe("CodexExecutionTrace", () => {
       onLoadResult: vi.fn(),
     }));
 
-    expect(html.match(/class="tool-call-group"/g)).toHaveLength(1);
+    expect(html.match(/class="execution-activity-block"/g)).toHaveLength(1);
     expect(html).toContain("运行了命令");
     expect(html).toContain("2 项");
     expect(html).not.toContain("execution-trace__load");

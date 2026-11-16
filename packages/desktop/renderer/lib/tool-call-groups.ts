@@ -37,12 +37,17 @@ function isToolOnlyAssistant(message: ChatMessage): boolean {
   return isAssistantWithToolCalls(message) && message.content.trim().length === 0;
 }
 
-export function coalesceAdjacentToolCallMessages(messages: readonly ChatMessage[]): ChatMessage[] {
+export function coalesceAdjacentToolCallMessages(
+  messages: readonly ChatMessage[],
+  options: { preserveReasoning?: boolean } = {},
+): ChatMessage[] {
   const result: ChatMessage[] = [];
   for (const message of messages) {
-    if (isHiddenReasoning(message)) continue;
+    if (!options.preserveReasoning && isHiddenReasoning(message)) continue;
     const previous = result[result.length - 1];
-    if (previous && isAssistantWithToolCalls(previous) && isToolOnlyAssistant(message) && sameTraceScope(previous, message)) {
+    const keepsSummary = options.preserveReasoning
+      && (previous?.presentation?.reasoning?.length || message.presentation?.reasoning?.length);
+    if (!keepsSummary && previous && isAssistantWithToolCalls(previous) && isToolOnlyAssistant(message) && sameTraceScope(previous, message)) {
       result[result.length - 1] = {
         ...previous,
         toolCalls: [...previous.toolCalls!, ...message.toolCalls!],

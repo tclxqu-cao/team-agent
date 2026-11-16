@@ -121,7 +121,14 @@ export function toolPreview(rawName: string, args: Record<string, unknown>): str
 }
 
 export function toolActivityPreview(name: string, args: Record<string, unknown>): string {
-  return toolFamily(name) === "command"
-    ? truncateLine(String(args.command ?? args.cmd ?? name), 240)
-    : toolPreview(name, args) || name;
+  if (toolFamily(name) === "command") return truncateLine(String(args.command ?? args.cmd ?? name), 240);
+  const preview = toolPreview(name, args);
+  if (!preview) return name;
+  const canonical = canonicalToolName(name);
+  if (READ_TOOLS.has(canonical)) return `已读取 ${preview}`;
+  if (WRITE_TOOLS.has(canonical)) return `已写入 ${preview}`;
+  if (EDIT_TOOLS.has(canonical)) return `已修改 ${preview}`;
+  if (canonical === "Glob" || canonical === "glob_search") return `已搜索文件 ${preview}`;
+  if (canonical === "Grep" || canonical === "grep_search") return `已搜索“${preview}”`;
+  return preview;
 }

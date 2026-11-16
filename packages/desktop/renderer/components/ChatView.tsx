@@ -434,7 +434,8 @@ export function renderAssistantText(text: string, onOpenArtifact?: (path: string
 }
 
 import { useSettingsStore } from "../stores/settingsStore";
-import { ToolCallGroup } from "./ToolCallCard";
+import { ExecutionActivityBlock } from "./ExecutionTrace";
+import { latestExecutionSummary } from "../lib/execution-activity-blocks";
 import AskUserCard from "./AskUserCard";
 import ContextUsageBar from "./ContextUsageBar";
 import HarnessModeControl from "./HarnessModeControl";
@@ -458,7 +459,7 @@ import { areToolCallsComplete } from "../lib/tool-call-status";
 import { scheduledMessageContent } from "../lib/scheduled-message";
 import { extractMemoryCitations } from "../lib/memory-citations";
 import { parseRichInlineTokens } from "../lib/markdown-links";
-import { coalesceAdjacentToolCallMessages, groupAdjacentToolCallEntries } from "../lib/tool-call-groups";
+import { coalesceAdjacentToolCallMessages } from "../lib/tool-call-groups";
 import {
   messageActionPolicy,
   validCompletionDurationMs,
@@ -689,7 +690,7 @@ export default function ChatView({
     () => coalesceAdjacentToolCallMessages(presentQuestionAnswers(hideQueuedGoalMessages(
       visibleMessages.filter((message) => !message.isQueued),
       goalState.queued,
-    ), (sessionSummary?.agentType ?? activeAgentType) === "codex")),
+    ), (sessionSummary?.agentType ?? activeAgentType) === "codex"), { preserveReasoning: true }),
     [activeAgentType, sessionSummary?.agentType, goalState.queued, visibleMessages],
   );
   const latestCodexExecutionTurnId = useMemo(
@@ -4789,7 +4790,6 @@ export default function ChatView({
               nativeSubagent: nativeSubagents[toolCall.id],
             };
           });
-          const toolCallGroups = groupAdjacentToolCallEntries(toolCallEntries);
 
           return (
           <div
@@ -4977,17 +4977,17 @@ export default function ChatView({
                     <pre>{chatMsg.presentation.rawContent}</pre>
                   </details>
                 )}
-                {toolCallGroups.map((group) => (
-                  <ToolCallGroup
-                    key={`group-${group.items[0].toolCall.id}`}
-                    variant="activity"
-                    items={group.items}
+                {toolCallEntries.length > 0 && (
+                  <ExecutionActivityBlock
+                    id={toolCallEntries[0].toolCall.id}
+                    summary={latestExecutionSummary([chatMsg])}
+                    items={toolCallEntries}
                     onSelectSession={onSelectSession}
                     workspacePath={workspacePath}
                     onOpenArtifact={onOpenArtifact}
                     onLoadResult={loadToolResult}
                   />
-                ))}
+                )}
                 {/* File change summary — one compact bar after all tool calls */}
                 {(() => {
                   const writes = (msg.toolCalls ?? []).filter(tc => tc.name === "write_file" && tc.result && !tc.isError);

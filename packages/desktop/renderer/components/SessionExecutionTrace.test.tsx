@@ -19,7 +19,7 @@ describe("SessionExecutionTrace", () => {
     const html = render(true);
     expect(html).toContain('data-message-id="session-execution:user:0"');
     expect(html).toContain("核对发送入口");
-    expect(html).toContain("运行了命令");
+    expect(html).toContain("execution-activity-block");
     expect(html).not.toContain("rg sendTurn");
     expect(html).not.toContain("execution-trace__summary");
   });
@@ -38,7 +38,7 @@ describe("SessionExecutionTrace", () => {
     expect(render(false)).not.toContain("秒");
   });
 
-  it("hides reasoning and folds adjacent tools by action while preserving commentary", () => {
+  it("folds mixed operations under the latest summary while preserving commentary", () => {
     const html = renderToStaticMarkup(<ExecutionTraceContent
       messages={[{
         id: "mixed", role: "assistant", content: "配置已经核对完成。", timestamp: 1,
@@ -55,12 +55,11 @@ describe("SessionExecutionTrace", () => {
       }]}
       renderContent={text => text} runtimeProgress={[]} nativeSubagents={{}} onLoadResult={vi.fn()}
     />);
-    expect(html).not.toContain("先核对配置与调用入口。");
+    expect(html).toContain("先核对配置与调用入口。");
     expect(html).toContain("配置已经核对完成。");
-    expect(html).toContain('data-presentation="activity"');
-    expect([...html.matchAll(/class="tool-call-group__label">([^<]+)/g)].map(match => match[1]))
-      .toEqual(["读取了文件", "修改了文件", "运行了命令"]);
-    expect(html.match(/class="tool-call-group"/g)).toHaveLength(3);
+    expect(html.match(/class="execution-activity-block"/g)).toHaveLength(1);
+    expect(html).toContain("4 项");
+    expect(html).not.toContain("tool-call-group");
     expect(html).not.toContain("reasoning-summary__toggle");
     expect(html).not.toContain("tool-call-group__items");
     expect(html).not.toContain("tool-call-group__count");
@@ -83,10 +82,12 @@ describe("SessionExecutionTrace", () => {
         presentation: { agentMessagePhase: "commentary" } },
       tool("three", "Bash"),
     ]} renderContent={text => text} runtimeProgress={[]} nativeSubagents={{}} onLoadResult={vi.fn()} />);
-    expect(html.match(/class="tool-call-group"/g)).toHaveLength(2);
+    expect(html.match(/class="execution-activity-block"/g)).toHaveLength(2);
     expect(html).toContain("2 项");
     expect(html).toContain("接下来继续核对。");
-    expect(html).not.toContain("hidden-");
+    expect(html).toContain('class="execution-activity-block__preview">hidden-two');
+    expect(html).not.toContain("hidden-one");
+    expect(html).not.toContain("reasoning-summary__content");
   });
 
   it("supports single unknown tools and preserves pending and failure states", () => {
