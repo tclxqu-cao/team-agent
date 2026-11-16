@@ -1,0 +1,49 @@
+packages/desktop/renderer/components/ExecutionTrace.tsx
+  s_2f0bd1e1df8d1b::t_8f1827c82b0db1 1-155
+packages/desktop/renderer/components/SessionExecutionTrace.test.tsx
+  s_2f0bd1e1df8d1b::t_80cf8d0ea7f64e 1-38
+packages/desktop/renderer/components/SessionExecutionTrace.tsx
+  s_2f0bd1e1df8d1b::t_5f7761f851d249 1-30
+packages/desktop/renderer/lib/codex-execution-summary.test.ts
+  s_2f0bd1e1df8d1b::t_e7e5c3106d6efe 1-49
+packages/desktop/renderer/lib/codex-execution-summary.ts
+  s_2f0bd1e1df8d1b::t_0ce48bcae5157c 1-18
+packages/desktop/renderer/lib/session-execution-summary.ts
+  s_2f0bd1e1df8d1b::t_df4e80496f6fb8 1-11
+packages/desktop/renderer/lib/session-execution-trace.test.ts
+  s_2f0bd1e1df8d1b::t_2f64df5949add5 1-152
+packages/desktop/renderer/lib/session-execution-trace.ts
+  s_2f0bd1e1df8d1b::t_65a718a0c784d0 1-108
+packages/server/app/api/messaging/route.test.ts
+  s_2f0bd1e1df8d1b::t_5e0e9934e43a84 1-14
+packages/server/app/web/DeferredTabContent.tsx
+  s_2f0bd1e1df8d1b::t_78e5d76ecb0fab 1-10
+packages/server/lib/web-app-cache.mjs
+  s_edbde25212bc94::t_bb33b9c9d93265 1-6
+packages/server/lib/web-app-cache.test.ts
+  s_edbde25212bc94::t_11864b744763c5 1-12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "029aebff4528f409df3159cd74e66535ee961a45",
+  "prompts": {},
+  "sessions": {
+    "s_2f0bd1e1df8d1b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1c549-c68b-7f23-9bcd-3dde8c92ca0e",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_edbde25212bc94": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1e2e0-1124-7ce0-8361-cb2a2dcbdbb8",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
