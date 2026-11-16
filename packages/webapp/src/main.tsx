@@ -1,11 +1,12 @@
 import { isPageActive } from "../../desktop/renderer/lib/page-activity";
 import { installBrowserCompatibility } from "./infrastructure/browser-compatibility";
-import { BrowserLiveHeaderContext } from "@desktop/renderer/components/browser-live-header-context";
+import { BrowserLiveHeaderContext, WebAppHeaderActionsContext } from "@desktop/renderer/components/browser-live-header-context";
 import { SKINS, useUIStore } from "@desktop/renderer/stores/uiStore";
 import RemoteAuthorizationControl from "./presentation/RemoteAuthorizationControl";
+import WebMobilePairingButton from "./presentation/WebMobilePairingButton";
 import { StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
-import { HttpClient } from "./infrastructure/http/http-client";
+import { HttpClient, UnauthorizedError } from "./infrastructure/http/http-client";
 import { installClientErrorReporter } from "./infrastructure/client-error-reporter";
 import { AgentHttpGateway } from "./infrastructure/http/agent-http-gateway";
 import { BrowserDictation } from "./infrastructure/voice/browser-dictation";
@@ -191,7 +192,9 @@ async function boot(endpoint: ServerEndpoint | null): Promise<void> {
     if (!nativeWorkspace && window.parent === window) startPushNotifications(http);
     root.render(
       <StrictMode>
-        <BrowserLiveHeaderContext.Provider value={<RemoteAuthorizationControl />}><App /></BrowserLiveHeaderContext.Provider>
+        <WebAppHeaderActionsContext.Provider value={<WebMobilePairingButton />}>
+          <BrowserLiveHeaderContext.Provider value={<RemoteAuthorizationControl />}><App /></BrowserLiveHeaderContext.Provider>
+        </WebAppHeaderActionsContext.Provider>
         <WebappReadySignal />
       </StrictMode>,
     );
@@ -203,6 +206,10 @@ async function boot(endpoint: ServerEndpoint | null): Promise<void> {
       startBuildWatchdog();
     }
   } catch (error) {
+    if (error instanceof UnauthorizedError && !nativeWorkspace && window.parent === window) {
+      location.replace("/pair");
+      return;
+    }
     if (nativePairing && window.parent === window) {
       showUnpairedHome(error instanceof Error ? error.message : "连接失败，请重新扫码。");
       return;

@@ -1,5 +1,7 @@
-import { useEffect, useState } from "react";
-import { Check, FolderOpen, LayoutGrid, LoaderCircle, Monitor, Unplug, UsersRound } from "lucide-react";
+import { useContext, useEffect, useState } from "react";
+import { WebAppHeaderActionsContext } from "./browser-live-header-context";
+import { Check, FolderOpen, LayoutDashboard, LayoutGrid, LoaderCircle, Monitor, PanelsTopLeft, Unplug, UsersRound } from "lucide-react";
+import { navigationLayoutSwitchTitle, nextNavigationLayout } from "../../../core/src/domain/web-console/navigation-layout";
 import { useUIStore } from "../stores/uiStore";
 import { isDesktopLiveSetupPending } from "../lib/desktop-live-setup";
 import { isWebShell } from "../web/webLayout";
@@ -84,6 +86,7 @@ export default function ChatHeaderActions({
   onOpenSettings,
 }: ChatHeaderActionsProps) {
   const desktopLivePending = useDesktopLiveSetupPending(Boolean(onOpenDesktopLive));
+  const webAppActions = useContext(WebAppHeaderActionsContext);
   const navigationLayout = useUIStore((state) => state.navigationLayout);
   const releaseTitle = codexReleaseState === "releasing"
     ? "正在停止 AgentRoam 使用此会话"
@@ -93,6 +96,7 @@ export default function ChatHeaderActions({
   const actions = (
     <div className="chat-header-actions" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
       {appActions}
+      {webAppActions}
       {typeof window !== "undefined" && window.sharedServiceApi?.mobilePairing && <MobilePairingButton />}
       {onOpenSessionDashboard && <button type="button" onClick={onOpenSessionDashboard} title="进行中的 Agent 会话" aria-label="打开进行中的 Agent 会话" className="ui-icon-button chat-header-action"><RunningSessionsIcon size={17} aria-hidden="true"/></button>}
       {onOpenCollaborationDashboard && <button

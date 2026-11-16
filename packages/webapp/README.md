@@ -47,3 +47,22 @@ ws-server 以 `/app` 路径静态托管（可用 `AGENT_WEB_APP_DIST` 覆盖产�
 - 智能体定义/LSP/上传为本地兜底，不参与服务端运行；
 - cron(`​/loop`)在 web 端只展示占位任务，不执行；
 - TTS/语音唤醒走浏览器能力或禁用，native TTS 管线仅桌面端可用。
+
+## 本机开发网页的手机配对
+
+复制本目录 `.env.example` 为 `.env.local`，将 `AGENT_MOBILE_ACCESS_URL`
+改成手机实际可访问的服务地址（例如 Mac 的 Tailscale IP）。可使用
+`AGENT_DEV_BACKEND_URL` 指定本机网关端口，默认 `http://127.0.0.1:3000`。
+然后在仓库根目录运行 `bun run dev:webapp`，按终端输出的 localhost 地址访问并完成登录。
+点击聊天页右上角「更多功能 → 手机扫码连接」即可显示或刷新二维码。
+
+该入口仅适用于 Vite 开发模式下的已配对本机网页；正式构建不会显示该按钮，
+也不会包含开发授权接口。接口检查回环连接、Host、Origin、设备登录及锁定状态，
+本机服务管理凭证不会返回浏览器。二维码一次有效，五分钟过期；刷新会使旧二维码失效。
+
+手机保持 MeshArc / Tailscale 连接，用支持当前应用的浏览器扫码，授权后进入 `/app/`。
+这个目标路径要求网关旁已有 WebApp 构建：在仓库根目录执行
+`bun run --cwd packages/webapp build`。另外需配置 Tailscale Serve 或自己的网络转发，
+本功能只生成授权入口，不会自动开启网络通道。
+
+运行授权边界检查：`node --test scripts/dev-mobile-pairing.test.mjs`。

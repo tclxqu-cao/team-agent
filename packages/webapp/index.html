@@ -10,9 +10,24 @@
   <title>agentroam</title>
   <link rel="icon" type="image/svg+xml" href="./agentroam-icon.svg" />
   <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
+<script>
+(function () {
+  function report(message) {
+    var status = document.getElementById('boot-status');
+    if (status) status.textContent = '启动未完成：' + message + '。请截图反馈后刷新重试。';
+  }
+  window.addEventListener('error', function (event) {
+    var target = event.target;
+    report(event.message || (target && (target.src || target.href)) || '资源加载失败');
+  }, true);
+  window.addEventListener('unhandledrejection', function (event) {
+    report(String(event.reason && event.reason.message || event.reason || '未知错误'));
+  });
+})();
+</script>
 </head>
 <body>
-  <div id="root"></div>
+  <div id="root"><div id="boot-status" role="status" style="padding:48px 24px;font:16px/1.7 system-ui;color:#334155">正在加载 AgentRoam…<br>流量中继下首次加载可能需要一分钟，请保持页面打开。</div></div>
   <script type="module" src="/src/main.tsx"></script>
 </body>
 </html>
