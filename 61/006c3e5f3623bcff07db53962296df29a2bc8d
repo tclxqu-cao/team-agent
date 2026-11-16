@@ -1,0 +1,51 @@
+packages/core/src/domain/web-console/computer-settings.test.ts
+  s_28864dc692733f::t_a140eb508a3b84 23,26-27
+packages/server/lib/remote-control/infrastructure/werift-video-transport.test.ts
+  s_ac547109ecbab9::t_c8061c18c1d9d4 361-362,365-369,372-374,385-394,396-398
+packages/core/src/domain/live-view/remote-video-policy.test.ts
+  s_ac547109ecbab9::t_9d546b95ed4844 80-87
+  s_ac547109ecbab9::t_0cf139ae60f5c0 71-79,88-96
+packages/core/src/domain/web-console/computer-settings.ts
+  s_28864dc692733f::t_ebd70b35cf19e3 1,26-27,31
+packages/core/src/domain/live-view/remote-video-receiver.ts
+  s_ac547109ecbab9::t_59763f92aa7f6f 42-43,48-49
+  s_ac547109ecbab9::t_e28e9e28370481 16-17,21-22,28,32-33,35-36,39,47,62-67,70,77,79-82
+  s_ac547109ecbab9::t_e09485aec1fae1 34,37-38,44-46
+packages/core/src/domain/live-view/live-view-registry.ts
+  s_ac547109ecbab9::t_7bccdd2b3fa10f 344-348
+packages/core/src/domain/live-view/remote-video-receiver.test.ts
+  s_ac547109ecbab9::t_20a9021b3cd826 81-90
+  s_ac547109ecbab9::t_5474379b0c6607 41-67
+  s_ac547109ecbab9::t_c8e03916d486eb 91-106
+  s_ac547109ecbab9::t_d6b3c2c0023644 68-80
+packages/core/src/domain/live-view/remote-video-policy.ts
+  s_ac547109ecbab9::t_c2c98223cb6c47 114-117
+  s_ac547109ecbab9::t_0cf139ae60f5c0 68-71,91-94,152,156-166,202-205
+packages/core/src/domain/live-view/live-view-registry.test.ts
+  s_ac547109ecbab9::t_7bccdd2b3fa10f 15-35,38-45,47-68
+  s_ac547109ecbab9::t_e67161e64a7837 36-37,46
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "61006c3e5f3623bcff07db53962296df29a2bc8d",
+  "prompts": {},
+  "sessions": {
+    "s_28864dc692733f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1d04d-38ed-7b90-b153-3ffcbc66a1b9",
+        "model": "chat-gpt-omhk9/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_ac547109ecbab9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1a6e8-0566-7af0-a793-2844cd6bf19b",
+        "model": "chat-gpt-omhk9/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
