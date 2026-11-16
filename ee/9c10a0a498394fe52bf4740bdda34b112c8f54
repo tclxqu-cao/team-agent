@@ -1,0 +1,19 @@
+packages/desktop/package.json
+  s_dcf1fa4b873a9f::t_ac8c573f00131b 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ee9c10a0a498394fe52bf4740bdda34b112c8f54",
+  "prompts": {},
+  "sessions": {
+    "s_dcf1fa4b873a9f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1e32c-f6fd-7102-aac5-cca1fe23d55b",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
