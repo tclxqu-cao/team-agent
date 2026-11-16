@@ -9,7 +9,10 @@ import "./session-dashboard.css";
 
 export default function SupervisionNotifier({ onOpen }: { onOpen: () => void }) {
   const active = usePageActive();
-  const [pending, setPending] = useState(0);
+  const [pendingIds, setPendingIds] = useState<string[]>([]);
+  const [dismissedIds, setDismissedIds] = useState<ReadonlySet<string>>(() => new Set());
+  const pending = pendingIds.length;
+  const showPending = pendingIds.some(id => !dismissedIds.has(id));
   const [notice, setNotice] = useState("");
   const [decision, setDecision] = useState<SupervisionAlert | null>(null);
   const refreshAlerts = useRef<() => Promise<void>>(async () => {});
@@ -24,7 +27,7 @@ export default function SupervisionNotifier({ onOpen }: { onOpen: () => void }) 
       try {
         const alerts = await collaborationRequest<SupervisionAlert[]>({ action: "supervisionAlerts" });
         if (!live) return;
-        setPending(alerts.filter(alert => alert.incident.status === "waiting").length);
+        setPendingIds(alerts.filter(alert => alert.incident.status === "waiting").map(alert => alert.incident.id));
         setDecision(current => current ? alerts.find(alert => alert.incident.id === current.incident.id && alert.incident.status === "waiting") ?? null : null);
         const fresh = alerts.filter(alert => !seen.current.has(`${alert.incident.id}:${alert.incident.status}`));
         if (fresh.length) {
@@ -44,9 +47,14 @@ export default function SupervisionNotifier({ onOpen }: { onOpen: () => void }) 
     const timer = setInterval(() => { void refresh(); }, 7000);
     return () => { live = false; clearInterval(timer); };
   }, [active]);
-  useEffect(() => { if (!notice || pending) return; const timer = setTimeout(() => setNotice(""), 10000); return () => clearTimeout(timer); }, [notice, pending]);
-  if (!pending && !notice) return null;
-  return <aside className={`supervision-notice${decision ? " is-expanded" : ""}`} aria-label="监工提醒" role="status"><div className="supervision-notice-heading"><button onClick={onOpen}><Bell size={16}/><span>{pending ? `监工有 ${pending} 项待你决策` : notice}</span></button><button aria-label={decision ? "收起决策提醒" : "关闭监工提醒"} onClick={() => { setDecision(null); setNotice(""); }}><X size={14}/></button></div>
+  useEffect(() => { if (!notice || showPending) return; const timer = setTimeout(() => setNotice(""), 10000); return () => clearTimeout(timer); }, [notice, showPending]);
+  const dismiss = () => {
+    setDismissedIds(current => new Set([...current, ...pendingIds]));
+    setDecision(null);
+    setNotice("");
+  };
+  if (!showPending && !notice) return null;
+  return <aside className={`supervision-notice${decision ? " is-expanded" : ""}`} aria-label="监工提醒" role="status"><div className="supervision-notice-heading"><button onClick={onOpen}><Bell size={16}/><span>{showPending ? `监工有 ${pending} 项待你决策` : notice}</span></button><button aria-label="关闭监工提醒" onClick={dismiss}><X size={14}/></button></div>
     {decision?.target && <div className="session-dashboard supervision-notice-content"><strong>{decision.groupName} · {decision.incident.sessionTitle}</strong><DashboardDecision text={decision.incident.message} options={decision.incident.question?.options ?? decision.incident.options} recommendation={decision.incident.recommendation} multiSelect={decision.incident.question?.multiSelect} sourceOnly={decision.incident.question?.requiresSource}
       onSource={() => postDashboardIntent({ kind: "session", session: decision.target! })}
       onAnswer={async (answer, selectedIndices) => { await collaborationRequest({ action: "answerSupervision", groupId: decision.incident.groupId, incidentId: decision.incident.id, answer, selectedIndices }); setDecision(null); setNotice(""); await refreshAlerts.current(); }}/></div>}

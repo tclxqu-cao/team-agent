@@ -85,6 +85,16 @@ describe("cached session history windows", () => {
     assistant("history-message.v1.5.answer", "Development hot reloads"),
   ];
 
+  it("updates retained native segments to the fetched revision without changing frozen history", () => {
+    const trace = (id: string, revision: string) => ({ ...message(id, id), executionTrace: { turnId: id, revision } });
+    const previous = [trace("turn-old", "rev-1"), trace("engine-frozen:phase", "immutable-phase"), trace("turn-streaming", "live:turn-streaming")];
+    const latest = trace("turn-current", "rev-2");
+    const restored = restoreLatestSessionHistoryWindow(previous, [latest], "core", history, { kind: "latest", olderCursor: "older" });
+    expect(restored.messages.map(row => row.executionTrace?.revision)).toEqual(["rev-2", "immutable-phase", "live:turn-streaming", "rev-2"]);
+    expect(previous[0].executionTrace.revision).toBe("rev-1");
+    expect(restored.window.olderCursor).toBe("older");
+  });
+
   it("reopens a cached window without re-fetching its retained latest turns as older pages", () => {
     const cached = turns.slice(2);
     const restored = restoreLatestSessionHistoryWindow(cached, turns.slice(4), "core", history, {
@@ -196,7 +206,7 @@ describe("loadCodexExecutionTracePage", () => {
     expect(loaded).toMatchObject({ revision: "rev-2", recovered: true });
     expect(getSession.mock.calls.map(([, query]) => query)).toEqual([
       { view: "trace", revision: "rev-1", turnId: "turn-1" },
-      { view: "core", limit: 50 },
+      { view: "core", limit: 1 },
       { view: "trace", revision: "rev-2", turnId: "turn-1" },
     ]);
   });

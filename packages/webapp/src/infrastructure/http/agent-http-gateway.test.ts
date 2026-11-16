@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AgentHttpGateway } from "./agent-http-gateway";
+import { HttpClient } from "./http-client";
 
 class FailedEventSource {
   static readonly CLOSED = 2;
@@ -34,6 +35,48 @@ function emit(source: ObservableEventSource, event: Record<string, unknown>): vo
 }
 
 describe("AgentHttpGateway", () => {
+  it("ends an unconfirmed send even when the confirmation request also hangs", async () => {
+    vi.useFakeTimers();
+    const transport = vi.fn(() => new Promise<Response>(() => {}));
+    const gateway = new AgentHttpGateway(new HttpClient(transport), {} as never);
+    const events: Array<Record<string, unknown>> = [];
+    gateway.onEvent(event => events.push(event as Record<string, unknown>));
+    const run = gateway.run("user command", "runtime:codex:unreachable-confirmation");
+    await vi.advanceTimersByTimeAsync(12_000);
+    await run;
+    expect(events).toContainEqual(expect.objectContaining({ type: "error" }));
+    expect(transport.mock.calls.filter(([url]) => url === "/api/agent/run")).toHaveLength(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it.each([true, false])("recovers a hung admission only when a new run is confirmed (accepted=%s)", async accepted => {
+    vi.useFakeTimers();
+    globalThis.EventSource = ObservableEventSource as unknown as typeof EventSource;
+    const transport = vi.fn(async (url: string) => {
+      if (url === "/api/agent/run") return new Promise<Response>(() => {});
+      return new Response(JSON.stringify({
+        status: accepted ? "running" : "idle", snapshotRunId: accepted ? "run-accepted" : null,
+        snapshotRevision: 1, messages: [], events: [], history: { delivery: "core" },
+      }));
+    });
+    const gateway = new AgentHttpGateway(new HttpClient(transport as typeof fetch), {} as never);
+    const events: Array<Record<string, unknown>> = [];
+    gateway.onEvent(event => events.push(event as Record<string, unknown>));
+    const run = gateway.run("user command", "runtime:codex:hung-admission");
+    await vi.advanceTimersByTimeAsync(8_000);
+    if (accepted) {
+      expect(events).toContainEqual(expect.objectContaining({ type: "run_admitted", _nativeRunId: "run-accepted" }));
+      emit(ObservableEventSource.instances[0], { type: "done", _nativeRunId: "run-accepted", _nativeSequence: 2 });
+    } else {
+      expect(events).toContainEqual(expect.objectContaining({ type: "error" }));
+      expect(events.some(event => event.type === "run_admitted")).toBe(false);
+      expect(ObservableEventSource.instances).toHaveLength(0);
+    }
+    await run;
+    expect(transport.mock.calls.filter(([url]) => url === "/api/agent/run")).toHaveLength(1);
+    expect(transport.mock.calls.some(([url]) => url.includes("view=core"))).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+  });
   it("sends message intake commands through the authenticated shared HTTP transport", async () => {
     const http = { post: vi.fn().mockResolvedValue({ messages: [] }) };
     const gateway = new AgentHttpGateway(http as never, {} as never);

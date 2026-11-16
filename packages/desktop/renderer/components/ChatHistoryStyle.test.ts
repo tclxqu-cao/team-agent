@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import MessageLink from "./MessageLink";
 
 const chatView = readFileSync(new URL("./ChatView.tsx", import.meta.url), "utf8");
-const codexExecutionTrace = readFileSync(new URL("./CodexExecutionTrace.tsx", import.meta.url), "utf8");
+const executionTrace = readFileSync(new URL("./ExecutionTrace.tsx", import.meta.url), "utf8");
 const app = readFileSync(new URL("../App.tsx", import.meta.url), "utf8");
 const toolCallCard = readFileSync(new URL("./ToolCallCard.tsx", import.meta.url), "utf8");
 const globalCss = readFileSync(new URL("../styles/global.css", import.meta.url), "utf8");
@@ -42,10 +42,14 @@ const runtimeErrorHandler = chatView.slice(
 
 describe("shared Codex-style message history", () => {
   it("applies one presentation path to every runtime", () => {
-    expect(chatView).toContain('className="chat-view chat-view--codex-history"');
+    expect(chatView).toContain('className="chat-view chat-view--unified-history"');
     expect(chatView).toContain("<SessionRunActivity");
     expect(chatView).not.toContain('className={webShell ? "chat-view');
     expect(chatView).not.toContain('className={isNativeRuntime ? "chat-view');
+    const projection = chatView.slice(chatView.indexOf("const renderedMessages = useMemo"), chatView.indexOf("const codexTurnDurations"));
+    expect(projection).toContain("groupSessionExecutionMessages(ungroupedMessages, isRunning)");
+    expect(projection).not.toMatch(/agentType|activeAgentType/);
+    expect(executionTrace).not.toMatch(/AgentType|agentType|data-execution-agent/);
   });
 
   it("keeps one run activity component independent of tool rows and streaming reasoning", () => {
@@ -86,8 +90,8 @@ describe("shared Codex-style message history", () => {
 
   it("shows one left-aligned thinking status when native progress is available", () => {
     expect(pendingIndicator).toContain("progress={globalRuntimeProgress} startedAt={thinkingStartedAt}");
-    expect(globalCss).toContain(".chat-view--codex-history .runtime-progress-row:not(.runtime-progress-row--compact)");
-    expect(globalCss).toMatch(/\.chat-view--codex-history \.runtime-progress-row:not\(\.runtime-progress-row--compact\)\s*\{[^}]*width: 100%;[^}]*max-width: none;/s);
+    expect(globalCss).toContain(".chat-view--unified-history .runtime-progress-row:not(.runtime-progress-row--compact)");
+    expect(globalCss).toMatch(/\.chat-view--unified-history \.runtime-progress-row:not\(\.runtime-progress-row--compact\)\s*\{[^}]*width: 100%;[^}]*max-width: none;/s);
     expect(globalCss).toContain("margin-left: auto");
     expect(globalCss).toContain("margin-right: auto");
   });
@@ -113,8 +117,8 @@ describe("shared Codex-style message history", () => {
     expect(chatView).toMatch(/coalesceAdjacentToolCallMessages\(\s*presentQuestionAnswers\(\s*hideQueuedGoalMessages\(/);
     expect(chatView).toContain("groupAdjacentToolCallEntries(toolCallEntries)");
     expect(chatView).not.toContain("renderToolCallsIndividually");
-    expect(codexExecutionTrace).toContain("groupAdjacentToolCallEntries(toolEntries)");
-    expect(codexExecutionTrace).toContain("<ToolCallGroup");
+    expect(executionTrace).toContain("groupAdjacentToolCallEntries(toolEntries)");
+    expect(executionTrace).toContain("<ToolCallGroup");
     expect(chatView).toContain("<ToolCallGroup");
     expect(toolCallCard).toContain('className="tool-call-group__summary"');
     expect(toolCallCard).toContain("aria-expanded={expanded}");
@@ -136,24 +140,24 @@ describe("shared Codex-style message history", () => {
   });
 
   it("owns the shared document lane, bubbles, and compact tool rows", () => {
-    expect(globalCss).toContain(".chat-view--codex-history .chat-message-group");
-    expect(globalCss).toMatch(/\.chat-view--codex-history \.chat-message-group\s*\{[^}]*width: 100%;/s);
+    expect(globalCss).toContain(".chat-view--unified-history .chat-message-group");
+    expect(globalCss).toMatch(/\.chat-view--unified-history \.chat-message-group\s*\{[^}]*width: 100%;/s);
     expect(globalCss).toContain("--chat-lane-width: 92%");
     expect(globalCss).toMatch(/\.chat-messages\s*\{[^}]*width: var\(--chat-lane-width\);/s);
     expect(globalCss).toMatch(/\.chat-input-area\s*\{[^}]*width: var\(--chat-lane-width\);/s);
     expect(globalCss).toMatch(/@media \(max-width: 899px\)[\s\S]*?--chat-lane-width: 100%;/);
-    expect(globalCss).toContain(".chat-view--codex-history .chat-message-avatar");
-    expect(globalCss).toContain(".chat-view--codex-history .chat-message-content--assistant");
+    expect(globalCss).toContain(".chat-view--unified-history .chat-message-avatar");
+    expect(globalCss).toContain(".chat-view--unified-history .chat-message-content--assistant");
     expect(globalCss).toContain("max-width: min(78%, 680px) !important");
-    expect(globalCss).toContain(".chat-view--codex-history .chat-message-bubble--assistant.message-card");
-    expect(globalCss).toContain(".chat-view--codex-history .tool-call-shell__header");
+    expect(globalCss).toContain(".chat-view--unified-history .chat-message-bubble--assistant.message-card");
+    expect(globalCss).toContain(".chat-view--unified-history .tool-call-shell__header");
     expect(globalCss).toContain("min-height: 32px");
     expect(globalCss).toContain("background: transparent !important");
   });
 
   it("aligns icon-led reasoning and tool rows without a timeline", () => {
     const historyRowsCss = globalCss.slice(
-      globalCss.indexOf(".chat-view--codex-history .agent-activity-indicator"),
+      globalCss.indexOf(".chat-view--unified-history .agent-activity-indicator"),
       globalCss.indexOf(".query-navigation-rail"),
     );
 
@@ -163,31 +167,31 @@ describe("shared Codex-style message history", () => {
     expect(chatView).toContain("visibleMessages.filter((message) => !message.isQueued)");
     expect(globalCss).not.toContain(".chat-message-group--trace::before");
     expect(globalCss).not.toContain(".chat-message-group--trace::after");
-    expect(globalCss).toContain(".chat-view--codex-history .agent-activity-indicator");
+    expect(globalCss).toContain(".chat-view--unified-history .agent-activity-indicator");
     expect(globalCss).toContain(".reasoning-summary__preview");
     expect(globalCss).toMatch(/\.reasoning-summary\s*\{[^}]*width: 100%;/s);
     expect(globalCss).not.toMatch(/\.reasoning-summary\s*\{[^}]*width: min\(720px, 100%\);/s);
     expect(globalCss).toContain(".tool-call-shell__preview");
     expect(globalCss.match(/place-items: center start/g)).toHaveLength(6);
     expect(globalCss.match(/padding: 5px 0;/g)).toHaveLength(4);
-    expect(globalCss).toContain(".codex-execution-trace__load");
-    expect(globalCss).not.toContain(".codex-execution-trace__summary");
+    expect(globalCss).toContain(".execution-trace__load");
+    expect(globalCss).toContain(".execution-trace__summary");
     expect(globalCss).toContain("padding: 5px 0 !important");
-    expect(globalCss).not.toContain(".codex-execution-trace__body");
-    expect(globalCss).toContain(".chat-view--codex-history .codex-execution-trace__timeline");
-    expect(globalCss).toMatch(/\.chat-view--codex-history \.codex-execution-trace__commentary\s*\{[^}]*padding: 6px 0 7px;[^}]*color: var\(--chat-history-text\);[^}]*font-size: var\(--chat-bubble-font-size\);[^}]*line-height: var\(--chat-bubble-line-height\);/s);
+    expect(globalCss).not.toContain(".execution-trace__body");
+    expect(globalCss).toContain(".chat-view--unified-history .execution-trace__timeline");
+    expect(globalCss).toMatch(/\.chat-view--unified-history \.execution-trace__commentary\s*\{[^}]*padding: 3px 0;[^}]*color: var\(--chat-history-text\);[^}]*font-size: var\(--chat-bubble-font-size\);[^}]*line-height: var\(--chat-bubble-line-height\);/s);
     expect(globalCss).toContain(".reasoning-summary__label");
-    expect(globalCss).toContain(".chat-view--codex-history .tool-call-shell__label");
+    expect(globalCss).toContain(".chat-view--unified-history .tool-call-shell__label");
     expect(globalCss).not.toMatch(/\.reasoning-summary__label\s*\{[^}]*transform:/s);
-    expect(globalCss).not.toMatch(/\.chat-view--codex-history \.tool-call-shell__label\s*\{[^}]*transform:/s);
+    expect(globalCss).not.toMatch(/\.chat-view--unified-history \.tool-call-shell__label\s*\{[^}]*transform:/s);
     expect(historyRowsCss).not.toContain("transform: translateY(-1px)");
   });
 
   it("throttles visible Codex trace refreshes independently from core pagination", () => {
-    expect(chatView).toContain("CODEX_TRACE_REFRESH_MIN_INTERVAL_MS = 750");
+    expect(chatView).toContain("CODEX_TRACE_REFRESH_MIN_INTERVAL_MS = 5_000");
     expect(chatView).toContain("scheduleCodexTraceRefresh(targetSid)");
     expect(chatView).toContain("refreshSignal={chatMsg.executionTrace.turnId === latestCodexExecutionTurnId");
-    expect(chatView).toContain('autoLoad={historyWindowMode === "latest" && chatMsg.executionTrace.turnId === latestCodexExecutionTurnId}');
+    expect(chatView).toContain('autoLoad={historyWindowMode === "latest" && !chatMsg.executionTrace.turnId.startsWith("engine-frozen:") && chatMsg.executionTrace.turnId === latestCodexExecutionTurnId}');
   });
 
   it("keeps the workspace close to the sidebar surface across skins", () => {
@@ -371,7 +375,7 @@ describe("shared Codex-style message history", () => {
     expect(chatView).toContain('aria-label="复制内容"');
     expect(chatView).toContain('aria-label="目标消息"');
     expect(chatView).toContain('chat-message-group--intermediate');
-    expect(globalCss).toContain(".chat-view--codex-history .chat-message-group--intermediate");
+    expect(globalCss).toContain(".chat-view--unified-history .chat-message-group--intermediate");
     expect(globalCss).toContain("margin-bottom: 0 !important");
     expect(globalCss).toContain(".msg-completion-footer");
     expect(globalCss).toContain("min-height: 32px");

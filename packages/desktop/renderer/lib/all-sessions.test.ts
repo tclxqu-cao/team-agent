@@ -1,12 +1,32 @@
 import { describe, expect, it, vi } from "vitest";
 import type { CatalogSession } from "../../../core/src/domain/supervision/types";
-import { readSessionCatalogPage, mergeCatalogSessions, orderAllSessions } from "./all-sessions";
+import { readSessionCatalogPage, mergeCatalogSessions, mergeCatalogReceipts, refreshCatalogWindow, orderAllSessions } from "./all-sessions";
 
 const session = (id: string, agentType: CatalogSession["agentType"], status: CatalogSession["status"], updated = "2026-11-02T00:00:00Z"): CatalogSession => ({
   id, agentType, status, updated, title: id, cwd: `/work/${id}`, canResume: true,
 });
 
 describe("all Agent sessions", () => {
+  it("retains a new session over stale discovery until its authoritative row arrives", () => {
+    const receipt = session("new", "codex", "running");
+    const stale = [session("old", "codex", "idle")];
+    expect(orderAllSessions(mergeCatalogReceipts(stale, [receipt], ""), [], []).map(row => row.id)).toEqual(["new", "old"]);
+    const discovered = { ...receipt, title: "Server title", status: "completed" as const };
+    expect(mergeCatalogReceipts([discovered], [receipt], "")).toEqual([discovered]);
+    expect(mergeCatalogReceipts(stale, [receipt], "unrelated")).toEqual(stale);
+  });
+
+  it("refreshes the head without discarding older loaded rows or their snapshot cursor", () => {
+    const rows = Array.from({ length: 40 }, (_, index) => session(`${index}`, "codex", "idle"));
+    const newest = session("new", "codex", "running");
+    const page = { data: [newest, { ...rows[0], title: "Updated" }], nextCursor: "new-head-cursor", total: 41 };
+    const refreshed = refreshCatalogWindow({ rows, cursor: "old-history-cursor" }, page);
+    expect(refreshed.rows).toHaveLength(41);
+    expect(refreshed.rows.find(row => row.id === "0")?.title).toBe("Updated");
+    expect(refreshed.rows).toContainEqual(rows[39]);
+    expect(refreshed.cursor).toBe("old-history-cursor");
+    expect(refreshCatalogWindow({ rows: rows.slice(0, 20), cursor: "old" }, page)).toEqual({ rows: page.data, cursor: page.nextCursor });
+  });
   it("puts running sessions before pinned idle ones and keeps recency within each group", () => {
     const rows = [session("pinned", "codex", "idle"), session("running-old", "opencode", "running", "2026-10-01"),
       session("running-new", "claude-code", "running"), session("idle", "customer-agent", "idle")];

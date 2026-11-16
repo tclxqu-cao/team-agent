@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Check, FolderOpen, Inbox, LayoutGrid, LoaderCircle, Monitor, Unplug, UsersRound } from "lucide-react";
+import { Check, FolderOpen, LayoutGrid, LoaderCircle, Monitor, Unplug, UsersRound } from "lucide-react";
 import { useUIStore } from "../stores/uiStore";
 import { isDesktopLiveSetupPending } from "../lib/desktop-live-setup";
 import { isWebShell } from "../web/webLayout";
@@ -55,7 +55,6 @@ interface ChatHeaderActionsProps {
   onOpenHub?: () => void;
   onOpenCollaborationDashboard?: () => void;
   onOpenSessionDashboard?: () => void;
-  onOpenMessaging?: () => void;
   onOpenDesktopLive?: () => void;
   desktopLiveOpen?: boolean;
   filesOpen?: boolean;
@@ -77,7 +76,6 @@ export default function ChatHeaderActions({
   onOpenHub,
   onOpenCollaborationDashboard,
   onOpenSessionDashboard,
-  onOpenMessaging,
   onOpenDesktopLive,
   desktopLiveOpen = false,
   filesOpen = false,
@@ -97,7 +95,6 @@ export default function ChatHeaderActions({
       {appActions}
       {typeof window !== "undefined" && window.sharedServiceApi?.mobilePairing && <MobilePairingButton />}
       {onOpenSessionDashboard && <button type="button" onClick={onOpenSessionDashboard} title="进行中的 Agent 会话" aria-label="打开进行中的 Agent 会话" className="ui-icon-button chat-header-action"><RunningSessionsIcon size={17} aria-hidden="true"/></button>}
-      {onOpenMessaging && <button type="button" onClick={onOpenMessaging} title="消息接入 · 监听与路由" aria-label="打开消息接入" className="ui-icon-button chat-header-action"><Inbox size={17} aria-hidden="true"/></button>}
       {onOpenCollaborationDashboard && <button
         type="button"
         onClick={onOpenCollaborationDashboard}

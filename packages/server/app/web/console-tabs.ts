@@ -1,7 +1,7 @@
 export interface ConsoleTab {
   id: string;
   title: string;
-  kind?: "webapp" | "aihub" | "flowstudio" | "remote-desktop" | "collaboration" | "collaboration-dashboard" | "session-dashboard" | "messaging";
+  kind?: "webapp" | "aihub" | "flowstudio" | "remote-desktop" | "collaboration" | "collaboration-dashboard" | "session-dashboard";
   groupId?: string;
   discussionId?: string;
   initialCommand?: string;
@@ -17,7 +17,7 @@ export function parseWorkspaceSnapshot(raw: string | null): WorkspaceSnapshot | 
     const value = JSON.parse(raw || "null");
     if (!value || !Array.isArray(value.tabs)) return null;
     const ids = new Set<string>();
-    const kinds = new Set(["webapp", "aihub", "flowstudio", "remote-desktop", "collaboration", "collaboration-dashboard", "session-dashboard", "messaging"]);
+    const kinds = new Set(["webapp", "aihub", "flowstudio", "remote-desktop", "collaboration", "collaboration-dashboard", "session-dashboard"]);
     const tabs: ConsoleTab[] = [];
     for (const tab of value.tabs.slice(0, 100)) {
       if (!tab || typeof tab.id !== "string" || typeof tab.title !== "string" || ids.has(tab.id)) continue;
@@ -26,7 +26,7 @@ export function parseWorkspaceSnapshot(raw: string | null): WorkspaceSnapshot | 
       ids.add(tab.id);
       tabs.push({ id: tab.id, title: tab.title, ...(tab.kind ? { kind: tab.kind } : {}), ...(typeof tab.groupId === "string" ? { groupId: tab.groupId } : {}), ...(typeof tab.discussionId === "string" && /^[\w-]{1,200}$/.test(tab.discussionId) ? { discussionId: tab.discussionId } : {}) });
     }
-    return { tabs, activeTerminalId: typeof value.activeTerminalId === "string" ? value.activeTerminalId : null };
+    return { tabs, activeTerminalId: typeof value.activeTerminalId === "string" && value.activeTerminalId !== "messaging" ? value.activeTerminalId : null };
   } catch { return null; }
 }
 
@@ -58,10 +58,6 @@ export function withCollaborationDashboard(tabs: ConsoleTab[]): ConsoleTab[] {
 }
 
 export const SESSION_DASHBOARD_TAB = { id: "session-dashboard", title: "Dashboard", kind: "session-dashboard" } as const;
-export const MESSAGING_TAB = { id: "messaging", title: "消息接入", kind: "messaging" } as const;
-export function withMessaging(tabs: ConsoleTab[]): ConsoleTab[] {
-  return tabs.some(tab => tab.id === MESSAGING_TAB.id) ? tabs : [...tabs, { ...MESSAGING_TAB }];
-}
 export function withSessionDashboard(tabs: ConsoleTab[]): ConsoleTab[] {
   return tabs.some(tab => tab.id === SESSION_DASHBOARD_TAB.id) ? tabs : [...tabs, { ...SESSION_DASHBOARD_TAB }];
 }

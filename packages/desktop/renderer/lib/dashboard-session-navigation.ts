@@ -1,7 +1,20 @@
 import type { MonitoredSession } from "../../../core/src/domain/supervision/types";
-import type { AgentApi, UnifiedSessionSummary } from "../global";
+import type { AgentApi, AgentType, UnifiedSessionSummary } from "../global";
+import { isAgentType } from "../../../core/src/domain/agent/agent-type";
 import type { AgentRailSessions } from "./agent-rail-sessions";
 import { SESSION_HISTORY_PAGE_SIZE, type SessionHistoryDetail, type SessionHistorySeed } from "./session-history";
+
+/** Explicit navigation must not hydrate a different saved conversation first. */
+export function initialSessionNavigation(search: string, fallback: AgentType) {
+  const query = new URLSearchParams(search);
+  const sessionId = query.get("session");
+  const sessionAgent = sessionId?.startsWith("runtime:") ? sessionId.split(":")[1] : undefined;
+  const requestedAgent = sessionAgent ?? query.get("agent");
+  return {
+    agentType: isAgentType(requestedAgent) ? requestedAgent : fallback,
+    explicit: Boolean(sessionId || query.get("newSession") === "1" || isAgentType(requestedAgent)),
+  };
+}
 
 /** Reopen verified cached metadata while ChatView refreshes its retained messages. */
 export function getCachedDashboardSession(target: MonitoredSession, cached?: AgentRailSessions): { session: UnifiedSessionSummary; snapshot: AgentRailSessions } | undefined {

@@ -5,12 +5,12 @@
   --web-composer-control-size: 38px;
   --web-composer-icon-size: 20px;
 }
-.chat-view--codex-history .composer-shell {
+.chat-view--unified-history .composer-shell {
   border: 1px solid var(--border-default);
   border-radius: 24px !important;
   box-shadow: none;
 }
-.chat-view--codex-history .composer-input-row {
+.chat-view--unified-history .composer-input-row {
   display: flex !important;
   flex-direction: column;
   align-items: stretch !important;

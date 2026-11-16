@@ -1,5 +1,5 @@
 import { isPageActive } from "./lib/page-activity";
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { createPortal } from "react-dom";
 import { History, LoaderCircle, Plus, Search } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
@@ -9,25 +9,18 @@ import SidebarRefreshButton from "./components/SidebarRefreshButton";
 import SidebarSessionPagination from "./components/SidebarSessionPagination";
 import CollaborationLauncher from "./components/collaboration/CollaborationLauncher";
 import CollaborationCreateDialog from "./components/collaboration/CollaborationCreateDialog";
-import CollaborationDashboard from "./components/collaboration/CollaborationDashboard";
-import SessionDashboard from "./components/collaboration/SessionDashboard";
-import MessagingPage from "./components/messaging/MessagingPage";
-import { openShellMessaging } from "./lib/messaging-navigation";
-import { MESSAGING_OPEN_QUERY } from "../../core/src/domain/web-console/MessagingBridge";
 import SupervisionNotifier from "./components/collaboration/SupervisionNotifier";
 import { collaborationRequest } from "./components/collaboration/client";
-import { getCachedDashboardSession, resolveDashboardSession } from "./lib/dashboard-session-navigation";
+import { getCachedDashboardSession, resolveDashboardSession, initialSessionNavigation } from "./lib/dashboard-session-navigation";
 import { postDashboardIntent } from "./lib/dashboard-navigation-delivery";
 import type { SessionHistorySeed } from "./lib/session-history";
 import type { AgentRailSessions } from "./lib/agent-rail-sessions";
 import { isAgentType } from "../../core/src/domain/agent/agent-type";
 import { readSessionDashboardIntent, SESSION_DASHBOARD_NAVIGATE, SESSION_DASHBOARD_CHAT_READY, SESSION_DASHBOARD_APPLIED, type SessionDashboardIntent } from "../../core/src/domain/web-console/SessionDashboardBridge";
 import { fetchEngineThreadIndex, activeThreadSession, foldEngineThreadSessions, type EngineThreadIndex } from "./lib/engine-thread-index";
-import CollaborationPage from "./components/collaboration/CollaborationPage";
 import DesktopWorkspaceTabs from "./components/collaboration/DesktopWorkspaceTabs";
 import type { CollaborationGroup } from "@agent/core/domain/collaboration/types";
 import { COLLABORATION_OPEN_TYPE, readCollaborationCreate } from "../../core/src/domain/web-console/CollaborationTabBridge";
-import AIHubView from "./components/AIHubView";
 import UpdateNotice from "./components/UpdateNotice";
 import DesktopLiveControlBanner from "./components/DesktopLiveControlBanner";
 import { renewVoiceConversation } from "./lib/voice-command";
@@ -53,13 +46,7 @@ import {
   removeSessionFromCollections,
   sessionDeletionConfirmation,
 } from "./lib/session-deletion";
-import SettingsPanel from "./components/SettingsPanel";
 import DesktopLiveDialog from "./components/DesktopLiveDialog";
-import MCPServerList from "./components/MCPServerList";
-import MemoryViewer from "./components/MemoryViewer";
-import SkillManager from "./components/SkillManager";
-import AgentManager from "./components/AgentManager";
-import LSPServerList from "./components/LSPServerList";
 import WakeOverlay from "./components/WakeOverlay";
 import AgentWorkspaceSwitcher from "./components/AgentWorkspaceSwitcher";
 import { agentUnavailableMessage } from "./lib/agent-availability";
@@ -75,9 +62,7 @@ import SidebarDeleteConfirmation from "./components/SidebarDeleteConfirmation";
 import SidebarSessionRow, { type SidebarDeleteAnchor } from "./components/SidebarSessionRow";
 import HostProjectPicker from "./components/HostProjectPicker";
 import AppActionNotice from "./components/AppActionNotice";
-import FileWorkspaceDrawer, {
-  type FileWorkspaceDrawerTab,
-} from "./components/file-workspace/FileWorkspaceDrawer";
+import type { FileWorkspaceDrawerTab } from "./components/file-workspace/FileWorkspaceDrawer";
 import type { FileTreeRevealRequest } from "./components/file-workspace/fileTreeReveal";
 import type {
   AgentType,
@@ -117,6 +102,18 @@ import {
 import { refreshableWorkspaceIds } from "./lib/visible-session-refresh";
 import { useResizableSidebar } from "./lib/use-resizable-sidebar";
 import { mergeSearchSessions } from "./lib/session-search";
+
+const CollaborationDashboard = lazy(() => import("./components/collaboration/CollaborationDashboard"));
+const SessionDashboard = lazy(() => import("./components/collaboration/SessionDashboard"));
+const CollaborationPage = lazy(() => import("./components/collaboration/CollaborationPage"));
+const AIHubView = lazy(() => import("./components/AIHubView"));
+const SettingsPanel = lazy(() => import("./components/SettingsPanel"));
+const MCPServerList = lazy(() => import("./components/MCPServerList"));
+const MemoryViewer = lazy(() => import("./components/MemoryViewer"));
+const SkillManager = lazy(() => import("./components/SkillManager"));
+const AgentManager = lazy(() => import("./components/AgentManager"));
+const LSPServerList = lazy(() => import("./components/LSPServerList"));
+const FileWorkspaceDrawer = lazy(() => import("./components/file-workspace/FileWorkspaceDrawer"));
 
 type SettingsTab = "settings" | "mcp" | "memory" | "skill" | "agent" | "lsp";
 
@@ -227,7 +224,10 @@ function blurActiveTextEntry(): void {
 
 export default function App() {
   const [initialWorkspaceCache] = useState(readAgentWorkspaceCache);
-  const initialAgent = initialWorkspaceCache.activeAgent;
+  const [initialNavigation] = useState(() => initialSessionNavigation(
+    typeof window === "undefined" ? "" : window.location.search, initialWorkspaceCache.activeAgent,
+  ));
+  const initialAgent = initialNavigation.agentType;
   const initialPartition = initialWorkspaceCache.agents[initialAgent] ?? emptyAgentWorkspacePartition();
   const [initialSessionState] = useState(() => buildCachedSessionState(
     initialPartition.sessions as Record<string, { data: Session[]; loaded: boolean }>,
@@ -298,7 +298,7 @@ export default function App() {
   const workspaceRequestIds = useRef(new Map<AgentType, number>());
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(initialPartition.selectedWorkspaceId);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(() =>
-    useUIStore.getState().navigationLayout === "all-sessions" ? null : initialPartition.selectedSessionId,
+    initialNavigation.explicit || useUIStore.getState().navigationLayout === "all-sessions" ? null : initialPartition.selectedSessionId,
   );
   const [createdSessionReceipt, setCreatedSessionReceipt] = useState<Session | null>(null);
   const createdSessionReceiptRef = useRef<Session | null>(null);
@@ -364,8 +364,6 @@ export default function App() {
   const [collaborationDashboardVisible, setCollaborationDashboardVisible] = useState(false);
   const [sessionDashboardOpen, setSessionDashboardOpen] = useState(false);
   const [sessionDashboardVisible, setSessionDashboardVisible] = useState(false);
-  const [messagingOpen, setMessagingOpen] = useState(false);
-  const [messagingVisible, setMessagingVisible] = useState(false);
   /** 新建会话输入框聚焦序号：从 Dashboard 等入口进入时递增，触发 composer focus。 */
   const [newSessionFocusNonce, setNewSessionFocusNonce] = useState(0);
   const [initialSessionHistory, setInitialSessionHistory] = useState<SessionHistorySeed>();
@@ -386,27 +384,8 @@ export default function App() {
     if (window.parent !== window) window.parent.postMessage({ type: SESSION_DASHBOARD_APPLIED, sessionId }, window.location.origin);
   }, []);
   const chatNavigationInstance = useRef(`${Date.now()}-${Math.random().toString(36).slice(2)}`);
-  const hasWorkspaceTabs = messagingVisible || sessionDashboardVisible || collaborationDashboardVisible || collaborationTabs.length > 0;
-  const openMessaging = () => {
-    setSidebarDrawerOpen(false);
-    if (isWebShell() && window.parent !== window) {
-      void openShellMessaging().catch(error => {
-        setNotice(error instanceof Error ? error.message : "消息接入打开失败");
-        setNoticeType("error");
-      });
-      return;
-    }
-    setMessagingVisible(true); setMessagingOpen(true);
-    setSessionDashboardOpen(false); setCollaborationDashboardOpen(false); setActiveCollaboration(null);
-  };
-  useEffect(() => {
-    if (!isWebShell() || window.parent === window) return;
-    try {
-      if (new URL(window.parent.location.href).searchParams.get(MESSAGING_OPEN_QUERY) === "messaging") openMessaging();
-    } catch { /* A native parent can use a different origin. */ }
-  }, []);
+  const hasWorkspaceTabs = sessionDashboardVisible || collaborationDashboardVisible || collaborationTabs.length > 0;
   const openSessionDashboard = () => {
-    setMessagingOpen(false);
     if (isWebShell() && window.parent !== window) {
       window.parent.postMessage({ type: SESSION_DASHBOARD_NAVIGATE, intent: { kind: "dashboard" } }, window.location.origin);
       return;
@@ -415,7 +394,6 @@ export default function App() {
     setCollaborationDashboardOpen(false); setActiveCollaboration(null);
   };
   const openCollaborationDashboard = () => {
-    setMessagingOpen(false);
     setCollaborationDashboardVisible(true);
     setCollaborationDashboardOpen(true);
     setActiveCollaboration(null);
@@ -424,7 +402,6 @@ export default function App() {
   const [collaborationCreateOpen, setCollaborationCreateOpen] = useState(false);
   const [collaborationGroupsRevision, setCollaborationGroupsRevision] = useState(0);
   const openCollaboration = (group: CollaborationGroup) => {
-    setMessagingOpen(false);
     if (isWebShell() && window.parent !== window) {
       window.parent.postMessage({type: COLLABORATION_OPEN_TYPE, groupId: group.id, title: group.name}, window.location.origin);
     } else {
@@ -1015,7 +992,6 @@ export default function App() {
     useAgentStore.setState({ sessionId: null, messages: [] });
     setSessionDashboardOpen(false);
     setSessionDashboardVisible(false);
-    setMessagingOpen(false);
     setCollaborationDashboardOpen(false);
     setActiveCollaboration(null);
     setHubOpen(false);
@@ -1040,7 +1016,6 @@ export default function App() {
   }, [activeAgent, projects, selectedProjectId, selectedSessionId]);
 
   const openAgentSession = (session: UnifiedSessionSummary, snapshot: AgentRailSessions, preservePagination = false) => {
-    setMessagingOpen(false);
     const partition = workspaceCacheRef.current.agents[session.agentType] ?? emptyAgentWorkspacePartition();
     workspaceCacheRef.current = { ...workspaceCacheRef.current, agents: { ...workspaceCacheRef.current.agents,
       [session.agentType]: { ...partition, workspaces: snapshot.workspaces, nextCursor: preservePagination ? partition.nextCursor : null,
@@ -1058,7 +1033,6 @@ export default function App() {
     if (mobileDrawer) setSidebarDrawerOpen(false);
   };
   dashboardNavigation.current = intent => {
-    setMessagingOpen(false);
     if (webShell && window.parent !== window && ["dashboard", "groups", "group"].includes(intent.kind)) {
       window.parent.postMessage({ type: SESSION_DASHBOARD_NAVIGATE, intent }, window.location.origin);
       return;
@@ -1150,7 +1124,8 @@ export default function App() {
     if (window.parent !== window) window.parent.postMessage({ type: SESSION_DASHBOARD_CHAT_READY, instanceId: chatNavigationInstance.current }, window.location.origin);
     const query = new URLSearchParams(location.search);
     const sessionId = query.get("session"), agent = query.get("agent");
-    if (sessionId) void window.agentApi.getSession(sessionId, { limit: 1 }).then(value => {
+    if (sessionId) void window.agentApi.getSession(sessionId, sessionId.startsWith("runtime:codex:")
+      ? { limit: 1, view: "core" } : { limit: 1 }).then(value => {
       const session = value as UnifiedSessionSummary;
       if (session.id && isAgentType(session.agentType)) dashboardNavigation.current({ kind: "session", session });
     }).catch(error => { setNotice(error instanceof Error ? error.message : "原会话不可访问"); setNoticeType("error"); });
@@ -1752,7 +1727,6 @@ export default function App() {
           }}
           onSelect={() => {
             if (mobileDrawer) setSidebarDrawerOpen(false);
-            setMessagingOpen(false);
             applySidebarSelection(selectSession(projectId, session.id));
             if (children.length > 0) {
               setCollapsedParents((prev) => {
@@ -1792,7 +1766,6 @@ export default function App() {
                 deleteLabel="删除子会话"
                 onSelect={() => {
                   if (mobileDrawer) setSidebarDrawerOpen(false);
-                  setMessagingOpen(false);
                   applySidebarSelection(selectSession(projectId, child.id));
                 }}
                 onDelete={(anchor) => requestDeleteSession(child, anchor)}
@@ -1833,18 +1806,14 @@ export default function App() {
         groups={collaborationTabs}
         dashboardVisible={collaborationDashboardVisible}
         sessionDashboardVisible={sessionDashboardVisible}
-        messagingVisible={messagingVisible}
-        activeId={messagingOpen ? "messaging" : sessionDashboardOpen ? "sessions" : collaborationDashboardOpen ? "dashboard" : activeCollaboration ?? "assistant"}
+        activeId={sessionDashboardOpen ? "sessions" : collaborationDashboardOpen ? "dashboard" : activeCollaboration ?? "assistant"}
         onSelect={id => {
-          setMessagingOpen(id === "messaging");
           setSessionDashboardOpen(id === "sessions");
           setCollaborationDashboardOpen(id === "dashboard");
-          setActiveCollaboration(["assistant", "dashboard", "sessions", "messaging"].includes(id) ? null : id);
+          setActiveCollaboration(["assistant", "dashboard", "sessions"].includes(id) ? null : id);
         }}
         onClose={id => {
-          if (id === "messaging") {
-            setMessagingOpen(false); setMessagingVisible(false);
-          } else if (id === "sessions") {
+          if (id === "sessions") {
             setSessionDashboardVisible(false); setSessionDashboardOpen(false);
           } else if (id === "dashboard") {
             setCollaborationDashboardVisible(false);
@@ -1855,19 +1824,12 @@ export default function App() {
           }
         }}
       />}
-      {(messagingOpen || activeCollaboration || collaborationDashboardOpen || sessionDashboardOpen) && <div className="collab-desktop-overlay">
-        <div className="collab-desktop-body">{messagingOpen ? <MessagingPage onClose={() => { setMessagingOpen(false); setMessagingVisible(false); }} onOpenSession={message => {
-          const decision = message.routing.decision;
-          const project = message.routing.candidates?.find(item => item.projectId === decision?.projectId);
-          if (message.execution.sessionId && decision?.agentType && project) {
-            setMessagingOpen(false);
-            dashboardNavigation.current({ kind: "session", session: { id: message.execution.sessionId, agentType: decision.agentType, title: message.source.conversationName, cwd: project.description, projectId: decision.projectId } });
-          }
-        }}/> : sessionDashboardOpen ? <SessionDashboard onNewSession={handleBottomNewSession} onOpenGroup={item => dashboardNavigation.current({ kind: "group", groupId: item.group.id, title: item.group.name, discussionId: item.discussionId })} onOpenSession={session => dashboardNavigation.current({ kind: "session", session })} onViewAgent={agentType => dashboardNavigation.current({ kind: "agent", agentType })} onViewGroups={openCollaborationDashboard} onClose={() => { setSessionDashboardOpen(false); setSessionDashboardVisible(false); }}/> : collaborationDashboardOpen ? <CollaborationDashboard cwd={selectedWorkspacePath || undefined} onOpen={openCollaboration} onClose={() => { setCollaborationDashboardOpen(false); setCollaborationDashboardVisible(false); }} onChanged={(id, group) => {
+      {(activeCollaboration || collaborationDashboardOpen || sessionDashboardOpen) && <div className="collab-desktop-overlay">
+        <div className="collab-desktop-body"><Suspense fallback={<SessionLoading label="正在打开工作区" />}>{sessionDashboardOpen ? <SessionDashboard onNewSession={handleBottomNewSession} onOpenGroup={item => dashboardNavigation.current({ kind: "group", groupId: item.group.id, title: item.group.name, discussionId: item.discussionId })} onOpenSession={session => dashboardNavigation.current({ kind: "session", session })} onViewAgent={agentType => dashboardNavigation.current({ kind: "agent", agentType })} onViewGroups={openCollaborationDashboard} onClose={() => { setSessionDashboardOpen(false); setSessionDashboardVisible(false); }}/> : collaborationDashboardOpen ? <CollaborationDashboard cwd={selectedWorkspacePath || undefined} onOpen={openCollaboration} onClose={() => { setCollaborationDashboardOpen(false); setCollaborationDashboardVisible(false); }} onChanged={(id, group) => {
           setCollaborationGroupsRevision(revision => revision + 1);
           setCollaborationTabs(current => group ? current.map(item => item.id === id ? group : item) : current.filter(item => item.id !== id));
           if (!group && activeCollaboration === id) setActiveCollaboration(null);
-        }}/> : activeCollaboration && <CollaborationPage key={`${activeCollaboration}-${collaborationGroupsRevision}`} groupId={activeCollaboration} initialDiscussionId={initialDiscussions[activeCollaboration]}/>}</div>
+        }}/> : activeCollaboration && <CollaborationPage key={`${activeCollaboration}-${collaborationGroupsRevision}`} groupId={activeCollaboration} initialDiscussionId={initialDiscussions[activeCollaboration]}/>}</Suspense></div>
       </div>}
       <DesktopLiveControlBanner />
       {!allSessionsLayout && !mobileDrawer && !flowStudioEntryUrl && <AgentSessionRail hidden={!sidebarHidden}
@@ -1986,6 +1948,7 @@ export default function App() {
 
         {allSessionsLayout ? <AllSessionsSidebar
           selectedSessionId={selectedSessionId}
+          pendingSession={createdSessionReceipt}
           runningSessionId={runningSessionId}
           needsInput={sessionsNeedingInput}
           pinnedIds={pinnedSessionIds}
@@ -2489,7 +2452,6 @@ export default function App() {
                       const projectId = session.projectId && projects.some((p) => p.id === session.projectId)
                         ? session.projectId
                         : null;
-                      setMessagingOpen(false);
                       applySidebarSelection(selectSession(projectId, session.id));
                       setSearchOpen(false);
                       if (mobileDrawer) setSidebarDrawerOpen(false);
@@ -2554,7 +2516,6 @@ export default function App() {
             } : undefined}
             onOpenCollaborationDashboard={!webShell ? openCollaborationDashboard : undefined}
             onOpenSessionDashboard={!webShell ? openSessionDashboard : undefined}
-            onOpenMessaging={!webShell ? openMessaging : undefined}
             activeAgentType={activeAgent}
             selectedProjectId={selectedProjectId}
             selectedSessionId={selectedSessionId}
@@ -2692,11 +2653,11 @@ export default function App() {
 
         {/* AI Hub（多 AI 网页聚合）：与 ChatView 互斥显示 */}
         {hubOpen && (
-          <AIHubView conversationId={selectedSessionId} onExit={() => setHubOpen(false)} />
+          <Suspense fallback={<SessionLoading label="正在打开 AI Hub" />}><AIHubView conversationId={selectedSessionId} onExit={() => setHubOpen(false)} /></Suspense>
         )}
 
-        {fileWorkspaceGateway && (
-          <FileWorkspaceDrawer
+        {fileWorkspaceGateway && fileDrawerOpen && (
+          <Suspense fallback={<SessionLoading label="正在打开文件" />}><FileWorkspaceDrawer
             open={fileDrawerOpen}
             tab={fileDrawerTab}
             gateway={fileWorkspaceGateway}
@@ -2706,7 +2667,7 @@ export default function App() {
             onTabChange={setFileDrawerTab}
             onSelectPath={setFilePreviewPath}
             onClose={() => setFileDrawerOpen(false)}
-          />
+          /></Suspense>
         )}
 
         {flowStudioEntryUrl && (
@@ -2783,14 +2744,14 @@ export default function App() {
                 </button>
               </div>
 
-              <div style={{ flex: 1, overflow: "auto" }}>
+              <div style={{ flex: 1, overflow: "auto" }}><Suspense fallback={<SessionLoading label="正在打开设置" />}>
                 {settingsTab === "settings" && <SettingsPanel />}
                 {settingsTab === "mcp" && <MCPServerList />}
                 {settingsTab === "memory" && <MemoryViewer />}
                 {settingsTab === "skill" && <SkillManager />}
                 {settingsTab === "agent" && <AgentManager />}
                 {settingsTab === "lsp" && <LSPServerList />}
-              </div>
+              </Suspense></div>
             </div>
           </div>
         , document.body)}

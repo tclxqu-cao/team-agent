@@ -11,6 +11,20 @@ import AllSessionsSidebar from "./AllSessionsSidebar";
 afterEach(() => vi.unstubAllGlobals());
 
 describe("all sessions cache presentation", () => {
+  it("shows a newly created running session immediately over an older local cache", () => {
+    vi.stubGlobal("window", { localStorage: { getItem: () => JSON.stringify({ version: 1, total: 1,
+      data: [{ id: "old", agentType: "codex", title: "旧任务", cwd: "/project", updated: "2026-11-01", status: "idle", canResume: true }],
+    }) } });
+    const html = renderToStaticMarkup(createElement(AllSessionsSidebar, {
+      selectedSessionId: "created", runningSessionId: "created", needsInput: [], pinnedIds: [], revision: 1,
+      pendingSession: { id: "created", agentType: "codex", title: "刚发出的任务", cwd: "/project", updated: "2026-11-13", status: "running", canResume: true },
+      onSelect: () => {}, onPin: () => {}, onDelete: () => {},
+    }));
+    expect(html).toContain("刚发出的任务");
+    expect(html.indexOf("刚发出的任务")).toBeLessThan(html.indexOf("旧任务"));
+    expect(html).toContain(">2<");
+  });
+
   it("renders cached summaries and total synchronously before any request completes", () => {
     vi.stubGlobal("window", { localStorage: { getItem: (key: string) => key === ALL_SESSIONS_CACHE_KEY ? JSON.stringify({
       version: 1, total: 2620,

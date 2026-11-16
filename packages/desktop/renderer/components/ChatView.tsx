@@ -2,7 +2,7 @@ import { usePageActive, isPageActive } from "../lib/page-activity";
 import { AGENT_LABELS } from "../lib/agent-catalog";
 import { completedTurnForkPoint } from "../lib/completed-turn-fork";
 import { HistoryPullGesture, shouldLoadOlderHistoryFromWheel } from "../lib/history-pull-gesture";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   type AgentEvent,
@@ -443,10 +443,12 @@ import { reconcileCodexExecutionSegments } from "../lib/codex-execution-trace";
 import { resolveChatSessionId } from "../lib/session-search";
 import ReasoningSummary from "./ReasoningSummary";
 import CodexExecutionTrace from "./CodexExecutionTrace";
+import SessionExecutionTrace from "./SessionExecutionTrace";
+import { groupSessionExecutionMessages, type SessionExecutionMessage } from "../lib/session-execution-trace";
+import { codexExecutionTurnDurations } from "../lib/codex-execution-summary";
 import RuntimeProgressRow from "./RuntimeProgressRow";
 import SessionBackgroundJobs from "./SessionBackgroundJobs";
 import ChatHeaderActions from "./ChatHeaderActions";
-import BrowserLivePanel from "./BrowserLivePanel";
 import EmptySessionWelcome from "./EmptySessionWelcome";
 import MessageImageLightbox, { type MessageImagePreview } from "./MessageImageLightbox";
 import { widgetRegistry } from "./widgets/index.js";
@@ -482,6 +484,8 @@ import { NativeGoalBar } from "./NativeGoalBar";
 import { useNativeSessionGoal } from "../lib/use-native-session-goal";
 import { nativeGoalSubmission } from "../lib/native-goal-submission";
 
+const BrowserLivePanel = lazy(() => import("./BrowserLivePanel"));
+
 interface ChatViewProps {
   activeAgentType?: AgentType;
   selectedProjectId?: string | null;
@@ -510,7 +514,6 @@ interface ChatViewProps {
   onToggleSidebar?: () => void;
   onOpenCollaborationDashboard?: () => void;
   onOpenSessionDashboard?: () => void;
-  onOpenMessaging?: () => void;
   settingsOpen?: boolean;
   onHideToBackground?: () => void;
   onOpenHub?: () => void;
@@ -547,7 +550,8 @@ const EFFORT_OPTIONS: Array<{ value: "off" | "low" | "medium" | "high"; label: s
   { value: "high", label: "高" },
 ];
 const EFFORT_LABELS = Object.fromEntries(EFFORT_OPTIONS.map((o) => [o.value, o.label])) as Record<"off" | "low" | "medium" | "high", string>;
-const CODEX_TRACE_REFRESH_MIN_INTERVAL_MS = 750;
+// Live events remain immediate; full-turn snapshots only repair missed events.
+const CODEX_TRACE_REFRESH_MIN_INTERVAL_MS = 5_000;
 
 /** One pickable model in the native-runtime composer dropdown. */
 interface ComposerModelOption {
@@ -610,7 +614,6 @@ export default function ChatView({
   onToggleSidebar,
   onOpenCollaborationDashboard,
   onOpenSessionDashboard,
-  onOpenMessaging,
   settingsOpen = false,
   onHideToBackground,
   onOpenHub,
@@ -684,7 +687,7 @@ export default function ChatView({
     () => resolveVisibleSessionMessages(messages, messagesBySession, sessionId, selectedSessionId),
     [messages, messagesBySession, sessionId, selectedSessionId],
   );
-  const renderedMessages = useMemo(
+  const ungroupedMessages = useMemo(
     () => coalesceAdjacentToolCallMessages(presentQuestionAnswers(hideQueuedGoalMessages(
       visibleMessages.filter((message) => !message.isQueued),
       goalState.queued,
@@ -692,8 +695,8 @@ export default function ChatView({
     [activeAgentType, sessionSummary?.agentType, goalState.queued, visibleMessages],
   );
   const latestCodexExecutionTurnId = useMemo(
-    () => renderedMessages.findLast((message) => message.executionTrace && !message.executionTrace.turnId.startsWith("engine-frozen:"))?.executionTrace?.turnId,
-    [renderedMessages],
+    () => ungroupedMessages.findLast((message) => message.executionTrace && !message.executionTrace.turnId.startsWith("engine-frozen:"))?.executionTrace?.turnId,
+    [ungroupedMessages],
   );
   const { isConfigured, profiles, activeProfileId, switchActiveProfile, loadFromSystem, contextWindow, reasoningEffort, taskNotifications, setField, saveToSystem } = useSettingsStore();
   const isWorkspaceWelcome = selectedProjectId !== null && selectedSessionId === null;
@@ -743,6 +746,8 @@ export default function ChatView({
   const completedForkInFlightRef = useRef(false);
   const [codexReleaseState, setCodexReleaseState] = useState<"idle" | "releasing" | "released">("idle");
   const [browserLiveOpen, setBrowserLiveOpen] = useState(false);
+  const [browserLiveOpened, setBrowserLiveOpened] = useState(false);
+  useEffect(() => { if (browserLiveOpen) setBrowserLiveOpened(true); }, [browserLiveOpen]);
 
   // Web Shell：外壳页签栏的「远程桌面」按钮经 postMessage → web-shell-live 桥
   // 转成 window CustomEvent，这里收到后打开浏览器直播面板。
@@ -953,6 +958,11 @@ export default function ChatView({
   const shouldQueueMessage = shouldQueueMessageForActiveRun(sessionSummary, isLocallyRunning);
   const isRunning = parallel.group ? parallel.isRunning(viewSessionId)
     : isNativeRunVisible(sessionSummary, viewSessionId, isLocallyRunning, nativeRunObservation);
+  const renderedMessages = useMemo<SessionExecutionMessage[]>(
+    () => groupSessionExecutionMessages(ungroupedMessages, isRunning),
+    [isRunning, ungroupedMessages],
+  );
+  const codexTurnDurations = useMemo(() => codexExecutionTurnDurations(renderedMessages), [renderedMessages]);
   const runtimeProgress = viewSessionId ? runtimeProgressBySession[viewSessionId] ?? [] : [];
   const nativeSubagents = viewSessionId ? nativeSubagentsBySession[viewSessionId] ?? {} : {};
   const jobRuntimeProgress = runtimeProgress.filter(progress => progress.kind === "background-job");
@@ -1223,7 +1233,7 @@ export default function ChatView({
         agentApi,
         targetSid,
         trace,
-        SESSION_HISTORY_PAGE_SIZE,
+        CODEX_LATEST_HISTORY_PAGE_SIZE,
       );
       const detail = loaded.detail;
       if (selectedSessionIdRef.current !== targetSid) {
@@ -4417,7 +4427,7 @@ export default function ChatView({
 
   return (
     <MessageMediaWorkspace.Provider value={sessionSummary?.cwd ?? workspacePath ?? null}>
-    <div className="chat-view chat-view--codex-history" style={{
+    <div className="chat-view chat-view--unified-history" style={{
       display: "flex",
       flexDirection: "column",
       height: "100%",
@@ -4461,7 +4471,6 @@ export default function ChatView({
         {onOpenSettings && onHideToBackground && onToggleAppearance && (
           <ChatHeaderActions
             appActions={headerAppActions}
-            onOpenMessaging={onOpenMessaging}
             appearanceOpen={appearanceOpen}
             settingsOpen={settingsOpen}
             showSettings={composerAgentType === "customer-agent"}
@@ -4510,11 +4519,15 @@ export default function ChatView({
         }}
       />}
 
-      <BrowserLivePanel
-        open={browserLiveOpen}
-        agentSessionId={viewSessionId}
-        onClose={() => setBrowserLiveOpen(false)}
-      />
+      {(browserLiveOpen || browserLiveOpened) && (
+        <Suspense fallback={<SessionLoading label="正在打开直播" />}>
+          <BrowserLivePanel
+            open={browserLiveOpen}
+            agentSessionId={viewSessionId}
+            onClose={() => setBrowserLiveOpen(false)}
+          />
+        </Suspense>
+      )}
 
       {/* Messages area */}
       <div className="chat-messages-frame">
@@ -4592,6 +4605,21 @@ export default function ChatView({
           const chatMsg = msg as import("../stores/agentStore").ChatMessage;
           // Skip queued messages — they are rendered in the queue bar above the input
           if (chatMsg.isQueued) return null;
+          if (msg.executionGroup) {
+            return (
+              <SessionExecutionTrace
+                key={`${viewSessionId}:${msg.id}`}
+                group={msg.executionGroup}
+                renderContent={renderMessageContent}
+                runtimeProgress={runtimeProgress}
+                nativeSubagents={nativeSubagents}
+                onLoadResult={loadToolResult}
+                onSelectSession={onSelectSession}
+                workspacePath={workspacePath}
+                onOpenArtifact={onOpenArtifact}
+              />
+            );
+          }
           if (chatMsg.executionTrace) {
             return (
               <CodexExecutionTrace
@@ -4609,6 +4637,9 @@ export default function ChatView({
                   ? codexTraceRefreshSignal
                   : 0}
                 autoLoad={historyWindowMode === "latest" && !chatMsg.executionTrace.turnId.startsWith("engine-frozen:") && chatMsg.executionTrace.turnId === latestCodexExecutionTurnId}
+                isRunning={isRunning && chatMsg.executionTrace.turnId === latestCodexExecutionTurnId
+                  && !codexTurnDurations.has(chatMsg.executionTrace.turnId)}
+                durationMs={codexTurnDurations.get(chatMsg.executionTrace.turnId)}
               />
             );
           }

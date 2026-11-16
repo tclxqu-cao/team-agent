@@ -114,15 +114,15 @@ describe("shared composer panel layout", () => {
 
 describe("Codex-style Web message history", () => {
   it("uses the shared history modifier and semantic tool-call hooks", () => {
-    expect(chatView).toContain('className="chat-view chat-view--codex-history"');
+    expect(chatView).toContain('className="chat-view chat-view--unified-history"');
     expect(toolCallCard).toContain('className="tool-call-shell"');
     expect(toolCallCard).toContain('className="tool-call-shell__header"');
     expect(toolCallCard).toContain('className="tool-call-shell__body-content"');
   });
 
   it("loads the shared document history while keeping Web shell rules scoped", () => {
-    expect(globalCss).toContain(".chat-view--codex-history .chat-message-avatar");
-    expect(globalCss).toContain(".chat-view--codex-history .tool-call-shell__header");
+    expect(globalCss).toContain(".chat-view--unified-history .chat-message-avatar");
+    expect(globalCss).toContain(".chat-view--unified-history .tool-call-shell__header");
     expect(globalCss).toContain("max-width: var(--chat-content-max-width)");
     expect(webCss).toContain('body[data-web-shell="1"] .chat-messages');
     expect(webCss).not.toContain('body[data-web-shell="1"] .chat-message-avatar');

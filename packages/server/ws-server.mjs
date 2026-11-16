@@ -6,6 +6,7 @@ import { createDesktopDiscovery } from "./lib/desktop-discovery.mjs";
 import { createTunnelControlGateway } from "./lib/tunnel-control.mjs";
 import { createVoiceAsrGateway } from "./lib/voice-asr-gateway.mjs";
 import { createVoiceTtsGateway } from "./lib/voice-tts-gateway.mjs";
+import { webAppCacheControl } from "./lib/web-app-cache.mjs";
 // ws-server.mjs — custom server for @agent/server.
 // Serves the Next.js app (API + /web console) and multiplexes a WebSocket
 // channel on the SAME port for the remote terminal (PTY) and file services.
@@ -1170,8 +1171,8 @@ async function serveWebApp(req, res) {
     const ext = path.extname(filePath).toLowerCase();
     const headers = {
       "content-type": WEB_APP_MIME[ext] || "application/octet-stream",
-      // Hashed filenames change per build — never let devices pin old bundles.
-      "cache-control": "no-cache",
+      // HTML selects each build's hashes; unchanged assets can be reused on reopen.
+      "cache-control": webAppCacheControl(relative),
     };
     // Compress the big text assets — remote links (tailscale relay, tunnels)
     // are the slow path for phones.
@@ -1457,10 +1458,6 @@ server.listen(port, process.env.HOST || "127.0.0.1", async () => {
     console.error("Customer runtime initialization failed", error);
   });
   // Restore collaboration scheduling and its durable history without a browser visit.
-  void fetch(`http://127.0.0.1:${server.address().port}/api/messaging`, {
-    headers: desktopDiscovery.headers(), signal: AbortSignal.timeout(60_000),
-  }).then(response => { if (!response.ok) throw new Error(`HTTP ${response.status}`); })
-    .catch(error => globalLogger.error("Messaging initialization failed", error));
   void fetch(`http://127.0.0.1:${server.address().port}/api/collaboration`, {
     method: "POST", headers: { ...desktopDiscovery.headers(), "content-type": "application/json" },
     body: JSON.stringify({ action: "groups" }), signal: AbortSignal.timeout(60_000),

@@ -1640,7 +1640,15 @@ export default function BrowserLivePanel({ open, active = true, agentSessionId, 
                     viewportRef.current.scrollTo(start.left + start.x - event.clientX, start.top + start.y - event.clientY);
                     return;
                   }
-                  if (!hasControl || !pointerDown.current) return;
+                  if (!hasControl) return;
+                  // A physical mouse should drive the remote cursor while hovering.
+                  // Direct input sends these moves on the low-latency lossy channel;
+                  // touch still returns above so its gestures keep scrolling/panning.
+                  if (!pointerDown.current) {
+                    const point = pointerCoordinates(event);
+                    if (point) sendInput({ kind: "pointer", action: "move", ...point, button: "left" });
+                    return;
+                  }
                   const point = pointerCoordinates(event);
                   if (point) sendInput({ kind: "pointer", action: "move", ...point, button: "left" });
                 }}

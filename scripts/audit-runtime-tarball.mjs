@@ -51,6 +51,7 @@ for (const required of [
   "package/runtime/lib/voice-tts-gateway.mjs",
   "package/runtime/lib/pairing-page.mjs",
   "package/runtime/lib/pwa-assets.mjs",
+  "package/runtime/lib/web-app-cache.mjs",
   "package/runtime/node_modules/jsqr/dist/jsQR.js",
   "package/runtime/public/pwa/manifest.webmanifest",
   "package/runtime/public/pwa/service-worker.js",

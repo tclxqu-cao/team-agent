@@ -192,7 +192,7 @@ describe("shared Electron and Web composer", () => {
   it("loads one stylesheet in Electron and Web", () => {
     expect(desktopMain).toContain('import "./styles/composer.css"');
     expect(webMain).toContain('import "@desktop/renderer/styles/composer.css"');
-    expect(css).toContain(".chat-view--codex-history .composer-input-row");
+    expect(css).toContain(".chat-view--unified-history .composer-input-row");
     expect(css).toContain(".web-native-composer-textarea");
     expect(css).toContain(".web-native-composer-toolbar");
     expect(css).toContain(".web-native-context-control");

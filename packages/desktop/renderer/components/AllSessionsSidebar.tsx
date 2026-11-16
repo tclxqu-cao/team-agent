@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Search } from "lucide-react";
 import type { CatalogSession, SessionCatalogPage } from "../../../core/src/domain/supervision/types";
-import { readSessionCatalogPage, mergeCatalogSessions, orderAllSessions } from "../lib/all-sessions";
+import { readSessionCatalogPage, mergeCatalogSessions, mergeCatalogReceipts, catalogSessionReceipt, refreshCatalogWindow, orderAllSessions, type CatalogSessionReceipt } from "../lib/all-sessions";
 import { readAllSessionsCache, writeAllSessionsCache } from "../lib/all-sessions-cache";
 import { usePageActive, isPageActive } from "../lib/page-activity";
 import { getSidebarSessionVisualState, SIDEBAR_SESSION_STATUS_LABELS } from "../lib/sidebar-session-status";
@@ -16,6 +16,7 @@ interface Props {
   needsInput: string[];
   pinnedIds: string[];
   revision: number;
+  pendingSession?: CatalogSessionReceipt | null;
   onSelect(session: CatalogSession): void;
   onPin(sessionId: string): void;
   onDelete(session: CatalogSession, anchor: SidebarDeleteAnchor): void;
@@ -38,6 +39,13 @@ export default function AllSessionsSidebar(props: Props) {
   const snapshot = useRef({ query: "", rows: initialCache?.data ?? [], cursor: null as string | null });
   const firstPageRequest = useRef<{ query: string; promise: Promise<SessionCatalogPage> } | null>(null);
   const scroll = useRef<HTMLDivElement>(null);
+  const receipts = useRef(new Map<string, CatalogSession>());
+  const lastReceiptId = useRef<string | null>(null);
+  if (props.pendingSession && props.pendingSession.id !== lastReceiptId.current) {
+    lastReceiptId.current = props.pendingSession.id;
+    receipts.current.set(props.pendingSession.id, catalogSessionReceipt(props.pendingSession));
+    if (receipts.current.size > 20) receipts.current.delete(receipts.current.keys().next().value!);
+  }
 
   useEffect(() => {
     const timer = window.setTimeout(() => setSearch(query.trim()), 250);
@@ -82,9 +90,12 @@ export default function AllSessionsSidebar(props: Props) {
           controller.signal, previous.cursor ?? undefined,
         );
       }
-      const rows = reset ? page.data : mergeCatalogSessions(previous.rows, page.data);
-      snapshot.current = { query: search, rows, cursor: page.nextCursor };
-      setSessions(rows); setTotal(page.total); setNextCursor(page.nextCursor);
+      for (const session of page.data) receipts.current.delete(session.id);
+      const nextWindow = reset && previous.query === search
+        ? refreshCatalogWindow(previous, page)
+        : { rows: reset ? page.data : mergeCatalogSessions(previous.rows, page.data), cursor: page.nextCursor };
+      snapshot.current = { query: search, ...nextWindow };
+      setSessions(nextWindow.rows); setTotal(page.total); setNextCursor(nextWindow.cursor);
       setShowingCache(false);
       if (reset && !search) writeAllSessionsCache(page);
       if (reset && previous.query !== search && scroll.current) scroll.current.scrollTop = 0;
@@ -100,10 +111,10 @@ export default function AllSessionsSidebar(props: Props) {
     const revision = `${props.revision}:${props.runningSessionId}`;
     const invalidated = refreshedRevision.current !== revision;
     refreshedRevision.current = revision;
-    // Refresh only the first page. An expanded history keeps its snapshot and scroll position.
-    if (invalidated || snapshot.current.query !== search || snapshot.current.rows.length <= 20) void load(true);
+    // Head refreshes preserve expanded rows, their cursor and scroll position.
+    if (invalidated || snapshot.current.query !== search || !request.current) void load(true);
     const refreshIfIdle = () => {
-      if (isPageActive() && !request.current && snapshot.current.rows.length <= 20) void load(true);
+      if (isPageActive() && !request.current) void load(true);
     };
     const timer = window.setInterval(refreshIfIdle, 15_000);
     window.addEventListener("focus", refreshIfIdle);
@@ -116,7 +127,8 @@ export default function AllSessionsSidebar(props: Props) {
   }, [active, load, search, props.revision, props.runningSessionId]);
 
   const activeIds = [...props.needsInput, ...(props.runningSessionId ? [props.runningSessionId] : [])];
-  const ordered = orderAllSessions(sessions, props.pinnedIds, activeIds);
+  const merged = mergeCatalogReceipts(sessions, [...receipts.current.values()], search);
+  const ordered = orderAllSessions(merged, props.pinnedIds, activeIds);
   const normalized = query.trim().toLocaleLowerCase();
   const visible = ordered;
   const pinned = useMemo(() => new Set(props.pinnedIds), [props.pinnedIds]);
@@ -128,7 +140,7 @@ export default function AllSessionsSidebar(props: Props) {
         onChange={event => { setQuery(event.target.value); }} />
     </label>
     <div className="sidebar-project-toolbar">
-      <div className="sidebar-project-heading"><span className="sidebar-project-title">所有会话</span><span className="sidebar-project-count">{total}</span></div>
+      <div className="sidebar-project-heading"><span className="sidebar-project-title">所有会话</span><span className="sidebar-project-count">{total + merged.length - sessions.length}</span></div>
       <div className="sidebar-project-actions"><span className="all-sessions-sort-label">进行中优先</span>
         <SidebarRefreshButton loading={loading} error={error} subject="所有会话" onRefresh={() => void load(true)} />
       </div>

@@ -1,7 +1,19 @@
 import { expect, it, vi } from "vitest";
 import type { AgentApi } from "../global";
-import { getCachedDashboardSession, resolveDashboardSession } from "./dashboard-session-navigation";
+import { getCachedDashboardSession, resolveDashboardSession, initialSessionNavigation } from "./dashboard-session-navigation";
 import { loadProgressiveSessionHistoryPage } from "./session-history";
+
+it("opens the requested engine without restoring a different saved session", () => {
+  expect(initialSessionNavigation("?session=runtime%3Acodex%3Arequested", "zcode")).toEqual({ agentType: "codex", explicit: true });
+  expect(initialSessionNavigation("?session=customer-session", "codex")).toEqual({ agentType: "codex", explicit: true });
+  expect(initialSessionNavigation("?agent=claude-code", "zcode")).toEqual({ agentType: "claude-code", explicit: true });
+  expect(initialSessionNavigation("?newSession=1", "codex")).toEqual({ agentType: "codex", explicit: true });
+});
+
+it("retains the saved partition for ordinary entry and rejects unknown requested engines", () => {
+  expect(initialSessionNavigation("", "zcode")).toEqual({ agentType: "zcode", explicit: false });
+  expect(initialSessionNavigation("?agent=unknown", "codex")).toEqual({ agentType: "codex", explicit: false });
+});
 
 it("uses the existing workspace catalog IDs when opening an original or hidden member session", async () => {
   const api = {

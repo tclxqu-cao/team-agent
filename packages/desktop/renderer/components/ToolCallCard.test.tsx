@@ -237,8 +237,8 @@ describe("tool activity rows", () => {
   });
 
   it("aligns file disclosure chevrons without shrinking their touch target", () => {
-    const disclosureRule = globalCss.match(/\.chat-view--codex-history \.tool-call-shell__disclosure\s*\{([^}]+)\}/)?.[1] ?? "";
-    const hitAreaRule = globalCss.match(/\.chat-view--codex-history \.tool-call-shell__disclosure::before\s*\{([^}]+)\}/)?.[1] ?? "";
+    const disclosureRule = globalCss.match(/\.chat-view--unified-history \.tool-call-shell__disclosure\s*\{([^}]+)\}/)?.[1] ?? "";
+    const hitAreaRule = globalCss.match(/\.chat-view--unified-history \.tool-call-shell__disclosure::before\s*\{([^}]+)\}/)?.[1] ?? "";
 
     expect(disclosureRule).toContain("width: 11px");
     expect(disclosureRule).toContain("flex: 0 0 11px");

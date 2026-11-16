@@ -19,7 +19,7 @@ import type {
 } from "../../domain/ports/agent-port";
 import type { DictationPort } from "../../domain/ports/dictation-port";
 import type { SpeechOutputPort } from "../../domain/ports/speech-output-port";
-import { HttpClient, listOf } from "./http-client";
+import { HttpClient, RequestTimeoutError, listOf } from "./http-client";
 
 import type { LocalSettingsRepository } from "../local/local-settings-repository";
 import { StreamingThinkFilter, stripThinkBlocks } from "./think-filter";
@@ -56,7 +56,7 @@ const ORDINARY_RUN_RECOVERY_INTERVAL_MS = 1_000;
 const NATIVE_RUN_RECOVERY_INTERVAL_MS = 2_000;
 
 function isTransportFailure(error: unknown): boolean {
-  return error instanceof Error
+  return error instanceof RequestTimeoutError || error instanceof Error
     && error.name !== "AbortError"
     && TRANSPORT_FAILURE.test(error.message.trim());
 }
@@ -182,7 +182,7 @@ export class AgentHttpGateway {
       if (!isNativeSession) this.ordinaryRunStreamText.set(sessionId, "");
       // A user-configured model profile travels with the run; without one the
       // server keeps using its own env configuration.
-      const started = await this.http.post<{ runId?: string; snapshotRevision?: number }>("/api/agent/run", {
+      const payload = {
         input,
         sessionId,
         ...(images?.length ? { images } : {}),
@@ -190,7 +190,10 @@ export class AgentHttpGateway {
         ...(!isNativeSession && nativeOptions?.profileId ? { profileId: nativeOptions.profileId } : {}),
         ...(nativeOptions?.model?.id ? { nativeModel: nativeOptions.model } : {}),
         ...(nativeOptions?.reasoningEffort ? { nativeReasoningEffort: nativeOptions.reasoningEffort } : {}),
-      });
+      };
+      const started = isNativeSession
+        ? await this.http.post<{ runId?: string; snapshotRevision?: number }>("/api/agent/run", payload, { timeoutMs: 8_000 })
+        : await this.http.post<{ runId?: string; snapshotRevision?: number }>("/api/agent/run", payload);
       if (!isNativeSession) this.startOrdinaryRunRecovery(sessionId);
       if (isNativeSession) {
         const recovery = this.nativeRunRecoveries.get(sessionId);
@@ -292,7 +295,7 @@ export class AgentHttpGateway {
         status?: string;
         snapshotRevision?: number;
         snapshotRunId?: string | null;
-      }>(`/api/sessions/${encodeURIComponent(sessionId)}?limit=1`);
+      }>(`/api/sessions/${encodeURIComponent(sessionId)}?limit=1&view=core`, { timeoutMs: 4_000 });
       const runId = typeof detail.snapshotRunId === "string" ? detail.snapshotRunId : undefined;
       const sequence = typeof detail.snapshotRevision === "number" ? detail.snapshotRevision : 0;
       const isNewRun = Boolean(runId && previousCursor?.runId && runId !== previousCursor.runId);

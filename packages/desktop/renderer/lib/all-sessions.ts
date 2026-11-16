@@ -17,6 +17,35 @@ export function mergeCatalogSessions(existing: readonly CatalogSession[], page: 
   return [...new Map([...existing, ...page].map(session => [session.id, session])).values()];
 }
 
+export type CatalogSessionReceipt = Omit<CatalogSession, "status"> & { status: string };
+
+export function catalogSessionReceipt(session: CatalogSessionReceipt): CatalogSession {
+  const status = session.status === "active" ? "running"
+    : session.status === "running" || session.status === "completed" || session.status === "failed" ? session.status : "idle";
+  return { id: session.id, agentType: session.agentType, title: session.title, cwd: session.cwd,
+    projectId: session.projectId, updated: session.updated, status, canResume: session.canResume,
+    occupancy: session.occupancy, readOnly: session.readOnly };
+}
+
+/** Create receipts stay visible until discovery confirms them, even over a stale first page. */
+export function mergeCatalogReceipts(
+  sessions: readonly CatalogSession[], receipts: readonly CatalogSession[], query: string,
+): CatalogSession[] {
+  const search = query.trim().toLocaleLowerCase();
+  const known = new Set(sessions.map(session => session.id));
+  return [...sessions, ...receipts.filter(session => !known.has(session.id)
+    && `${session.title} ${session.cwd} ${session.agentType}`.toLocaleLowerCase().includes(search))];
+}
+
+/** A head refresh must not discard an expanded immutable history window. */
+export function refreshCatalogWindow(
+  previous: { rows: CatalogSession[]; cursor: string | null }, page: SessionCatalogPage,
+): { rows: CatalogSession[]; cursor: string | null } {
+  const expanded = previous.rows.length > 20;
+  return { rows: expanded ? mergeCatalogSessions(previous.rows, page.data) : page.data,
+    cursor: expanded && previous.cursor ? previous.cursor : page.nextCursor };
+}
+
 export function orderAllSessions(
   sessions: readonly CatalogSession[],
   pinnedIds: readonly string[],

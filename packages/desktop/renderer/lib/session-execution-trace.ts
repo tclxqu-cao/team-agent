@@ -1,0 +1,108 @@
+import type { ChatMessage } from "../stores/agentStore";
+import { validCompletionDurationMs } from "./message-actions";
+
+export interface SessionExecutionGroup {
+  id: string;
+  messages: ChatMessage[];
+  isRunning: boolean;
+  durationMs?: number;
+}
+
+export type SessionExecutionMessage = ChatMessage & { executionGroup?: SessionExecutionGroup };
+
+function isExecutionMessage(message: ChatMessage): boolean {
+  return message.role === "assistant" && !message.askUser && !message.widget
+    && !message.isCompactionSummary && !message.executionTrace && !message.images?.length
+    && !message.presentation?.attachments?.length && !message.agentName;
+}
+
+function hasExecutionContent(message: ChatMessage): boolean {
+  return Boolean(message.content.trim() || message.toolCalls?.length
+    || message.presentation?.reasoning?.some((section) => section.text.trim()));
+}
+
+function startsTurn(message: ChatMessage): boolean {
+  return message.role === "user" && !message.isCompactionSummary
+    && !message.isQueued && !message.isSteered;
+}
+
+/** Group by message semantics. Runtime adapters retain ownership of native history. */
+export function groupSessionExecutionMessages(
+  messages: readonly ChatMessage[],
+  isRunning: boolean,
+): SessionExecutionMessage[] {
+  const result: SessionExecutionMessage[] = [];
+  let index = 0;
+  while (index < messages.length) {
+    const user = messages[index++];
+    result.push(user);
+    // An older history page can begin in the middle of a turn. Wait for its input anchor.
+    if (!startsTurn(user)) continue;
+    let end = index;
+    while (end < messages.length && !startsTurn(messages[end])) end++;
+    const turn = messages.slice(index, end);
+    // A lazy trace already owns this turn's progress. Preserve its data and anchors.
+    if (turn.some((message) => message.executionTrace)) {
+      result.push(...turn);
+      index = end;
+      continue;
+    }
+    const durationMs = [user, ...turn].reduce<number | undefined>((duration, message) => (
+      validCompletionDurationMs(message.presentation?.completionDurationMs)
+      ?? validCompletionDurationMs(message.presentation?.runResult?.durationMs) ?? duration
+    ), undefined);
+    const running = isRunning && end === messages.length && durationMs === undefined;
+    const isAnswer = (message: ChatMessage) => (
+      isExecutionMessage(message) && Boolean(message.content.trim())
+      && !message.toolCalls?.length && message.presentation?.agentMessagePhase !== "commentary"
+    );
+    const explicitFinal = turn.findLastIndex((message) => (
+      isAnswer(message) && message.presentation?.agentMessagePhase === "final_answer"
+    ));
+    const lastOutput = turn.findLastIndex((message) => (
+      isExecutionMessage(message) && Boolean(message.content.trim() || message.toolCalls?.length)
+    ));
+    const finalIndex = explicitFinal >= 0 ? explicitFinal
+      : !running && lastOutput >= 0 && isAnswer(turn[lastOutput]) ? lastOutput : -1;
+    let pending: ChatMessage[] = [];
+    let block = 0;
+    const flush = () => {
+      if (pending.length === 0) return;
+      const id = `session-execution:${user.id}:${block++}`;
+      result.push({
+        id, role: "assistant", content: "", timestamp: user.timestamp,
+        executionGroup: { id, messages: pending, isRunning: running, durationMs },
+      });
+      pending = [];
+    };
+    turn.forEach((message, turnIndex) => {
+      if (!isExecutionMessage(message)) {
+        // Questions, widgets, compaction and engine boundaries remain visible and ordered.
+        flush();
+        result.push(message);
+        return;
+      }
+      if (turnIndex === finalIndex) {
+        const reasoning = message.presentation?.reasoning;
+        if (reasoning?.some((section) => section.text.trim())) {
+          pending.push({
+            ...message, id: `${message.id}:reasoning`, content: "",
+            presentation: { reasoning },
+          });
+        }
+        flush();
+        result.push(reasoning?.length
+          ? { ...message, presentation: { ...message.presentation, reasoning: undefined } }
+          : message);
+      } else if (hasExecutionContent(message)) {
+        pending.push(message.content.trim() ? {
+          ...message,
+          presentation: { ...message.presentation, agentMessagePhase: "commentary" },
+        } : message);
+      }
+    });
+    flush();
+    index = end;
+  }
+  return result;
+}

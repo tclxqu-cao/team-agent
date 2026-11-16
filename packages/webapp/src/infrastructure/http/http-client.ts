@@ -18,8 +18,16 @@ export class ApiError extends Error {
   }
 }
 
+export class RequestTimeoutError extends Error {
+  constructor() {
+    super("请求超时，请检查连接后重试");
+    this.name = "RequestTimeoutError";
+  }
+}
+
 export interface HttpOptions {
   headers?: Record<string, string>;
+  timeoutMs?: number;
 }
 
 /**
@@ -46,7 +54,7 @@ export class HttpClient {
   }
 
   async get<T>(path: string, options?: HttpOptions): Promise<T> {
-    return this.request<T>(path, { method: "GET", headers: options?.headers });
+    return this.request<T>(path, { method: "GET", headers: options?.headers }, options?.timeoutMs);
   }
 
   async post<T = unknown>(path: string, body?: unknown, options?: HttpOptions): Promise<T> {
@@ -54,7 +62,7 @@ export class HttpClient {
       method: "POST",
       headers: { "content-type": "application/json", ...options?.headers },
       body: body === undefined ? undefined : JSON.stringify(body),
-    });
+    }, options?.timeoutMs);
   }
 
   async patch<T = unknown>(path: string, body?: unknown, options?: HttpOptions): Promise<T> {
@@ -62,7 +70,7 @@ export class HttpClient {
       method: "PATCH",
       headers: { "content-type": "application/json", ...options?.headers },
       body: body === undefined ? undefined : JSON.stringify(body),
-    });
+    }, options?.timeoutMs);
   }
 
   async put<T = unknown>(path: string, body?: unknown, options?: HttpOptions): Promise<T> {
@@ -70,14 +78,30 @@ export class HttpClient {
       method: "PUT",
       headers: { "content-type": "application/json", ...options?.headers },
       body: body === undefined ? undefined : JSON.stringify(body),
-    });
+    }, options?.timeoutMs);
   }
 
   async delete<T = unknown>(path: string, options?: HttpOptions): Promise<T> {
-    return this.request<T>(path, { method: "DELETE", headers: options?.headers });
+    return this.request<T>(path, { method: "DELETE", headers: options?.headers }, options?.timeoutMs);
   }
 
-  private async request<T>(path: string, init: RequestInit): Promise<T> {
+  private async request<T>(path: string, init: RequestInit, timeoutMs = 30_000): Promise<T> {
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout>;
+    const deadline = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => {
+        reject(new RequestTimeoutError());
+        controller.abort();
+      }, timeoutMs);
+    });
+    try {
+      return await Promise.race([this.readResponse<T>(path, { ...init, signal: controller.signal }), deadline]);
+    } finally {
+      clearTimeout(timer!);
+    }
+  }
+
+  private async readResponse<T>(path: string, init: RequestInit): Promise<T> {
     const response = await this.transport(this.resolve(path), {
       credentials: "same-origin",
       cache: "no-store",

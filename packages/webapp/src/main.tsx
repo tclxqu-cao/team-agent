@@ -175,22 +175,20 @@ async function boot(endpoint: ServerEndpoint | null): Promise<void> {
       return;
     }
     window.agentApi = gateway as unknown as AgentApi;
-    await gateway.refreshServerModel();
-    // 浏览器（同源、https/localhost）才启用 Web Push：原生壳 WebView 不支持
-    // Web Push，且订阅跟随已配对的设备凭证由 http 层自动携带。
-    if (!nativeWorkspace && window.parent === window) startPushNotifications(http);
     const view = new URLSearchParams(location.search).get("view");
-    const { default: App } = view === "collaboration"
-      ? await import("../../desktop/renderer/components/collaboration/CollaborationPage")
+    const appModule = view === "collaboration"
+      ? import("../../desktop/renderer/components/collaboration/CollaborationPage")
       : view === "collaboration-dashboard"
-      ? await import("../../desktop/renderer/components/collaboration/CollaborationDashboard")
+      ? import("../../desktop/renderer/components/collaboration/CollaborationDashboard")
       : view === "session-dashboard"
-      ? await import("../../desktop/renderer/components/collaboration/SessionDashboard")
-      : view === "messaging"
-      ? await import("../../desktop/renderer/components/messaging/MessagingPage")
+      ? import("../../desktop/renderer/components/collaboration/SessionDashboard")
       : view === "remote-desktop"
-      ? await import("./presentation/RemoteDesktopPage")
-      : await import("@desktop/renderer/App");
+      ? import("./presentation/RemoteDesktopPage")
+      : import("@desktop/renderer/App");
+    // Download the UI while settings/migration runs; mount only after both succeed.
+    const [, { default: App }] = await Promise.all([gateway.refreshServerModel(), appModule]);
+    // 浏览器（同源、https/localhost）才启用 Web Push：原生壳 WebView 不支持。
+    if (!nativeWorkspace && window.parent === window) startPushNotifications(http);
     root.render(
       <StrictMode>
         <BrowserLiveHeaderContext.Provider value={<RemoteAuthorizationControl />}><App /></BrowserLiveHeaderContext.Provider>

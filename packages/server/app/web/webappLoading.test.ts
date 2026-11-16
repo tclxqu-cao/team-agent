@@ -22,7 +22,7 @@ describe("webapp shell loading state", () => {
 
   it("does not block the shared renderer on a remote font stylesheet", () => {
     expect(sharedCss).not.toContain("fonts.googleapis.com");
-    expect(sharedCss).not.toMatch(/^\s*@import\b/m);
+    expect(sharedCss).not.toMatch(/^\s*@import\s+(?:url\(\s*)?["']?(?:https?:)?\/\//m);
   });
 
   it("paints the document dark before route CSS and client hydration", () => {

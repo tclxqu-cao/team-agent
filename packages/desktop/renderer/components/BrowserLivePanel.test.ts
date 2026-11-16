@@ -165,6 +165,28 @@ describe("zoomed touch dragging", () => {
   });
 });
 
+describe("desktop mouse hover", () => {
+  const source = readFileSync(new URL("./BrowserLivePanel.tsx", import.meta.url), "utf8");
+  const handler = source.slice(source.indexOf("onPointerMove={(event) => {") + "onPointerMove={(event) => {".length, source.indexOf("onPointerUp={(event) => {")).replace(/\}\}\s*$/, "");
+
+  it("sends unpressed physical-mouse movement to the remote cursor", () => {
+    const sendInput = vi.fn();
+    const bindings = {
+      pointerCoordinates: () => ({ x: 0.25, y: 0.6 }),
+      hasControl: true,
+      panMode: false,
+      panStart: { current: null },
+      viewportRef: { current: null },
+      pointerDown: { current: false },
+      sendInput,
+    };
+    const onMove = new Function(...Object.keys(bindings), "event", handler);
+    onMove(...Object.values(bindings), { pointerType: "mouse", clientX: 120, clientY: 90 });
+
+    expect(sendInput).toHaveBeenCalledWith({ kind: "pointer", action: "move", x: 0.25, y: 0.6, button: "left" });
+  });
+});
+
 describe("stale control reply guard", () => {
   const controller = (state: BrowserLiveSession["state"]): BrowserLiveSession => ({
     ...session("desktop:primary", ""),

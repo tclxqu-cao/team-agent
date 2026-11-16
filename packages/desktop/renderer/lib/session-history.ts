@@ -90,7 +90,7 @@ export async function loadCodexExecutionTracePage(
   api: SessionHistoryApi,
   sessionId: string,
   trace: { turnId: string; revision: string },
-  limit = 50,
+  limit = 1,
 ): Promise<{ detail: SessionHistoryDetail | null; revision: string; recovered: boolean }> {
   const requestTrace = (revision: string) => api.getSession(sessionId, {
     view: "trace",
@@ -174,8 +174,19 @@ export function restoreLatestSessionHistoryWindow(
   const retained = cachedWindow?.kind === "anchored"
     ? current.filter((message) => message.isQueued)
     : uniqueSessionMessages(current);
+  const merged = mergeProgressiveSessionHistoryPage(retained, refreshed, phase, history);
+  // A revision describes the native session's ordinal space, including older
+  // retained segments. Keep them on the same revision after a new core page.
+  const messages = phase === "core" && history?.delivery === "core" && history.revision
+    ? merged.map(message => message.executionTrace
+      && !message.executionTrace.turnId.startsWith("engine-frozen:")
+      && !message.executionTrace.revision.startsWith("live:")
+      && message.executionTrace.revision !== history.revision
+      ? { ...message, executionTrace: { ...message.executionTrace, revision: history.revision! } }
+      : message)
+    : merged;
   return {
-    messages: mergeProgressiveSessionHistoryPage(retained, refreshed, phase, history),
+    messages,
     window: {
       kind: "latest",
       olderCursor: cachedWindow?.kind === "latest" && retained.some((message) => !message.isQueued)
