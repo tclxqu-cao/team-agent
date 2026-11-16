@@ -1,0 +1,53 @@
+package.json
+  s_4051421ec36e36::t_1301142fdcd4db 35,45,48,73
+packages/desktop/package.json
+  s_4051421ec36e36::t_860a584bf9aff9 35
+packages/desktop/tsconfig.json
+  s_4051421ec36e36::t_1944e863d34146 13
+packages/server/app/api/messaging/route.test.ts
+  s_c180ae29f7de44::t_3c51da4db6b201 1
+packages/server/app/web/ResponsiveToolbar.tsx
+  s_c180ae29f7de44::t_0a3e8d1806e5c0 10
+packages/server/app/web/toolbar-order.test.ts
+  s_c180ae29f7de44::t_f3ffa7798aaf62 7-10
+packages/server/next.config.js
+  s_c180ae29f7de44::t_0029af539dd111 16,30
+packages/webapp/package.json
+  s_4051421ec36e36::t_46a754a7559d3a 20
+scripts/audit-runtime-tarball.mjs
+  s_c180ae29f7de44::t_c06513abd6d5d9 15-16
+scripts/audit-runtime-tarball.test.mjs
+  s_c180ae29f7de44::t_2a222ee88113e0 2-3,5-7,9-25
+scripts/incremental-cli-release.mjs
+  s_c180ae29f7de44::t_fe5622bd615536 27,35
+scripts/incremental-cli-release.test.mjs
+  s_c180ae29f7de44::t_480027c08f0ee3 25
+scripts/stage-agent-packages-for-packaging.mjs
+  s_c180ae29f7de44::t_13fcc72cfab470 16-19
+scripts/stage-agent-packages-for-packaging.test.mjs
+  s_c180ae29f7de44::t_eea19b1822c067 1,3-4,6,8-42
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "98fe93817aba106d49f85f0bfa20e750274d42a7",
+  "prompts": {},
+  "sessions": {
+    "s_4051421ec36e36": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cac9-1b4d-7871-932c-4020e9ae7bd4",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_c180ae29f7de44": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1e333-4d68-7972-878e-056da492fc99",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
