@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ChatMessage } from "../stores/agentStore";
-import { groupSessionExecutionMessages } from "./session-execution-trace";
+import { groupSessionExecutionMessages, sessionExecutionActivity } from "./session-execution-trace";
 import { messageActionPolicy } from "./message-actions";
 
 function message(id: string, extra: Partial<ChatMessage> = {}): ChatMessage {
@@ -13,6 +13,34 @@ const tool = message("tool", {
   toolCalls: [{ id: "call", name: "shell", arguments: { command: "rg sendTurn" }, result: "" }],
 });
 const final = message("final", { content: "流程如下：\n```mermaid\ngraph TD; A-->B\n```", presentation: { reasoning } });
+
+describe("session execution activity ownership", () => {
+  it("moves activity to the last visible native segment without highlighting old progress", () => {
+    const earlier = message("earlier", { executionTrace: { turnId: "turn", segmentIndex: 0, revision: "r" } });
+    const latest = message("latest", { executionTrace: { turnId: "turn", segmentIndex: 1, revision: "r" } });
+    expect(sessionExecutionActivity([user(), earlier, user("follow-up"), latest], true))
+      .toEqual({ kind: "message", messageId: "latest" });
+    expect(sessionExecutionActivity([user(), earlier, user("new")], true)).toEqual({ kind: "pending" });
+    expect(sessionExecutionActivity([user(), earlier], false)).toEqual({ kind: "none" });
+  });
+
+  it("stops at a pending question or final answer and resumes after new work arrives", () => {
+    const question = message("question", { askUser: { questionId: "q", question: "选哪个" } });
+    expect(sessionExecutionActivity([user(), tool, question], true)).toEqual({ kind: "none" });
+    expect(sessionExecutionActivity([user(), tool, question, tool], true)).toEqual({ kind: "message", messageId: "tool" });
+    expect(sessionExecutionActivity([user(), tool, { ...final, presentation: { agentMessagePhase: "final_answer" } }], true))
+      .toEqual({ kind: "none" });
+    expect(sessionExecutionActivity([user(), message("frozen", { executionTrace: { turnId: "engine-frozen:old", revision: "r" } })], true))
+      .toEqual({ kind: "none" });
+  });
+
+  it("uses the same ownership rule for shared groups and ignores queued messages", () => {
+    const messages = groupSessionExecutionMessages([user(), tool], true);
+    expect(sessionExecutionActivity([...messages, { ...user("queued"), isQueued: true }], true))
+      .toEqual({ kind: "message", messageId: "session-execution:user:0" });
+    expect(sessionExecutionActivity([], true)).toEqual({ kind: "pending" });
+  });
+});
 
 describe("Session execution display projection", () => {
   it("groups completed progress, tools and final reasoning while preserving the final answer", () => {

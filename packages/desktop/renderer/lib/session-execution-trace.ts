@@ -10,6 +10,19 @@ export interface SessionExecutionGroup {
 
 export type SessionExecutionMessage = ChatMessage & { executionGroup?: SessionExecutionGroup };
 
+export function sessionExecutionActivity(messages: readonly SessionExecutionMessage[], running: boolean):
+  { kind: "none" } | { kind: "pending" } | { kind: "message"; messageId: string } {
+  if (!running) return { kind: "none" };
+  const last = messages.findLast((message) => !message.isQueued && message.role !== "tool" && !message.isCompactionSummary);
+  if (!last || last.role === "user") return { kind: "pending" };
+  if (last.askUser) return { kind: last.askUser.answered || last.askUser.cancelled ? "pending" : "none" };
+  if (last.presentation?.agentMessagePhase === "final_answer") return { kind: "none" };
+  if (last.executionTrace?.turnId.startsWith("engine-frozen:")) return { kind: "none" };
+  if (last.executionGroup && !last.executionGroup.isRunning) return { kind: "pending" };
+  return last.executionTrace || last.executionGroup || last.toolCalls?.length || last.presentation?.reasoning?.length
+    ? { kind: "message", messageId: last.id } : { kind: "none" };
+}
+
 function isExecutionMessage(message: ChatMessage): boolean {
   return message.role === "assistant" && !message.askUser && !message.widget
     && !message.isCompactionSummary && !message.executionTrace && !message.images?.length

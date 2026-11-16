@@ -1,9 +1,8 @@
 import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
 import type { NativeSubagentActivity, RuntimeProgress, SessionToolResultRef } from "@agent/core";
-import { ChevronRight, LoaderCircle } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import type { ChatMessage } from "../stores/agentStore";
-import { executionActivityRows } from "../lib/execution-activity-blocks";
-import { hasToolCallResult } from "../lib/tool-call-status";
+import { executionActivityRows, latestExecutionSummary } from "../lib/execution-activity-blocks";
 import { toolRuntimeProgress } from "../lib/native-runtime-progress";
 import { formatSessionWorkDuration } from "../lib/session-execution-summary";
 import { ToolCallActivity, type ToolCallGroupItem } from "./ToolCallCard";
@@ -56,6 +55,7 @@ export default function ExecutionTrace({
 
 interface ExecutionTraceContentProps {
   messages: ChatMessage[];
+  active?: boolean;
   renderContent: (text: string) => ReactNode;
   runtimeProgress: RuntimeProgress[];
   nativeSubagents: Record<string, NativeSubagentActivity>;
@@ -71,18 +71,28 @@ interface ExecutionActivityBlockProps extends Omit<ExecutionTraceContentProps, "
   items: ToolCallGroupItem[];
 }
 
-export function ExecutionActivityBlock({ id, summary = "执行操作", items, ...handlers }: ExecutionActivityBlockProps) {
+function ExecutionActivityPreview({ summary, active }: { summary: string; active: boolean }) {
+  return <span className={`execution-activity-block__preview${active ? " execution-activity-block__preview--active" : ""}`}>{summary}</span>;
+}
+
+export function ExecutionActivityPlaceholder({ summary = "正在处理这条消息" }: { summary?: string }) {
+  return <div className="execution-activity-block">
+    <div className="execution-activity-block__summary" role="status" aria-busy="true" aria-label={`${summary}，执行中`}>
+      <ExecutionActivityPreview summary={summary} active />
+    </div>
+  </div>;
+}
+
+export function ExecutionActivityBlock({ id, summary = "执行操作", items, active = false, ...handlers }: ExecutionActivityBlockProps) {
   const [expanded, setExpanded] = useState(false);
   const contentId = useId();
-  const pending = items.some(({ toolCall }) => !hasToolCallResult(toolCall));
   const errors = items.filter(({ toolCall }) => toolCall.isError).length;
   return <div className="execution-activity-block" data-activity-id={id}>
     <button type="button" className="execution-activity-block__summary"
-      aria-expanded={expanded} aria-controls={contentId} aria-busy={pending || undefined}
-      aria-label={`${summary}，${items.length} 项，${expanded ? "收起" : "展开"}`} title={summary}
+      aria-expanded={expanded} aria-controls={contentId} aria-busy={active || undefined}
+      aria-label={`${summary}，${items.length} 项${active ? "，执行中" : ""}，${expanded ? "收起" : "展开"}`} title={summary}
       onClick={() => setExpanded((value) => !value)}>
-      <span className="execution-activity-block__preview">{summary}</span>
-      {pending && <LoaderCircle size={12} className="animate-spin" aria-hidden="true" />}
+      <ExecutionActivityPreview summary={summary} active={active} />
       {errors > 0 && <span className="execution-activity-block__error">{errors} 项失败</span>}
       <ChevronRight size={12} className="execution-activity-block__chevron" aria-hidden="true" />
     </button>
@@ -94,6 +104,7 @@ export function ExecutionActivityBlock({ id, summary = "执行操作", items, ..
 
 export function ExecutionTraceContent({
   messages,
+  active = false,
   renderContent,
   runtimeProgress,
   nativeSubagents,
@@ -127,8 +138,13 @@ export function ExecutionTraceContent({
     });
   }, [messages, nativeSubagents, runtimeProgress]);
 
+  const lastRow = rows.at(-1);
+  const pendingSummary = active && lastRow?.kind !== "activity";
+  const summaryStart = lastRow ? messages.findIndex((message) => message.id === lastRow.id) : 0;
   if (rows.length === 0) {
-    return <div className="execution-trace__empty">这一轮没有可显示的执行过程</div>;
+    return active
+      ? <ExecutionActivityPlaceholder summary={latestExecutionSummary(messages)} />
+      : <div className="execution-trace__empty">这一轮没有可显示的执行过程</div>;
   }
 
   return (
@@ -136,9 +152,10 @@ export function ExecutionTraceContent({
       {rows.map((row) => <div key={`${row.kind}:${row.id}`} className="execution-trace__item">
         {row.kind === "commentary"
           ? <div className="execution-trace__commentary">{renderContent(row.content)}</div>
-          : <ExecutionActivityBlock id={row.id} summary={row.summary} items={row.items}
+          : <ExecutionActivityBlock id={row.id} summary={row.summary} items={row.items} active={active && row === lastRow}
               onSelectSession={onSelectSession} workspacePath={workspacePath} onOpenArtifact={onOpenArtifact} onLoadResult={onLoadResult} />}
       </div>)}
+      {pendingSummary && <ExecutionActivityPlaceholder summary={latestExecutionSummary(messages.slice(Math.max(0, summaryStart)))} />}
     </div>
   );
 }

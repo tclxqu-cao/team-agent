@@ -52,15 +52,15 @@ describe("shared Codex-style message history", () => {
     expect(executionTrace).not.toMatch(/AgentType|agentType|data-execution-agent/);
   });
 
-  it("keeps one run activity component independent of tool rows and streaming reasoning", () => {
-    expect(pendingIndicator).toContain("<SessionRunActivity running={isRunning}");
+  it("uses the shared fallback only before an active summary block is available", () => {
+    expect(pendingIndicator).toContain('<SessionRunActivity running={executionActivity.kind === "pending"}');
     expect(pendingIndicator).not.toContain("chat-message-avatar");
     expect(chatView).not.toContain("hasStreamingReasoning");
     expect(chatView).not.toContain("hasVisibleRunningTool");
     expect(chatView).toContain("visibleMessages.length === 0 && !isRunning");
   });
 
-  it("starts every run with a fresh thinking timer before exposing the running state", () => {
+  it("sets run activity before exposing the running state", () => {
     expect(chatView).toContain("const beginAgentRunActivity = useCallback((targetSessionId: string) => {");
     expect(startRun).toContain("beginAgentRunActivity(targetSessionId);");
     expect(startRun.indexOf("beginAgentRunActivity(targetSessionId);"))
@@ -87,8 +87,9 @@ describe("shared Codex-style message history", () => {
     expect(toolCallCard).toContain("!isDone && <StatusIcon");
   });
 
-  it("shows one left-aligned thinking status when native progress is available", () => {
-    expect(pendingIndicator).toContain("progress={globalRuntimeProgress} startedAt={thinkingStartedAt}");
+  it("keeps native progress available without a standalone thinking timer", () => {
+    expect(pendingIndicator).toContain("progress={globalRuntimeProgress}");
+    expect(chatView).not.toContain("thinkingStartedAt");
     expect(globalCss).toContain(".chat-view--unified-history .runtime-progress-row:not(.runtime-progress-row--compact)");
     expect(globalCss).toMatch(/\.chat-view--unified-history \.runtime-progress-row:not\(\.runtime-progress-row--compact\)\s*\{[^}]*width: 100%;[^}]*max-width: none;/s);
     expect(globalCss).toContain("margin-left: auto");

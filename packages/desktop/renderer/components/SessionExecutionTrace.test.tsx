@@ -20,6 +20,7 @@ describe("SessionExecutionTrace", () => {
     expect(html).toContain('data-message-id="session-execution:user:0"');
     expect(html).toContain("核对发送入口");
     expect(html).toContain("execution-activity-block");
+    expect(html.match(/execution-activity-block__preview--active/g)).toHaveLength(1);
     expect(html).not.toContain("rg sendTurn");
     expect(html).not.toContain("execution-trace__summary");
   });
@@ -90,14 +91,18 @@ describe("SessionExecutionTrace", () => {
     expect(html).not.toContain("reasoning-summary__content");
   });
 
-  it("supports single unknown tools and preserves pending and failure states", () => {
-    const renderTool = (toolCall: { id: string; name: string; arguments: {}; result?: string; isError?: boolean }) => renderToStaticMarkup(<ExecutionTraceContent
+  it("drives activity from the run state and preserves failures without animating stale pending tools", () => {
+    const renderTool = (toolCall: { id: string; name: string; arguments: {}; result?: string; isError?: boolean }, active = false) => renderToStaticMarkup(<ExecutionTraceContent
       messages={[{ id: "custom", role: "assistant", content: "", timestamp: 1, toolCalls: [toolCall] }]}
+      active={active}
       renderContent={text => text} runtimeProgress={[]} nativeSubagents={{}} onLoadResult={vi.fn()}
     />);
     const pending = renderTool({ id: "one", name: "constructor", arguments: {} });
     expect(pending).toContain("调用了工具");
-    expect(pending).toContain('aria-busy="true"');
+    expect(pending).not.toContain('aria-busy="true"');
+    const running = renderTool({ id: "one", name: "constructor", arguments: {}, result: "" }, true);
+    expect(running).toContain('aria-busy="true"');
+    expect(running).toContain("execution-activity-block__preview--active");
     const failed = renderTool({ id: "one", name: "new_custom_tool", arguments: {}, result: "", isError: true });
     expect(failed).toContain("1 项失败");
     expect(failed).not.toContain("aria-busy");

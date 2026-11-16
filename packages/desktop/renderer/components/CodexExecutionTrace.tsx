@@ -12,7 +12,7 @@ import {
   codexExecutionSegmentMessages,
   mergeCodexExecutionMessages,
 } from "../lib/codex-execution-trace";
-import ExecutionTrace, { ExecutionTraceContent, useExecutionTraceDisclosure } from "./ExecutionTrace";
+import ExecutionTrace, { ExecutionActivityPlaceholder, ExecutionTraceContent, useExecutionTraceDisclosure } from "./ExecutionTrace";
 
 interface CodexExecutionTraceProps {
   trace: NonNullable<ChatMessage["executionTrace"]>;
@@ -27,6 +27,7 @@ interface CodexExecutionTraceProps {
   refreshSignal?: number;
   autoLoad?: boolean;
   isRunning?: boolean;
+  active?: boolean;
   durationMs?: number;
 }
 
@@ -43,6 +44,7 @@ export default function CodexExecutionTrace({
   refreshSignal = 0,
   autoLoad = false,
   isRunning = false,
+  active = isRunning,
   durationMs,
 }: CodexExecutionTraceProps) {
   const segmentIndex = trace.segmentIndex ?? 0;
@@ -171,6 +173,7 @@ export default function CodexExecutionTrace({
       {hasMessages ? (
         <ExecutionTraceContent
           messages={displayMessages}
+          active={active && isRunning}
           renderContent={renderContent}
           runtimeProgress={runtimeProgress}
           nativeSubagents={nativeSubagents}
@@ -179,6 +182,8 @@ export default function CodexExecutionTrace({
           onOpenArtifact={onOpenArtifact}
           onLoadResult={loadLocalToolResult}
         />
+      ) : active && isRunning && !error ? (
+        <ExecutionActivityPlaceholder />
       ) : (autoLoad || needsHistory) && !error ? (
         <div
           className="execution-trace__status"

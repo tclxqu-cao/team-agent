@@ -5,6 +5,7 @@ import ExecutionTrace, { ExecutionTraceContent, useExecutionTraceDisclosure } fr
 
 interface SessionExecutionTraceProps {
   group: SessionExecutionGroup;
+  active?: boolean;
   renderContent: (text: string) => ReactNode;
   runtimeProgress: RuntimeProgress[];
   nativeSubagents: Record<string, NativeSubagentActivity>;
@@ -14,7 +15,7 @@ interface SessionExecutionTraceProps {
   onOpenArtifact?: (path: string) => void;
 }
 
-export default function SessionExecutionTrace({ group, ...contentProps }: SessionExecutionTraceProps) {
+export default function SessionExecutionTrace({ group, active = group.isRunning, ...contentProps }: SessionExecutionTraceProps) {
   const { expanded, setExpanded } = useExecutionTraceDisclosure(group.id, group.isRunning);
   return (
     <ExecutionTrace
@@ -24,7 +25,7 @@ export default function SessionExecutionTrace({ group, ...contentProps }: Sessio
       expanded={expanded}
       onToggle={() => setExpanded((value) => !value)}
     >
-      <ExecutionTraceContent messages={group.messages} {...contentProps} />
+      <ExecutionTraceContent messages={group.messages} active={active && group.isRunning} {...contentProps} />
     </ExecutionTrace>
   );
 }

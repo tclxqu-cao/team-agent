@@ -444,7 +444,7 @@ import { reconcileCodexExecutionSegments } from "../lib/codex-execution-trace";
 import { resolveChatSessionId } from "../lib/session-search";
 import CodexExecutionTrace from "./CodexExecutionTrace";
 import SessionExecutionTrace from "./SessionExecutionTrace";
-import { groupSessionExecutionMessages, type SessionExecutionMessage } from "../lib/session-execution-trace";
+import { groupSessionExecutionMessages, sessionExecutionActivity, type SessionExecutionMessage } from "../lib/session-execution-trace";
 import { codexExecutionTurnDurations } from "../lib/codex-execution-summary";
 import RuntimeProgressRow from "./RuntimeProgressRow";
 import SessionBackgroundJobs from "./SessionBackgroundJobs";
@@ -934,11 +934,9 @@ export default function ChatView({
   const [agentActivity, setAgentActivity] = useState<"idle" | "thinking" | "tools">("idle");
   const agentActivityRef = useRef<"idle" | "thinking" | "tools">("idle");
   const thinkingSessionIdRef = useRef<string | null>(null);
-  const [thinkingStartedAt, setThinkingStartedAt] = useState(() => Date.now());
   const beginAgentRunActivity = useCallback((targetSessionId: string) => {
     thinkingSessionIdRef.current = targetSessionId;
     agentActivityRef.current = "thinking";
-    setThinkingStartedAt(Date.now());
     setAgentActivity("thinking");
   }, []);
   const [nativeRunObservation, setNativeRunObservation] = useState<NativeRunObservation | null>(null);
@@ -1130,6 +1128,10 @@ export default function ChatView({
   const [olderHistoryError, setOlderHistoryError] = useState<string | null>(null);
   const [queryIndex, setQueryIndex] = useState<SessionQueryIndex | null>(null);
   const [historyWindowMode, setHistoryWindowMode] = useState<"latest" | "anchored">("latest");
+  const executionActivity = useMemo(
+    () => sessionExecutionActivity(renderedMessages, isRunning && historyWindowMode === "latest"),
+    [historyWindowMode, isRunning, renderedMessages],
+  );
   const [activeQueryMessageId, setActiveQueryMessageId] = useState<string | null>(null);
   const [loadingQueryMessageId, setLoadingQueryMessageId] = useState<string | null>(null);
   const [hasLatestHistoryUpdates, setHasLatestHistoryUpdates] = useState(false);
@@ -1613,7 +1615,6 @@ export default function ChatView({
       && thinkingSessionIdRef.current !== activitySessionId
     ) {
       thinkingSessionIdRef.current = activitySessionId;
-      setThinkingStartedAt(Date.now());
     } else if (next === "idle") {
       thinkingSessionIdRef.current = null;
     }
@@ -4609,6 +4610,7 @@ export default function ChatView({
               <SessionExecutionTrace
                 key={`${viewSessionId}:${msg.id}`}
                 group={msg.executionGroup}
+                active={executionActivity.kind === "message" && executionActivity.messageId === msg.id}
                 renderContent={renderMessageContent}
                 runtimeProgress={runtimeProgress}
                 nativeSubagents={nativeSubagents}
@@ -4638,6 +4640,7 @@ export default function ChatView({
                 autoLoad={historyWindowMode === "latest" && !chatMsg.executionTrace.turnId.startsWith("engine-frozen:") && chatMsg.executionTrace.turnId === latestCodexExecutionTurnId}
                 isRunning={isRunning && chatMsg.executionTrace.turnId === latestCodexExecutionTurnId
                   && !codexTurnDurations.has(chatMsg.executionTrace.turnId)}
+                active={executionActivity.kind === "message" && executionActivity.messageId === msg.id}
                 durationMs={codexTurnDurations.get(chatMsg.executionTrace.turnId)}
               />
             );
@@ -4982,6 +4985,7 @@ export default function ChatView({
                     id={toolCallEntries[0].toolCall.id}
                     summary={latestExecutionSummary([chatMsg])}
                     items={toolCallEntries}
+                    active={executionActivity.kind === "message" && executionActivity.messageId === msg.id}
                     onSelectSession={onSelectSession}
                     workspacePath={workspacePath}
                     onOpenArtifact={onOpenArtifact}
@@ -5205,7 +5209,7 @@ export default function ChatView({
           <RuntimeProgressRow key={progress.progressId} progress={progress} />
         ))}
 
-        <SessionRunActivity running={isRunning} progress={globalRuntimeProgress} startedAt={thinkingStartedAt} />
+        <SessionRunActivity running={executionActivity.kind === "pending"} progress={globalRuntimeProgress} />
 
         {displayedError && (
           <RunFailureNotice

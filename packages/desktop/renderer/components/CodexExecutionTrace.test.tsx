@@ -40,10 +40,10 @@ describe("CodexExecutionTrace", () => {
     }));
 
     expect(loadTrace).not.toHaveBeenCalled();
-    expect(html).toContain('class="execution-trace__status"');
+    expect(html).toContain('class="execution-activity-block"');
     expect(html).toContain('role="status"');
     expect(html).toContain('aria-busy="true"');
-    expect(html).toContain("正在加载会话");
+    expect(html).toContain("正在处理这条消息");
     expect(html).not.toContain("查看执行过程");
     expect(html).not.toContain("<button");
   });
@@ -206,7 +206,7 @@ describe("Codex resumed execution display", () => {
 
   it("waits for native ownership before displaying a run replay beneath a follow-up", () => {
     const html = render(1, "rev");
-    expect(html).toContain("正在加载会话");
+    expect(html).toContain("正在处理这条消息");
     expect(html).not.toContain(live.content);
     expect(render(1, "rev", ["agent:" + live.id])).toContain(live.content);
   });
