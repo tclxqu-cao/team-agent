@@ -62,6 +62,7 @@ packages/desktop/.runtime/
 # CLI native remote authorization build outputs
 packages/server/native/.build-remote/
 packages/server/native/*.app/
+packages/server/native/Support.noindex/
 
 # 本地产物与运行态（2026-09-17）
 outputs/
