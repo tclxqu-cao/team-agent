@@ -1,0 +1,18 @@
+packages/website/public/release-snapshot.js
+  h_b0bf4228a0b7ec 3-35
+packages/website/src/pages.mjs
+  h_b0bf4228a0b7ec 27
+packages/website/src/website.test.mjs
+  h_b0bf4228a0b7ec 95-97,137
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f3e2e2ceb6ee95d5ae7eb9247f9d6bcd8896196e",
+  "prompts": {},
+  "humans": {
+    "h_b0bf4228a0b7ec": {
+      "author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
