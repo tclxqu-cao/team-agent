@@ -1,6 +1,17 @@
 // Published release fallback for GitHub API outages or rate limits. Refresh on release.
 export const releaseSnapshot = [
   {
+    "tag_name": "android-v0.2.0-preview.37",
+    "published_at": "2026-11-16T09:34:06Z",
+    "assets": [
+      {
+        "name": "AgentRoam-0.2.0-preview.37-android.apk",
+        "size": 32652560,
+        "browser_download_url": "https://github.com/tclxqu-cao/team-agent/releases/download/android-v0.2.0-preview.37/AgentRoam-0.2.0-preview.37-android.apk"
+      }
+    ]
+  },
+  {
     "tag_name": "desktop-v0.2.0-preview.36",
     "published_at": "2026-11-10T12:25:09Z",
     "assets": [
