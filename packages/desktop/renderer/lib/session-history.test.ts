@@ -14,6 +14,22 @@ import {
 } from "./session-history";
 
 describe("native live/history ownership", () => {
+  it("identifies only complete leading history fragments without inventing native turn ownership", () => {
+    const source = [{ historyId: "thought", role: "assistant", content: "",
+      presentation: { reasoning: [{ itemId: "native-thought", sectionIndex: 0, text: "检查文件" }] } },
+      { historyId: "call", role: "assistant", content: "", toolCalls: [{ id: "read", name: "Read", arguments: {} }] }];
+    const complete = restoreSessionHistoryPage({ id: "native", messages: source, history: { hasMore: false } });
+    expect(complete[0].historyPrefixId).toBe("history-prefix:native:native-thought");
+    expect(complete[0].presentation?.executionTrace).toBeUndefined();
+    expect(complete.map(message => message.id)).toEqual(["thought", "call"]);
+    expect(restoreSessionHistoryPage({ id: "native", messages: source, history: { hasMore: true } })[0].historyPrefixId).toBeUndefined();
+    expect(source[0]).not.toHaveProperty("historyPrefixId");
+    const checkpoint = { role: "user", name: "__compaction_checkpoint__", content: '{"summary":"已压缩上下文"}' };
+    const afterCompaction = restoreSessionHistoryPage({ id: "native", messages: [checkpoint, ...source], history: { hasMore: false } });
+    expect(afterCompaction[0].isCompactionSummary).toBe(true);
+    expect(afterCompaction[1].historyPrefixId).toBe(complete[0].historyPrefixId);
+  });
+
   it("confirms an already admitted input on a Codex core page", () => {
     const current = [
       { ...message("local-input", "continue"), awaitingHistory: true },
@@ -361,6 +377,21 @@ describe("restoreSessionHistoryPage", () => {
 
     expect(restored).toHaveLength(1);
     expect(restored[0].toolCalls?.[0].result).toBe("/tmp");
+  });
+
+  it("retains native tool-result failures when the result is inline or lazy", () => {
+    const inline = restoreSessionHistoryPage({ messages: [
+      { role: "assistant", content: "", toolCalls: [{ id: "read", name: "Read", arguments: {} }] },
+      { role: "tool", content: "permission denied", toolCallId: "read", isError: true },
+    ] });
+    expect(inline[0].toolCalls?.[0]).toMatchObject({ result: "permission denied", isError: true });
+    const lazy = restoreSessionHistoryPage({ messages: [
+      { role: "assistant", content: "", toolCalls: [{ id: "read", name: "Read", arguments: {} }] },
+      { role: "tool", content: "", toolCallId: "read", isError: true,
+        toolResultRef: { turnId: "turn", itemId: "read", revision: "r", byteSize: 1000 } },
+    ] });
+    expect(lazy[0].toolCalls?.[0]).toMatchObject({ isError: true, resultRef: { itemId: "read" } });
+    expect(lazy[0].toolCalls?.[0].result).toBeUndefined();
   });
 
   it("restores a lazy tool-result locator without hydrating its body", () => {

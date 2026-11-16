@@ -114,6 +114,8 @@ export interface TodoItem {
 
 export interface ChatMessage {
   id: string;
+  /** Display-only scope for a complete native history prefix whose input was compacted away. */
+  historyPrefixId?: string;
   role: "user" | "assistant" | "tool";
   content: string;
   /** Name of the agent that was @-mentioned for this message */

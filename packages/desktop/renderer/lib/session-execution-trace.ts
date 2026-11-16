@@ -48,19 +48,27 @@ export function groupSessionExecutionMessages(
   let index = 0;
   while (index < messages.length) {
     const user = messages[index++];
-    result.push(user);
-    // An older history page can begin in the middle of a turn. Wait for its input anchor.
-    if (!startsTurn(user)) continue;
+    const anchored = startsTurn(user);
+    const owner = user.presentation?.executionTrace?.turnId ?? user.historyPrefixId;
+    // Fold a prefix only with native ownership or a verified complete-history scope.
+    const ownedPrefix = !anchored && isExecutionMessage(user) && Boolean(owner);
+    if (anchored || !ownedPrefix) result.push(user);
+    if (!anchored && !ownedPrefix) continue;
+    const start = ownedPrefix ? index - 1 : index;
     let end = index;
-    while (end < messages.length && !startsTurn(messages[end])) end++;
-    const turn = messages.slice(index, end);
+    while (end < messages.length && !startsTurn(messages[end])) {
+      const nextOwner = messages[end].presentation?.executionTrace?.turnId;
+      if (owner && nextOwner && owner !== nextOwner) break;
+      end++;
+    }
+    const turn = messages.slice(start, end);
     // A lazy trace already owns this turn's progress. Preserve its data and anchors.
     if (turn.some((message) => message.executionTrace)) {
       result.push(...turn);
       index = end;
       continue;
     }
-    const durationMs = [user, ...turn].reduce<number | undefined>((duration, message) => (
+    const durationMs = (anchored ? [user, ...turn] : turn).reduce<number | undefined>((duration, message) => (
       validCompletionDurationMs(message.presentation?.completionDurationMs)
       ?? validCompletionDurationMs(message.presentation?.runResult?.durationMs) ?? duration
     ), undefined);
@@ -81,7 +89,7 @@ export function groupSessionExecutionMessages(
     let block = 0;
     const flush = () => {
       if (pending.length === 0) return;
-      const id = `session-execution:${user.id}:${block++}`;
+      const id = `session-execution:${owner ?? user.id}:${block++}`;
       result.push({
         id, role: "assistant", content: "", timestamp: user.timestamp,
         executionGroup: { id, messages: pending, isRunning: running, durationMs },

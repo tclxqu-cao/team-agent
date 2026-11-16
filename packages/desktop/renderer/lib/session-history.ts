@@ -45,6 +45,7 @@ export interface PersistedHistoryEvent {
 }
 
 export interface SessionHistoryDetail {
+  id?: string;
   nativePermissions?: UnifiedSessionSummary["nativePermissions"];
   agentType?: AgentType;
   status?: "active" | "idle" | "running" | "completed" | "failed";
@@ -56,6 +57,7 @@ export interface SessionHistoryDetail {
     toolCalls?: Array<{ id: string; name: string; arguments: Record<string, unknown> }>;
     toolCallId?: string;
     toolResultRef?: SessionToolResultRef;
+    isError?: boolean;
     name?: string;
     presentation?: MessagePresentation;
   }>;
@@ -341,6 +343,18 @@ function isCoreAssistantMessage(message: ChatMessage): boolean {
 export function restoreSessionHistoryPage(detail: SessionHistoryDetail | null): ChatMessage[] {
   const isCodexCore = detail?.history?.delivery === "core";
   const restored = restoreSessionMessages(detail, !isCodexCore);
+  const prefixStart = restored.findIndex((message) => (
+    (message.role === "user" && !message.isCompactionSummary)
+    || (message.role === "assistant" && !message.askUser && !message.widget)
+  ));
+  const first = restored[prefixStart];
+  if (!isCodexCore && detail?.id && detail.history?.hasMore === false
+    && first?.role === "assistant" && !first.executionTrace && !first.presentation?.executionTrace) {
+    // The native branch itself can start after compaction. A complete prefix
+    // may be folded without fetching another page or inventing a user/turn.
+    const identity = first.presentation?.reasoning?.[0]?.itemId ?? first.id;
+    restored[prefixStart] = { ...first, historyPrefixId: `history-prefix:${detail.id}:${identity}` };
+  }
   const revision = detail?.history?.revision;
   if (!isCodexCore || !revision) return restored;
   return restoreCodexLiveExecutionEvents(
@@ -390,8 +404,8 @@ function restoreSessionMessages(
       || message.role === "tool"
     ) && message.name !== "__interrupt__")
     .map(toChatMessage);
-  const messageToolResults = new Map<string, ChatMessage>();
-  for (const message of rawMessages) {
+  const messageToolResults = new Map<string, NonNullable<SessionHistoryDetail["messages"]>[number]>();
+  for (const message of persisted) {
     if (message.role === "tool" && message.toolCallId) {
       messageToolResults.set(message.toolCallId, message);
     }
@@ -413,9 +427,9 @@ function restoreSessionMessages(
               ...(resultMessage.toolResultRef
                 ? {
                     resultRef: resultMessage.toolResultRef,
-                    isError: resultMessage.toolResultRef.isError,
+                    isError: resultMessage.toolResultRef.isError ?? resultMessage.isError ?? toolCall.isError,
                   }
-                : { result: resultMessage.content }),
+                : { result: resultMessage.content ?? "", isError: resultMessage.isError ?? toolCall.isError }),
             };
             const eventResult = eventToolResults.get(toolCall.id);
             return eventResult

@@ -97,6 +97,30 @@ describe("Session execution display projection", () => {
     expect(groupSessionExecutionMessages([user(), carrier], false)).toEqual([user(), carrier]);
   });
 
+  it("folds an explicitly owned native prefix while preserving its final answer and following input", () => {
+    const scoped = (entry: ChatMessage) => ({ ...entry, presentation: { ...entry.presentation, executionTrace: { turnId: "native-prefix" } } });
+    const source = [scoped(tool), scoped(message("more", { toolCalls: [{ id: "more-call", name: "Read", arguments: {}, result: "text" }] })),
+      scoped(final), user("next")];
+    const result = groupSessionExecutionMessages(source, false);
+    expect(result.map(entry => entry.id)).toEqual(["session-execution:native-prefix:0", "final", "next"]);
+    expect(result[0].executionGroup?.messages.flatMap(entry => entry.toolCalls ?? []).map(call => call.id)).toEqual(["call", "more-call"]);
+    expect(result[1].content).toBe(final.content);
+    expect(result[2]).toBe(source[3]);
+    expect(result.filter(entry => entry.role === "user")).toEqual([source[3]]);
+
+    const anchored = groupSessionExecutionMessages([scoped(user("original")), ...source], false);
+    expect(anchored[1].executionGroup?.id).toBe(result[0].executionGroup?.id);
+  });
+
+  it("folds a complete compacted prefix using its display scope without adding a user bubble", () => {
+    const prefix = { ...tool, historyPrefixId: "history-prefix:session:thought" };
+    const result = groupSessionExecutionMessages([prefix, final, user("next")], false);
+    expect(result[0].executionGroup?.id).toBe("session-execution:history-prefix:session:thought:0");
+    expect(result[1].content).toBe(final.content);
+    expect(result.filter(entry => entry.role === "user").map(entry => entry.id)).toEqual(["next"]);
+    expect(result[0].presentation?.executionTrace).toBeUndefined();
+  });
+
   it("does not add a disclosure to a plain answer with no execution process", () => {
     const answer = message("answer", { content: "你好" });
     expect(groupSessionExecutionMessages([user(), answer], false)).toEqual([user(), answer]);
