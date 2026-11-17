@@ -1,0 +1,49 @@
+packages/core/src/domain/calendar/entities.ts
+  s_dcf1fa4b873a9f::t_242693ce821472 1-98
+packages/core/src/domain/calendar/index.ts
+  s_dcf1fa4b873a9f::t_142381a58fe7ec 1-5
+packages/core/src/domain/cron/cronParser.test.ts
+  s_dcf1fa4b873a9f::t_91a0f39da2f544 1-26
+packages/server/app/api/calendar/route.ts
+  s_dcf1fa4b873a9f::t_c05678ab1b3ef9 1-64
+packages/server/lib/calendar/aggregate.ts
+  s_dcf1fa4b873a9f::t_a7b1291f2abdff 1-88
+packages/server/lib/calendar/claude-source.ts
+  s_dcf1fa4b873a9f::t_815ac401d264ef 1-103
+packages/server/lib/calendar/codex-source.ts
+  s_dcf1fa4b873a9f::t_b51f15daf43354 1-150
+packages/server/lib/calendar/customer-agent-source.ts
+  s_dcf1fa4b873a9f::t_9a393e76534afa 1-103
+packages/server/lib/calendar/deepseek-source.ts
+  s_dcf1fa4b873a9f::t_01a9e6e9ad8e53 1-62
+packages/server/lib/calendar/opencode-source.ts
+  s_dcf1fa4b873a9f::t_ef0655fcd736bd 1-47
+packages/server/lib/calendar/schedule-expand.ts
+  s_dcf1fa4b873a9f::t_f5c8b744bc818b 1-192
+packages/server/lib/calendar/sqlite.ts
+  s_dcf1fa4b873a9f::t_b9cad1cd138aca 1-40
+packages/server/lib/calendar/toml.ts
+  s_dcf1fa4b873a9f::t_e45afd0c0ad696 1-143
+packages/server/lib/calendar/types.ts
+  s_dcf1fa4b873a9f::t_d9a7c1343d03d5 1-22
+packages/server/lib/calendar/workbuddy-source.ts
+  s_dcf1fa4b873a9f::t_f7faa8ccd98544 1-65
+packages/server/lib/calendar/zcode-source.ts
+  s_dcf1fa4b873a9f::t_0d33600358d97c 1-131
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c1c06627c3bb17dbde3d59ddb95647177371cf4f",
+  "prompts": {},
+  "sessions": {
+    "s_dcf1fa4b873a9f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1e32c-f6fd-7102-aac5-cca1fe23d55b",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
