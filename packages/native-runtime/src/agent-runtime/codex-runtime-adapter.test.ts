@@ -2895,6 +2895,27 @@ describe("Codex native paged history", () => {
     ))).toBe(false);
   });
 
+  it("reads the latest summary while occupancy inspection is still pending", async () => {
+    const requests: Array<{ method: string; params: any }> = [];
+    let releaseOccupancy!: (files: Set<string>) => void;
+    const openFiles = vi.spyOn(nativeProcesses, "listOpenSessionFiles").mockReturnValue(
+      new Promise<Set<string>>((resolve) => { releaseOccupancy = resolve; }),
+    );
+    try {
+      const adapter = new CodexRuntimeAdapter({ client: pagingClientFor(requests) as never });
+      const pending = adapter.getSessionPaged("cx-paged", { limit: 1, view: "core" });
+      await vi.waitFor(() => expect(requests.some(({ method }) => method === "thread/turns/list")).toBe(true));
+      releaseOccupancy(new Set());
+      const detail = await pending;
+      expect(detail.messages.map((message) => message.content)).toEqual(["q-t5", "s-t5"]);
+      expect(detail.history?.delivery).toBe("core");
+      expect(requests.some(({ method, params }) => method === "thread/read" && params.includeTurns === true)).toBe(false);
+    } finally {
+      releaseOccupancy(new Set());
+      openFiles.mockRestore();
+    }
+  });
+
   it("includes durable native timing in core pages without hydrating execution details", async () => {
     const directory = await mkdtemp(join(tmpdir(), "codex-completion-timing-"));
     temporaryDirectories.push(directory);

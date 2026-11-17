@@ -40,6 +40,8 @@ export interface TodoItem {
   status: "pending" | "in-progress" | "completed";
   /** Titles of tasks that must be completed before this task can start */
   dependsOn?: string[];
+  /** Optional deadline (UTC ms); overdue incomplete todos render dimmed on the calendar. */
+  dueAt?: number;
 }
 
 export interface ReasoningSummarySection {

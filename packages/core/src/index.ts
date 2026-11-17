@@ -62,6 +62,9 @@ export { SQLiteRemoteToolStore } from './infrastructure/SQLiteRemoteToolStore.js
 // Cron
 export * from './domain/cron/index.js';
 
+// Calendar (跨 Agent 定时任务 / 待办只读聚合)
+export * from './domain/calendar/index.js';
+
 // Thread goal (目标模式)
 export * from './domain/goal/index.js';
 export * from './application/goal/ThreadGoalService.js';

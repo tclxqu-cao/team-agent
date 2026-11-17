@@ -43,6 +43,7 @@ export class TodoAddTool implements ITool {
         dependsOn: z.array(z.string()).optional().describe(
           "Titles of other tasks in this batch that must be completed before this one",
         ),
+        dueAt: z.number().optional().describe("Optional deadline as a UTC millisecond timestamp"),
       }),
     ).min(1).describe("List of tasks to add"),
   });
@@ -61,6 +62,7 @@ export class TodoAddTool implements ITool {
               items: { type: "string" },
               description: "Titles of other tasks that must complete before this task can start",
             },
+            dueAt: { type: "number", description: "Optional deadline as a UTC millisecond timestamp" },
           },
           required: ["title"],
         },
@@ -87,6 +89,7 @@ export class TodoAddTool implements ITool {
       agentName: t.agentName,
       status: "pending" as const,
       dependsOn: t.dependsOn?.length ? t.dependsOn : undefined,
+      dueAt: t.dueAt,
     }));
     // Topologically sort the combined list so dependent tasks always follow prerequisites.
     const sorted = topoSort([...current, ...newItems]);
@@ -107,6 +110,7 @@ export class TodoUpdateTool implements ITool {
     id: z.string().optional().describe("Todo item ID (exact match)"),
     title: z.string().optional().describe("Todo item title (partial case-insensitive match)"),
     status: z.enum(["pending", "in-progress", "completed"]).describe("New status"),
+    dueAt: z.number().nullable().optional().describe("New deadline as a UTC millisecond timestamp; null clears it"),
   }).refine((d) => d.id !== undefined || d.title !== undefined, {
     message: "Provide either id or title",
   });
@@ -120,6 +124,7 @@ export class TodoUpdateTool implements ITool {
         enum: ["pending", "in-progress", "completed"],
         description: "New status",
       },
+      dueAt: { type: ["number", "null"], description: "New deadline as a UTC millisecond timestamp; null clears it" },
     },
     required: ["status"],
   };
@@ -143,7 +148,8 @@ export class TodoUpdateTool implements ITool {
         t.title.toLowerCase().includes(parsed.data.title.toLowerCase());
       if (byId || byTitle) {
         matched = true;
-        return { ...t, status: parsed.data.status };
+        const dueAt = parsed.data.dueAt === undefined ? t.dueAt : parsed.data.dueAt ?? undefined;
+        return { ...t, status: parsed.data.status, dueAt };
       }
       return t;
     });

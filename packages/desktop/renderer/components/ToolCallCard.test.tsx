@@ -54,6 +54,30 @@ describe("ToolCallGroup", () => {
 
 describe("tool activity rows", () => {
   it.each([
+    { name: "read_file", arguments: { file_path: "/tmp/SKILL.md" }, result: "file source", expected: "file source" },
+    { name: "write_file", arguments: { file_path: "/tmp/app.ts", content: "written source" }, result: "", expected: "written source" },
+    { name: "str_replace", arguments: { file_path: "/tmp/app.ts", old_string: "before", new_string: "after" }, result: "", expected: "after" },
+    { name: "shell", arguments: { command: "pwd" }, result: "/tmp/workspace", expected: "/tmp/workspace" },
+    { name: "Grep", arguments: { pattern: "needle" }, result: "search result", expected: "search result" },
+  ])("opens $name directly under its existing activity row without another card header", ({ expected, ...tool }) => {
+    const html = renderToStaticMarkup(<ToolCallActivity initiallyExpanded toolCall={{ id: "single", ...tool }} />);
+    expect(html).toContain(expected);
+    expect(html.match(/aria-expanded="true"/g)).toHaveLength(1);
+    expect(html).not.toContain("tool-call-shell__header");
+    expect(html).not.toContain("tool-call-shell__row");
+    expect(html).not.toContain("tool-call-shell__disclosure");
+  });
+
+  it("keeps file preview available from the path when the duplicated header is removed", () => {
+    const html = renderToStaticMarkup(<ToolCallActivity initiallyExpanded
+      toolCall={{ id: "read", name: "read_file", arguments: { file_path: "/tmp/SKILL.md" }, result: "source" }}
+      onOpenArtifact={vi.fn()} />);
+    expect(html).toContain('aria-label="预览文件 SKILL.md"');
+    expect(html).toContain("/tmp/SKILL.md");
+    expect(html).not.toContain("tool-call-shell__header");
+  });
+
+  it.each([
     [{ kind: { type: "add" }, diff: "line\n".repeat(301) }, "写入", "新增 301 行，删除 0 行"],
     [{ kind: { type: "update" }, diff: "@@ -1,6 +1,6 @@\n" + "-old\n".repeat(6) + "+new\n".repeat(6) }, "编辑", "新增 6 行，删除 6 行"],
     [{ kind: { type: "delete" }, diff: "line\n".repeat(12) }, "删除", "新增 0 行，删除 12 行"],
@@ -232,7 +256,7 @@ describe("tool activity rows", () => {
   });
 
   it("places multi-file preview actions before verbose tool arguments", () => {
-    const previewList = toolCallCardSource.indexOf('{previewPaths.length > 1 && (');
+    const previewList = toolCallCardSource.indexOf('className="tool-call-file-list"');
     const argumentsBlock = toolCallCardSource.indexOf('{/* Arguments */}', previewList);
 
     expect(previewList).toBeGreaterThan(-1);

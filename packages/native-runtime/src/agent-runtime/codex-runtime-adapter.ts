@@ -557,31 +557,34 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     if (!this.nativePagingSupported) {
       throw new RuntimeSessionError("Codex native history paging is unavailable", "OPERATION_NOT_SUPPORTED");
     }
-    let meta: { thread: CodexThread };
-    try {
-      meta = await this.client.request<{ thread: CodexThread }>("thread/read", {
-        threadId: nativeSessionId,
-        includeTurns: false,
-      });
-    } catch (error) {
-      throw this.normalizePagedError(error);
-    }
-    const openFiles = await listOpenSessionFiles("codex", this.sessionRoot, {
+    const metadata = this.client.request<{ thread: CodexThread }>("thread/read", {
+      threadId: nativeSessionId,
+      includeTurns: false,
+    });
+    const occupancy = listOpenSessionFiles("codex", this.sessionRoot, {
       excludePids: this.ownedClientPids(),
       idleAfterMs: null,
       platform: this.platform,
     });
+    let meta: { thread: CodexThread };
+    let openFiles: Set<string>;
+    let ascTurns: CodexTurn[];
+    try {
+      // Occupancy inspection is independent of native history. Do not put its
+      // process scan between the metadata and summary reads on every click.
+      [meta, openFiles, ascTurns] = await Promise.all([
+        metadata,
+        occupancy,
+        metadata.then(({ thread }) => this.loadSummaryTurns(nativeSessionId, thread.path)),
+      ]);
+    } catch (error) {
+      throw this.normalizePagedError(error);
+    }
     const rolloutActivities = await this.rolloutActivityReader.readMany(
       this.platform === "win32" ? rolloutPaths([meta.thread], this.platform) : openFiles,
     );
     let summary = this.toSummary(meta.thread, openFiles, rolloutActivities);
 
-    let ascTurns: CodexTurn[];
-    try {
-      ascTurns = await this.loadSummaryTurns(nativeSessionId, meta.thread.path);
-    } catch (error) {
-      throw this.normalizePagedError(error);
-    }
     const isLatestCorePage = query.view === "core" && !query.before && !query.after && !query.anchor;
     if (isLatestCorePage && summary.status === "running" && meta.thread.path) {
       const finalizing = await readCodexRolloutFinalizingAnswer(meta.thread.path);

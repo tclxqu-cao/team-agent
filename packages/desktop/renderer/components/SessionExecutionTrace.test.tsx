@@ -2,6 +2,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import SessionExecutionTrace from "./SessionExecutionTrace";
 import { ExecutionTraceContent } from "./ExecutionTrace";
+import { groupSessionExecutionMessages } from "../lib/session-execution-trace";
+import type { ChatMessage } from "../stores/agentStore";
 
 function render(isRunning: boolean, durationMs?: number) {
   return renderToStaticMarkup(<SessionExecutionTrace
@@ -15,6 +17,36 @@ function render(isRunning: boolean, durationMs?: number) {
 }
 
 describe("SessionExecutionTrace", () => {
+  it.each([false, true])("hides an empty completed process after a question reply (running: %s)", (isRunning) => {
+    const answer = "收到，我现在发送协议，并逐条核对发送记录。";
+    const projected = groupSessionExecutionMessages([
+      { id: "user", role: "user", content: "发送协议", timestamp: 1 },
+      { id: "question", role: "assistant", content: "", timestamp: 2,
+        askUser: { questionId: "q", question: "请解锁电脑", answered: true, answer: "已解锁" } },
+      { id: "answer", role: "assistant", content: answer, timestamp: 3,
+        presentation: { agentMessagePhase: "final_answer", completionDurationMs: 1_000,
+          reasoning: [{ sectionIndex: 0, text: "根据用户回复继续" }] } },
+    ] satisfies ChatMessage[], isRunning);
+    const html = renderToStaticMarkup(<>{projected.map(message => message.executionGroup
+      ? <SessionExecutionTrace key={message.id} group={message.executionGroup}
+          renderContent={text => text} runtimeProgress={[]} nativeSubagents={{}} onLoadResult={vi.fn()} />
+      : <div key={message.id}>{message.askUser?.answer ?? message.content}</div>)}</>);
+    expect(html).toContain("已解锁");
+    expect(html).toContain(answer);
+    expect(html).not.toContain("已工作");
+    expect(html).not.toContain("execution-trace");
+  });
+
+  it.each([{ messages: [] }, { messages: [{ id: "thinking", role: "assistant" as const, content: "", timestamp: 1,
+    presentation: { reasoning: [{ sectionIndex: 0, text: "核对用户回复" }] } }] }])("keeps running activity visible before tools arrive: %j", ({ messages }) => {
+    const html = renderToStaticMarkup(<SessionExecutionTrace
+      group={{ id: "pending", isRunning: true, messages }}
+      renderContent={text => text} runtimeProgress={[]} nativeSubagents={{}} onLoadResult={vi.fn()}
+    />);
+    expect(html).toContain('aria-busy="true"');
+    expect(html).not.toContain("已工作");
+  });
+
   it("keeps a running process visible", () => {
     const html = render(true);
     expect(html).toContain('data-message-id="session-execution:user:0"');

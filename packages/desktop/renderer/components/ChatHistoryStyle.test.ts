@@ -233,7 +233,7 @@ describe("shared Codex-style message history", () => {
   it("loads older history near the top without flashing a fast-request spinner", () => {
     const pageStatusCss = globalCss.match(/\.chat-history-page-status\s*\{([^}]*)\}/)?.[1] ?? "";
 
-    expect(chatView).toContain("container.scrollTop <= 240");
+    expect(chatView).toContain("shouldLoadOlderHistoryFromScroll(previousTop, container.scrollTop)");
     expect(chatView).toContain('import { SinglePageHistoryPrefetch } from "../lib/session-history-prefetch"');
     expect(chatView).toContain(".prefetch(targetSid, cursor");
     expect(chatView).toContain("historyPrefetchRef.current!.consume(");

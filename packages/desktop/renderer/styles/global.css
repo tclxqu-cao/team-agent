@@ -3396,7 +3396,7 @@ input:focus, select:focus, textarea:focus {
 }
 
 .chat-view--unified-history .execution-trace {
-  --execution-trace-font-size: 14px;
+  --execution-trace-font-size: 15px;
   --execution-trace-line-height: 1.7;
   --execution-trace-muted: color-mix(in srgb, var(--chat-history-text) 50%, transparent);
   width: 100%;
@@ -3419,7 +3419,7 @@ input:focus, select:focus, textarea:focus {
   border-radius: 4px;
   background: transparent;
   color: var(--execution-trace-muted);
-  font: 400 14px/1.5 var(--font-body);
+  font: 400 15px/1.5 var(--font-body);
   text-align: left;
   cursor: pointer;
 }
@@ -3613,7 +3613,7 @@ input:focus, select:focus, textarea:focus {
   border-radius: 4px;
   background: transparent;
   color: inherit;
-  font: 400 13px/1.6 var(--font-body);
+  font: 400 14px/1.6 var(--font-body);
   text-align: left;
   cursor: pointer;
 }
@@ -3657,7 +3657,7 @@ input:focus, select:focus, textarea:focus {
   border-radius: 4px;
   background: transparent;
   color: inherit;
-  font: 400 13px/1.6 var(--font-body);
+  font: 400 14px/1.6 var(--font-body);
   text-align: left;
   cursor: pointer;
 }
@@ -3751,7 +3751,7 @@ input:focus, select:focus, textarea:focus {
   --chat-content-max-width: 76%;
   --chat-user-bubble-padding: 10px 14px;
   --chat-assistant-bubble-padding: 11px 15px;
-  --chat-bubble-font-size: 15px;
+  --chat-bubble-font-size: 16px;
   --chat-bubble-line-height: 1.65;
   --composer-row-padding: 6px 6px 6px 12px;
 }

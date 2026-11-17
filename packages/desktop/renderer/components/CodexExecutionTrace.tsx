@@ -7,6 +7,7 @@ import type {
 } from "@agent/core";
 import { CircleAlert, LoaderCircle, Workflow } from "lucide-react";
 import type { ChatMessage } from "../stores/agentStore";
+import { executionActivityRows } from "../lib/execution-activity-blocks";
 import {
   applyCodexExecutionToolResult,
   codexExecutionSegmentMessages,
@@ -56,6 +57,7 @@ export default function CodexExecutionTrace({
   const pendingRef = useRef<Promise<ChatMessage[]> | null>(null);
   const [loading, setLoading] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[] | null>(null);
+  const [loadedToolResults, setLoadedToolResults] = useState<Record<string, SessionToolResultBody>>({});
   const [error, setError] = useState<string | null>(null);
   const { expanded, setExpanded } = useExecutionTraceDisclosure(scope, isRunning);
 
@@ -64,6 +66,7 @@ export default function CodexExecutionTrace({
     pendingRef.current = null;
     setLoading(false);
     setMessages(null);
+    setLoadedToolResults({});
     setError(null);
     handledRefreshSignalRef.current = refreshSignal;
     autoLoadAttemptRef.current = null;
@@ -92,10 +95,11 @@ export default function CodexExecutionTrace({
     () => codexExecutionSegmentMessages(messages ?? [], segmentIndex),
     [messages, segmentIndex],
   );
-  const displayMessages = useMemo(
-    () => mergeCodexExecutionMessages(persistedMessages, liveMessages),
-    [liveMessages, persistedMessages],
-  );
+  const displayMessages = useMemo(() => Object.entries(loadedToolResults).reduce(
+    (current, [itemId, body]) => applyCodexExecutionToolResult(current, itemId, body.content, body.isError),
+    mergeCodexExecutionMessages(persistedMessages, liveMessages),
+  ), [liveMessages, loadedToolResults, persistedMessages]);
+  const hasActivity = useMemo(() => executionActivityRows(displayMessages).length > 0, [displayMessages]);
   const hasMessages = messages !== null || liveMessages.length > 0;
   const needsHistory = expanded && (autoLoad || !isRunning)
     && messages === null && !trace.revision.startsWith("live:");
@@ -145,9 +149,9 @@ export default function CodexExecutionTrace({
   const loadLocalToolResult = useCallback(async (ref: SessionToolResultRef) => {
     const body = await loadToolResult(ref);
     if (scopeRef.current !== scope) return;
-    setMessages((current) => current
-      ? applyCodexExecutionToolResult(current, ref.itemId, body.content, body.isError)
-      : current);
+    // Keep on-demand bodies separate from native snapshots: a live segment may
+    // not have loaded persisted history yet, and later snapshots stay lazy.
+    setLoadedToolResults((current) => ({ ...current, [ref.itemId]: body }));
   }, [loadToolResult, scope]);
 
   const loadLabel = loading
@@ -155,6 +159,12 @@ export default function CodexExecutionTrace({
     : error
       ? "重新加载执行过程"
       : "查看执行过程";
+
+  // Unknown native history stays lazy; hide only a completed, known-empty trace.
+  const hasUnloadedHistory = messages === null && !trace.revision.startsWith("live:")
+    && (trace.historyItemKeys === undefined
+      || trace.historyItemKeys.some((key) => key.startsWith("agent:") || key.startsWith("tool:")));
+  if (!isRunning && !hasActivity && !hasUnloadedHistory && !error) return null;
 
   return (
     <ExecutionTrace

@@ -25,7 +25,34 @@ describe("execution activity blocks", () => {
       tool("two", "Read"), comment("p2", "再检查测试单。"), tool("three")]);
     expect(rows.map(row => row.kind)).toEqual(["commentary", "activity", "commentary", "activity"]);
     expect(rows[1]).toMatchObject({ id: "one", summary: "核对配置入口" });
-    expect(rows[3]).toMatchObject({ id: "three", summary: "再检查测试单。" });
+    expect(rows[3]).toMatchObject({ id: "three", summary: "运行了命令" });
+  });
+
+  it("does not repeat visible commentary when historical thinking is unavailable", () => {
+    const text = "我把这两项字段删掉，并清理文档和示例中的相关说明。";
+    const messages = [comment("paragraph", text), tool("command"), tool("patch", "apply_patch")];
+    expect(executionActivityRows(messages)).toEqual([
+      { kind: "commentary", id: "paragraph", content: text },
+      expect.objectContaining({ kind: "activity", summary: "运行了命令、修改了文件" }),
+    ]);
+    expect(latestExecutionSummary(messages)).toBeUndefined();
+  });
+
+  it("retains the latest persisted thought before its commentary and following operations", () => {
+    const thinking = { ...thought("thinking", "ignored"), presentation: { reasoning: [
+      { sectionIndex: 0, text: "**Editing document v0.6**" },
+      { sectionIndex: 1, text: "**Removing classification tags**" },
+    ] } };
+    const rows = executionActivityRows([thinking, comment("paragraph", "节点里的审核人字段也删除。"), tool("patch", "apply_patch")]);
+    expect(rows[1]).toMatchObject({ kind: "activity", summary: "Removing classification tags" });
+  });
+
+  it("does not carry a thought across a completed block or a native input boundary", () => {
+    const scoped = (message: ChatMessage, segmentIndex: number): ChatMessage => ({ ...message,
+      presentation: { ...message.presentation, executionTrace: { turnId: "turn", segmentIndex } } });
+    const rows = executionActivityRows([scoped(thought("thinking", "First task"), 0), scoped(tool("first"), 0),
+      scoped(comment("paragraph", "第二个任务。"), 1), scoped(tool("second", "Read"), 1)]);
+    expect(rows.at(-1)).toMatchObject({ id: "second", summary: "读取了文件" });
   });
 
   it("keeps interactive and native segment boundaries", () => {

@@ -77,7 +77,7 @@ describe("listOpenSessionFiles", () => {
     })).resolves.toEqual(new Set([OLD_SESSION, RECENT_SESSION]));
     expect(execute).toHaveBeenCalledWith(
       "/usr/sbin/lsof",
-      ["+c", "0", "-a", "-c", "codex", "-FpFn"],
+      ["-nP", "-b", "+c", "0", "-a", "-c", "codex", "-FpFn"],
       { encoding: "utf8", timeout: 5000, maxBuffer: 4 * 1024 * 1024 },
     );
   });

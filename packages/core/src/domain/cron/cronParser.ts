@@ -89,3 +89,46 @@ export function describeCron(cron: string): string {
     return `每天 ${hour.padStart(2, '0')}:00`;
   return `cron: ${cron}`;
 }
+
+/**
+ * List fire timestamps (ms) of a cron/interval expression inside [fromMs, toMs].
+ * Interval shorthands step from `anchorMs` (defaults to fromMs) so callers can
+ * align expansions with a task's real schedule anchor (nextFireAt/lastFiredAt).
+ */
+export function listCronFires(
+  cron: string,
+  fromMs: number,
+  toMs: number,
+  opts: { anchorMs?: number; limit?: number } = {},
+): number[] {
+  const limit = opts.limit ?? 500;
+  if (toMs < fromMs || limit <= 0) return [];
+  const intervalMs = parseIntervalMs(cron);
+  if (intervalMs !== null) {
+    if (intervalMs <= 0) return [];
+    const anchor = opts.anchorMs ?? fromMs;
+    const fires: number[] = [];
+    let t = anchor;
+    if (t < fromMs) t += Math.ceil((fromMs - t) / intervalMs) * intervalMs;
+    for (; t <= toMs && fires.length < limit; t += intervalMs) fires.push(t);
+    return fires;
+  }
+  if (!isCronExpression(cron)) return [];
+  const [minExpr, hourExpr, domExpr, monExpr, dowExpr] = cron.trim().split(/\s+/);
+  const fires: number[] = [];
+  const start = new Date(fromMs);
+  start.setSeconds(0, 0);
+  let t = start.getTime();
+  const end = Math.min(toMs, fromMs + 366 * 86_400_000);
+  for (; t <= end && fires.length < limit; t += 60_000) {
+    const d = new Date(t);
+    if (
+      matchField(d.getMinutes(), minExpr) &&
+      matchField(d.getHours(), hourExpr) &&
+      matchField(d.getDate(), domExpr) &&
+      matchField(d.getMonth() + 1, monExpr) &&
+      matchField(d.getDay(), dowExpr)
+    ) fires.push(t);
+  }
+  return fires;
+}

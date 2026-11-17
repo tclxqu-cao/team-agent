@@ -1,6 +1,6 @@
-export const COMPUTER_TOOLS = ["refresh", "dashboard", "collaboration", "remote", "theme", "files", "ai-hub", "flow", "install"] as const;
+export const COMPUTER_TOOLS = ["refresh", "dashboard", "collaboration", "remote", "theme", "files", "ai-hub", "flow", "install", "calendar"] as const;
 export type ComputerToolId = typeof COMPUTER_TOOLS[number];
-export const DEFAULT_COMPUTER_TOOLS: readonly ComputerToolId[] = ["refresh", "remote", "theme", "files"];
+export const DEFAULT_COMPUTER_TOOLS: readonly ComputerToolId[] = ["refresh", "remote", "theme", "files", "calendar"];
 
 export interface SavedComputerPage {
   id: string;

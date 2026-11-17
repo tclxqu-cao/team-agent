@@ -1,7 +1,7 @@
 import { usePageActive, isPageActive } from "../lib/page-activity";
 import { AGENT_LABELS } from "../lib/agent-catalog";
 import { completedTurnForkPoint } from "../lib/completed-turn-fork";
-import { HistoryPullGesture, shouldLoadOlderHistoryFromWheel } from "../lib/history-pull-gesture";
+import { HistoryPullGesture, shouldLoadOlderHistoryFromScroll, shouldLoadOlderHistoryFromWheel } from "../lib/history-pull-gesture";
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -1077,6 +1077,7 @@ export default function ChatView({
   const [previewedMessageImage, setPreviewedMessageImage] = useState<MessageImagePreview | null>(null);
   const messagesScrollRef = useRef<HTMLDivElement>(null);
   const historyScrollTimerRef = useRef<number | null>(null);
+  const historyScrollPositionRef = useRef<{ container: HTMLDivElement; top: number } | null>(null);
   const loadOlderHistoryRef = useRef<() => void>(() => undefined);
   const historyPullGestureRef = useRef(new HistoryPullGesture());
   const loadNewerHistoryRef = useRef<() => void>(() => undefined);
@@ -1341,7 +1342,10 @@ export default function ChatView({
     const container = messagesScrollRef.current;
     if (!container) return;
     const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
-    if (container.scrollTop <= 240) loadOlderHistoryRef.current();
+    const previous = historyScrollPositionRef.current;
+    const previousTop = previous?.container === container ? previous.top : null;
+    historyScrollPositionRef.current = { container, top: container.scrollTop };
+    if (shouldLoadOlderHistoryFromScroll(previousTop, container.scrollTop)) loadOlderHistoryRef.current();
     if (
       historyWindowModeRef.current === "anchored"
       && distanceFromBottom <= 240
@@ -1979,12 +1983,9 @@ export default function ChatView({
               historyCursorRef.current = restoredWindow.window.olderCursor;
               nextAutoScrollRef.current = "instant";
               setMessages(nextMessages, targetSid, restoredWindow.window);
-              // The current turn's trace owns the first native read after core.
-              // Older history remains available on scroll and is prefetched once
-              // that trace has loaded.
-              if (historyAgentType(targetSid) !== "codex" || !nextMessages.some(message => message.executionTrace && !message.executionTrace.turnId.startsWith("engine-frozen:"))) {
-                prefetchOlderHistory(targetSid, restoredWindow.window.olderCursor);
-              }
+              // Prefetch one core page in the background even when the latest
+              // completed trace stays collapsed and is never opened.
+              prefetchOlderHistory(targetSid, restoredWindow.window.olderCursor);
               setRuntimeProgress(restoredRuntimeProgress, targetSid);
               setNativeSubagentActivities(restoredNativeSubagents, targetSid);
               if (shouldRestoreLocalNativeRun(detail) || shouldRestoreCustomerAgentRun(detail)) {

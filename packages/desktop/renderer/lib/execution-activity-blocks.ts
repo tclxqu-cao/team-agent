@@ -25,8 +25,7 @@ export function latestExecutionSummary(messages: readonly ChatMessage[]): string
     const preview = reasoningPreview(messages[index]);
     if (preview) return preview;
   }
-  const commentary = messages.findLast((message) => message.content.trim());
-  return commentary ? executionSummaryPreview(commentary.content) || undefined : undefined;
+  return undefined;
 }
 
 export type ExecutionActivityRow =
@@ -38,7 +37,6 @@ export function executionActivityRows(messages: readonly ChatMessage[]): Executi
   const rows: ExecutionActivityRow[] = [];
   let pending: Extract<ExecutionActivityRow, { kind: "activity" }> | undefined;
   let summary: string | undefined;
-  let fallback: string | undefined;
   let scope: string | undefined;
   const flush = () => {
     if (pending) rows.push({ ...pending, summary: pending.summary
@@ -52,15 +50,17 @@ export function executionActivityRows(messages: readonly ChatMessage[]): Executi
       || message.images?.length || message.presentation?.attachments?.length || message.agentName;
     if (boundary || (scope !== undefined && nextScope !== undefined && nextScope !== scope)) {
       flush();
-      summary = fallback = undefined;
+      summary = undefined;
       scope = nextScope;
       if (boundary) continue;
     }
     if (nextScope !== undefined) scope = nextScope;
     if (message.presentation?.agentMessagePhase === "commentary" && message.content.trim()) {
+      const hadActivity = pending !== undefined;
       flush();
-      summary = undefined;
-      fallback = executionSummaryPreview(message.content);
+      // Persisted thinking can precede the paragraph introducing its tools.
+      // Keep it for those tools, but never reuse a finished block's summary.
+      if (hadActivity) summary = undefined;
       rows.push({ kind: "commentary", id: message.id, content: message.content.trim() });
     }
     const preview = reasoningPreview(message);
@@ -70,7 +70,7 @@ export function executionActivityRows(messages: readonly ChatMessage[]): Executi
     }
     if (message.toolCalls?.length) {
       pending ??= { kind: "activity", id: message.toolCalls[0].id,
-        summary: summary || fallback || "", toolCalls: [] };
+        summary: summary || "", toolCalls: [] };
       pending.toolCalls.push(...message.toolCalls);
     }
   }

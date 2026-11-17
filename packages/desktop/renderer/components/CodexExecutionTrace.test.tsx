@@ -8,6 +8,35 @@ import { ExecutionTraceContent } from "./ExecutionTrace";
 const source = readFileSync(new URL("./CodexExecutionTrace.tsx", import.meta.url), "utf8");
 
 describe("CodexExecutionTrace", () => {
+  it.each([
+    { revision: "live:turn-1", liveMessages: [] },
+    { revision: "live:turn-1", liveMessages: [{
+      id: "thinking", role: "assistant" as const, content: "", timestamp: 1,
+      presentation: { reasoning: [{ itemId: "r", sectionIndex: 0, text: "根据用户回复继续" }] },
+    }] },
+    { revision: "rev-1", historyItemKeys: [] },
+    { revision: "rev-1", historyItemKeys: ["reasoning:r:0"] },
+  ])("omits a completed trace with no visible activity: %j", (trace) => {
+    const loadTrace = vi.fn(async () => []);
+    const html = renderToStaticMarkup(<CodexExecutionTrace
+      trace={{ turnId: "turn-1", ...trace }} loadTrace={loadTrace} loadToolResult={vi.fn()}
+      renderContent={text => text} runtimeProgress={[]} nativeSubagents={{}}
+    />);
+    expect(html).toBe("");
+    expect(loadTrace).not.toHaveBeenCalled();
+  });
+
+  it.each(["tool:call-1", "agent:commentary-1"])("preserves unloaded history with visible activity: %s", (key) => {
+    const loadTrace = vi.fn(async () => []);
+    const html = renderToStaticMarkup(<CodexExecutionTrace
+      trace={{ turnId: "turn-1", revision: "rev-1", historyItemKeys: ["reasoning:r:0", key] }}
+      loadTrace={loadTrace} loadToolResult={vi.fn()}
+      renderContent={text => text} runtimeProgress={[]} nativeSubagents={{}}
+    />);
+    expect(html).toContain("已工作");
+    expect(loadTrace).not.toHaveBeenCalled();
+  });
+
   it("collapses completed history without requesting trace data", () => {
     const loadTrace = vi.fn(async () => []);
     const html = renderToStaticMarkup(createElement(CodexExecutionTrace, {

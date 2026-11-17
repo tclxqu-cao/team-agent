@@ -1,6 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { HistoryPullGesture, shouldLoadOlderHistoryFromWheel } from './history-pull-gesture';
+import { HistoryPullGesture, shouldLoadOlderHistoryFromScroll, shouldLoadOlderHistoryFromWheel } from './history-pull-gesture';
 const point = (clientX: number, clientY: number) => ({ clientX, clientY });
+describe('history scroll direction', () => {
+  it('does not append prefetched history during initial bottom positioning in a short conversation', () => {
+    expect(shouldLoadOlderHistoryFromScroll(null, 120)).toBe(false);
+    expect(shouldLoadOlderHistoryFromScroll(0, 120)).toBe(false);
+    expect(shouldLoadOlderHistoryFromScroll(120, 120)).toBe(false);
+  });
+
+  it('loads when scrolling up near the top, including Safari overscroll', () => {
+    expect(shouldLoadOlderHistoryFromScroll(300, 240)).toBe(true);
+    expect(shouldLoadOlderHistoryFromScroll(0, -12)).toBe(true);
+    expect(shouldLoadOlderHistoryFromScroll(500, 300)).toBe(false);
+  });
+});
 describe('history wheel input', () => {
   const upward = { deltaX: 0, deltaY: -80, ctrlKey: false };
 

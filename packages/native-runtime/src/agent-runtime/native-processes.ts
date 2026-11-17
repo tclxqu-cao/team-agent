@@ -78,7 +78,9 @@ export async function listOpenSessionFiles(
     const { stdout } = await execute(
       // launchd's PATH may omit /usr/sbin even when native CLIs are available.
       platform === "darwin" ? "/usr/sbin/lsof" : "lsof",
-      ["+c", "0", "-a", "-c", commandName, "-FpFn"],
+      // Only numeric IDs and kernel-cached paths are needed here. Blocking
+      // filesystem/name resolution can otherwise delay every history page.
+      ["-nP", ...(platform === "darwin" ? ["-b"] : []), "+c", "0", "-a", "-c", commandName, "-FpFn"],
       { encoding: "utf8", timeout: 5000, maxBuffer: 4 * 1024 * 1024 },
     );
     return selectOpenSessionFiles(stdout, root, options);

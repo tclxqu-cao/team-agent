@@ -1,5 +1,10 @@
 interface TouchPoint { clientX: number; clientY: number }
 
+/** Initial positioning and scrolling towards latest must not consume prefetch. */
+export function shouldLoadOlderHistoryFromScroll(previousTop: number | null, scrollTop: number): boolean {
+  return previousTop !== null && scrollTop < previousTop && scrollTop <= 240;
+}
+
 /** Wheel input still arrives when a short history cannot change scrollTop. */
 export function shouldLoadOlderHistoryFromWheel(
   event: { deltaX: number; deltaY: number; ctrlKey: boolean },

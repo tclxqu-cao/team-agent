@@ -1086,6 +1086,18 @@ body[data-web-shell="1"] {
     background: var(--bg-workspace);
   }
 
+  body[data-web-shell="1"] .chat-view--unified-history .execution-trace {
+    --execution-trace-font-size: 14px;
+  }
+
+  body[data-web-shell="1"] .chat-view--unified-history .execution-trace__summary {
+    font-size: 14px;
+  }
+
+  body[data-web-shell="1"] .chat-view--unified-history :is(.execution-activity-block__summary, .tool-call-activity__summary) {
+    font-size: 13px;
+  }
+
   body[data-web-shell="1"] .app-accent-glow {
     display: none;
   }
