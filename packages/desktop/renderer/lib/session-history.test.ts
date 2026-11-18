@@ -10,10 +10,89 @@ import {
   restoreCodexExecutionTrace,
   restoreSessionHistoryPage,
   restoreLatestSessionHistoryWindow,
+  retainAnsweredSessionQuestions,
   shouldDeferLiveHistoryRefresh,
+  type SessionHistoryDetail,
 } from "./session-history";
 
 describe("native live/history ownership", () => {
+  it("keeps a submitted ZCode permission answer between its surrounding messages after repeated refreshes", () => {
+    const submitted: ChatMessage = { ...assistant("question:zcode-permission", ""), askUser: {
+      questionId: "zcode-permission", question: "Bash: High risk tools require explicit approval",
+      options: [{ label: "Allow once", description: "" }], answered: true, answer: "Allow once",
+    } };
+    const before = assistant("before", "准备搜索 GitHub");
+    const after = assistant("after", "已取得搜索结果");
+    let current = [message("start", "找开源项目"), before, submitted, after];
+    const snapshot = [current[0], before, after, assistant("final", "继续检查官网")];
+    for (let iteration = 0; iteration < 3; iteration += 1) {
+      current = mergeProgressiveSessionHistoryPage(current, snapshot, "full");
+      expect(current.map(entry => entry.id)).toEqual(["start", "before", submitted.id, "after", "final"]);
+      expect(current[2].askUser).toEqual(submitted.askUser);
+    }
+  });
+
+  it("does not turn a submitted answer back into a pending card from a delayed snapshot", () => {
+    const submitted: ChatMessage = { ...assistant("question:one", ""), askUser: {
+      questionId: "one", question: "选择范围", answered: true, answer: "当前项目",
+    } };
+    const current = [message("start", "检查"), submitted];
+    const pending = { ...submitted, askUser: { ...submitted.askUser!, answered: false, answer: undefined } };
+    for (const phase of ["core", "trace", "full"] as const) {
+      const merged = mergeProgressiveSessionHistoryPage(current, [current[0], pending], phase,
+        { delivery: phase === "core" ? "core" : "trace", revision: "new" });
+      expect(merged.filter(entry => entry.askUser)).toHaveLength(1);
+      expect(merged.find(entry => entry.askUser)?.askUser).toMatchObject({ answered: true, answer: "当前项目" });
+    }
+  });
+
+  it("retains each submitted occurrence and leaves an unresolved question out of settled history", () => {
+    const question = (id: string, answered: boolean): ChatMessage => ({ ...assistant(id, ""), askUser: {
+      questionId: id, question: "继续吗？", answered, answer: answered ? "继续" : undefined,
+    } });
+    const current = [message("start", "检查"), question("one", true), question("two", true), question("pending", false)];
+    const merged = mergeRefreshedSessionHistory(current, [current[0], assistant("result", "检查结束")]);
+    expect(merged.map(entry => entry.id)).toEqual(["start", "one", "two", "result"]);
+    expect(merged.filter(entry => entry.askUser)).toHaveLength(2);
+  });
+
+  it("uses the native settled card once when it replaces the live question at the same position", () => {
+    const live: ChatMessage = { ...assistant("live-question", ""), askUser: {
+      questionId: "zcode-interaction:live", question: "选择范围", answered: true, answer: "当前项目",
+    } };
+    const native: ChatMessage = { ...assistant("native-question", ""), askUser: {
+      ...live.askUser!, questionId: "zcode-question-history:native",
+    }, presentation: { question: { questionId: "zcode-question-history:native", question: "选择范围", status: "answered", answer: "当前项目" } } };
+    const start = message("start", "检查");
+    const after = assistant("after", "开始处理");
+    const merged = mergeRefreshedSessionHistory([start, live, after], [start, native, after]);
+    expect(merged.filter(entry => entry.askUser)).toHaveLength(1);
+    expect(merged.find(entry => entry.askUser)?.askUser?.questionId).toBe(native.askUser?.questionId);
+  });
+
+  it("restores a confirmed receipt if the resolved snapshot arrives before the answer request returns", () => {
+    const submitted: ChatMessage = { ...assistant("question:one", ""), askUser: {
+      questionId: "one", question: "选择范围", answered: true, answer: "当前项目",
+    } };
+    const start = message("start", "检查");
+    const after = assistant("after", "已收到回答，继续执行");
+    const merged = retainAnsweredSessionQuestions([start, submitted], [start, after]);
+    expect(merged).toEqual([start, submitted, after]);
+    expect(retainAnsweredSessionQuestions([start, submitted], merged)).toEqual(merged);
+  });
+
+  it("does not deduplicate identical answered questions from different turns", () => {
+    const question: ChatMessage = { ...assistant("old-question", ""), askUser: {
+      questionId: "old", question: "继续吗？", answered: true, answer: "继续",
+    } };
+    const native: ChatMessage = { ...question, id: "new-question", askUser: { ...question.askUser!, questionId: "new" },
+      presentation: { question: { questionId: "new", question: "继续吗？", status: "answered", answer: "继续" } } };
+    const start = message("start", "检查一");
+    const next = message("next", "检查二");
+    const merged = mergeRefreshedSessionHistory([start, question, next], [start, next, native]);
+    expect(merged.map(entry => entry.id)).toEqual(["start", "old-question", "next", "new-question"]);
+  });
+
   it("identifies only complete leading history fragments without inventing native turn ownership", () => {
     const source = [{ historyId: "thought", role: "assistant", content: "",
       presentation: { reasoning: [{ itemId: "native-thought", sectionIndex: 0, text: "检查文件" }] } },
@@ -52,6 +131,8 @@ describe("native live/history ownership", () => {
     expect(shouldDeferLiveHistoryRefresh("codex", "one", null)).toBe(false);
     expect(shouldDeferLiveHistoryRefresh("codex", "one", "two")).toBe(false);
     expect(shouldDeferLiveHistoryRefresh("customer-agent", "one", "one")).toBe(false);
+    expect(shouldDeferLiveHistoryRefresh("codex", "one", "one", false)).toBe(false);
+    expect(shouldDeferLiveHistoryRefresh("deepseek-harness", "one", "one", false)).toBe(false);
   });
 
   it("does not append a Codex suffix to a snapshot that already contains it", () => {
@@ -912,6 +993,96 @@ describe("mergeRefreshedSessionHistory", () => {
 });
 
 describe("loadProgressiveSessionHistoryPage", () => {
+  const corePage = (turnId: string, ordinal: number, revision: string, cursor: string | null,
+    answer?: string): SessionHistoryDetail => ({
+    messages: [
+      { historyId: `history-message.v1.${ordinal}.user`, role: "user", content: turnId,
+        presentation: { executionTrace: { turnId } } },
+      ...(answer ? [{ historyId: `history-message.v1.${ordinal + 1}.answer`, role: "assistant", content: answer,
+        presentation: { agentMessagePhase: "final_answer" as const } }] : []),
+    ],
+    history: { delivery: "core", revision, nextCursor: cursor, hasMore: cursor !== null },
+  });
+
+  it("fills a retained turn's missed final answer after the latest page advances to another turn", async () => {
+    const live = assistant("live-progress", "浏览器组件验证已看到更新提速");
+    const retained = restoreSessionHistoryPage(corePage("previous", 5, "old", null));
+    retained[1].executionTrace!.liveMessages = [live];
+    let visible = retained;
+    const getSession = vi.fn()
+      .mockResolvedValueOnce(corePage("next", 7, "new", "opaque-previous"))
+      .mockResolvedValueOnce(corePage("previous", 5, "new", null, "代码已一并修复"));
+    const commits: ChatMessage[][] = [];
+    await loadProgressiveSessionHistoryPage({ getSession }, "session", "codex", { limit: 1 },
+      (detail, phase) => {
+        visible = restoreLatestSessionHistoryWindow(visible, restoreSessionHistoryPage(detail), phase,
+          detail?.history, { kind: "latest", olderCursor: null }).messages;
+        commits.push(visible);
+      }, () => true, undefined, retained);
+    expect(commits[0].at(-2)?.content).toBe("next");
+    expect(getSession).toHaveBeenNthCalledWith(2, "session", { before: "opaque-previous", limit: 1, view: "core" });
+    expect(visible.filter(message => message.role === "user" || message.content).map(message => message.content))
+      .toEqual(["previous", "代码已一并修复", "next"]);
+    expect(visible[1].executionTrace?.liveMessages).toEqual([live]);
+    expect(visible[1].executionTrace?.revision).toBe("new");
+  });
+
+  it.each(["same-turn", "cold", "anchored"])("keeps %s reads on a single core request", async (mode) => {
+    const retained = mode === "cold" ? [] : restoreSessionHistoryPage(corePage("previous", 5, "old", null));
+    const getSession = vi.fn().mockResolvedValue(corePage(mode === "same-turn" ? "previous" : "next", 7, "new", "older"));
+    await loadProgressiveSessionHistoryPage({ getSession }, "session", "codex", mode === "anchored" ? { anchor: "anchor" } : {},
+      () => {}, () => true, undefined, retained);
+    expect(getSession).toHaveBeenCalledOnce();
+  });
+
+  it("fills multiple missed turns before reconnecting the retained history window", async () => {
+    const retained = restoreSessionHistoryPage(corePage("previous", 1, "old", null));
+    const getSession = vi.fn()
+      .mockResolvedValueOnce(corePage("latest", 5, "new", "middle-cursor"))
+      .mockResolvedValueOnce(corePage("middle", 3, "new", "previous-cursor", "middle answer"))
+      .mockResolvedValueOnce(corePage("previous", 1, "new", null, "previous answer"));
+    const pages: SessionHistoryDetail[] = [];
+    await loadProgressiveSessionHistoryPage({ getSession }, "session", "codex", {},
+      detail => { if (detail) pages.push(detail); }, () => true, undefined, retained);
+    expect(pages.at(-1)?.messages?.map(message => message.content))
+      .toEqual(["previous", "previous answer", "middle", "middle answer", "latest"]);
+    expect(getSession).toHaveBeenNthCalledWith(3, "session", { before: "previous-cursor", limit: 50, view: "core" });
+  });
+
+  it("ignores a catch-up response after the reader switches sessions", async () => {
+    const retained = restoreSessionHistoryPage(corePage("previous", 1, "old", null));
+    let current = true;
+    const getSession = vi.fn().mockResolvedValueOnce(corePage("next", 3, "new", "previous-cursor"))
+      .mockImplementationOnce(async () => { current = false; return corePage("previous", 1, "new", null, "late answer"); });
+    const commit = vi.fn();
+    await loadProgressiveSessionHistoryPage({ getSession }, "session", "codex", {}, commit, () => current, undefined, retained);
+    expect(commit).toHaveBeenCalledOnce();
+  });
+
+  it("restarts catch-up on a changed revision without mixing ordinal spaces", async () => {
+    const retained = restoreSessionHistoryPage(corePage("previous", 1, "old", null));
+    const getSession = vi.fn()
+      .mockResolvedValueOnce(corePage("next", 3, "rev-2", "previous-cursor"))
+      .mockResolvedValueOnce(corePage("previous", 1, "rev-3", null, "stale page"))
+      .mockResolvedValueOnce(corePage("next", 3, "rev-3", "fresh-cursor"))
+      .mockResolvedValueOnce(corePage("previous", 1, "rev-3", null, "complete answer"));
+    const pages: SessionHistoryDetail[] = [];
+    await loadProgressiveSessionHistoryPage({ getSession }, "session", "codex", {},
+      detail => { if (detail) pages.push(detail); }, () => true, undefined, retained);
+    expect(pages.flatMap(page => page.messages ?? []).some(message => message.content === "stale page")).toBe(false);
+    expect(pages.at(-1)?.messages?.map(message => message.content)).toEqual(["previous", "complete answer", "next"]);
+    expect(getSession).toHaveBeenCalledTimes(4);
+  });
+
+  it("stops catch-up on a repeated cursor", async () => {
+    const retained = restoreSessionHistoryPage(corePage("previous", 1, "old", null));
+    const getSession = vi.fn()
+      .mockResolvedValueOnce(corePage("next", 5, "new", "repeated"))
+      .mockResolvedValueOnce(corePage("middle", 3, "new", "repeated"));
+    await loadProgressiveSessionHistoryPage({ getSession }, "session", "codex", {}, () => {}, () => true, undefined, retained);
+    expect(getSession).toHaveBeenCalledTimes(2);
+  });
+
   it("keeps frozen Codex traces lazy when another engine owns a mixed thread", async () => {
     const getSession = vi.fn(async () => ({ messages: [], history: { revision: "thread-rev", delivery: "core" as const } }));
     const pages: string[] = [];

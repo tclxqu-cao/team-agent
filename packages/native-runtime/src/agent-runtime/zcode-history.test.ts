@@ -70,6 +70,18 @@ describe("ZCode bounded persisted history", () => {
     expect((await client.read("large")).messages).toHaveLength(257);
   });
 
+  it("preserves native Agent-only output and its error even without a final text response", async () => {
+    const { client } = fixture([{ info: { messageId: "agent-only", role: "assistant" }, parts: [{
+      type: "tool", partId: "agent-part", callID: "agent-call", tool: "Agent", state: {
+        status: "error", input: { description: "Inspect", prompt: "Check files", subagent_type: "Explore" }, error: "Child stopped",
+      },
+    }] }]);
+    const { messages } = await client.read("large");
+    expect(messages).toHaveLength(2);
+    expect(messages[0].toolCalls?.[0]).toMatchObject({ id: "agent-call", name: "Agent", arguments: { subagent_type: "Explore" } });
+    expect(messages[1]).toMatchObject({ role: "tool", toolCallId: "agent-call", content: "Child stopped", isError: true });
+  });
+
   it("fails a repeated cursor without looping and permits a later fresh read", async () => {
     const rows = Array.from({ length: 257 }, (_, index) => message(index));
     rows[256] = message(0);

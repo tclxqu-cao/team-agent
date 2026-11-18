@@ -38,7 +38,7 @@ export function isNativeRunVisible(
   observation: NativeRunObservation | null,
 ): boolean {
   return locallyRunning || (observation?.sessionId === sessionId
-    ? observation.running : isObservedNativeRun(session));
+    ? observation.running : isActiveNativeSession(session));
 }
 
 export function shouldRestoreLocalNativeRun(session: NativeSessionViewState | null | undefined): boolean {
@@ -64,8 +64,8 @@ export function shouldFollowNativeHistory(
   return Boolean(targetSessionId && session && session.agentType !== "customer-agent");
 }
 
-export function shouldPollNativeHistoryFallback(session: NativeSessionViewState | null | undefined): boolean {
-  return session?.agentType === "customer-agent"
+export function shouldPollNativeHistoryFallback(session: NativeSessionViewState | null | undefined, observerAvailable = true): boolean {
+  return !observerAvailable || session?.agentType === "customer-agent"
     || session?.agentType === "deepseek-harness"
     || prefersNativeHistoryPolling(session)
     || session?.occupancy === "owned-externally"

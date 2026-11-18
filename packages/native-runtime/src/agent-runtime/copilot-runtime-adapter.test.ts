@@ -5,6 +5,7 @@ import { ActionType, MessageKind, SessionStatus, SessionLifecycle, chatReducer, 
 import type { AgentEvent } from "@agent/core";
 import { CopilotAhpConnection } from "./copilot-ahp-connection.js";
 import { CopilotClient } from "./copilot-client.js";
+import { CopilotTodoTools } from "./copilot-todo-tools.js";
 import { CopilotRuntimeAdapter } from "./copilot-runtime-adapter.js";
 import type { VSCodeAgentEndpoint } from "./copilot-vscode-discovery.js";
 
@@ -12,7 +13,7 @@ const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => { await Promise.all(cleanups.splice(0).map(cleanup => cleanup())); });
 const collect = async (events: AsyncIterable<AgentEvent>) => { const result: AgentEvent[] = []; for await (const event of events) result.push(event); return result; };
 
-async function fixture(ackTimeout = 300) {
+async function fixture(ackTimeout = 300, todoTools?: CopilotTodoTools) {
   const [clientTransport, server] = InMemoryTransport.pair();
   const connection = new CopilotAhpConnection("editor-host", clientTransport, ackTimeout);
   let seq = 1; let clientId = "";
@@ -62,7 +63,7 @@ async function fixture(ackTimeout = 300) {
     }
   })();
   await connection.initialize();
-  const client = new CopilotClient({ discover: async () => [{ instanceId: "editor-host" } as VSCodeAgentEndpoint], connect: async () => connection });
+  const client = new CopilotClient({ discover: async () => [{ instanceId: "editor-host" } as VSCodeAgentEndpoint], connect: async () => connection, todoTools });
   const adapter = new CopilotRuntimeAdapter(client);
   cleanups.push(async () => { await client.dispose(); await connection.dispose(); await server.close(); await loop; });
   return { adapter, client, connection, get sessionURI() { return sessionURI; }, get chatURI() { return chatURI; }, messages, session, notify, chat: () => chat,
@@ -72,6 +73,43 @@ async function fixture(ackTimeout = 300) {
 }
 
 describe("VS Code Copilot native adapter", () => {
+  it("does not dispatch a native message after cancellation during Todo tool attachment", async () => {
+    let release!: (detach: () => Promise<void>) => void;
+    const bridge = new CopilotTodoTools();
+    const attach = vi.spyOn(bridge, "attach").mockImplementation(() => new Promise(resolve => { release = resolve; }));
+    const detach = vi.fn(async () => undefined);
+    const f = await fixture(300, bridge);
+    const execution = collect(f.adapter.run(f.sessionURI, "must not reach the model", undefined, undefined, undefined, {
+      todoMcp: { command: "node", args: [], env: { AGENTROAM_TODO_DESCRIPTOR: "scoped.json" } },
+    }));
+    await vi.waitFor(() => expect(attach).toHaveBeenCalledOnce());
+    await f.adapter.abort(f.sessionURI);
+    release(detach);
+    expect(await execution).toEqual([{ type: "turn_aborted" }]);
+    expect(f.messages.filter(message => message.method === "dispatchAction")).toHaveLength(0);
+    expect(detach).toHaveBeenCalledOnce();
+  });
+
+  it("advertises scoped Todo client tools before the turn and returns their result over native AHP", async () => {
+    const execute = vi.fn(async () => ({ toolCallId: "", content: '{"items":[]}', isError: false }));
+    const bridge = new CopilotTodoTools(async () => [{ name: "todo_list", description: "Scoped Todo", parameters: { type: "object", properties: {} }, execute }] as never);
+    const f = await fixture(300, bridge);
+    f.behavior((_channel, action) => {
+      if (action.type === ActionType.ChatTurnStarted) void (async () => {
+        const owner = f.session.activeClients.find(c => c.tools.some(tool => tool.name === "todo_list"))!;
+        await f.notify({ type: ActionType.ChatToolCallStart, turnId: action.turnId, toolCallId: "todo-call", toolName: "todo_list", displayName: "Todo list", contributor: { kind: "client", clientId: owner.clientId } } as any);
+        await f.notify({ type: ActionType.ChatToolCallReady, turnId: action.turnId, toolCallId: "todo-call", toolInput: "{}", invocationMessage: "List Todo", confirmed: "not-needed" } as any);
+      })();
+      if (action.type === ActionType.ChatToolCallComplete) void f.notify({ type: ActionType.ChatTurnComplete, turnId: action.turnId, duration: 1 });
+    });
+    const events = await collect(f.adapter.run(f.sessionURI, "list my Todo", undefined, undefined, undefined, {
+      todoMcp: { command: "node", args: [], env: { AGENTROAM_TODO_DESCRIPTOR: "scoped.json" } },
+    }));
+    expect(execute).toHaveBeenCalledOnce();
+    expect(events).toContainEqual(expect.objectContaining({ type: "tool_result", result: expect.objectContaining({ content: '{"items":[]}' }) }));
+    expect(f.session.activeClients).toEqual([{ clientId: "original-editor", displayName: "VS Code", tools: [] }]);
+  });
+
   it("discovers and reads the same native session without creating/resuming another process", async () => {
     const f = await fixture();
     f.setChat({ turnsNextCursor: "older-page" });

@@ -16,6 +16,23 @@ const empty: CalendarOverview = {
 };
 
 describe("CalendarView", () => {
+  it("provides a return-to-chat action only when hosted as a desktop pane", () => {
+    const html = renderToStaticMarkup(createElement(CalendarView, { loadOverview: async () => empty, onClose: () => {} }));
+    expect(html).toContain('aria-label="返回聊天"');
+    const standalone = renderToStaticMarkup(createElement(CalendarView, { loadOverview: async () => empty }));
+    expect(standalone).not.toContain('aria-label="返回聊天"');
+  });
+  it("keeps todos and scheduled tasks inside the calendar without notification controls", () => {
+    const html = renderToStaticMarkup(createElement(CalendarView, { loadOverview: async () => empty }));
+    expect(html).toContain("无日期待办");
+    expect(html).toContain("定时任务");
+    expect(html).toContain("未排期任务");
+    expect(html).not.toContain("通知");
+    expect(html).not.toContain("todo-notifications");
+    expect(html).not.toContain("创建 / 管理待办");
+    expect(html).not.toContain("管理待办");
+    expect(html).not.toContain("我的待办");
+  });
   it("renders the header, every source filter and the loading grid without crashing", () => {
     const html = renderToStaticMarkup(createElement(CalendarView, { loadOverview: async () => empty }));
     expect(html).toContain("智能体日历");

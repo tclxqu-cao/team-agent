@@ -13,7 +13,7 @@ Team Agent is an enterprise-grade multimodal intelligent Agent runtime platform.
 - **Session Persistence**: SQLite persistent storage, supporting session history recovery and cross-session context inheritance.
 
 ### Interaction Capabilities
-- **Voice Interaction**: Integrates capabilities such as ASR speech recognition, TTS speech synthesis, wake word detection, and barge-in handling.
+- **Voice Interaction**: Integrates capabilities such as ASR speech recognition, wake word detection, and voice commands.
 - **Multi-End Adaptation**: Provides three interaction entry points: Web, TUI Terminal, and Electron Desktop, with unified session state synchronization.
 - **Goal Queue**: Supports queuing, sorting, and status tracking of session goals, enabling multi-round iteration for complex tasks.
 

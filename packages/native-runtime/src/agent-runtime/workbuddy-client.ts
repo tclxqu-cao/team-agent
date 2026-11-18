@@ -7,6 +7,7 @@ import { nativeRecord } from "./native-rpc-client.js";
 import { NativeStdioChannel, type NativeJsonPacket, type NativeStdioCommand } from "./native-stdio-channel.js";
 import type { NativeProtocolSession, NativeSessionProtocol } from "./stdio-native-runtime-adapter.js";
 import { WorkBuddySessionCatalog, workBuddyText } from "./workbuddy-session-catalog.js";
+import { WorkBuddySubagentTracker } from "./workbuddy-subagent-tracker.js";
 import { RuntimeSessionError, type CreateRuntimeSessionOptions, type RuntimeModelInfo, type RuntimeQuestionAnswer, type RuntimeRunOptions } from "./types.js";
 
 interface Run {
@@ -21,6 +22,8 @@ interface Run {
   nativeFailure?: Extract<AgentEvent, { type: "error" }>;
   toolIds: Set<string>;
   blocks: Map<number, { id: string; name: string; input: string }>;
+  subagents: WorkBuddySubagentTracker;
+  todoMcp: boolean;
 }
 
 interface Permission {
@@ -50,6 +53,7 @@ export class WorkBuddyClient implements NativeSessionProtocol {
   private readonly catalog: Pick<WorkBuddySessionCatalog, "list" | "read">;
   private readonly command: () => Promise<NativeStdioCommand>;
   private readonly drafts = new Map<string, NativeProtocolSession>();
+  private readonly todoMcpBySession = new Map<string, NonNullable<RuntimeRunOptions["todoMcp"]>>();
   private readonly runs = new Map<string, Run>();
   private readonly permissions = new Map<string, Permission>();
 
@@ -116,6 +120,7 @@ export class WorkBuddyClient implements NativeSessionProtocol {
     const now = new Date().toISOString();
     const session = { id: randomUUID(), title: options.title, cwd: options.cwd, created: now, updated: now };
     this.drafts.set(session.id, session);
+    if (options.todoMcp) this.todoMcpBySession.set(session.id, structuredClone(options.todoMcp));
     return session;
   }
 
@@ -130,14 +135,19 @@ export class WorkBuddyClient implements NativeSessionProtocol {
     if (options?.reasoningEffort) throw new RuntimeSessionError("WorkBuddy model effort is not advertised by its native model list", "OPERATION_NOT_SUPPORTED");
     const content: NativeJsonPacket[] = [{ type: "text", text: input }, ...parseImageDataUrls(images).map(image => ({ type: "image", source: { type: "base64", media_type: image.mimeType, data: image.base64 } }))];
     const command = await this.command();
+    const todoMcp = options?.todoMcp ?? this.todoMcpBySession.get(id);
     command.cwd = session.cwd;
     command.args = [...command.args ?? [], native ? "--resume" : "--session-id", id, ...(options?.model ? ["--model", options.model.id] : [])];
+    // Keep the native user's existing MCPs; --mcp-config adds this launch's
+    // scoped server without writing global configuration.
+    if (todoMcp) command.args.push("--mcp-config", JSON.stringify({ mcpServers: { "agentroam-todo": todoMcp } }));
     const channel = this.channel(command, id);
-    const run: Run = { channel, queue: new AsyncEventQueue(), text: "", messageText: "", reasoningScope: randomUUID(), messageOrdinal: 0, aborted: false, finished: false, toolIds: new Set(), blocks: new Map() };
+    const run: Run = { channel, queue: new AsyncEventQueue(), text: "", messageText: "", reasoningScope: randomUUID(), messageOrdinal: 0, aborted: false, finished: false, toolIds: new Set(), blocks: new Map(), subagents: new WorkBuddySubagentTracker(), todoMcp: Boolean(todoMcp) };
     this.runs.set(id, run);
     try {
       await this.control(channel, "initialize");
-      await channel.send({ type: "user", session_id: id, uuid: randomUUID(), parent_tool_use_id: null, message: { role: "user", content } });
+      if (todoMcp && !run.aborted && !run.finished) this.todoMcpBySession.set(id, structuredClone(todoMcp));
+      if (!run.aborted && !run.finished) await channel.send({ type: "user", session_id: id, uuid: randomUUID(), parent_tool_use_id: null, message: { role: "user", content } });
       yield* run.queue;
     } finally {
       run.finished = true; run.queue.close();
@@ -151,6 +161,9 @@ export class WorkBuddyClient implements NativeSessionProtocol {
     const run = this.runs.get(id);
     if (!run || run.finished) return;
     run.finished = true;
+    if (event.type === "turn_aborted" || event.type === "error") {
+      for (const activity of run.subagents.stopActive(event.type === "turn_aborted" ? "stopped" : "failed")) run.queue.push(activity);
+    }
     for (const [questionId, pending] of this.permissions) if (pending.sessionId === id) {
       this.permissions.delete(questionId); run.queue.push({ type: "approval_resolved", questionId });
     }
@@ -166,7 +179,17 @@ export class WorkBuddyClient implements NativeSessionProtocol {
   private packet(id: string, packet: NativeJsonPacket): void {
     const run = this.runs.get(id);
     if (!run || run.finished) return;
-    if (typeof packet.session_id === "string" && packet.session_id !== id) return;
+    const nested = typeof packet.parent_tool_use_id === "string" && Boolean(packet.parent_tool_use_id);
+    if (typeof packet.session_id === "string" && packet.session_id !== id && !nested) return;
+    if (run.todoMcp && packet.type === "system" && packet.subtype === "mcp_status") {
+      const failed = packet.event === "finish" && [packet.failed, packet.timed_out].some(names => Array.isArray(names) && names.includes("agentroam-todo"));
+      if (failed || packet.event === "server" && packet.name === "agentroam-todo" && typeof packet.error === "string" && packet.error) {
+        this.finish(id, { type: "error", code: "NATIVE_PROTOCOL_ERROR", message: "WorkBuddy Todo MCP could not initialize; the personal Todo tools are unavailable" });
+        return;
+      }
+    }
+    for (const event of run.subagents.consume(packet)) run.queue.push(event);
+    if (nested && packet.type !== "control_request" && packet.type !== "control_cancel_request") return;
     if (packet.type === "control_request") {
       const request = nativeRecord(packet.request);
       if (request.subtype !== "can_use_tool" || typeof packet.request_id !== "string") {
@@ -257,5 +280,6 @@ export class WorkBuddyClient implements NativeSessionProtocol {
 
   async dispose(): Promise<void> {
     await Promise.all([...this.runs.keys()].map(id => this.abort(id)));
+    this.todoMcpBySession.clear();
   }
 }

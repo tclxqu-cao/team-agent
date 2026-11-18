@@ -782,6 +782,48 @@ describe("ZCode native NDJSON adapter", () => {
   });
 });
 
+describe("ZCode permission mode mapping", () => {
+  it.each([
+    ["full-access", "yolo"],
+    ["auto-approval", "edit"],
+    ["request-approval", "build"],
+  ] as const)("arms session/setMode for %s as %s before the native send", async (permissionMode, mode) => {
+    const rpc = new ZCodeFixture(); const client = new ZCodeClient(rpc, { readMany: async () => new Map() });
+    await collect(client.run("sess_native", "gated turn", undefined, { permissionMode }));
+    expect(rpc.calls.find(call => call.method === "session/setMode")?.params).toEqual({ sessionId: "sess_native", mode });
+    const order = rpc.calls.map(call => call.method);
+    expect(order.indexOf("session/setMode")).toBeLessThan(order.indexOf("session/send"));
+  });
+
+  it("leaves the native mode untouched when a turn carries no permission mode", async () => {
+    const rpc = new ZCodeFixture(); const client = new ZCodeClient(rpc, { readMany: async () => new Map() });
+    await collect(client.run("sess_native", "plain turn"));
+    expect(rpc.calls.some(call => call.method === "session/setMode")).toBe(false);
+  });
+
+  it.each(["full-access", "auto-approval", "request-approval"] as const)("rejects %s without sending when the CLI cannot set the permission mode", async permissionMode => {
+    const rpc = new ZCodeFixture(); const client = new ZCodeClient(rpc, { readMany: async () => new Map() });
+    const request = rpc.request.bind(rpc);
+    rpc.request = async (method, params) => method === "session/setMode"
+      ? Promise.reject(new NativeRpcError("Method not found: session/setMode", -32601))
+      : request(method, params);
+    await expect(collect(client.run("sess_native", "legacy turn", undefined, { permissionMode }))).rejects.toMatchObject({
+      message: "当前 ZCode 版本不支持设置会话权限，请升级 ZCode 后重试", code: "OPERATION_NOT_SUPPORTED",
+    });
+    expect(rpc.calls.some(call => call.method === "session/send")).toBe(false);
+  });
+
+  it("fails the turn instead of sending when the native side rejects the requested mode", async () => {
+    const rpc = new ZCodeFixture(); const client = new ZCodeClient(rpc, { readMany: async () => new Map() });
+    const request = rpc.request.bind(rpc);
+    rpc.request = async (method, params) => method === "session/setMode"
+      ? Promise.reject(new NativeRpcError("Unsupported session mode", -32602))
+      : request(method, params);
+    await expect(collect(client.run("sess_native", "gated turn", undefined, { permissionMode: "request-approval" }))).rejects.toMatchObject({ message: "Unsupported session mode" });
+    expect(rpc.calls.some(call => call.method === "session/send")).toBe(false);
+  });
+});
+
 describe("ZCode image attachment transport", () => {
   it("sends two native image attachments in order with unchanged text and model selection", async () => {
     const { client, rpc } = await imageClient();

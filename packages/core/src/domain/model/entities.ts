@@ -40,6 +40,10 @@ export interface MessageAttachment {
   type: "image";
   name: string;
   dataUrl?: string;
+  /** Display resource: preview is fetched separately; original is fetched only on expansion. */
+  imageId?: string;
+  /** Internal native-to-server source. Removed from browser history responses. */
+  localImagePath?: string;
   unavailable?: boolean;
   /** Set when the payload was withheld by an inline-size budget, not lost. */
   omitted?: boolean;

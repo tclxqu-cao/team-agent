@@ -1,6 +1,6 @@
 # @agent/phone-agent — 手机操作 Agent
 
-让 CA agent（Customer Agent）直接操作你的手机：**语音唤醒 → 截屏/无障碍树感知 → 点按滑动 → 干活**（跨 App 购物比价、查东西、开应用等），干完用语音回答。
+让 CA agent（Customer Agent）直接操作你的手机：**语音唤醒 → 截屏/无障碍树感知 → 点按滑动 → 干活**（跨 App 购物比价、查东西、开应用等），完成后输出文字结果。
 
 整体分四层，全部跑在 Mac 上、通过驱动控制手机，**手机上不需要装任何新东西**：
 
@@ -9,7 +9,7 @@
 │ phone-agent voice                                             │
 │ ffmpeg 采麦克风 → voice-service「小智」唤醒 + 中文 ASR          │
 │   → POST /api/agent/run → SSE → done.finalText                 │
-│   → voice-service TTS → afplay 播放                            │
+│   → 最终文字结果                                              │
 └──────────────────────┬────────────────────────────────────────┘
                        │ 会话（sessionId=phone-butler）
 ┌──────────────────────▼────────────────────────────────────────┐
@@ -78,7 +78,7 @@ curl -s -X POST http://127.0.0.1:3000/api/mcp/connect \
 
 ### 3. 语音唤醒（可选）
 
-前提：voice-service 模型齐全（本机已装好 ASR/KWS/TTS，`curl http://127.0.0.1:17863/health` 应全 true）、agent 服务端在 :3000、且模型路由在线（server 默认走 AI Hub 桌面端，桌面 App 在线即可；离线时会报「AI Hub 桌面端离线」）。然后：
+前提：voice-service 模型齐全（本机已装好 ASR/KWS，`curl http://127.0.0.1:17863/health` 应全 true）、agent 服务端在 :3000、且模型路由在线（server 默认走 AI Hub 桌面端，桌面 App 在线即可；离线时会报「AI Hub 桌面端离线」）。然后：
 
 ```bash
 brew install ffmpeg   # 采集麦克风
@@ -88,7 +88,7 @@ bun run --cwd packages/phone-agent voice
 ```
 
 说「小智，帮我对比一下淘宝和京东的 AirPods Pro 2 价格」→ 网关把转写文本交给 CA agent
-（会话 `phone-butler`，历史可跨次延续）→ agent 驱动手机干活 → 最终回答由 TTS 念出来。
+（会话 `phone-butler`，历史可跨次延续）→ agent 驱动手机干活 → 最终回答输出为文字。
 
 不想接麦克风时可以先单条调试：`bun run --cwd packages/phone-agent voice -- --once "打开设置"`。
 桌面端已有完整语音链路（唤醒→聊天），也可以直接在桌面聊天里说同样的话，效果一致。
@@ -125,7 +125,6 @@ bun run --cwd packages/phone-agent voice
 | `VOICE_SERVICE_URL` | `ws://127.0.0.1:17863` | voice-service 地址 |
 | `PHONE_VOICE_WAKE_WORD` | `小智` | 唤醒词（需与 KWS 模型支持一致） |
 | `PHONE_VOICE_SESSION` | `phone-butler` | 语音会话 sessionId |
-| `PHONE_TTS_VOICE` | `Serena` | TTS 音色 |
 | `PHONE_MIC` | `:0` | ffmpeg avfoundation 麦克风设备 |
 
 ## 已知限制（诚实清单）

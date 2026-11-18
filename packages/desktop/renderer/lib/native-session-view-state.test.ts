@@ -13,6 +13,12 @@ import {
   type NativeSessionViewState,
 } from "./native-session-view-state";
 
+it("polls even an idle Codex view when the client has no history observer", () => {
+  const idle = { agentType: "codex" as const, status: "idle" as const, occupancy: "available" as const };
+  expect(shouldPollNativeHistoryFallback(idle, false)).toBe(true);
+  expect(shouldPollNativeHistoryFallback(idle, true)).toBe(false);
+});
+
 const externalRunning = (agentType: "codex" | "claude-code"): NativeSessionViewState => ({
   agentType,
   status: "running",
@@ -20,6 +26,16 @@ const externalRunning = (agentType: "codex" | "claude-code"): NativeSessionViewS
 });
 
 describe("native session view state", () => {
+  it.each(["available", "owned-by-customer-agent", "owned-externally"] as const)(
+    "shows an actively running native session independently of ownership: %s",
+    (occupancy) => {
+      const running = { agentType: "codex", status: "running", occupancy } as const;
+      expect(isNativeRunVisible(running, "selected", false, null)).toBe(true);
+      expect(isNativeRunVisible(running, "selected", false, { sessionId: "selected", running: true })).toBe(true);
+      expect(isNativeRunVisible(running, "selected", false, { sessionId: "selected", running: false })).toBe(false);
+    },
+  );
+
   it("uses polled execution and completion instead of the selected session's cached status", () => {
     const idle = { agentType: "zcode", status: "idle", occupancy: "available" } as const;
     expect(isNativeRunVisible(idle, "selected", false, { sessionId: "selected", running: true })).toBe(true);

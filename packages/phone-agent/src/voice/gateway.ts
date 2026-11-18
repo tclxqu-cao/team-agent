@@ -1,16 +1,13 @@
 import { spawn } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import type { PhoneAgentConfig } from "../config.js";
 
 /**
- * 语音网关（可选的独立进程）：复用 voice-service 的「小智」唤醒词 + 中文 ASR + MLX TTS，
- * 把听到的指令转给 CA agent（/api/agent/run + SSE），再把回答念出来。
+ * 语音网关（可选的独立进程）：复用 voice-service 的「小智」唤醒词 + 中文 ASR，
+ * 把听到的指令转给 CA agent（/api/agent/run + SSE），并输出文字回答。
  *
  * 流程：mic(ffmpeg) → WS /v1/asr(mode=wake) → keyword 事件 → streaming ASR
  *      → final 文本 → POST /api/agent/run → GET /api/agent/stream (SSE)
- *      → done.finalText → WS /v1/tts/stream → PCM → WAV → afplay 播放
+ *      → done.finalText → 文字结果
  */
 
 interface AsrEvent {
@@ -42,33 +39,6 @@ function connectWs(url: string): Promise<WsLike> {
   });
 }
 
-/** 24kHz mono s16le PCM → WAV 字节。 */
-export function pcmToWav(pcm: Buffer, sampleRate = 24_000): Buffer {
-  const header = Buffer.alloc(44);
-  header.write("RIFF", 0);
-  header.writeUInt32LE(36 + pcm.length, 4);
-  header.write("WAVE", 8);
-  header.write("fmt ", 12);
-  header.writeUInt32LE(16, 16);
-  header.writeUInt16LE(1, 20); // PCM
-  header.writeUInt16LE(1, 22); // mono
-  header.writeUInt32LE(sampleRate, 24);
-  header.writeUInt32LE(sampleRate * 2, 28);
-  header.writeUInt16LE(2, 32);
-  header.writeUInt16LE(16, 34);
-  header.write("data", 36);
-  header.writeUInt32LE(pcm.length, 40);
-  return Buffer.concat([header, pcm]);
-}
-
-function playFile(path: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const proc = spawn("afplay", [path], { stdio: "ignore" });
-    proc.on("exit", (code) => (code === 0 ? resolve() : reject(new Error(`afplay 退出码 ${code}`))));
-    proc.on("error", reject);
-  });
-}
-
 export class VoiceGateway {
   private generation = 0;
   private busy = false;
@@ -76,53 +46,6 @@ export class VoiceGateway {
   private disposed = false;
 
   constructor(private readonly config: PhoneAgentConfig) {}
-
-  /** TTS 一段话并播放。 */
-  async speak(text: string): Promise<void> {
-    if (!text.trim()) return;
-    const ws = await connectWs(`${this.config.voiceServiceUrl}/v1/tts/stream`);
-    const gen = ++this.generation;
-    const chunks: Buffer[] = [];
-    try {
-      await new Promise<void>((resolve, reject) => {
-        ws.addEventListener("message", (ev) => {
-          const data = ev.data as ArrayBuffer | string;
-          if (typeof data === "string") {
-            try {
-              const msg = JSON.parse(data) as { type?: string; message?: string };
-              if (msg.type === "finished" || msg.type === "cancelled") resolve();
-              if (msg.type === "error") reject(new Error(msg.message ?? "TTS error"));
-            } catch {
-              // 忽略无法解析的控制帧
-            }
-            return;
-          }
-          chunks.push(Buffer.from(data));
-        });
-        ws.addEventListener("close", () => resolve());
-        ws.addEventListener("error", (ev) => reject(new Error(`TTS WS 错误: ${String((ev as ErrorEvent).message ?? ev)}`)));
-        ws.send(JSON.stringify({
-          type: "start",
-          sessionId: this.config.voiceSessionId,
-          generation: gen,
-          text,
-          voice: this.config.ttsVoice,
-          speed: 1,
-        }));
-      });
-    } finally {
-      try { ws.close(); } catch { /* 已关闭 */ }
-    }
-    const wav = pcmToWav(Buffer.concat(chunks));
-    const dir = await mkdtemp(join(tmpdir(), "phone-tts-"));
-    try {
-      const path = join(dir, "reply.wav");
-      await writeFile(path, wav);
-      await playFile(path);
-    } finally {
-      await rm(dir, { recursive: true, force: true }).catch(() => undefined);
-    }
-  }
 
   /** 发指令给 CA agent 并等 SSE 终态，返回最终文本。 */
   async runAgentCommand(input: string): Promise<string> {
@@ -183,7 +106,7 @@ export class VoiceGateway {
         } else if (event.type === "tool_call") {
           console.log(`[voice] agent 正在操作: ${(event as { toolCall?: { name?: string } }).toolCall?.name ?? ""}`);
         } else if (event.type === "ask_user") {
-          // v1：把追问念出来结束本轮，用户下一句话作为新输入继续（会话上下文仍在）
+          // 输出追问后结束本轮，下一句话作为新输入继续（会话上下文仍在）
           finalText = event.question || (event as { message?: string }).message || "需要你的确认";
         }
       }
@@ -194,7 +117,7 @@ export class VoiceGateway {
   /** 处理一句唤醒后的指令。 */
   private async handleCommand(text: string): Promise<void> {
     if (this.busy) {
-      await this.speak("上一条任务还在执行，请稍等");
+      console.warn("[voice] 上一条任务还在执行，请稍等");
       return;
     }
     this.busy = true;
@@ -202,11 +125,9 @@ export class VoiceGateway {
       console.log(`[voice] 指令: ${text}`);
       const reply = await this.runAgentCommand(text);
       console.log(`[voice] 回复: ${reply}`);
-      await this.speak(reply);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error(`[voice] 执行失败: ${msg}`);
-      await this.speak(`任务执行失败：${msg.slice(0, 80)}`).catch(() => undefined);
     } finally {
       this.busy = false;
     }
@@ -306,5 +227,4 @@ export async function runOnce(config: PhoneAgentConfig, text: string): Promise<v
   const gateway = new VoiceGateway(config);
   const reply = await gateway.runAgentCommand(text);
   console.log(`[voice] 回复: ${reply}`);
-  await gateway.speak(reply);
 }

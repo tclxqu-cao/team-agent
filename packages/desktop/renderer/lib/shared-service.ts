@@ -90,6 +90,8 @@ export function createSharedAgentApi(api: SharedServiceApi, device: AgentApi): A
   const localNames = new Set([
     "openFileDialog",
     "showDirectoryContextMenu",
+    "showFileContextMenu",
+    "notificationRead",
     "fileWorkspaceRequest",
     "onFileWorkspaceEvent",
     "readFile",
@@ -98,6 +100,9 @@ export function createSharedAgentApi(api: SharedServiceApi, device: AgentApi): A
     "hideWindow",
     "showWindow",
     "isWindowVisible",
+    "openNewSessionWindow",
+    "setNotificationVisible",
+    "onNotificationOpen",
     "openExternal",
     "getUpdateStatus",
     "checkForUpdate",
@@ -107,7 +112,7 @@ export function createSharedAgentApi(api: SharedServiceApi, device: AgentApi): A
   return new Proxy(gateway, {
     get(target, key) {
       if (typeof key !== "string") return Reflect.get(target, key);
-      const local = localNames.has(key) || /^(hub|flowStudio|desktopLive|wake|dictation|tts|onWake|onDictation|onTts|onHub|onFlowStudio|onDesktop|onApp)/.test(key);
+      const local = localNames.has(key) || /^(hub|flowStudio|taskPage|desktopLive|wake|dictation|onWake|onDictation|onHub|onFlowStudio|onDesktop|onApp)/.test(key);
       const owner = local ? device : target;
       const value = Reflect.get(owner, key);
       return typeof value === "function" ? value.bind(owner) : value;

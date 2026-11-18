@@ -118,7 +118,7 @@ export function reconcileSessionNextCursor<T extends UnifiedSessionSummary>(
   replace: boolean,
   previousCursor: string | null | undefined,
 ): string | null {
-  if (page.stale && previousCursor !== undefined) return previousCursor;
+  if ((page.stale || page.refreshing) && previousCursor !== undefined) return previousCursor;
   if (!replace || !page.nextCursor || previousCursor === undefined) return page.nextCursor;
   const freshIds = new Set(page.data.map((session) => session.id));
   return current.some((session) => !freshIds.has(session.id)) ? previousCursor : page.nextCursor;
@@ -134,7 +134,7 @@ export function reconcileSessionPage<T extends UnifiedSessionSummary>(
   const freshById = new Map(page.data.map((session) => [session.id, session]));
   const currentIds = new Set(current.map((session) => session.id));
   const source = replace
-    ? page.nextCursor
+    ? page.nextCursor || page.refreshing
       ? [...page.data, ...current.filter((session) => !freshIds.has(session.id))]
       : [...page.data, ...current.filter(session => session.id === selectedSessionId && !freshIds.has(session.id))]
     : [
@@ -160,7 +160,7 @@ export async function refreshCachedRunningSessionPages<T extends UnifiedSessionS
   loadPage: (cursor: string) => Promise<WorkspacePage<T>>,
   pendingSessionId?: string,
 ): Promise<WorkspacePage<T>> {
-  if (firstPage.stale) return firstPage;
+  if (firstPage.stale || firstPage.refreshing) return firstPage;
 
   const refreshedIds = new Set(firstPage.data.map((session) => session.id));
   const unresolvedIds = new Set(
@@ -175,7 +175,7 @@ export async function refreshCachedRunningSessionPages<T extends UnifiedSessionS
   if (unresolvedIds.size === 0 || !firstPage.nextCursor) return firstPage;
 
   let data = [...firstPage.data];
-  let nextCursor = firstPage.nextCursor;
+  let nextCursor: string | null = firstPage.nextCursor;
   let watermark = firstPage.watermark;
   const seenCursors = new Set<string>();
 

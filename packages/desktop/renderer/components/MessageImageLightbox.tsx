@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { initialImageViewport, moveImage, zoomImage, type ImagePoint } from "../lib/image-viewport";
 import { createPortal } from "react-dom";
-import { X } from "lucide-react";
+import { LoaderCircle, X } from "lucide-react";
 
 export interface MessageImagePreview {
   src: string;
   alt: string;
+  loadOriginal?: () => Promise<string>;
 }
 
 interface MessageImageLightboxProps {
@@ -15,9 +16,24 @@ interface MessageImageLightboxProps {
 
 export default function MessageImageLightbox({ image, onClose }: MessageImageLightboxProps) {
   const [view, setView] = useState(initialImageViewport);
+  const [attempt, setAttempt] = useState(0);
+  const [original, setOriginal] = useState<{ image: MessageImagePreview; src?: string; status: "loading" | "decoding" | "ready" | "failed" } | null>(null);
+  const current = original?.image === image ? original : null;
+  const src = current?.src ?? image?.src;
+  const failed = current?.status === "failed";
+  const loading = Boolean(image?.loadOriginal && current?.status !== "ready" && !failed);
   const surface = useRef<HTMLDivElement>(null);
   const pointers = useRef(new Map<number, ImagePoint>());
   const dragged = useRef(false);
+  useEffect(() => {
+    if (!image?.loadOriginal) { setOriginal(null); return; }
+    let disposed = false;
+    setOriginal({ image, status: "loading" });
+    void image.loadOriginal().then(src => {
+      if (!disposed) setOriginal({ image, src, status: "decoding" });
+    }).catch(() => { if (!disposed) setOriginal({ image, status: "failed" }); });
+    return () => { disposed = true; };
+  }, [image, attempt]);
   const point = (clientX: number, clientY: number): ImagePoint => {
     const rect = surface.current!.getBoundingClientRect();
     return { x: clientX - rect.left - rect.width / 2, y: clientY - rect.top - rect.height / 2 };
@@ -67,6 +83,7 @@ export default function MessageImageLightbox({ image, onClose }: MessageImageLig
       role="dialog"
       aria-modal="true"
       aria-label="图片预览"
+      aria-busy={loading}
       onClick={(event) => {
         if (event.target === event.currentTarget && !dragged.current) onClose();
       }}
@@ -90,8 +107,14 @@ export default function MessageImageLightbox({ image, onClose }: MessageImageLig
       onPointerCancel={(event) => pointers.current.delete(event.pointerId)}
       onLostPointerCapture={(event) => pointers.current.delete(event.pointerId)}
     >
-      <img className="message-image-lightbox__image" src={image.src} alt={image.alt} draggable={false}
-        style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})` }} />
+      {src && <img className="message-image-lightbox__image" src={src} alt={image.alt} draggable={false}
+        onLoad={() => setOriginal(value => value?.image === image && value.status === "decoding" ? { ...value, status: "ready" } : value)}
+        onError={() => { if (current?.status === "decoding") setOriginal({ image, status: "failed" }); }}
+        style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})` }} />}
+      {(loading || failed) && <div className="message-image-lightbox__status" role="status" aria-live="polite">
+        {loading ? <><LoaderCircle className="message-image-spinner" size={22} aria-hidden="true" /><span>正在加载原图…</span></>
+          : <><span>原图加载失败</span><button type="button" onClick={() => setAttempt(value => value + 1)}>重试</button></>}
+      </div>}
       <div className="message-image-lightbox__toolbar">
         <button type="button" aria-label="缩小图片" disabled={view.scale <= 1} onClick={() => setView((value) => zoomImage(value, value.scale / 1.5))}>−</button>
         <span aria-live="polite">{Math.round(view.scale * 100)}%</span>

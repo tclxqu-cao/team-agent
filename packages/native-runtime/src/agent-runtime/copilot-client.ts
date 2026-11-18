@@ -7,6 +7,7 @@ import { AsyncEventQueue } from "./async-event-queue.js";
 import { CopilotAhpConnection } from "./copilot-ahp-connection.js";
 import { CopilotApprovals } from "./copilot-approvals.js";
 import { CopilotEventProjection, copilotHistory } from "./copilot-events.js";
+import { CopilotTodoTools } from "./copilot-todo-tools.js";
 import { discoverVSCodeAgentEndpoints, type VSCodeAgentEndpoint } from "./copilot-vscode-discovery.js";
 import type { NativeProtocolSession, NativeSessionProtocol } from "./stdio-native-runtime-adapter.js";
 import { RuntimeSessionError, type CreateRuntimeSessionOptions, type RuntimeHealth, type RuntimeModelInfo,
@@ -17,6 +18,7 @@ interface ActiveRun { host?: CopilotAhpConnection; chat?: string; turn?: string;
 export interface CopilotClientOptions {
   discover?: () => Promise<VSCodeAgentEndpoint[]>;
   connect?: (endpoint: VSCodeAgentEndpoint) => Promise<CopilotAhpConnection>;
+  todoTools?: CopilotTodoTools;
 }
 
 /** Existing VS Code hosts own credentials, native sessions, tools and permissions. */
@@ -27,9 +29,10 @@ export class CopilotClient implements NativeSessionProtocol {
   private readonly running = new Map<string, ActiveRun>();
   private readonly steering = new Map<string, { messageId: string; result: Promise<boolean> }>();
   private readonly approvals = new CopilotApprovals();
+  private readonly todoTools: CopilotTodoTools;
   private refreshing: Promise<void> | undefined;
 
-  constructor(private readonly options: CopilotClientOptions = {}) {}
+  constructor(private readonly options: CopilotClientOptions = {}) { this.todoTools = options.todoTools ?? new CopilotTodoTools(); }
 
   private async refreshHosts(): Promise<void> {
     if (this.refreshing) return this.refreshing;
@@ -162,6 +165,7 @@ export class CopilotClient implements NativeSessionProtocol {
     const projection = new CopilotEventProjection();
     let stopActions = () => {};
     let stopClose = () => {};
+    let detachTodo: (() => Promise<void>) | undefined;
     let terminal = false;
     const finish = (event: AgentEvent) => { if (!terminal) { terminal = true; queue.push(event); queue.close(); } };
     try {
@@ -174,6 +178,9 @@ export class CopilotClient implements NativeSessionProtocol {
       if (active.cancelled) { yield { type: "turn_aborted" }; return; }
       active.host = host; active.chat = chat.resource;
       active.turn = chat.activeTurn?.id ?? randomUUID();
+      if (options?.todoMcp) detachTodo = await this.todoTools.attach(host, entry.session.resource, chat.resource, active.turn, options.todoMcp,
+        error => finish({ type: "error", code: "NATIVE_PROTOCOL_ERROR", message: `Copilot 待办工具结果未确认：${error.message}` }));
+      if (active.cancelled) { yield { type: "turn_aborted" }; return; }
       const steeringId = chat.activeTurn ? randomUUID() : undefined;
       let acknowledged = false;
       let consumed = !steeringId;
@@ -201,6 +208,7 @@ export class CopilotClient implements NativeSessionProtocol {
       });
       stopClose = host.onClose(() => finish({ type: "error", code: "RUNTIME_UNAVAILABLE", message: "VS Code 连接已断开，请在原会话确认执行状态；未自动重发" }));
       const message = this.message(input, images, options, chat);
+      if (active.cancelled) { yield { type: "turn_aborted" }; return; }
       try {
         active.sending = host.dispatch(chat.resource, steeringId
           ? { type: ActionType.ChatPendingMessageSet, kind: PendingMessageKind.Steering, id: steeringId, message }
@@ -214,7 +222,7 @@ export class CopilotClient implements NativeSessionProtocol {
       update();
       if (active.cancelled && !terminal) await this.abort(id);
       yield* queue;
-    } finally { stopActions(); stopClose(); queue.close(); this.running.delete(id); }
+    } finally { stopActions(); stopClose(); queue.close(); this.running.delete(id); await detachTodo?.(); }
   }
 
   private message(input: string, images: string[] | undefined, options: RuntimeRunOptions | undefined, chat: ChatState): AhpMessage {

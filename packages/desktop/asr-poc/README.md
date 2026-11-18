@@ -76,4 +76,4 @@ An Electron 32.3.3 main-process probe (Node 20.18.1, modules 128, N-API 9) loade
 
 AVFoundation microphone device 2 opened and streamed without a permission or FFmpeg error. No physical speech was present during the capture window, so live microphone recognition remains a manual acceptance item. Roughly 22 seconds of idle capture used about 7.3 CPU seconds and 470 MiB RSS.
 
-The current recommendation is to retain Swift microphone capture, calibrated VAD, voice processing, and TTS barge-in behavior. If human speech quality is better in manual acceptance, replace only the ASR backend with one long-lived sherpa recognizer so its model load cost is paid once. Directly replacing the whole Swift helper would discard working TCC and interruption behavior without evidence.
+The current recommendation is to retain Swift microphone capture, calibrated VAD, voice processing, and speech capture behavior. If human speech quality is better in manual acceptance, replace only the ASR backend with one long-lived sherpa recognizer so its model load cost is paid once. Directly replacing the whole Swift helper would discard working TCC and interruption behavior without evidence.

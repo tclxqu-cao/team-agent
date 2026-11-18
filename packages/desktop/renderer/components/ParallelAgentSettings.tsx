@@ -4,7 +4,7 @@ import { ChevronDown } from "lucide-react";
 import type { AgentType, NativeReasoningEffort, RuntimeModelInfo, UnifiedSessionSummary } from "../global";
 import { AGENT_LABELS } from "../lib/agent-catalog";
 import { isNativeAgentType, loadNativeRunPref, nativeModelFromKey, nativeModelKey, nativeReasoningEffortOptions, resolveNativeRunPref, saveNativeRunPref, type NativeAgentRunPref } from "../lib/native-agent-run-prefs";
-import { useAgentStore } from "../stores/agentStore";
+import { useScopedAgentStore as useAgentStore } from "../stores/AgentStoreContext";
 import AgentBrandIcon from "./AgentBrandIcon";
 import ContextUsageBar from "./ContextUsageBar";
 

@@ -162,6 +162,11 @@ describe("OpenCode mid-turn steering", () => {
       body: { messageID: expect.stringMatching(/^msg_/), parts: [{ type: "text", text: "change direction" }] },
       throwOnError: true });
     expect(messageID).not.toBe(fixture.client.session.promptAsync.mock.calls[0][0]?.body?.messageID);
+    await expect(adapter.steer("ses_1", "inspect image", undefined, ["data:image/png;base64,iVBORw0KGgoB"])).resolves.toBe(true);
+    expect(fixture.client.session.promptAsync.mock.calls[2][0]?.body?.parts).toEqual([
+      { type: "text", text: "inspect image" },
+      { type: "file", mime: "image/png", filename: "image-1.png", url: "data:image/png;base64,iVBORw0KGgoB" },
+    ]);
     fixture.emit({ type: "message.part.updated", properties: { part: {
       id: "steer-text", sessionID: "ses_1", messageID, type: "text", text: "change direction",
     }, delta: "change direction" } });
@@ -465,6 +470,43 @@ describe("OpenCodeRuntimeAdapter", () => {
       { type: "text_chunk", text: " world" },
       { type: "text_done" },
       { type: "done", finalText: "hello world", forkPoint: { messageId: "assistant_1" } },
+    ]);
+  });
+
+  it("retains task calls and outputs in live and paged history without mixing child-session text", async () => {
+    const fixture = mockServer();
+    const adapter = new OpenCodeRuntimeAdapter({ server: fixture.server });
+    const result = drain(adapter.run("ses_1", "Inspect the question card"));
+    await vi.waitFor(() => expect(fixture.client.session.promptAsync).toHaveBeenCalled());
+    const input = { subagent_type: "explore", description: "Inspect the question card", prompt: "Trace its rendering" };
+    const output = '<task id="child-session" state="completed"><task_result>Found the handler</task_result></task>';
+    const task = {
+      id: "task-part", type: "tool" as const, sessionID: "ses_1", messageID: "parent-message", callID: "task-call", tool: "task",
+    };
+    fixture.emit({ type: "message.part.updated", properties: { part: {
+      id: "child-text", sessionID: "child-session", messageID: "child-message", type: "text", text: "private child transcript",
+    } } });
+    fixture.emit({ type: "message.part.updated", properties: { part: { ...task,
+      state: { status: "running", input, title: "Inspect the question card", metadata: {}, time: { start: 1 } },
+    } } });
+    const completed = { ...task, state: { status: "completed" as const, input, output, title: "Inspect the question card",
+      metadata: { parentSessionId: "ses_1", sessionId: "child-session" }, time: { start: 1, end: 2 } } };
+    fixture.emit({ type: "message.part.updated", properties: { part: completed } });
+    fixture.emit({ type: "session.idle", properties: { sessionID: "ses_1" } });
+    const events = await result;
+    expect(events).toContainEqual({ type: "tool_call", toolCall: { id: "task-call", name: "task", arguments: input } });
+    expect(events).toContainEqual(expect.objectContaining({ type: "tool_result", result: expect.objectContaining({
+      toolCallId: "task-call", content: output,
+    }) }));
+    expect(JSON.stringify(events)).not.toContain("private child transcript");
+
+    fixture.client.session.messages.mockResolvedValue({ data: [{
+      info: { id: "parent-message", sessionID: "ses_1", role: "assistant", time: { created: 1 } }, parts: [completed],
+    }] } as never);
+    const history = await adapter.getSessionPaged("ses_1", { limit: 50 });
+    expect(history.messages).toEqual([
+      expect.objectContaining({ role: "assistant", toolCalls: [{ id: "task-call", name: "task", arguments: input }] }),
+      expect.objectContaining({ role: "tool", toolCallId: "task-call", content: output }),
     ]);
   });
 

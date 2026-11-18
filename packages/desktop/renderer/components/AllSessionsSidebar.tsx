@@ -8,6 +8,8 @@ import { getSidebarSessionVisualState, SIDEBAR_SESSION_STATUS_LABELS } from "../
 import { collaborationRequest } from "./collaboration/client";
 import SidebarSessionRow, { type SidebarDeleteAnchor } from "./SidebarSessionRow";
 import SidebarRefreshButton from "./SidebarRefreshButton";
+import { useSessionActivity } from "../lib/use-session-activity";
+import { applySessionActivity } from "../lib/session-activity";
 import "../styles/all-sessions.css";
 
 interface Props {
@@ -24,6 +26,7 @@ interface Props {
 
 export default function AllSessionsSidebar(props: Props) {
   const active = usePageActive();
+  const activity = useSessionActivity();
   const [initialCache] = useState(() => readAllSessionsCache());
   const [sessions, setSessions] = useState<CatalogSession[]>(initialCache?.data ?? []);
   const [total, setTotal] = useState(initialCache?.total ?? 0);
@@ -32,6 +35,7 @@ export default function AllSessionsSidebar(props: Props) {
   const [search, setSearch] = useState("");
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [discovering, setDiscovering] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const request = useRef<AbortController | null>(null);
   const requestQuery = useRef("");
@@ -74,7 +78,7 @@ export default function AllSessionsSidebar(props: Props) {
         if (pending?.query === search) {
           page = await pending.promise;
         } else {
-          const promise = collaborationRequest<SessionCatalogPage>({ action: "sessionCatalog", query: search, limit: 20 });
+          const promise = collaborationRequest<SessionCatalogPage>({ action: "sessionCatalog", query: search, limit: 20, backgroundRefresh: true });
           const entry = { query: search, promise };
           firstPageRequest.current = entry;
           try {
@@ -92,15 +96,18 @@ export default function AllSessionsSidebar(props: Props) {
       }
       for (const session of page.data) receipts.current.delete(session.id);
       const nextWindow = reset && previous.query === search
-        ? refreshCatalogWindow(previous, page)
+        ? page.refreshing
+          ? { rows: mergeCatalogSessions(previous.rows, page.data), cursor: previous.cursor ?? page.nextCursor }
+          : refreshCatalogWindow(previous, page)
         : { rows: reset ? page.data : mergeCatalogSessions(previous.rows, page.data), cursor: page.nextCursor };
       snapshot.current = { query: search, ...nextWindow };
       setSessions(nextWindow.rows); setTotal(page.total); setNextCursor(nextWindow.cursor);
       setShowingCache(false);
-      if (reset && !search) writeAllSessionsCache(page);
+      if (reset) setDiscovering(page.refreshing === true);
+      if (reset && !search && !page.refreshing) writeAllSessionsCache(page);
       if (reset && previous.query !== search && scroll.current) scroll.current.scrollTop = 0;
     } catch (err) {
-      if (!controller.signal.aborted) setError(err instanceof Error ? err.message : "会话加载失败");
+      if (!controller.signal.aborted) { setDiscovering(false); setError(err instanceof Error ? err.message : "会话加载失败"); }
     } finally {
       if (request.current === controller) { request.current = null; setLoading(false); }
     }
@@ -126,8 +133,14 @@ export default function AllSessionsSidebar(props: Props) {
     };
   }, [active, load, search, props.revision, props.runningSessionId]);
 
+  useEffect(() => {
+    if (!active || !discovering) return;
+    const timer = window.setInterval(() => { void load(true); }, 2_000);
+    return () => window.clearInterval(timer);
+  }, [active, discovering, load]);
+
   const activeIds = [...props.needsInput, ...(props.runningSessionId ? [props.runningSessionId] : [])];
-  const merged = mergeCatalogReceipts(sessions, [...receipts.current.values()], search);
+  const merged = applySessionActivity(mergeCatalogReceipts(sessions, [...receipts.current.values()], search), activity, search);
   const ordered = orderAllSessions(merged, props.pinnedIds, activeIds);
   const normalized = query.trim().toLocaleLowerCase();
   const visible = ordered;
@@ -140,22 +153,23 @@ export default function AllSessionsSidebar(props: Props) {
         onChange={event => { setQuery(event.target.value); }} />
     </label>
     <div className="sidebar-project-toolbar">
-      <div className="sidebar-project-heading"><span className="sidebar-project-title">所有会话</span><span className="sidebar-project-count">{total + merged.length - sessions.length}</span></div>
+      <div className="sidebar-project-heading"><span className="sidebar-project-title">所有会话</span><span className="sidebar-project-count">{Math.max(total, merged.length)}</span></div>
       <div className="sidebar-project-actions"><span className="all-sessions-sort-label">进行中优先</span>
         <SidebarRefreshButton loading={loading} error={error} subject="所有会话" onRefresh={() => void load(true)} />
       </div>
     </div>
-    <div ref={scroll} className="app-sidebar-scroll all-sessions-list" aria-label="所有 Agent 会话" aria-busy={loading && !showingCache && !sessions.length}
+    <div ref={scroll} className="app-sidebar-scroll all-sessions-list" aria-label="所有 Agent 会话" aria-busy={(loading || discovering) && !showingCache && !visible.length}
       onScroll={event => {
         const node = event.currentTarget;
         if (node.scrollTop > 0 && node.scrollHeight - node.scrollTop - node.clientHeight < 120) void load(false);
       }}>
       {error && <div role="alert" className="sidebar-load-error"><span>{error}</span><button onClick={() => void load(true)}>重试</button></div>}
-      {loading && !sessions.length && !showingCache && <p className="all-sessions-empty" role="status">正在加载所有会话…</p>}
-      {(!loading || showingCache) && !error && !visible.length && <p className="all-sessions-empty">{normalized ? "没有匹配的会话" : "暂无会话，开始一个新任务吧"}</p>}
+      {(loading || discovering) && !visible.length && !showingCache && <p className="all-sessions-empty" role="status">正在加载所有会话…</p>}
+      {(!loading || showingCache) && !discovering && !error && !visible.length && <p className="all-sessions-empty">{normalized ? "没有匹配的会话" : "暂无会话，开始一个新任务吧"}</p>}
       {visible.map(session => {
         const activity = props.needsInput.includes(session.id) ? "needs-input"
-          : props.runningSessionId === session.id ? "running" : session.status === "failed" ? "error" : session.status;
+          : props.runningSessionId === session.id ? "running" : session.status === "failed" ? "error"
+          : session.status === "completed" ? "idle" : session.status;
         const visualState = getSidebarSessionVisualState(activity);
         return <SidebarSessionRow key={session.id} session={{
           id: session.id, title: session.title, agentType: session.agentType, workspacePath: session.cwd,
@@ -167,7 +181,8 @@ export default function AllSessionsSidebar(props: Props) {
           onDelete={anchor => props.onDelete(session, anchor)} />;
       })}
       {nextCursor && <button className="all-sessions-more" disabled={loading} onClick={() => void load(false)}>{loading ? "正在加载…" : "加载更早的会话"}</button>}
-      {showingCache && <p className="sidebar-cache-state" role="status">{loading ? "显示缓存，正在后台更新…" : "当前显示缓存"}</p>}
+      {discovering && visible.length > 0 ? <p className="sidebar-cache-state" role="status">正在后台同步会话…</p>
+        : showingCache && <p className="sidebar-cache-state" role="status">{loading ? "显示缓存，正在后台更新…" : "当前显示缓存"}</p>}
     </div>
   </>;
 }

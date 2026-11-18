@@ -1,5 +1,6 @@
 import type { AgentEvent, Message, ToolCall } from "@agent/core";
 import { harnessRecord, type HarnessRecord } from "./deepseek-harness-client.js";
+import { stripTodoCommandBridgeInstructions } from "../todo-mcp/command-bridge.js";
 
 const text = (value: unknown) => typeof value === "string" ? value : "";
 const HARNESS_CONTEXT_PREFIX = "__native_harness_context:";
@@ -31,7 +32,7 @@ export function harnessMessage(event: HarnessRecord): Message | null {
     ? harnessContent(raw.content, "reasoning") : "";
   const sourceKind = raw.source && typeof raw.source === "object" ? text(harnessRecord(raw.source).kind) : "";
   return {
-    role: raw.role as Message["role"], content: harnessContent(raw.content), historyId: `dsh:${event.seq}`,
+    role: raw.role as Message["role"], content: raw.role === "user" ? stripTodoCommandBridgeInstructions(harnessContent(raw.content)) : harnessContent(raw.content), historyId: `dsh:${event.seq}`,
     // Harness also sends injected model context as user/message.
     ...(raw.role === "user" && sourceKind && sourceKind !== "user" ? { name: `${HARNESS_CONTEXT_PREFIX}${sourceKind}` } : {}),
     ...(typeof raw.toolCallId === "string" ? { toolCallId: raw.toolCallId, isError: raw.isError === true } : {}),

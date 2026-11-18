@@ -3,6 +3,8 @@ import type { TaskNotificationPreferences } from "../../domain/settings/entities
 export type { TaskNotificationPreferences } from "../../domain/settings/entities.js";
 
 export const DEFAULT_TASK_NOTIFICATION_PREFERENCES: TaskNotificationPreferences = {
+  approvalEnabled: true,
+  todoEnabled: true,
   completionEnabled: true,
   soundEnabled: true,
   notifyWhileForeground: false,
@@ -36,6 +38,8 @@ export function resolveTaskNotificationPreferences(
   value?: Partial<TaskNotificationPreferences> | null,
 ): TaskNotificationPreferences {
   return {
+    approvalEnabled: value?.approvalEnabled ?? true,
+    todoEnabled: value?.todoEnabled ?? true,
     completionEnabled: value?.completionEnabled ?? DEFAULT_TASK_NOTIFICATION_PREFERENCES.completionEnabled,
     soundEnabled: value?.soundEnabled ?? DEFAULT_TASK_NOTIFICATION_PREFERENCES.soundEnabled,
     notifyWhileForeground: value?.notifyWhileForeground ?? DEFAULT_TASK_NOTIFICATION_PREFERENCES.notifyWhileForeground,

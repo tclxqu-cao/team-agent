@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { AgentEvent, Message } from "@agent/core";
+import type { AgentEvent, Message, ToolPermissionMode } from "@agent/core";
 import { AsyncEventQueue } from "./async-event-queue.js";
 import { parseImageDataUrls } from "./image-input.js";
 import { persistZCodeImageAttachments, readZCodeHistoryImages } from "./zcode-image-attachments.js";
@@ -14,6 +14,7 @@ import { ZCodeSteering } from "./zcode-steering.js";
 import { ZCodeDesktopBridge, type ZCodeDesktopGuide } from "./zcode-desktop-bridge.js";
 import type { NativeJsonPacket } from "./native-stdio-channel.js";
 import type { NativeProtocolSession, NativeSessionProtocol } from "./stdio-native-runtime-adapter.js";
+import type { NativeTodoMcpConfiguration } from "./runtime-tool-injection.js";
 import { RuntimeSessionError, type CreateRuntimeSessionOptions, type NativeReasoningEffort, type RuntimeModelInfo, type RuntimeQuestionAnswer, type RuntimeRunOptions } from "./types.js";
 
 interface Run { queue: AsyncEventQueue<AgentEvent>; text: string; aborted: boolean; finished: boolean; lastSeq: number; toolIds: Set<string>; reasoningId: string }
@@ -21,6 +22,11 @@ interface Question { sessionId: string; options: NativeJsonPacket[]; resolve(res
 const rows = (value: unknown): NativeJsonPacket[] => Array.isArray(value) ? value.map(nativeRecord) : [];
 const reasoningEfforts: readonly NativeReasoningEffort[] = ["low", "medium", "high", "xhigh", "max"];
 const nativeEffort = (value: unknown) => reasoningEfforts.find(effort => effort === value);
+const todoMcpServers = (configuration: NativeTodoMcpConfiguration): NativeJsonPacket[] => [{
+  name: "agentroam-todo", command: configuration.command, args: [...configuration.args],
+  env: Object.entries(configuration.env).sort(([left], [right]) => left.localeCompare(right)).map(([name, value]) => ({ name, value })),
+  isolation: "session", alwaysLoad: true,
+}];
 const modelRefKey = (providerId: string | undefined, modelId: string) => JSON.stringify([providerId, modelId]);
 const desktopActivity = new ZCodeDesktopActivityReader();
 const HISTORY_BATCH_SIZE = 256;
@@ -29,6 +35,11 @@ const nativeDate = (value: unknown): string => {
   const date = new Date(typeof value === "string" || typeof value === "number" ? value : Date.now());
   return Number.isFinite(date.getTime()) ? date.toISOString() : new Date().toISOString();
 };
+
+/** ZCode native modes accepted by session/setMode; build asks before changes, edit auto-applies edits, yolo runs fully automatic. */
+export function zcodeModeForPermission(permissionMode: ToolPermissionMode): "build" | "edit" | "yolo" {
+  return permissionMode === "full-access" ? "yolo" : permissionMode === "auto-approval" ? "edit" : "build";
+}
 
 export function decodeZCodeHistory(value: unknown, sessionId = "", imageData?: ReadonlyMap<string, string>): Message[] {
   const messages: Message[] = [];
@@ -75,10 +86,12 @@ export function decodeZCodeHistory(value: unknown, sessionId = "", imageData?: R
 export class ZCodeClient implements NativeSessionProtocol {
   private readonly sessions = new Map<string, NativeProtocolSession>();
   private readonly loaded = new Set<string>();
+  private readonly todoMcp = new Map<string, NativeTodoMcpConfiguration>();
   private readonly resumes = new Map<string, Promise<NativeProtocolSession>>();
   private readonly historyReads = new Map<string, Promise<{ session: NativeProtocolSession; messages: Message[] }>>();
   private readonly historyCache = new Map<string, { messages: NativeJsonPacket[]; reconciledAt: number }>();
   private readonly runs = new Map<string, Run>();
+  private readonly pendingTodoRuns = new Map<string, AbortController>();
   private readonly questions = new Map<string, Question>();
   private readonly interactions = new Map<string, { sessionId: string; response: Promise<NativeJsonPacket> }>();
   private models: RuntimeModelInfo[] = [];
@@ -140,7 +153,7 @@ export class ZCodeClient implements NativeSessionProtocol {
           ...(efforts.length ? { reasoningEfforts: efforts } : {}) }];
       });
     }
-    // Native mode changes are intentionally not exposed until the method is implemented.
+    // The session mode is enforced per turn in run() via session/setMode; snapshot projection stays out of scope.
     return session;
   }
 
@@ -191,7 +204,10 @@ export class ZCodeClient implements NativeSessionProtocol {
     const pending = this.resumes.get(id);
     if (pending) return pending;
     if (this.loaded.has(id) && !refresh) return this.sessions.get(id)!;
-    const loading = this.rpc.request("session/resume", { sessionId: id }, 60_000).then(result => {
+    const configuration = this.todoMcp.get(id);
+    const loading = this.rpc.request("session/resume", { sessionId: id,
+      ...(configuration ? { mcpServers: todoMcpServers(configuration) } : {}),
+    }, 60_000).then(result => {
       const session = this.snapshot(result); this.loaded.add(id);
       return session;
     }).finally(() => {
@@ -201,11 +217,36 @@ export class ZCodeClient implements NativeSessionProtocol {
     return loading;
   }
 
+  private async configureTodoMcp(id: string, configuration: NativeTodoMcpConfiguration, signal?: AbortSignal): Promise<void> {
+    await this.resumes.get(id);
+    signal?.throwIfAborted();
+    if (this.sessions.get(id)?.readOnly) throw new RuntimeSessionError("ZCode child sessions are read-only", "SESSION_OCCUPIED");
+    const previous = this.todoMcp.get(id);
+    if (previous && JSON.stringify(todoMcpServers(previous)) === JSON.stringify(todoMcpServers(configuration))) return;
+    if (this.runs.has(id)) throw new RuntimeSessionError("ZCode session is already running", "SESSION_ALREADY_RUNNING");
+    if (this.loaded.has(id)) {
+      const current = this.sessions.get(id)!;
+      const [observed] = await this.withDesktopActivity([current]);
+      signal?.throwIfAborted();
+      if (observed!.running || observed!.readOnly) throw new RuntimeSessionError("ZCode session is owned by another process", "SESSION_OCCUPIED");
+      // Native resume reuses an existing resident and ignores new startup MCP
+      // settings. Release only our idle resident before a configured cold resume.
+      const closed = await this.rpc.request("session/close", { sessionId: id });
+      if (closed.closed !== true) throw new RuntimeSessionError("ZCode did not release the session for Todo MCP configuration", "NATIVE_PROTOCOL_ERROR");
+      this.loaded.delete(id);
+    }
+    signal?.throwIfAborted();
+    this.todoMcp.set(id, { command: configuration.command, args: [...configuration.args], env: { ...configuration.env } });
+  }
+
   /** Idle eviction can report either inactive or runtime-not-ready. Never retry a send. */
-  private async withActiveSession<T>(id: string, operation: (session: NativeProtocolSession) => Promise<T>): Promise<T> {
+  private async withActiveSession<T>(id: string, operation: (session: NativeProtocolSession) => Promise<T>, signal?: AbortSignal): Promise<T> {
+    signal?.throwIfAborted();
     const session = await this.resume(id);
+    signal?.throwIfAborted();
     try { return await operation(session); }
     catch (error) {
+      signal?.throwIfAborted();
       if (!(error instanceof NativeRpcError) || error.nativeCode !== -32004
         || (error.message !== `Session is not active: ${id}` && error.message !== "Session runtime is not ready")
         || this.runs.has(id)) throw error;
@@ -299,10 +340,12 @@ export class ZCodeClient implements NativeSessionProtocol {
   async create(options: CreateRuntimeSessionOptions): Promise<NativeProtocolSession> {
     const result = await this.rpc.request("session/create", {
       workspace: { workspacePath: options.cwd, workspaceKey: options.cwd }, persistence: "immediate", titleGenerationEnabled: false,
+      ...(options.todoMcp ? { mcpServers: todoMcpServers(options.todoMcp) } : {}),
     }, 60_000);
     const session = this.snapshot(result);
     session.title = options.title;
     this.loaded.add(session.id);
+    if (options.todoMcp) this.todoMcp.set(session.id, { command: options.todoMcp.command, args: [...options.todoMcp.args], env: { ...options.todoMcp.env } });
     return session;
   }
 
@@ -317,6 +360,20 @@ export class ZCodeClient implements NativeSessionProtocol {
   }
 
   async *run(id: string, input: string, images?: string[], options?: RuntimeRunOptions): AsyncIterable<AgentEvent> {
+    if (this.pendingTodoRuns.has(id)) throw new RuntimeSessionError("ZCode session is already running", "SESSION_ALREADY_RUNNING");
+    const preparation = options?.todoMcp ? new AbortController() : undefined;
+    if (preparation) this.pendingTodoRuns.set(id, preparation);
+    try {
+      yield* this.runPrepared(id, input, images, options, preparation?.signal);
+    } catch (error) {
+      if (!preparation?.signal.aborted) throw error;
+      yield { type: "turn_aborted" };
+    } finally {
+      if (this.pendingTodoRuns.get(id) === preparation) this.pendingTodoRuns.delete(id);
+    }
+  }
+
+  private async *runPrepared(id: string, input: string, images?: string[], options?: RuntimeRunOptions, signal?: AbortSignal): AsyncIterable<AgentEvent> {
     const parsedImages = parseImageDataUrls(images);
     if (options?.model && !options.model.providerID) throw new RuntimeSessionError("ZCode model selection requires a native provider ID", "NATIVE_PROTOCOL_ERROR");
     if (options?.reasoningEffort && !options.model) throw new RuntimeSessionError("ZCode reasoning effort requires an explicit native model", "OPERATION_NOT_SUPPORTED");
@@ -324,7 +381,9 @@ export class ZCodeClient implements NativeSessionProtocol {
     const current = this.sessions.get(id) ?? (await this.list()).find(session => session.id === id)
       ?? { id, title: "ZCode", cwd: "", created: "", updated: "" };
     const [observed] = await this.withDesktopActivity([current]);
+    signal?.throwIfAborted();
     if (observed!.running && !this.runs.has(id)) {
+      if (options?.todoMcp) throw new RuntimeSessionError("ZCode 桌面端运行中的原会话无法注入会话隔离的待办 MCP，请等待任务结束后重试", "OPERATION_NOT_SUPPORTED");
       if (!observed!.externalGuideSupported || observed!.readOnly) throw new RuntimeSessionError("ZCode session is owned by another process", "SESSION_OCCUPIED");
       if (parsedImages.length) throw new RuntimeSessionError("ZCode 桌面端运行中的原会话仅支持文字引导，请等待任务结束后发送图片", "OPERATION_NOT_SUPPORTED");
       if (options?.goal) throw new RuntimeSessionError("桌面端原会话仅支持文字引导", "OPERATION_NOT_SUPPORTED");
@@ -333,16 +392,26 @@ export class ZCodeClient implements NativeSessionProtocol {
       yield { type: "done", finalText: "" };
       return;
     }
+    if (options?.todoMcp) await this.configureTodoMcp(id, options.todoMcp, signal);
+    signal?.throwIfAborted();
     const subscribed = await this.withActiveSession(id, async session => {
+      signal?.throwIfAborted();
       const [observed] = await this.withDesktopActivity([session]);
+      signal?.throwIfAborted();
       if (observed!.running && !this.runs.has(id)) throw new RuntimeSessionError("ZCode session is owned by another process", "SESSION_OCCUPIED");
       if (this.runs.has(id)) throw new RuntimeSessionError("ZCode session is already running", "SESSION_ALREADY_RUNNING");
+      // Arm the unified permission gate before the turn: a silent failure here could run a gated turn fully automatic.
+      if (options?.permissionMode) await this.applySessionMode(id, zcodeModeForPermission(options.permissionMode));
+      signal?.throwIfAborted();
       return this.rpc.request("session/subscribe", { sessionId: id, deliveryKind: "web-remote-replayable", includeSnapshot: false });
-    });
+    }, signal);
+    signal?.throwIfAborted();
     const attachments = await persistZCodeImageAttachments(parsedImages, this.imageStorageRoot);
+    signal?.throwIfAborted();
     const effort = options?.reasoningEffort ?? (options?.model ? this.modelDefaults.get(modelRefKey(options.model.providerID, options.model.id)) : undefined);
     const run: Run = { queue: new AsyncEventQueue(), text: "", aborted: false, finished: false, lastSeq: typeof subscribed.eventSeq === "number" ? subscribed.eventSeq : 0, toolIds: new Set(), reasoningId: randomUUID() };
     this.runs.set(id, run);
+    if (this.pendingTodoRuns.get(id)?.signal === signal) this.pendingTodoRuns.delete(id);
     try {
       const accepted = await this.rpc.request("session/send", { sessionId: id, inputId: randomUUID(), content: input,
         ...(attachments.length ? { attachments } : {}),
@@ -357,6 +426,17 @@ export class ZCodeClient implements NativeSessionProtocol {
       for (const [key, interaction] of this.interactions) if (interaction.sessionId === id) this.interactions.delete(key);
       this.steering.clearSession(id);
       run.queue.close();
+    }
+  }
+
+  /** A turn must not start unless the requested native permission mode was applied. */
+  private async applySessionMode(id: string, mode: "build" | "edit" | "yolo"): Promise<void> {
+    try { await this.rpc.request("session/setMode", { sessionId: id, mode }); }
+    catch (error) {
+      if (error instanceof NativeRpcError && error.nativeCode === -32601) {
+        throw new RuntimeSessionError("当前 ZCode 版本不支持设置会话权限，请升级 ZCode 后重试", "OPERATION_NOT_SUPPORTED");
+      }
+      throw error;
     }
   }
 
@@ -484,6 +564,7 @@ export class ZCodeClient implements NativeSessionProtocol {
   }
 
   async abort(id: string): Promise<void> {
+    this.pendingTodoRuns.get(id)?.abort();
     const run = this.runs.get(id);
     if (!run || run.finished) return;
     run.aborted = true; this.cancelQuestions(id);
@@ -503,8 +584,11 @@ export class ZCodeClient implements NativeSessionProtocol {
   }
 
   async dispose(): Promise<void> {
+    for (const preparation of this.pendingTodoRuns.values()) preparation.abort();
+    this.pendingTodoRuns.clear();
     for (const id of this.runs.keys()) { this.cancelQuestions(id); this.steering.clearSession(id); }
     this.interactions.clear();
+    this.todoMcp.clear();
     await this.rpc.dispose();
     for (const unsubscribe of this.unsubscribe) unsubscribe();
   }

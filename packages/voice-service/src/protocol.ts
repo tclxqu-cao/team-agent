@@ -17,26 +17,6 @@ export interface AsrSimpleControl {
 
 export type AsrControl = AsrStartControl | AsrSimpleControl;
 
-export interface TtsRequest {
-  sessionId: string;
-  generation: number;
-  text: string;
-  voice: string;
-  speed: number;
-}
-
-export interface TtsStreamStart extends TtsRequest {
-  type: "start";
-}
-
-export interface TtsStreamCancel {
-  type: "cancel";
-  sessionId: string;
-  generation: number;
-}
-
-export type TtsStreamControl = TtsStreamStart | TtsStreamCancel;
-
 function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error("message must be a JSON object");
@@ -88,43 +68,4 @@ export function parseAsrControl(raw: string): AsrControl {
     mode: input.mode,
     ...(typeof input.wakeWord === "string" ? { wakeWord: input.wakeWord.trim() } : {}),
   };
-}
-
-export function parseTtsRequest(raw: unknown): TtsRequest {
-  const input = record(raw);
-  const text = typeof input.text === "string" ? input.text.trim() : "";
-  if (!text) throw new Error("text must be non-empty");
-  if (text.length > 600) throw new Error("text must contain at most 600 characters");
-  const speed = input.speed === undefined ? 1 : input.speed;
-  if (typeof speed !== "number" || !Number.isFinite(speed) || speed < 0.5 || speed > 2) {
-    throw new Error("speed must be between 0.5 and 2.0");
-  }
-  const voice = input.voice === undefined ? "Serena" : input.voice;
-  if (typeof voice !== "string" || !voice.trim()) throw new Error("voice must be non-empty");
-  return {
-    sessionId: sessionId(input.sessionId),
-    generation: generation(input.generation),
-    text,
-    voice,
-    speed,
-  };
-}
-
-export function parseTtsStreamControl(raw: string): TtsStreamControl {
-  let value: unknown;
-  try {
-    value = JSON.parse(raw);
-  } catch {
-    throw new Error("message must be valid JSON");
-  }
-  const input = record(value);
-  if (input.type === "cancel") {
-    return {
-      type: "cancel",
-      sessionId: sessionId(input.sessionId),
-      generation: generation(input.generation),
-    };
-  }
-  if (input.type !== "start") throw new Error("type is not supported");
-  return { type: "start", ...parseTtsRequest(input) };
 }

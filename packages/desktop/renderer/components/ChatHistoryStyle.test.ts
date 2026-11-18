@@ -8,6 +8,7 @@ const chatView = readFileSync(new URL("./ChatView.tsx", import.meta.url), "utf8"
 const executionTrace = readFileSync(new URL("./ExecutionTrace.tsx", import.meta.url), "utf8");
 const app = readFileSync(new URL("../App.tsx", import.meta.url), "utf8");
 const toolCallCard = readFileSync(new URL("./ToolCallCard.tsx", import.meta.url), "utf8");
+const artifactLink = readFileSync(new URL("./MessageArtifactLink.tsx", import.meta.url), "utf8");
 const globalCss = readFileSync(new URL("../styles/global.css", import.meta.url), "utf8");
 const webCss = readFileSync(new URL("../../../webapp/src/presentation/web.css", import.meta.url), "utf8");
 const pendingIndicator = chatView.slice(
@@ -41,6 +42,15 @@ const runtimeErrorHandler = chatView.slice(
 );
 
 describe("shared Codex-style message history", () => {
+  it("opens attachments directly without a plus menu or dictation entry", () => {
+    const toolbar = chatView.slice(chatView.indexOf('{/* Shared action toolbar */}'), chatView.indexOf('className={`web-native-runtime-status goal-mode-toggle'));
+    expect(toolbar).toContain('aria-label="添加附件或图片"');
+    expect(toolbar).toContain('<Paperclip size={20}');
+    expect(toolbar).toContain('onClick={() => fileInputRef.current?.click()}');
+    expect(toolbar).not.toContain("web-native-add-menu");
+    expect(toolbar).not.toContain("<Mic");
+    expect(chatView).not.toContain("startDictation");
+  });
   it("applies one presentation path to every runtime", () => {
     expect(chatView).toContain('className="chat-view chat-view--unified-history"');
     expect(chatView).toContain("<SessionRunActivity");
@@ -295,7 +305,7 @@ describe("shared Codex-style message history", () => {
 
   it("renders normalized Codex attachments and keeps raw source collapsed", () => {
     expect(chatView).toContain('className="chat-message-attachments"');
-    expect(chatView).toContain('className="chat-message-attachment-image"');
+    expect(chatView).toContain("<MessageImageAttachment");
     expect(chatView).toContain('className="chat-message-attachment-unavailable"');
     expect(chatView).toContain("图片已失效");
     expect(chatView).toContain('className="chat-message-raw-content"');
@@ -307,8 +317,8 @@ describe("shared Codex-style message history", () => {
 
   it("opens every usable message image in the shared lightbox", () => {
     expect(chatView).toContain('import MessageImageLightbox, { type MessageImagePreview } from "./MessageImageLightbox"');
-    expect(chatView).toContain("setPreviewedMessageImage({ src, alt:");
-    expect(chatView).toContain("setPreviewedMessageImage({ src: attachment.dataUrl!, alt:");
+    expect(chatView).toContain("attachment.imageId || attachment.dataUrl");
+    expect(chatView).toContain("onPreview={setPreviewedMessageImage}");
     expect(chatView).toContain("<MessageImageLightbox");
     expect(chatView).not.toContain('window.open(src, "_blank")');
     expect(chatView).not.toContain('window.open(attachment.dataUrl, "_blank")');
@@ -352,11 +362,12 @@ describe("shared Codex-style message history", () => {
     expect(chatView).toContain("parseRichInlineTokens(text).map");
     expect(chatView).toContain('token.type === "artifact"');
     expect(chatView).toContain("if (!onOpenArtifact)");
-    expect(chatView).toContain('className="chat-message-artifact-link"');
+    expect(chatView).toContain("<MessageArtifactLink");
+    expect(artifactLink).toContain('className="chat-message-artifact-link"');
     expect(chatView).toContain("<FileText");
-    expect(chatView).toContain("onOpenArtifact(token.path)");
+    expect(chatView).toContain("onOpen={onOpenArtifact}");
     expect(chatView).toContain("renderInlineLabel(token.label");
-    expect(chatView).toContain("打开交付物");
+    expect(artifactLink).toContain("打开交付物");
     expect(globalCss).toContain(".chat-message-artifact-link svg");
     expect(globalCss).toContain("overflow-wrap: anywhere");
   });
@@ -369,8 +380,6 @@ describe("shared Codex-style message history", () => {
     expect(chatView).toContain("<RunResultSummary result={runResult} />");
     expect(chatView).not.toContain("<span>已完成</span>");
     expect(chatView).not.toContain("总耗时 {completionDuration}");
-    expect(chatView).toContain('actionPolicy.showSpeak && typeof window.agentApi?.ttsSpeak === "function"');
-    expect(chatView).not.toContain("!isWebShell() && actionPolicy.showSpeak");
     expect(chatView).toContain("actionPolicy.showCopy && <button");
     expect(chatView).toContain("copyTextToClipboard(msg.content)");
     expect(chatView).toContain('aria-label="复制内容"');

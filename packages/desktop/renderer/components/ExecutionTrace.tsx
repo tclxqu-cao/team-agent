@@ -26,6 +26,27 @@ interface ExecutionTraceProps {
   children: ReactNode;
 }
 
+/** Persist only the observed running clock; completed durations remain native facts. */
+function RunningWorkDuration({ scope }: { scope: string }) {
+  const [startedAt] = useState(() => {
+    const now = Date.now();
+    try {
+      const saved = Number(window.sessionStorage.getItem(`agentroam.execution-clock:${scope}`));
+      if (saved > 0 && saved <= now) return saved;
+    } catch { /* An unavailable session store does not block live progress. */ }
+    return now;
+  });
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    try { window.sessionStorage.setItem(`agentroam.execution-clock:${scope}`, String(startedAt)); }
+    catch { /* The component still keeps a stable clock until it unmounts. */ }
+    setNow(Date.now());
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [scope, startedAt]);
+  return <>{formatSessionWorkDuration(Math.max(0, now - startedAt), true)}</>;
+}
+
 export default function ExecutionTrace({
   messageId, turnId, isRunning, durationMs, expanded, onToggle, children,
 }: ExecutionTraceProps) {
@@ -36,18 +57,21 @@ export default function ExecutionTrace({
       data-message-id={messageId}
       data-turn-id={turnId}
     >
-      {!isRunning && (
-        <button
+      <button
           type="button"
           className="execution-trace__summary"
           aria-expanded={expanded}
           aria-controls={contentId}
+          aria-busy={isRunning || undefined}
           onClick={onToggle}
         >
-          <span>{formatSessionWorkDuration(durationMs)}</span>
+          <span className={isRunning ? "execution-activity-block__preview--active" : undefined}>
+            {isRunning
+              ? <RunningWorkDuration key={turnId ?? messageId ?? contentId} scope={turnId ?? messageId ?? contentId} />
+              : formatSessionWorkDuration(durationMs)}
+          </span>
           <ChevronRight className="execution-trace__chevron" size={14} aria-hidden="true" />
-        </button>
-      )}
+      </button>
       {expanded && <div id={contentId}>{children}</div>}
     </div>
   );

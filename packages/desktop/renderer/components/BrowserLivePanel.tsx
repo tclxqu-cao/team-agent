@@ -39,6 +39,8 @@ interface BrowserFrame {
 
 interface BrowserLivePanelProps {
   open: boolean;
+  /** Render inside a workspace pane instead of a page-wide modal. */
+  embedded?: boolean;
   /** A hidden shell tab retains its viewer/control and local viewport state. */
   active?: boolean;
   agentSessionId?: string | null;
@@ -218,15 +220,15 @@ export function touchScrollDelta(
   return delta;
 }
 
-export default function BrowserLivePanel({ open, active = true, agentSessionId, onClose, onFullscreenChange }: BrowserLivePanelProps) {
+export default function BrowserLivePanel({ open, active = true, embedded = false, agentSessionId, onClose, onFullscreenChange }: BrowserLivePanelProps) {
   const headerControl = useContext(BrowserLiveHeaderContext);
   const api = typeof window === "undefined" ? undefined : window.browserLiveApi;
   const backdropRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLElement>(null);
   useLayoutEffect(() => {
-    if (!open || !backdropRef.current) return;
+    if (!open || embedded || !backdropRef.current) return;
     return trackBrowserLiveViewport(backdropRef.current, window, document.body.dataset.remoteDesktop === "1");
-  }, [open]);
+  }, [open, embedded]);
   const [fullscreen, setFullscreen] = useState(false);
   useEffect(() => {
     onFullscreenChange?.(fullscreen);
@@ -1316,11 +1318,11 @@ export default function BrowserLivePanel({ open, active = true, agentSessionId, 
         ? "JPEG 兜底"
         : null;
 
-  return createPortal(
-    <div ref={backdropRef} className="browser-live-backdrop" style={{ visibility: active ? undefined : "hidden", pointerEvents: active ? undefined : "none" }} aria-hidden={!active} data-tab-swipe-ignore role="presentation" onMouseDown={(event) => {
-      if (event.target === event.currentTarget) onClose();
+  const content = (
+    <div ref={backdropRef} className={`browser-live-backdrop${embedded ? " browser-live-backdrop--embedded" : ""}`} style={{ visibility: active ? undefined : "hidden", pointerEvents: active ? undefined : "none" }} aria-hidden={!active} data-tab-swipe-ignore role="presentation" onMouseDown={(event) => {
+      if (!embedded && event.target === event.currentTarget) onClose();
     }}>
-      <section ref={panelRef} className={`browser-live-panel ${fullscreen ? "is-fullscreen" : ""}`} role="dialog" aria-modal="true" aria-label="浏览器直播">
+      <section ref={panelRef} className={`browser-live-panel ${fullscreen ? "is-fullscreen" : ""}`} role={embedded ? "region" : "dialog"} aria-modal={embedded ? undefined : true} aria-label="浏览器直播">
         <header className="browser-live-header">
           <div className="browser-live-heading">
             <MonitorUp size={17} aria-hidden="true" />
@@ -1883,7 +1885,7 @@ export default function BrowserLivePanel({ open, active = true, agentSessionId, 
           </form>
         </div>
       )}
-    </div>,
-    document.body,
+    </div>
   );
+  return embedded ? content : createPortal(content, document.body);
 }

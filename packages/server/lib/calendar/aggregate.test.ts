@@ -17,10 +17,17 @@ writeFileSync(join(automation, "automation.toml"), [
   'cwds = ["/Users/a/wiki"]',
   'prompt = "整理 wiki"',
 ].join("\n"));
+writeFileSync(join(automation, "reports", "2026-11-02.md"), "# Same run, markdown report");
 writeFileSync(join(automation, "reports", "2026-11-02", "completion.json"), JSON.stringify({
   completed_at: new Date(2026, 10, 2, 9, 30).toISOString(), validation: "passed",
   sources_processed: 4, pages_created: 2, pages_updated: 3,
 }));
+mkdirSync(join(automation, "reports", "2026-11-09"));
+mkdirSync(join(automation, "reports", "2026-11-16"));
+writeFileSync(join(automation, "reports", "2026-11-16", "completion.json"), JSON.stringify({ completed_at: new Date(2026, 10, 16, 9, 30).toISOString(), validation: "failed" }));
+const claudeHome = join(root, "claude");
+mkdirSync(join(claudeHome, "scheduled-tasks", "wiki"), { recursive: true });
+writeFileSync(join(claudeHome, "scheduled-tasks", "wiki", "SKILL.md"), "---\nname: wiki\n---\nA skill is not an active schedule");
 // A corrupt WorkBuddy database must degrade to an error badge, not sink the rest.
 const workbuddyHome = join(root, "workbuddy");
 mkdirSync(workbuddyHome, { recursive: true });
@@ -38,7 +45,7 @@ describe("buildCalendarOverview", () => {
   it("buckets codex fires and runs into local days and degrades a corrupt source", async () => {
     const overview = await buildCalendarOverview({
       range, serverBaseDir: join(root, "empty"), projectRoots: [],
-      homes: { codex: codexHome, claude: join(root, "none"), workbuddy: workbuddyHome, zcode: join(root, "none"), opencode: join(root, "none") },
+      homes: { codex: codexHome, claude: claudeHome, workbuddy: workbuddyHome, zcode: join(root, "none"), opencode: join(root, "none") },
       discoverDeepSeek: async () => null,
     });
     expect(overview.sources.codex.ok).toBe(true);
@@ -48,10 +55,14 @@ describe("buildCalendarOverview", () => {
     expect(overview.sources.deepseek).toEqual({ ok: true, entries: 0, todos: 0 });
 
     const monday = overview.days["2026-11-02"] ?? [];
-    expect(monday.some(e => e.kind === "cron" && e.state === "upcoming")).toBe(true);
-    const run = monday.find(e => e.kind === "run");
-    expect(run?.state).toBe("completed");
-    expect(run?.detail).toContain("处理 4");
+    expect(monday).toHaveLength(1);
+    expect(monday[0]?.kind).toBe("cron");
+    expect(monday[0]?.state).toBe("completed");
+    expect(monday[0]?.detail).toContain("处理 4");
+    expect(overview.days["2026-11-09"]?.[0]?.state).toBe("overdue");
+    expect(overview.days["2026-11-16"]?.[0]?.state).toBe("failed");
+    expect(overview.unscheduledSchedules).toEqual([]);
+    expect(overview.days["2026-11-23"]?.[0]?.state).toBe("upcoming");
     // Five Mondays in November 2026.
     const cronFires = Object.values(overview.days).flat().filter(e => e.source === "codex" && e.kind === "cron");
     expect(cronFires.length).toBe(5);

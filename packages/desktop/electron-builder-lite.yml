@@ -23,6 +23,8 @@ files:
   - node_modules/**/*
   - "!node_modules/@agent/*/dist/**/*.map"
 extraResources:
+  - from: assets/notification-sounds
+    to: notification-sounds
   - from: assets/runtime
     to: runtime
   - from: assets/bootstrap

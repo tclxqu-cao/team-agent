@@ -38,8 +38,6 @@ export interface UIState {
   skin: SkinId;
   layout: LayoutId;
   navigationLayout: NavigationLayout;
-  /** 助手回复自动语音播报 */
-  autoSpeak: boolean;
   /** 隐藏窗口后持续监听语音唤醒 */
   wakeEnabled: boolean;
   /** 唤醒词（命中即唤起窗口） */
@@ -54,7 +52,6 @@ export interface UIState {
   setSkin: (skin: SkinId) => void;
   setLayout: (layout: LayoutId) => void;
   setNavigationLayout: (layout: NavigationLayout) => void;
-  setAutoSpeak: (v: boolean) => void;
   setWakeEnabled: (v: boolean) => void;
   setWakeWord: (w: string) => void;
   setRunningFirst: (v: boolean) => void;
@@ -63,7 +60,7 @@ export interface UIState {
   removePinnedSessions: (ids: readonly string[]) => void;
 }
 
-const UI_PREFERENCES_VERSION = 4;
+const UI_PREFERENCES_VERSION = 5;
 
 export function normalizePinnedSessionIds(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
@@ -76,13 +73,12 @@ export function migrateUIPreferences(persisted: unknown, version: number): Parti
     ...(preferences.skin !== undefined ? { skin: preferences.skin } : {}),
     ...(preferences.layout !== undefined ? { layout: preferences.layout } : {}),
     ...(isNavigationLayout(preferences.navigationLayout) ? { navigationLayout: preferences.navigationLayout } : {}),
-    ...(preferences.autoSpeak !== undefined ? { autoSpeak: preferences.autoSpeak } : {}),
     ...(preferences.wakeEnabled !== undefined ? { wakeEnabled: preferences.wakeEnabled } : {}),
     ...(preferences.wakeWord !== undefined ? { wakeWord: preferences.wakeWord } : {}),
     ...(preferences.runningFirst !== undefined ? { runningFirst: preferences.runningFirst } : {}),
     ...(typeof preferences.dashboardSessionsMerged === "boolean" ? { dashboardSessionsMerged: preferences.dashboardSessionsMerged } : {}),
     pinnedSessionIds: normalizePinnedSessionIds(preferences.pinnedSessionIds),
-    ...(version < UI_PREFERENCES_VERSION && isBrowserRuntime() ? { wakeEnabled: false } : {}),
+    ...(version < 4 && isBrowserRuntime() ? { wakeEnabled: false } : {}),
   };
 }
 
@@ -97,7 +93,6 @@ export const useUIStore = create<UIState>()(
       skin: "pearl",
       layout: "standard",
       navigationLayout: DEFAULT_NAVIGATION_LAYOUT,
-      autoSpeak: false,
       wakeEnabled: getDefaultWakeEnabled(),
       wakeWord: "小智",
       runningFirst: false,
@@ -107,7 +102,6 @@ export const useUIStore = create<UIState>()(
       setSkin: (skin) => set({ skin }),
       setLayout: (layout) => set({ layout }),
       setNavigationLayout: (navigationLayout) => set({ navigationLayout }),
-      setAutoSpeak: (autoSpeak) => set({ autoSpeak }),
       setWakeEnabled: (wakeEnabled) => set({ wakeEnabled }),
       setWakeWord: (wakeWord) => set({ wakeWord }),
       setRunningFirst: (runningFirst) => set({ runningFirst }),

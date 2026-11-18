@@ -1007,6 +1007,26 @@ describe("Codex terminal token usage", () => {
     return { adapter: new CodexRuntimeAdapter({ client: client as never, sessionRoot: "/tmp" }), notify, threadId: thread.id, request };
   }
 
+  it("projects native plan notifications and ignores updates from another turn", async () => {
+    const { adapter, threadId } = setup((notify, id) => {
+      notify({ method: "turn/started", params: { threadId: "cx-usage", turn: { id } } });
+      notify({ method: "turn/plan/updated", params: { threadId: "cx-usage", turnId: "old-turn", plan: [{ step: "旧计划", status: "completed" }] } });
+      notify({ method: "turn/plan/updated", params: { threadId: "cx-usage", turnId: id, plan: [
+        { step: "检查", status: "completed" }, { step: "手机适配", status: "inProgress" }, { step: "验证", status: "pending" },
+      ] } });
+      notify({ method: "turn/plan/updated", params: { threadId: "cx-usage", turnId: id, plan: [] } });
+      notify({ method: "turn/completed", params: { threadId: "cx-usage", turn: { id, status: "completed", items: [] } } });
+    });
+    const events = await drain(adapter.run(threadId, "plan"));
+    expect(events.filter(event => event.type === "todo_update")).toEqual([
+      { type: "todo_update", todos: [
+        { id: "plan-0", title: "检查", status: "completed" },
+        { id: "plan-1", title: "手机适配", status: "in-progress" },
+        { id: "plan-2", title: "验证", status: "pending" },
+      ] }, { type: "todo_update", todos: [] },
+    ]);
+  });
+
   it.each([
     { input_tokens: 20, output_tokens: 4, cached_input_tokens: 12 },
     { inputTokens: 20, outputTokens: 4, cachedInputTokens: 12 },
@@ -1114,6 +1134,7 @@ describe("Codex steering and user interruption", () => {
 
   function setup(options: {
     steerError?: Error;
+    imageStorageRoot?: string;
     interruptError?: Error;
     turnIds?: string[];
     reconciliationFailures?: number;
@@ -1158,7 +1179,7 @@ describe("Codex steering and user interruption", () => {
       },
     };
     return {
-      adapter: new CodexRuntimeAdapter({ client: client as never, sessionRoot: "/tmp" }),
+      adapter: new CodexRuntimeAdapter({ client: client as never, sessionRoot: "/tmp", imageStorageRoot: options.imageStorageRoot }),
       notify,
       requests,
     };
@@ -1213,6 +1234,36 @@ describe("Codex steering and user interruption", () => {
     const events = await run;
     expect(events).toContainEqual({ type: "done", finalText: "" });
     expect(events.some((event: any) => event.type === "error")).toBe(false);
+  });
+
+  it("includes persisted image bytes in steering input for the same active turn", async () => {
+    const root = await mkdtemp(join(tmpdir(), "codex-steering-image-")); temporaryDirectories.push(root);
+    const { adapter, notify, requests } = setup({ imageStorageRoot: root });
+    const running = drain(adapter.run(thread.id, "start")); await waitForTurnStart(requests);
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x01]);
+    try {
+      await expect(adapter.steer(thread.id, "inspect this", undefined, [`data:image/png;base64,${png.toString("base64")}`])).resolves.toBe(true);
+      const input = requests.find(request => request.method === "turn/steer")!.params;
+      expect(input.expectedTurnId).toBe("turn-steering");
+      expect(input.input).toEqual([{ type: "text", text: "inspect this", text_elements: [] }, { type: "localImage", path: expect.stringMatching(/image-1\.png$/) }]);
+      expect(await readFile(input.input[1].path)).toEqual(png);
+    } finally {
+      notify({ method: "turn/completed", params: { threadId: thread.id, turn: { id: "turn-steering", status: "completed", items: [] } } }); await running;
+    }
+  });
+
+  it("removes rejected steering image files and leaves the original run open", async () => {
+    const root = await mkdtemp(join(tmpdir(), "codex-steering-image-rejected-")); temporaryDirectories.push(root);
+    const { adapter, notify, requests } = setup({ imageStorageRoot: root, steerError: new Error("stale turn") });
+    const running = drain(adapter.run(thread.id, "start")); await waitForTurnStart(requests);
+    try {
+      await expect(adapter.steer(thread.id, "inspect", undefined, ["data:image/png;base64,iVBORw0KGgoB"])).rejects.toThrow("stale turn");
+      expect(await readdir(root)).toEqual([]);
+      await expect(adapter.steer(thread.id, "inspect", undefined, ["not an image"])).rejects.toThrow();
+      expect(requests.filter(request => request.method === "turn/steer")).toHaveLength(1);
+    } finally {
+      notify({ method: "turn/completed", params: { threadId: thread.id, turn: { id: "turn-steering", status: "completed", items: [] } } }); await running;
+    }
   });
 
   it("turns a locally requested interruption into normal completion", async () => {
@@ -3168,6 +3219,28 @@ describe("Codex native paged history", () => {
     });
     expect(refreshed.history?.revision).toBe(core.history?.revision);
     expect(refreshed.messages.map((message) => message.historyId)).toEqual(core.messages.map((message) => message.historyId));
+  });
+
+  it("returns native image sources for display without reading or withholding original image bodies", async () => {
+    const root = await mkdtemp(join(tmpdir(), "codex-image-sources-"));
+    temporaryDirectories.push(root);
+    const path = join(root, "one.png");
+    await writeFile(path, "original-image");
+    const sourceTurn = turn("images", 1, true);
+    sourceTurn.items[0].content!.push({ type: "localImage", path } as any);
+    const requests: Array<{ method: string; params: any }> = [];
+    const adapter = new CodexRuntimeAdapter({ client: pagingClientFor(requests, { sourceTurns: [sourceTurn] }) as never,
+      coreInlineImageBudgetBytes: 0 });
+    const readImage = vi.spyOn(filesystem, "readFile");
+    try {
+      const core = await adapter.getSessionPaged("cx-paged", { limit: 1, view: "core", imageView: "source" });
+      expect(core.messages[0].presentation?.attachments).toEqual([{ type: "image", name: "one.png", localImagePath: path }]);
+      expect(readImage.mock.calls.some(([file]) => String(file) === path)).toBe(false);
+      expect(JSON.stringify(core)).not.toContain(Buffer.from("original-image").toString("base64"));
+      const legacy = await adapter.getSessionPaged("cx-paged", { limit: 1, view: "core" });
+      expect(legacy.history?.revision).toBe(core.history?.revision);
+      expect(legacy.messages.map(message => message.historyId)).toEqual(core.messages.map(message => message.historyId));
+    } finally { readImage.mockRestore(); }
   });
 
   it("reads images only from turns in the selected core page", async () => {

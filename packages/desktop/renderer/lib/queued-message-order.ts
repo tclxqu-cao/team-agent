@@ -17,6 +17,7 @@ export interface DurableQueueItemLike {
   sourceMessageId?: string;
   createdAt: number;
   kind?: "goal" | "message";
+  lastReason?: string;
   messagePayload?: {
     images?: string[];
     agentName?: string;
@@ -31,6 +32,8 @@ export interface DurableQueuedMessageLike extends UserMessageLike {
   queueItemId?: string;
   isSteering?: boolean;
   isSteered?: boolean;
+  sourceMessageId?: string;
+  awaitingHistory?: boolean;
   presentation?: Pick<MessagePresentation, "executionTrace" | "forkPoint">;
 }
 
@@ -75,6 +78,8 @@ export function markDurableMessageSteered<T extends DurableQueuedMessageLike>(
     isQueued: false,
     isSteering: undefined,
     isSteered: true,
+    sourceMessageId: message.sourceMessageId ?? message.id,
+    awaitingHistory: true,
     queueItemId: undefined,
     sendState: undefined,
   } as T;
@@ -114,19 +119,30 @@ export function reconcileDurableQueuedMessages<T extends DurableQueuedMessageLik
 ): T[] {
   const completed = state.history.filter(item => item.kind === "message" && item.status === "completed");
   const completedBySource = new Map(completed.map(item => [item.sourceMessageId || item.id, item]));
+  const waitingMessageIds = new Set(state.queued.filter(item => item.kind === "message")
+    .flatMap(item => [item.id, item.sourceMessageId].filter(Boolean)));
   let history = messages.flatMap((message): T[] => {
-    if (!message.isQueued) return [message];
+    if (!message.isQueued) {
+      // A deferred admission can restore an optimistic active input to the
+      // queue. Its source identity must move with it, without hiding native input.
+      if (message.role === "user" && !message.isSteered && !message.presentation?.executionTrace
+        && (waitingMessageIds.has(message.id) || waitingMessageIds.has(message.queueItemId))) return [];
+      return [message];
+    }
     const item = completedBySource.get(message.id) ?? completed.find(candidate => candidate.id === message.queueItemId);
     if (!item) return [];
     const persisted = messages.some(candidate => candidate !== message && !candidate.isQueued
       && candidate.role === "user" && (candidate.id === item.sourceMessageId
         || candidate.queueItemId === item.id
         || (candidate.content === item.objective && candidate.timestamp >= message.timestamp)));
-    return persisted ? [] : [{ ...message, isQueued: false, queueItemId: undefined, sendState: undefined }];
+    return persisted ? [] : [{ ...message, isQueued: false, queueItemId: undefined, sendState: undefined,
+      awaitingHistory: true,
+      ...(item.lastReason === "steered" ? { isSteered: true, isSteering: undefined, sourceMessageId: item.sourceMessageId ?? message.id } : {}),
+    }];
   });
   const steeredMessageIds = new Set(history
     .filter((message) => message.role === "user" && message.isSteered)
-    .map((message) => message.id));
+    .flatMap((message) => message.sourceMessageId ? [message.id, message.sourceMessageId] : [message.id]));
   const currentByQueueId = new Map(
     messages
       .filter((message) => message.isQueued && message.queueItemId)

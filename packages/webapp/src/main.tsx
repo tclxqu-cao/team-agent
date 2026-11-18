@@ -9,8 +9,9 @@ import { createRoot } from "react-dom/client";
 import { HttpClient, UnauthorizedError } from "./infrastructure/http/http-client";
 import { installClientErrorReporter } from "./infrastructure/client-error-reporter";
 import { AgentHttpGateway } from "./infrastructure/http/agent-http-gateway";
+import { browserRunStreamPool, prepareNativeRunStreamUrl } from "./infrastructure/http/bounded-event-source";
+import { supportsWebTaskSplit } from "../../desktop/renderer/web/webTaskSplit";
 import { BrowserDictation } from "./infrastructure/voice/browser-dictation";
-import { BrowserSpeechOutput } from "./infrastructure/voice/browser-speech-output";
 import { LocalSettingsRepository } from "./infrastructure/local/local-settings-repository";
 import { installBrowserCryptoCompatibility } from "./infrastructure/browser-crypto";
 import { installParentTabSwipeBridge } from "./presentation/parent-tab-swipe";
@@ -94,6 +95,19 @@ if (frameBridge && authorizedFetch) globalThis.fetch = createNativeConsoleFetch(
 const http = new HttpClient(authorizedFetch);
 const projectBridge = window.parent === window ? undefined : new WebShellProjectBridge();
 const browserBridge = window.parent === window ? undefined : new WebShellBrowserBridge();
+// Transport follows device eligibility, not the current window width: a
+// desktop window can start narrow and later expand into the split workspace.
+const desktopWebStreams = supportsWebTaskSplit({
+  width: 900,
+  userAgent: navigator.userAgent,
+  coarsePointer: window.matchMedia("(pointer: coarse)").matches,
+  nativeApp: nativeWorkspace,
+});
+const runStreamPool = desktopWebStreams ? browserRunStreamPool() : null;
+const runStreamSources = new Set<EventSource>();
+window.addEventListener("pagehide", event => {
+  if (!event.persisted) for (const source of runStreamSources) source.close();
+});
 // SSE 也要指向远端服务器：基址在 boot() 里按连接方案填充（web 模式保持空）。
 let sseBase = "";
 async function openVoiceSocket(path: string): Promise<WebSocket> {
@@ -107,9 +121,19 @@ const gateway = new AgentHttpGateway(
   http,
   new LocalSettingsRepository(),
   projectBridge,
-  (url) => authorizedFetch ? new AuthenticatedEventSource(sseBase + url, { fetch: authorizedFetch }) as unknown as EventSource : new EventSource(sseBase + url),
+  (url) => {
+    if (!runStreamPool || !url.startsWith("/api/agent/stream?")) {
+      return authorizedFetch ? new AuthenticatedEventSource(sseBase + url, { fetch: authorizedFetch }) as unknown as EventSource : new EventSource(sseBase + url);
+    }
+    const source = runStreamPool.open(url, () => prepareNativeRunStreamUrl(url, id =>
+      http.get(`/api/sessions/${encodeURIComponent(id)}?limit=1&view=core`)));
+    runStreamSources.add(source);
+    const close = source.close.bind(source);
+    source.close = () => { runStreamSources.delete(source); close(); };
+    return source;
+  },
   new BrowserDictation({ openSocket: () => openVoiceSocket("/ws/voice") }),
-  new BrowserSpeechOutput(() => openVoiceSocket("/ws/voice/tts")),
+  { historyObservation: desktopWebStreams ? "polling" : "sse" },
 );
 window.browserLiveApi = browserBridge;
 
@@ -177,7 +201,10 @@ async function boot(endpoint: ServerEndpoint | null): Promise<void> {
     }
     window.agentApi = gateway as unknown as AgentApi;
     const view = new URLSearchParams(location.search).get("view");
-    const appModule = view === "collaboration"
+    const sessionWindow = new URLSearchParams(location.search).get("newSessionWindow") === "1";
+    const appModule = sessionWindow
+      ? import("@desktop/renderer/NewSessionWindow")
+      : view === "collaboration"
       ? import("../../desktop/renderer/components/collaboration/CollaborationPage")
       : view === "collaboration-dashboard"
       ? import("../../desktop/renderer/components/collaboration/CollaborationDashboard")
@@ -185,11 +212,15 @@ async function boot(endpoint: ServerEndpoint | null): Promise<void> {
       ? import("../../desktop/renderer/components/collaboration/SessionDashboard")
       : view === "remote-desktop"
       ? import("./presentation/RemoteDesktopPage")
+      : view === "calendar"
+      ? import("./presentation/CalendarPage")
+      : view === "todo"
+      ? import("./presentation/TodoPage")
       : import("@desktop/renderer/App");
     // Download the UI while settings/migration runs; mount only after both succeed.
     const [, { default: App }] = await Promise.all([gateway.refreshServerModel(), appModule]);
     // 浏览器（同源、https/localhost）才启用 Web Push：原生壳 WebView 不支持。
-    if (!nativeWorkspace && window.parent === window) startPushNotifications(http);
+    if (!sessionWindow && !nativeWorkspace && window.parent === window) startPushNotifications(http);
     root.render(
       <StrictMode>
         <WebAppHeaderActionsContext.Provider value={<WebMobilePairingButton />}>

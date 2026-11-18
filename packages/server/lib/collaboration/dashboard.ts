@@ -3,12 +3,19 @@ import { getServerBaseDir } from "../server-data-dir";
 import { catalogSessions } from "../session-catalog";
 import { supervisionService } from "../supervision/service";
 import { collaborationSessionIds } from "./visibility";
+import { sessionActivity } from "../session-activity";
 
 export async function sessionDashboard(): Promise<SessionDashboardSnapshot> {
   const repository = new SQLiteCollaborationRepository(getServerBaseDir());
   const rows = repository.dashboardDiscussions();
-  const { sessions, discoveryError } = await catalogSessions(true);
-  const byId = new Map(sessions.map(session => [session.id, session]));
+  const [catalog, activity] = await Promise.all([catalogSessions(true, true), sessionActivity({ includeInternal: true })]);
+  const ready = new Set(activity.agentTypes);
+  const live = new Map(activity.sessions.map(session => [session.id, session]));
+  const sessions = new Map(catalog.sessions.map(session => [session.id, live.get(session.id)
+    ?? (ready.has(session.agentType) && session.status === "running" ? { ...session, status: "idle" as const } : session)]));
+  for (const session of activity.sessions) sessions.set(session.id, session);
+  const { discoveryError } = catalog;
+  const byId = sessions;
   const hidden = collaborationSessionIds();
   const supervision = supervisionService();
   const groups: DashboardGroup[] = repository.listGroups().map(group => {
@@ -36,7 +43,7 @@ export async function sessionDashboard(): Promise<SessionDashboardSnapshot> {
   groups.sort((a, b) => Number(["running", "waiting"].includes(b.status)) - Number(["running", "waiting"].includes(a.status)) || b.updated.localeCompare(a.updated) || a.group.id.localeCompare(b.group.id));
   return {
     groups: groups.slice(0, 10), groupTotal: groups.length, decisionTotal: groups.reduce((count, group) => count + group.decisionCount, 0),
-    agents: AGENT_TYPES.map(agentType => ({ agentType, sessions: sessions.filter(session => session.agentType === agentType && session.status === "running" && !hidden.has(session.id)).sort((a, b) => b.updated.localeCompare(a.updated) || a.id.localeCompare(b.id)) })),
+    agents: AGENT_TYPES.map(agentType => ({ agentType, sessions: [...sessions.values()].filter(session => session.agentType === agentType && session.status === "running" && !hidden.has(session.id)).sort((a, b) => b.updated.localeCompare(a.updated) || a.id.localeCompare(b.id)) })),
     updatedAt: new Date().toISOString(), discoveryError,
   };
 }

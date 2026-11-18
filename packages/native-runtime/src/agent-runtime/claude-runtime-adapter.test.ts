@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { SDKMessage, SessionMessage } from "@anthropic-ai/claude-agent-sdk";
@@ -32,6 +32,10 @@ const state = vi.hoisted(() => ({
   forkCalls: [] as any[],
   renameCalls: [] as any[],
   deleteCalls: [] as any[],
+  todoMcpCalls: [] as any[],
+  todoMcpErrors: {} as Record<string, string>,
+  todoMcpGate: undefined as ((method: string) => Promise<void>) | undefined,
+  todoMcpServers: [{ name: "agentroam-todo", status: "connected", tools: [{ name: "todo_get" }, { name: "todo_create" }] }] as any[],
 }));
 
 const temporaryDirectories: string[] = [];
@@ -51,6 +55,9 @@ vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
       | undefined;
     let closed = false;
     return {
+      initializationResult: async () => { state.todoMcpCalls.push({ method: "initialize", inputs: state.inputMessages.length }); await state.todoMcpGate?.("initialize"); return {}; },
+      setMcpServers: async (servers: any) => { state.todoMcpCalls.push({ method: "set", servers, inputs: state.inputMessages.length }); await state.todoMcpGate?.("set"); return { added: ["agentroam-todo"], removed: [], errors: state.todoMcpErrors }; },
+      mcpServerStatus: async () => { state.todoMcpCalls.push({ method: "status", inputs: state.inputMessages.length }); await state.todoMcpGate?.("status"); return state.todoMcpServers; },
       [Symbol.asyncIterator]: async function* () {
         for (const message of state.stream) {
           if (closed) return;
@@ -160,6 +167,10 @@ beforeEach(() => {
   state.forkCalls = [];
   state.renameCalls = [];
   state.deleteCalls = [];
+  state.todoMcpCalls = [];
+  state.todoMcpErrors = {};
+  state.todoMcpGate = undefined;
+  state.todoMcpServers = [{ name: "agentroam-todo", status: "connected", tools: [{ name: "todo_get" }, { name: "todo_create" }] }];
 });
 
 afterEach(async () => {
@@ -529,6 +540,39 @@ describe("ClaudeRuntimeAdapter", () => {
     });
   });
 
+  it("refreshes a child's paged history when only its transcript changes", async () => {
+    const root = await mkdtemp(join(tmpdir(), "claude-subagent-refresh-"));
+    temporaryDirectories.push(root);
+    const sessionId = "123e4567-e89b-42d3-a456-426614174002";
+    const project = join(root, "-repo");
+    const subagents = join(project, sessionId, "subagents");
+    await mkdir(subagents, { recursive: true });
+    const parent = { type: "assistant", message: { content: [{
+      type: "tool_use", id: "agent-tool", name: "Agent", input: { prompt: "trace" },
+    }] } };
+    await writeFile(join(project, `${sessionId}.jsonl`), `${JSON.stringify(parent)}\n`);
+    await writeFile(join(subagents, "agent-child.meta.json"), JSON.stringify({
+      agentType: "Explore", description: "Trace the runtime", toolUseId: "agent-tool",
+    }));
+    const childPath = join(subagents, "agent-child.jsonl");
+    await writeFile(childPath, "{}\n");
+    state.sessions = [sdkSession(sessionId)];
+    state.subagentIds = ["child"];
+    state.subagentMessages.child = [{ type: "assistant", message: { content: [{ type: "text", text: "Checking files" }] } }];
+    const adapter = new ClaudeRuntimeAdapter({ occupancyTtlMs: 0, sessionRoot: root });
+
+    const initial = await adapter.getSessionPaged(sessionId, { limit: 50 });
+    expect(JSON.stringify(initial.events)).toContain("Checking files");
+    state.subagentMessages.child.push({ type: "assistant", message: { content: [{ type: "text", text: "Found the missing activity" }] } });
+    await appendFile(childPath, "{}\n");
+
+    const refreshed = await adapter.getSessionPaged(sessionId, { limit: 50 });
+    expect(JSON.stringify(refreshed.events)).toContain("Found the missing activity");
+    expect(refreshed.messages).toEqual(initial.messages);
+    expect(refreshed.history?.revision).toBe(initial.history?.revision);
+    expect((await adapter.getSessionPaged(sessionId, { limit: 50 })).events).toEqual(refreshed.events);
+  });
+
   it("reports health with the CLI version and degrades when the CLI is missing", async () => {
     const adapter = new ClaudeRuntimeAdapter({ occupancyTtlMs: 0, sessionRoot: "/tmp/claude-projects" });
 
@@ -673,6 +717,73 @@ describe("ClaudeRuntimeAdapter", () => {
     await drain(adapter.run(created.nativeSessionId, "start"));
     expect(state.queryCalls[1].options).toMatchObject({ sessionId: created.nativeSessionId });
     expect(state.queryCalls[1].options).not.toHaveProperty("resume");
+  });
+
+  it.each([false, true])("connects and discovers scoped Todo tools before prompting (draft=%s)", async draft => {
+    state.sessions = [sdkSession("cc-1")];
+    state.stream = [{ type: "result", subtype: "success", is_error: false, result: "done" }];
+    const adapter = new ClaudeRuntimeAdapter({ occupancyTtlMs: 0, sessionRoot: "/tmp/claude-projects" });
+    const id = draft ? (await adapter.create({ title: "Todo", cwd: "/repo" })).nativeSessionId : "cc-1";
+    const todoMcp = { command: "C:\\Program Files\\Node\\node.exe", args: ["C:\\Agent Roam\\todo.mjs"], env: { AGENTROAM_TODO_DESCRIPTOR: "C:\\Scoped Data\\todo.json" } };
+    await drain(adapter.run(id, "Create a personal Todo", undefined, undefined, undefined, { todoMcp }));
+    expect(state.queryCalls[0].options.mcpServers).toEqual({ "agentroam-todo": todoMcp });
+    expect(state.todoMcpCalls.map(call => [call.method, call.inputs])).toEqual([["initialize", 0], ["set", 0], ["status", 0]]);
+    expect(state.inputMessages).toHaveLength(1);
+  });
+
+  it("keeps the user prompt unsent and emits an error when the Todo server cannot connect", async () => {
+    state.sessions = [sdkSession("cc-1")];
+    state.todoMcpErrors = { "agentroam-todo": "Could not spawn scoped MCP" };
+    const adapter = new ClaudeRuntimeAdapter({ occupancyTtlMs: 0, sessionRoot: "/tmp/claude-projects" });
+    const events = await drain(adapter.run("cc-1", "Never send", undefined, undefined, undefined, {
+      todoMcp: { command: "node", args: ["todo.mjs"], env: {} },
+    }));
+    expect(events).toContainEqual(expect.objectContaining({ type: "error", code: "NATIVE_PROTOCOL_ERROR", message: expect.stringContaining("Could not spawn scoped MCP") }));
+    expect(state.inputMessages).toEqual([]);
+    expect(state.closedQueries).toBe(1);
+  });
+
+  it("retains a new draft's scoped Todo MCP and applies an explicit replacement on its next run", async () => {
+    state.stream = [{ type: "result", subtype: "success", is_error: false, result: "done" }];
+    const adapter = new ClaudeRuntimeAdapter({ occupancyTtlMs: 0, sessionRoot: "/tmp/claude-projects" });
+    const todoMcp = { command: "node", args: ["todo.mjs"], env: { AGENTROAM_TODO_DESCRIPTOR: "/scoped/first.json" } };
+    const session = await adapter.create({ title: "Scoped draft", cwd: "/repo", todoMcp });
+    await drain(adapter.run(session.nativeSessionId, "first"));
+    expect(state.queryCalls[0].options.mcpServers).toEqual({ "agentroam-todo": todoMcp });
+    state.sessions = [sdkSession(session.nativeSessionId)];
+    const replacement = { ...todoMcp, env: { AGENTROAM_TODO_DESCRIPTOR: "/scoped/second.json" } };
+    await drain(adapter.run(session.nativeSessionId, "next", undefined, undefined, undefined, { todoMcp: replacement }));
+    expect(state.queryCalls[1].options.mcpServers).toEqual({ "agentroam-todo": replacement });
+  });
+
+  it.each(["initialize", "set", "status"])("does not send the prompt after Stop during Todo MCP %s", async phase => {
+    state.sessions = [sdkSession("cc-1")];
+    let release = () => {};
+    state.todoMcpGate = method => method === phase ? new Promise<void>(resolve => { release = resolve; }) : Promise.resolve();
+    const adapter = new ClaudeRuntimeAdapter({ occupancyTtlMs: 0, sessionRoot: "/tmp/claude-projects" });
+    const completed = drain(adapter.run("cc-1", "Never send", undefined, undefined, undefined, {
+      todoMcp: { command: "node", args: ["todo.mjs"], env: {} },
+    }));
+    await vi.waitFor(() => expect(state.todoMcpCalls.some(call => call.method === phase)).toBe(true));
+    await adapter.abort("cc-1");
+    release();
+    expect(await completed).toEqual([{ type: "turn_aborted" }]);
+    expect(state.inputMessages).toEqual([]);
+  });
+
+  it.each([
+    { servers: [{ name: "agentroam-todo", status: "failed", tools: [{ name: "todo_get" }] }] },
+    { servers: [{ name: "agentroam-todo", status: "connected", tools: [] }] },
+    { servers: [] },
+  ])("refuses a missing or unavailable native Todo tool discovery: %j", async ({ servers }) => {
+    state.sessions = [sdkSession("cc-1")];
+    state.todoMcpServers = servers;
+    const adapter = new ClaudeRuntimeAdapter({ occupancyTtlMs: 0, sessionRoot: "/tmp/claude-projects" });
+    const events = await drain(adapter.run("cc-1", "Never send", undefined, undefined, undefined, {
+      todoMcp: { command: "node", args: ["todo.mjs"], env: {} },
+    }));
+    expect(events.some(event => event.type === "error")).toBe(true);
+    expect(state.inputMessages).toEqual([]);
   });
 
   it("uses Claude Code native goal input and enables SDK skills", async () => {
@@ -975,13 +1086,14 @@ describe("ClaudeRuntimeAdapter", () => {
       value: { type: "text_chunk", text: "working" },
     });
     await expect(adapter.steer("cc-1", "focus on tests")).resolves.toBe(true);
+    await expect(adapter.steer("cc-1", "inspect image", undefined, ["data:image/png;base64,iVBORw0KGgoB"])).resolves.toBe(true);
     await expect(iterator.next()).resolves.toMatchObject({
       done: false,
       value: { type: "done", finalText: "done" },
     });
     await expect(iterator.next()).resolves.toMatchObject({ done: true });
 
-    await vi.waitFor(() => expect(state.inputMessages).toHaveLength(2));
+    await vi.waitFor(() => expect(state.inputMessages).toHaveLength(3));
     expect(state.inputMessages).toEqual([
       {
         type: "user",
@@ -993,6 +1105,13 @@ describe("ClaudeRuntimeAdapter", () => {
         message: { role: "user", content: "focus on tests" },
         parent_tool_use_id: null,
         priority: "now",
+      },
+      {
+        type: "user", parent_tool_use_id: null, priority: "now",
+        message: { role: "user", content: [
+          { type: "text", text: "inspect image" },
+          { type: "image", source: { type: "base64", media_type: "image/png", data: "iVBORw0KGgoB" } },
+        ] },
       },
     ]);
     await expect(adapter.steer("cc-1", "too late")).resolves.toBe(false);

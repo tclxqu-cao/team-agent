@@ -260,6 +260,7 @@ export class AgentWorkspaceIndexService {
   private readonly workspaceCache = new Map<AgentType, WorkspaceCatalog>();
   private readonly workspaceRequests = new Map<AgentType, Promise<WorkspaceCatalog>>();
   private readonly sessionCache = new Map<string, WorkspacePage<UnifiedSessionSummary>>();
+  private readonly sessionRequestVersions = new Map<string, number>();
   private readonly sessionRequests = new Map<string, Promise<WorkspacePage<UnifiedSessionSummary>>>();
   private codexSessionCatalog: SessionCatalog | null = null;
   private codexSessionCatalogRequest: Promise<SessionCatalog> | null = null;
@@ -400,11 +401,14 @@ export class AgentWorkspaceIndexService {
       const pending = this.sessionRequests.get(cacheKey);
       if (pending) return pending;
     }
+    const version = (this.sessionRequestVersions.get(cacheKey) ?? 0) + 1;
+    this.sessionRequestVersions.set(cacheKey, version);
+    const isCurrent = () => this.sessionRequestVersions.get(cacheKey) === version;
     const imported = agentType === "customer-agent"
       ? null
       : this.importedWorkspaces?.list(agentType).find((workspace) => workspace.workspaceId === workspaceId) ?? null;
     const request = agentType === "codex"
-      ? this.listCodexWorkspaceSessions(adapter, workspaceId, query)
+      ? this.listCodexWorkspaceSessions(adapter, workspaceId, query, isCurrent)
       : imported
       ? this.listImportedWorkspaceSessions(adapter, imported, query)
       : adapter.listWorkspaceSessions!(workspaceId, {
@@ -413,8 +417,15 @@ export class AgentWorkspaceIndexService {
         });
     this.sessionRequests.set(cacheKey, request);
     try {
-      const page = await request;
-      this.sessionCache.set(cacheKey, page);
+      let page = await request;
+      // Supplemental discovery may finish between the direct response and
+      // this cache write. Do not put that earlier native-only head back.
+      if (isCurrent() && agentType === "codex" && !query.cursor) {
+        const catalog = this.codexSessionCatalog;
+        const rows = catalog?.byWorkspace.get(workspaceId);
+        if (catalog && rows) page = paginateCodexCatalog(rows, query, catalog.watermark);
+      }
+      if (isCurrent()) this.sessionCache.set(cacheKey, page);
       return page;
     } catch (error) {
       const cached = this.sessionCache.get(cacheKey);
@@ -561,6 +572,7 @@ export class AgentWorkspaceIndexService {
     adapter: AgentRuntimeAdapter,
     workspaceId: string,
     query: WorkspaceSessionQuery,
+    isCurrent: () => boolean,
   ): Promise<WorkspacePage<UnifiedSessionSummary>> {
     if (!this.workspaceCache.has("codex")) {
       await this.listWorkspaces("codex", { limit: MAX_PAGE_SIZE });
@@ -590,20 +602,14 @@ export class AgentWorkspaceIndexService {
         ...direct,
         data: direct.data.map((session) => ({ ...session, projectId: workspaceId })),
       };
+      if (!isCurrent()) return wrapCodexNativePage(canonicalDirect);
       this.rememberCodexDirectSessions(workspaceId, canonicalDirect.data, Boolean(query.cursor));
-      if (!query.cursor && query.refresh && !this.codexSessionCatalog) {
-        try {
-          await this.getCodexSessionCatalog(adapter, false);
-        } catch {
-          return { ...wrapCodexNativePage(canonicalDirect), stale: true };
-        }
-      }
       if (!query.cursor && this.codexSessionCatalog) {
         const sessions = this.codexSessionCatalog.byWorkspace.get(workspaceId) ?? [];
         return paginateCodexCatalog(sessions, query, this.codexSessionCatalog.watermark);
       }
       void this.getCodexSessionCatalog(adapter, false).catch(() => undefined);
-      return wrapCodexNativePage(canonicalDirect);
+      return { ...wrapCodexNativePage(canonicalDirect), refreshing: true };
     }
 
     const refresh = query.refresh === true && !query.cursor;

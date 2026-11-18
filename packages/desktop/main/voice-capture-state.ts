@@ -1,5 +1,4 @@
 export type VoiceCaptureAction = "start" | "append" | "ignore";
-export type TtsListeningMode = "barge-in" | "suspended";
 
 export function getVoiceCaptureAction(
   capturing: boolean,
@@ -56,30 +55,6 @@ export function shouldInvalidateVoiceProvider<T extends object>(
   failed: T,
 ): boolean {
   return active === failed;
-}
-
-export function getTtsListeningMode(conversation: boolean): TtsListeningMode {
-  return conversation ? "barge-in" : "suspended";
-}
-
-export function shouldAcceptBargeIn(ttsSpeaking: boolean, conversation: boolean): boolean {
-  return ttsSpeaking && conversation;
-}
-
-export async function prepareTtsListening(
-  mode: TtsListeningMode,
-  currentMode: "wake" | "dictation" | "barge-in" | null,
-  stop: () => void,
-  launchBargeIn: () => Promise<unknown>,
-): Promise<void> {
-  if (mode === "barge-in") {
-    if (currentMode !== "barge-in") {
-      stop();
-      await launchBargeIn();
-    }
-    return;
-  }
-  stop();
 }
 
 export function getVoiceCaptureSilenceTimeout(commandText: string): number {
@@ -141,12 +116,4 @@ export function routeVoiceServiceResult(
     return { action: "ignore", lastFinalUtteranceId: current.lastFinalUtteranceId };
   }
   return { action: "final", lastFinalUtteranceId: event.utteranceId as number };
-}
-
-export function shouldAcceptTtsPlayback(
-  resultGeneration: number,
-  currentGeneration: number,
-  speaking: boolean,
-): boolean {
-  return speaking && resultGeneration === currentGeneration;
 }

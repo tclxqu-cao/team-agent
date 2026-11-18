@@ -2,11 +2,33 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { messageActionPolicy } from "../lib/message-actions";
 import {
   findLatestContextUsage,
+  createAgentStore,
   reduceNativeSubagentActivities,
   resolveVisibleSessionMessages,
   useAgentStore,
   type ContextUsageSnapshot,
 } from "./agentStore";
+
+describe("independent desktop pane stores", () => {
+  it("keeps simultaneous streams, run completion and selected history separate", () => {
+    const left = createAgentStore(), right = createAgentStore();
+    left.getState().setSessionId("left"); right.getState().setSessionId("right");
+    left.getState().setRunningSession("left"); right.getState().setRunningSession("right");
+    left.getState().setSessionModelProfile("left", "model-a"); right.getState().setSessionModelProfile("right", "model-b");
+    left.getState().appendText("left output", "left"); right.getState().appendText("right output", "right");
+    left.getState().setRunningSession(null);
+    expect(left.getState().messages.map(message => message.content)).toEqual(["left output"]);
+    expect(right.getState().messages.map(message => message.content)).toEqual(["right output"]);
+    expect(right.getState().runningSessionId).toBe("right");
+    left.getState().setSessionId("replacement");
+    expect(left.getState().messages).toEqual([]);
+    expect(left.getState().getMessagesForSession("left")[0].content).toBe("left output");
+    expect(right.getState().sessionId).toBe("right");
+    expect(right.getState().getMessagesForSession("left")).toEqual([]);
+    expect(left.getState().modelProfileBySession).toEqual({ left: "model-a" });
+    expect(right.getState().modelProfileBySession).toEqual({ right: "model-b" });
+  });
+});
 
 function createUsage(requestIndex: number): ContextUsageSnapshot {
   return {

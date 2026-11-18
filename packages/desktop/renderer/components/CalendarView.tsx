@@ -1,19 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle, CalendarClock, CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight,
-  CircleDot, Inbox, ListTodo, Pause, RefreshCw, Repeat, Timer, X, Zap,
+  CircleDot, Inbox, ListTodo, LocateFixed, Pause, RefreshCw, Repeat, Timer, X, Zap,
 } from "lucide-react";
 import {
   CALENDAR_SOURCES, CALENDAR_SOURCE_LABELS, localDateKey,
   type CalendarEntry, type CalendarOverview, type CalendarSourceId, type CalendarTodoGroup,
 } from "../../../core/src/domain/calendar/entities";
 import "../styles/calendar.css";
+import type { TodoDetail } from "@agent/core";
 
 export type CalendarLoader = (from: string, to: string) => Promise<CalendarOverview>;
-type KindFilter = "all" | "cron" | "run" | "todo";
+type KindFilter = "all" | "cron" | "run" | "reminder" | "due";
 
 const WEEKDAYS = ["一", "二", "三", "四", "五", "六", "日"];
-const KIND_LABEL: Record<KindFilter, string> = { all: "全部", cron: "定时", run: "执行", todo: "待办" };
+const KIND_LABEL: Record<KindFilter, string> = { all: "全部", cron: "定时", run: "执行", reminder: "提醒", due: "待办日期" };
 const STATE_LABEL: Record<string, string> = {
   upcoming: "待执行", paused: "已暂停", completed: "已完成", failed: "失败",
   overdue: "已过期", pending: "待处理", "in-progress": "进行中", unscheduled: "未排期",
@@ -30,7 +31,7 @@ function timeLabel(ms: number): string {
   return `${`${d.getHours()}`.padStart(2, "0")}:${`${d.getMinutes()}`.padStart(2, "0")}`;
 }
 function monthLabel(year: number, month: number): string {
-  return `${year} 年 ${month + 1} 月`;
+  return `${year}年${month + 1}月`;
 }
 
 /** Monday-start 6×7 grid covering the displayed month. */
@@ -59,8 +60,8 @@ function StateMark({ state }: { state: CalendarEntry["state"] }) {
   return null;
 }
 
-function Chip({ entry, onClick }: { entry: CalendarEntry; onClick?: () => void }) {
-  const cls = `cal-chip kind-${entry.kind} is-${entry.state}`;
+function Chip({ entry, onClick, highlighted }: { entry: CalendarEntry; onClick?: () => void; highlighted?: boolean }) {
+  const cls = `cal-chip kind-${entry.kind} is-${entry.state}${highlighted ? " is-highlight" : ""}`;
   const body = (
     <>
       <span className="cal-chip-dot" aria-hidden="true" />
@@ -76,9 +77,9 @@ function Chip({ entry, onClick }: { entry: CalendarEntry; onClick?: () => void }
     : <div className={cls} data-source={entry.source} title={`${CALENDAR_SOURCE_LABELS[entry.source]} · ${entry.title}`}>{body}</div>;
 }
 
-function EntryRow({ entry }: { entry: CalendarEntry }) {
+function EntryRow({ entry, highlighted }: { entry: CalendarEntry; highlighted?: boolean }) {
   return (
-    <article className={`cal-entry is-${entry.state}`} data-source={entry.source}>
+    <article className={`cal-entry is-${entry.state}${highlighted ? " is-highlight" : ""}`} data-source={entry.source} data-task-id={entry.taskId}>
       <div className="cal-entry-top">
         <span className="cal-entry-src" data-source={entry.source}>{CALENDAR_SOURCE_LABELS[entry.source]}</span>
         <span className={`cal-entry-state is-${entry.state}`}>{STATE_LABEL[entry.state] ?? entry.state}</span>
@@ -90,45 +91,20 @@ function EntryRow({ entry }: { entry: CalendarEntry }) {
         {entry.recurring && <span className="cal-meta-pill"><Repeat size={11} />循环</span>}
         {entry.sessionTitle && <span className="cal-meta-pill" title={entry.sessionTitle}><ListTodo size={11} />{entry.sessionTitle}</span>}
       </div>
+      {entry.executedAt !== undefined && <p className="cal-entry-detail">执行记录：{new Date(entry.executedAt).toLocaleString("zh-CN", { hour12: false })}</p>}
+      {entry.kind === "cron" && entry.state === "overdue" && <p className="cal-entry-detail">计划时间已过，未找到执行结果；不代表执行成功或失败。</p>}
       {entry.detail && <p className="cal-entry-detail">{entry.detail}</p>}
       {entry.cwd && <p className="cal-entry-cwd" title={entry.cwd}>{entry.cwd}</p>}
     </article>
   );
 }
 
-function TodoRow({ entry }: { entry: CalendarEntry }) {
-  return (
-    <li className={`cal-todo is-${entry.state}`} data-source={entry.source}>
-      <span className="cal-todo-box" aria-hidden="true">{entry.state === "completed" ? <Check size={12} /> : entry.state === "in-progress" ? <span className="cal-pulse" /> : null}</span>
-      <span className={`cal-todo-text ${entry.state === "completed" ? "is-struck" : ""}`}>{entry.title}</span>
-      {entry.state === "overdue" && <span className="cal-tag is-overdue">过期</span>}
-      {entry.state === "in-progress" && <span className="cal-tag is-progress">进行中</span>}
-    </li>
-  );
-}
-
-function GroupCard({ group, expanded, onToggle }: { group: CalendarTodoGroup; expanded: boolean; onToggle: () => void }) {
-  const done = group.todos.filter(t => t.state === "completed").length;
-  const open = group.todos.length - done;
-  return (
-    <section className={`cal-group ${expanded ? "is-open" : ""}`} data-source={group.source}>
-      <button type="button" className="cal-group-head" onClick={onToggle} aria-expanded={expanded}>
-        <span className="cal-group-dot" data-source={group.source} aria-hidden="true" />
-        <span className="cal-group-title" title={group.title}>{group.title}</span>
-        <span className="cal-group-count">{open > 0 ? `${open} 待办` : "全部完成"}{done > 0 ? ` · ${done} 完成` : ""}</span>
-        <ChevronDown size={15} className="cal-group-chev" aria-hidden="true" />
-      </button>
-      {expanded && (
-        <div className="cal-group-body">
-          {group.cwd && <p className="cal-group-cwd" title={group.cwd}>{group.cwd}</p>}
-          <ul className="cal-group-todos">{group.todos.map(todo => <TodoRow key={todo.id} entry={todo} />)}</ul>
-        </div>
-      )}
-    </section>
-  );
-}
-
-export default function CalendarView({ loadOverview }: { loadOverview: CalendarLoader }) {
+export default function CalendarView({ loadOverview, onClose, initialTaskId, focusKey = 0 }: { loadOverview: CalendarLoader; onClose?: () => void; initialTaskId?: string; focusKey?: number }) {
+  const [undated, setUndated] = useState<TodoDetail[]>([]);
+  const [completing, setCompleting] = useState("");
+  const [highlightTaskId, setHighlightTaskId] = useState("");
+  const [expandedTaskId, setExpandedTaskId] = useState("");
+  const api = typeof window === "undefined" ? undefined : window.agentApi;
   const today = new Date();
   const todayKey = localDateKey(today.getTime());
   const [cursor, setCursor] = useState({ year: today.getFullYear(), month: today.getMonth() });
@@ -139,10 +115,31 @@ export default function CalendarView({ loadOverview }: { loadOverview: CalendarL
   const [selectedKey, setSelectedKey] = useState(todayKey);
   const [kind, setKind] = useState<KindFilter>("all");
   const [activeSources, setActiveSources] = useState<Set<CalendarSourceId>>(() => new Set(CALENDAR_SOURCES));
-  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [showUnscheduled, setShowUnscheduled] = useState(true);
   const rangeRef = useRef({ from: "", to: "" });
   const aliveRef = useRef(true);
+  const focusVersionRef = useRef(0);
+  // 任务入口定位：有截止日期跳到日历当天，无日期在“未安排”区高亮。
+  const focusTask = useCallback(async (id: string) => {
+    const version = ++focusVersionRef.current;
+    setKind("all");
+    setActiveSources(current => new Set([...current, "customer-agent"]));
+    setHighlightTaskId(id);
+    try {
+      const detail = api?.todoGet ? await api.todoGet(id) : undefined;
+      if (version !== focusVersionRef.current) return;
+      const dueAt = detail?.task.dueAt;
+      if (dueAt !== undefined) {
+        const due = new Date(dueAt);
+        setCursor({ year: due.getFullYear(), month: due.getMonth() });
+        setSelectedKey(localDateKey(due.getTime()));
+      } else setShowUnscheduled(true);
+    } catch { if (version === focusVersionRef.current) setShowUnscheduled(true); }
+  }, [api]);
+  useEffect(() => {
+    if (initialTaskId) void focusTask(initialTaskId);
+    return () => { focusVersionRef.current++; };
+  }, [initialTaskId, focusKey, focusTask]);
 
   const grid = useMemo(() => buildGrid(cursor.year, cursor.month), [cursor]);
   const from = grid[0]!.key;
@@ -153,7 +150,9 @@ export default function CalendarView({ loadOverview }: { loadOverview: CalendarL
     const { from: f, to: t } = rangeRef.current;
     if (mode === "initial") setLoading(true); else setRefreshing(true);
     try {
-      const next = await loadOverview(f, t);
+      const api = typeof window === "undefined" ? undefined : window.agentApi;
+      const [next, personal] = await Promise.all([loadOverview(f, t), api?.todoList?.({ limit: 200 }).catch(() => undefined)]);
+      if (personal) setUndated(personal.items.filter(d => d.task.dueAt === undefined && d.task.status !== "completed" && d.task.status !== "cancelled"));
       if (!aliveRef.current) return;
       setOverview(next);
       setError("");
@@ -191,7 +190,7 @@ export default function CalendarView({ loadOverview }: { loadOverview: CalendarL
   };
 
   const matches = useCallback((entry: CalendarEntry) =>
-    activeSources.has(entry.source) && (kind === "all" || entry.kind === kind), [activeSources, kind]);
+    entry.kind !== "todo" && activeSources.has(entry.source) && (kind === "all" || entry.kind === kind || (kind === "due" && entry.dueAt !== undefined) || (kind === "run" && entry.executedAt !== undefined)), [activeSources, kind]);
 
   const dayEntries = useMemo(() => {
     const map = new Map<string, CalendarEntry[]>();
@@ -206,7 +205,7 @@ export default function CalendarView({ loadOverview }: { loadOverview: CalendarL
   const stats = useMemo(() => {
     let scheduled = 0, completed = 0, overdue = 0, paused = 0, failed = 0, inProgress = 0;
     const count = (entry: CalendarEntry) => {
-      if (!activeSources.has(entry.source)) return;
+      if (entry.kind === "todo" || !activeSources.has(entry.source)) return;
       if (entry.kind === "cron" && entry.state === "upcoming") scheduled++;
       if (entry.state === "completed") completed++;
       if (entry.state === "overdue") overdue++;
@@ -216,22 +215,17 @@ export default function CalendarView({ loadOverview }: { loadOverview: CalendarL
     };
     if (overview) {
       for (const entries of Object.values(overview.days)) entries.forEach(count);
-      for (const group of overview.unscheduled) group.todos.forEach(count);
     }
     return { scheduled, completed, overdue, paused, failed, inProgress };
   }, [overview, activeSources]);
 
   const selectedEntries = dayEntries.get(selectedKey) ?? [];
-  const unscheduledGroups = useMemo(() =>
-    (overview?.unscheduled ?? []).filter(group => activeSources.has(group.source) && (kind === "all" || kind === "todo")),
-    [overview, activeSources, kind]);
   const unscheduledSchedules = useMemo(() =>
     (overview?.unscheduledSchedules ?? []).filter(entry => activeSources.has(entry.source) && (kind === "all" || kind === "cron")),
     [overview, activeSources, kind]);
   const sourceErrors = useMemo(() =>
     overview ? CALENDAR_SOURCES.filter(source => !overview.sources[source]?.ok).map(source => ({ source, error: overview.sources[source]?.error ?? "" })) : [],
     [overview]);
-  const totalTodos = unscheduledGroups.reduce((sum, group) => sum + group.todos.length, 0);
 
   const toggleSource = (source: CalendarSourceId) => {
     setActiveSources(current => {
@@ -240,17 +234,16 @@ export default function CalendarView({ loadOverview }: { loadOverview: CalendarL
       return next;
     });
   };
-  const toggleGroup = (id: string) => {
-    setExpanded(current => {
-      const next = new Set(current);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  };
 
   const selectedDate = new Date(`${selectedKey}T00:00:00`);
   const selectedLabel = `${selectedDate.getMonth() + 1} 月 ${selectedDate.getDate()} 日 · 周${WEEKDAYS[(selectedDate.getDay() + 6) % 7]}`;
 
+  const complete = async (detail: TodoDetail) => {
+    setCompleting(detail.task.id);
+    try { await window.agentApi.todoCommand?.({ type: "complete", taskId: detail.task.id, expectedVersion: detail.task.version }, crypto.randomUUID()); await load("refresh"); }
+    catch (error) { setError(error instanceof Error ? error.message : "待办更新失败"); }
+    finally { setCompleting(""); }
+  };
   return (
     <div className="cal-root">
       <div className="cal-aurora" aria-hidden="true" />
@@ -259,15 +252,16 @@ export default function CalendarView({ loadOverview }: { loadOverview: CalendarL
           <span className="cal-title-icon"><CalendarDays size={20} aria-hidden="true" /></span>
           <div>
             <h1>智能体日历</h1>
-            <p>所有 Agent 的定时任务 · 执行记录 · 待办，一屏尽览</p>
+            <p>定时任务、执行记录与待办提醒</p>
           </div>
         </div>
         <div className="cal-nav">
-          <button type="button" className="cal-nav-btn" aria-label="上个月" onClick={() => shiftMonth(-1)}><ChevronLeft size={18} /></button>
+          {onClose && <button type="button" className="cal-nav-btn" aria-label="返回聊天" title="返回聊天" onClick={onClose}><X size={17} /></button>}
+          <button type="button" className="cal-nav-btn" aria-label="上个月" onClick={() => shiftMonth(-1)}><ChevronLeft size={17} /></button>
           <button type="button" className="cal-month" onClick={goToday} title="回到今天">{monthLabel(cursor.year, cursor.month)}</button>
-          <button type="button" className="cal-nav-btn" aria-label="下个月" onClick={() => shiftMonth(1)}><ChevronRight size={18} /></button>
-          <button type="button" className="cal-today-btn" onClick={goToday}>今天</button>
-          <button type="button" className={`cal-refresh ${refreshing ? "is-spinning" : ""}`} aria-label="刷新" title="刷新" onClick={() => void load("refresh")}><RefreshCw size={15} /></button>
+          <button type="button" className="cal-nav-btn" aria-label="下个月" onClick={() => shiftMonth(1)}><ChevronRight size={17} /></button>
+          <button type="button" className="cal-nav-btn" aria-label="回到今天" title="回到今天" onClick={goToday}><LocateFixed size={17} /></button>
+          <button type="button" className={`cal-refresh ${refreshing ? "is-spinning" : ""}`} aria-label="刷新" title="刷新" onClick={() => void load("refresh")}><RefreshCw size={17} /></button>
         </div>
       </header>
 
@@ -287,7 +281,7 @@ export default function CalendarView({ loadOverview }: { loadOverview: CalendarL
               className={`cal-source-chip ${activeSources.has(source) ? "is-on" : "is-off"}`}
               onClick={() => toggleSource(source)} aria-pressed={activeSources.has(source)}>
               <span className="cal-source-dot" aria-hidden="true" />{CALENDAR_SOURCE_LABELS[source]}
-              {overview && <span className="cal-source-n">{overview.sources[source]?.entries + overview.sources[source]?.todos || 0}</span>}
+              {overview && <span className="cal-source-n">{overview.sources[source]?.entries || 0}</span>}
             </button>
           ))}
         </div>
@@ -331,7 +325,7 @@ export default function CalendarView({ loadOverview }: { loadOverview: CalendarL
                       {entries.length > 0 && <span className="cal-cell-n">{entries.length}</span>}
                     </div>
                     <div className="cal-chips">
-                      {shown.map(entry => <Chip key={entry.id} entry={entry} onClick={() => setSelectedKey(cell.key)} />)}
+                      {shown.map(entry => <Chip key={entry.id} entry={entry} highlighted={entry.taskId === highlightTaskId} onClick={() => setSelectedKey(cell.key)} />)}
                       {extra > 0 && <button type="button" className="cal-more" onClick={() => setSelectedKey(cell.key)}>+{extra} 更多</button>}
                     </div>
                   </div>
@@ -348,8 +342,8 @@ export default function CalendarView({ loadOverview }: { loadOverview: CalendarL
           </div>
           <div className="cal-detail-list">
             {selectedEntries.length === 0 ? (
-              <div className="cal-empty"><Inbox size={28} strokeWidth={1.4} /><p>这一天没有安排</p><small>点击其他日期查看定时任务与待办</small></div>
-            ) : selectedEntries.map(entry => <EntryRow key={entry.id} entry={entry} />)}
+              <div className="cal-empty"><Inbox size={28} strokeWidth={1.4} /><p>这一天没有安排</p><small>点击其他日期查看安排与提醒</small></div>
+            ) : selectedEntries.map(entry => <EntryRow key={entry.id} entry={entry} highlighted={entry.taskId === highlightTaskId} />)}
           </div>
         </aside>
       </div>
@@ -358,11 +352,31 @@ export default function CalendarView({ loadOverview }: { loadOverview: CalendarL
         <button type="button" className="cal-unscheduled-head" onClick={() => setShowUnscheduled(value => !value)} aria-expanded={showUnscheduled}>
           <ListTodo size={16} />
           <span>未安排</span>
-          <span className="cal-unscheduled-n">{totalTodos} 待办 · {unscheduledGroups.length} 会话{unscheduledSchedules.length ? ` · ${unscheduledSchedules.length} 未排期任务` : ""}</span>
+          <span className="cal-unscheduled-n">{undated.length} 无日期待办 · {unscheduledSchedules.length} 未排期任务</span>
           <ChevronDown size={16} className="cal-unscheduled-chev" />
         </button>
         {showUnscheduled && (
           <div className="cal-unscheduled-body">
+            {undated.length > 0 && <div className="cal-unsched-schedules"><h3><ListTodo size={14} />无日期待办</h3><div className="cal-unsched-schedule-list">{undated.map(detail => {
+              const expanded = expandedTaskId === detail.task.id;
+              const stateLabel = detail.task.status === "in_progress" ? "进行中" : detail.task.status === "failed" ? "执行失败" : "待完成";
+              return (
+                <div key={detail.task.id} className={`cal-unsched-schedule ${detail.task.id === highlightTaskId ? "is-highlight" : ""}`} data-source="customer-agent">
+                  <div className="cal-unsched-row">
+                    <button type="button" className="cal-nav-btn" aria-label={`完成 ${detail.task.title}`} disabled={!!completing} onClick={() => void complete(detail)}><Check size={13} /></button>
+                    <button type="button" className="cal-unsched-title" aria-expanded={expanded} title={expanded ? "收起详情" : "查看详情"} onClick={() => setExpandedTaskId(expanded ? "" : detail.task.id)}>{detail.task.title}</button>
+                  </div>
+                  <p>{stateLabel}</p>
+                  {expanded && (
+                    <div className="cal-unsched-expand">
+                      {detail.task.description && <p>{detail.task.description}</p>}
+                      {detail.schedule?.enabled && <p>下次执行：{detail.schedule.nextFireAt ? new Date(detail.schedule.nextFireAt).toLocaleString("zh-CN", { hour12: false }) : "—"} · {detail.schedule.target.agentType}</p>}
+                      {detail.reminders.some(reminder => reminder.enabled) && <p>已设置提醒</p>}
+                    </div>
+                  )}
+                </div>
+              );
+            })}</div></div>}
             {unscheduledSchedules.length > 0 && (
               <div className="cal-unsched-schedules">
                 <h3><CalendarClock size={14} />未排期的定时任务</h3>
@@ -377,13 +391,7 @@ export default function CalendarView({ loadOverview }: { loadOverview: CalendarL
                 </div>
               </div>
             )}
-            {unscheduledGroups.length === 0 && unscheduledSchedules.length === 0 ? (
-              <div className="cal-empty is-inline"><Inbox size={24} strokeWidth={1.4} /><p>没有未安排的待办</p></div>
-            ) : (
-              <div className="cal-groups">
-                {unscheduledGroups.map(group => <GroupCard key={group.id} group={group} expanded={expanded.has(group.id)} onToggle={() => toggleGroup(group.id)} />)}
-              </div>
-            )}
+            {undated.length === 0 && unscheduledSchedules.length === 0 && <div className="cal-empty is-inline"><Inbox size={24} strokeWidth={1.4} /><p>没有无日期待办或未排期任务</p></div>}
           </div>
         )}
       </section>

@@ -1,4 +1,4 @@
-import { createServer, type Server } from "node:http";
+import { createServer, type Server, type IncomingMessage, type ServerResponse } from "node:http";
 import { mkdtemp, rm, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -12,9 +12,9 @@ async function fixture() {
   const root = await mkdtemp(join(tmpdir(), "shared-service-"));
   closers.push(() => rm(root, { recursive: true, force: true }));
   const registry = join(root, "services");
-  const start = async (name: string) => {
+  const start = async (name: string, handle?: (req: IncomingMessage, res: ServerResponse) => void) => {
     const discovery = createDesktopDiscovery({ dataDir: join(root, name), directory: registry });
-    const server = createServer((req, res) => { if (discovery.handle(req, res)) return; res.setHeader("content-type", "application/json"); res.end(JSON.stringify({ name })); });
+    const server = createServer((req, res) => { if (discovery.handle(req, res)) return; if (handle) { handle(req, res); return; } res.setHeader("content-type", "application/json"); res.end(JSON.stringify({ name })); });
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     await discovery.publish((server.address() as { port: number }).port);
     let stopped = false;
@@ -44,6 +44,46 @@ describe("desktop shared service", () => {
     const { client, start } = await fixture(); await start("one"); await start("two");
     const status = await client.status(); expect(status.connected).toBe(false);
     await client.select(status.choices[1].instanceId); expect((await client.status()).connected).toBe(true);
+  });
+  it("pins notification scope checks and reads to the same descriptor when the selected service changes", async () => {
+    const { client, start } = await fixture();
+    const calls: string[] = [];
+    let releaseIdentity: (() => void) | undefined;
+    await start("one", (req, res) => {
+      calls.push(`one:${req.method}:${req.url}`);
+      if (req.url === "/api/notifications") {
+        releaseIdentity = () => { res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ serviceId: "scope-one", ownerId: "owner" })); };
+      } else {
+        let body = "";
+        req.on("data", chunk => { body += chunk; });
+        req.on("end", () => {
+          expect(JSON.parse(body)).toEqual({ read: true });
+          res.writeHead(200, { "content-type": "application/json" }).end('{"ok":true}');
+        });
+      }
+    });
+    await client.status();
+    await start("two", (req, res) => { calls.push(`two:${req.method}:${req.url}`); res.writeHead(200).end("{}"); });
+    const reading = client.readNotification("notice/one", { serviceId: "scope-one", ownerId: "owner" });
+    await vi.waitFor(() => expect(releaseIdentity).toBeDefined());
+    const other = (await client.status()).choices.find(item => item.dataDir.endsWith("two"))!;
+    await client.select(other.instanceId);
+    releaseIdentity!();
+    await expect(reading).resolves.toEqual({ ok: true });
+    expect(calls).toEqual(["one:GET:/api/notifications", "one:POST:/api/notifications/notice%2Fone/ack"]);
+    expect((await client.status()).selected?.instanceId).toBe(other.instanceId);
+  });
+  it.each([{ serviceId: "wrong-service", ownerId: "owner" }, { serviceId: "service", ownerId: "wrong-owner" }])("rejects mismatched notification scope without posting (%j)", async expected => {
+    const { client, start } = await fixture();
+    const writes = vi.fn();
+    await start("one", (req, res) => {
+      if (req.method === "POST") writes();
+      res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ serviceId: "service", ownerId: "owner" }));
+    });
+    await client.status();
+    await expect(client.readNotification("n", expected)).rejects.toThrow("Notification scope changed");
+    expect(writes).not.toHaveBeenCalled();
+    await expect(client.readNotification("n", undefined as never)).rejects.toThrow("Invalid notification read scope");
   });
   it("rejects non-loopback descriptors, redirects and API path escapes", () => {
     expect(validDescriptor({ protocol: 1, instanceId: "x", pid: 1, dataDir: "/data", token: "a".repeat(64), url: "http://example.com:3000" })).toBe(false);

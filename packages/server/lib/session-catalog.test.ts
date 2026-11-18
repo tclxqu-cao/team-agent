@@ -48,7 +48,7 @@ describe("shared session catalog", () => {
     const response = await GET(new Request("http://localhost/api/sessions"));
     const body = await response.json(); expect(Array.isArray(body)).toBe(true); expect(body.map((session: { id: string }) => session.id)).toEqual(["codex:1"]);
   });
-  it("returns cached sessions immediately and applies background refresh on the next request", async () => {
+  it("applies newly running sessions on the first poll after the cache expires", async () => {
     vi.useFakeTimers();
     const stale = [{ ...session(0), status: "running" as const }, { ...session(1), status: "running" as const }, { ...session(2), status: "idle" as const }];
     mocks.list.mockResolvedValue(stale);
@@ -57,29 +57,35 @@ describe("shared session catalog", () => {
     expect(first.data.filter(session => session.status === "running")).toHaveLength(2);
     mocks.refresh.mockResolvedValue(stale.map(session => session.id === "codex:2" ? { ...session, status: "running", updated: "2026-10-28T05:47:02Z" } : session));
     await vi.advanceTimersByTimeAsync(15_001);
-    const cached = await querySessionCatalog({});
-    expect(cached.data.filter(session => session.status === "running")).toHaveLength(2);
-    expect(mocks.refresh).toHaveBeenCalledTimes(2);
-    await vi.advanceTimersByTimeAsync(0);
     const next = await querySessionCatalog({});
     expect(next.data.filter(session => session.status === "running")).toHaveLength(3);
+    expect(next.data.find(session => session.id === "codex:2")?.status).toBe("running");
     expect(mocks.list).not.toHaveBeenCalled();
     expect(mocks.refresh).toHaveBeenCalledTimes(2);
     expect(first.data.find(session => session.id === "codex:2")?.status).toBe("idle");
   });
-  it("does not wait for a slow native refresh when cached sessions exist", async () => {
+  it("coalesces slow expired refreshes and returns current activity to every waiting viewer", async () => {
     vi.useFakeTimers();
     await querySessionCatalog({});
     let release!: (sessions: UnifiedSessionSummary[]) => void;
     mocks.refresh.mockReturnValue(new Promise<UnifiedSessionSummary[]>(resolve => { release = resolve; }));
     await vi.advanceTimersByTimeAsync(15_001);
-    const page = await querySessionCatalog({});
-    expect(page.total).toBe(45);
+    let settled = false;
+    const first = querySessionCatalog({}).then(page => { settled = true; return page; });
+    const second = querySessionCatalog({ query: "任务" });
+    await vi.waitFor(() => expect(mocks.refresh).toHaveBeenCalledTimes(2));
+    expect(settled).toBe(false);
+    release([{ ...session(0), status: "idle" }, { ...session(1), status: "running" }]);
+    const pages = await Promise.all([first, second]);
+    for (const page of pages) {
+      expect(page.total).toBe(2);
+      expect(page.data.map(({ id, status }) => ({ id, status }))).toEqual([
+        { id: "codex:1", status: "running" }, { id: "codex:0", status: "idle" },
+      ]);
+    }
     expect(mocks.refresh).toHaveBeenCalledTimes(2);
-    release(Array.from({ length: 45 }, (_, index) => session(index)));
-    await vi.advanceTimersByTimeAsync(0);
   });
-  it("retains cached native sessions when a background refresh fails", async () => {
+  it("retains cached native sessions when a refresh fails", async () => {
     vi.useFakeTimers();
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     await querySessionCatalog({});
@@ -117,5 +123,79 @@ describe("shared session catalog", () => {
     await expect(querySessionCatalog({})).rejects.toThrow("temporary discovery failure");
     mocks.refresh.mockResolvedValue([session(0), session(1)]);
     expect((await querySessionCatalog({})).total).toBe(2);
+  });
+
+  it("keeps cached picker tasks selectable while one shared refresh is slow", async () => {
+    vi.useFakeTimers();
+    const first = await querySessionCatalog({ backgroundRefresh: true });
+    let release!: (sessions: UnifiedSessionSummary[]) => void;
+    mocks.refresh.mockReturnValue(new Promise<UnifiedSessionSummary[]>(resolve => { release = resolve; }));
+    await vi.advanceTimersByTimeAsync(15_001);
+
+    const pending = await querySessionCatalog({ backgroundRefresh: true });
+    const search = await querySessionCatalog({ query: "分页可搜索", backgroundRefresh: true });
+    expect(pending.data).toEqual(first.data);
+    expect(pending.refreshing).toBe(true);
+    expect(search.data.map(row => row.id)).toEqual(["codex:44"]);
+    expect(search.refreshing).toBe(true);
+    expect(mocks.refresh).toHaveBeenCalledTimes(2);
+
+    release([session(99)]);
+    await vi.advanceTimersByTimeAsync(0);
+    const latest = await querySessionCatalog({ backgroundRefresh: true });
+    expect(latest.data.map(row => row.id)).toEqual(["codex:99"]);
+    expect(latest.refreshing).toBeUndefined();
+    expect((await querySessionCatalog({ cursor: first.nextCursor! })).total).toBe(45);
+  });
+
+  it("bounds a cold picker request and reports discovery in progress instead of an empty search result", async () => {
+    vi.useFakeTimers();
+    let release!: (sessions: UnifiedSessionSummary[]) => void;
+    mocks.refresh.mockReturnValue(new Promise<UnifiedSessionSummary[]>(resolve => { release = resolve; }));
+    mocks.summaries.mockResolvedValue([{ id: "local", title: "本地任务", projectId: "", status: "idle",
+      created: "2026-11-17", updated: "2026-11-17", metadata: {} }]);
+    const request = querySessionCatalog({ backgroundRefresh: true });
+    await vi.advanceTimersByTimeAsync(1_000);
+    const warming = await request;
+    expect(warming.data.map(row => row.id)).toEqual(["local"]);
+    expect(warming.refreshing).toBe(true);
+
+    release([session(1)]);
+    await vi.advanceTimersByTimeAsync(0);
+    const complete = await querySessionCatalog({ backgroundRefresh: true });
+    expect(complete.data.map(row => row.id)).toEqual(["local", "codex:1"]);
+    expect(complete.refreshing).toBeUndefined();
+    expect(mocks.refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the refresh marker if discovery completes while project metadata is loading", async () => {
+    vi.useFakeTimers();
+    await querySessionCatalog({ backgroundRefresh: true });
+    let releaseRefresh!: (sessions: UnifiedSessionSummary[]) => void;
+    let releaseProjects!: (projects: []) => void;
+    mocks.refresh.mockReturnValue(new Promise<UnifiedSessionSummary[]>(resolve => { releaseRefresh = resolve; }));
+    mocks.projects.mockReturnValue(new Promise<[]>(resolve => { releaseProjects = resolve; }));
+    await vi.advanceTimersByTimeAsync(15_001);
+    const request = querySessionCatalog({ backgroundRefresh: true });
+    await vi.advanceTimersByTimeAsync(0);
+    releaseRefresh([session(99)]);
+    releaseProjects([]);
+    const page = await request;
+    expect(page.refreshing).toBe(true);
+    expect(page.total).toBe(45);
+  });
+
+  it("reports a late cold discovery failure on the next picker read and permits retry", async () => {
+    vi.useFakeTimers();
+    let fail!: (error: Error) => void;
+    mocks.refresh.mockReturnValue(new Promise<UnifiedSessionSummary[]>((_resolve, reject) => { fail = reject; }));
+    const request = querySessionCatalog({ backgroundRefresh: true });
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect((await request).refreshing).toBe(true);
+    fail(new Error("late discovery failure"));
+    await vi.advanceTimersByTimeAsync(0);
+    await expect(querySessionCatalog({ backgroundRefresh: true })).rejects.toThrow("late discovery failure");
+    mocks.refresh.mockResolvedValue([session(1)]);
+    expect((await querySessionCatalog({ backgroundRefresh: true })).data.map(row => row.id)).toEqual(["codex:1"]);
   });
 });

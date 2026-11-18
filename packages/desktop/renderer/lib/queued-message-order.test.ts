@@ -126,6 +126,8 @@ describe("markDurableMessageSteered", () => {
       timestamp: 4,
       isQueued: false,
       isSteered: true,
+      awaitingHistory: true,
+      sourceMessageId: queued.id,
       queueItemId: undefined,
       sendState: undefined,
     });
@@ -173,6 +175,22 @@ describe("markDurableMessageSteered", () => {
 });
 
 describe("reconcileDurableQueuedMessages", () => {
+  it("returns an unadmitted active input to the queue without duplicating earlier equal text", () => {
+    const earlier = { id: "native-earlier", role: "user", content: "same request", timestamp: 1 };
+    const pending = { id: "source", role: "user", content: earlier.content, timestamp: 2, sendState: "pending" as const };
+    const state = {
+      active: null,
+      queued: [{ id: "queue", sourceMessageId: pending.id, objective: pending.content, kind: "message" as const, status: "queued" as const, createdAt: 2 }],
+      history: [],
+    };
+    const restored = reconcileDurableQueuedMessages([earlier, pending], state);
+    expect(restored.filter(message => !message.isQueued)).toEqual([earlier]);
+    expect(restored.filter(message => message.isQueued)).toEqual([
+      expect.objectContaining({ id: "source", queueItemId: "queue", content: "same request" }),
+    ]);
+    expect(reconcileDurableQueuedMessages(restored, state)).toEqual(restored);
+  });
+
   it("retains an in-flight steer across repeated consumed-queue snapshots without retaining deleted messages", () => {
     const input = { id: "steering", role: "user", content: "guide now", timestamp: 2, isQueued: true, queueItemId: "queue", isSteering: true };
     const deleted = { ...input, id: "deleted", queueItemId: "deleted-queue", isSteering: false };

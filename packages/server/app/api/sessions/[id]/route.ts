@@ -19,6 +19,7 @@ import {
 import { RuntimeSessionError } from "@agent/native-runtime";
 import { rebuildMessagesFromEvents } from "../../../../lib/session-history-source";
 import { loadEngineThreadHistory } from "../../../../lib/engine-switch/history";
+import { getSessionImageStore } from "../../../../lib/session-images";
 
 export async function GET(
   request: Request,
@@ -46,10 +47,11 @@ export async function GET(
     : undefined;
   if (isNativeSessionId(params.id)) {
     try {
-      const thread = await loadEngineThreadHistory(params.id, historyQuery);
-      if (thread) return NextResponse.json(thread);
-      const detail = await getNativeRuntimeService().get(params.id, historyQuery);
-      return NextResponse.json(detail);
+      const displayQuery = historyQuery?.view === "core" ? { ...historyQuery, imageView: "source" as const } : historyQuery;
+      const thread = await loadEngineThreadHistory(params.id, displayQuery);
+      if (thread) return NextResponse.json(await getSessionImageStore().project(thread));
+      const detail = await getNativeRuntimeService().get(params.id, displayQuery);
+      return NextResponse.json(await getSessionImageStore().project(detail));
     } catch (err) {
       return NextResponse.json(
         {
@@ -110,7 +112,7 @@ export async function GET(
           permissionMode: normalizeToolPermissionMode(session.metadata.permissionMode),
           ...(activeRun ? { activeRun } : {}),
         };
-    return NextResponse.json({ ...hydrated, messageQueueVersion: 1, goalState: readSessionGoalState(session.metadata) });
+    return NextResponse.json(await getSessionImageStore().project({ ...hydrated, messageQueueVersion: 1, goalState: readSessionGoalState(session.metadata) }));
   } catch (error) {
     if (error instanceof StaleSessionAnchorError) {
       return NextResponse.json({ error: error.message, code: error.code }, { status: 409 });

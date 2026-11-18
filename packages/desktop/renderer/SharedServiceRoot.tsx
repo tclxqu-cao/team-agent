@@ -2,8 +2,10 @@ import DesktopPermissionDialog from "./components/DesktopPermissionDialog";
 import React, { useEffect, useRef, useState } from "react";
 import { createSharedAgentApi, type SharedServiceStatus } from "./lib/shared-service";
 import { isDesktopLiveSetupPending } from "./lib/desktop-live-setup";
+import { readNewSessionWindow } from "./lib/new-session-window";
 
 window.agentApi = createSharedAgentApi(window.sharedServiceApi, window.desktopDeviceApi);
+const sessionWindow = Boolean(readNewSessionWindow(window.location.search));
 
 export function SharedServiceRoot() {
   const [status, setStatus] = useState<SharedServiceStatus | null>(null);
@@ -12,6 +14,7 @@ export function SharedServiceRoot() {
   const [showPermissions, setShowPermissions] = useState(false);
   const permissionsDismissedRef = useRef(false);
   useEffect(() => {
+    if (sessionWindow) return;
     if (permissionsDismissedRef.current) return;
     let active = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -47,7 +50,7 @@ export function SharedServiceRoot() {
     void window.sharedServiceApi.prepareRuntime().then(setBootstrap).catch(() => setBootstrap({ phase: "error", message: "运行环境准备失败，请重试。" }));
   }, [status]);
   useEffect(() => {
-    if (status?.connected && !App) void import("./App").then((module) => setApp(() => module.default));
+    if (status?.connected && !App) void (sessionWindow ? import("./NewSessionWindow") : import("./App")).then((module) => setApp(() => module.default));
   }, [status?.connected, App]);
   const select = async (id: string) => {
     try { await window.sharedServiceApi.select(id); window.location.reload(); }

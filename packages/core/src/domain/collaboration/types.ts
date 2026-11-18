@@ -155,7 +155,8 @@ export interface CollaborationDiscussionSummary {
   updatedAt: string;
 }
 export type CollaborationCommand =
-  | { action: "sessionCatalog"; query?: string; cursor?: string; limit?: number }
+  | { action: "sessionCatalog"; query?: string; cursor?: string; limit?: number; backgroundRefresh?: boolean }
+  | { action: "sessionActivity" }
   | { action: "dashboard" }
   | { action: "supervisionAlerts" }
   | { action: "supervision" | "applySupervision"; groupId: string }

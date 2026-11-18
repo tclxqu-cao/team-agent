@@ -25,6 +25,8 @@ const nextConfig = {
     }
     config.externals.push({ "better-sqlite3": "commonjs better-sqlite3" });
     config.externals.push({ "@anthropic-ai/claude-agent-sdk": "commonjs @anthropic-ai/claude-agent-sdk" });
+    // Image codecs resolve worker files relative to the installed Next module.
+    if (isServer) config.externals.push({ "next/dist/server/image-optimizer": "commonjs next/dist/server/image-optimizer" });
     // These ESM packages are shipped beside the server. Bundling their
     // createRequire(import.meta.url) embeds the build host's absolute path.
     if (isServer) for (const name of ["@agent/core", "@agent/computer-use", "@agent/native-runtime"]) {

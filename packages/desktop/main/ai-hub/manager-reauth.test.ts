@@ -77,6 +77,29 @@ function makeManager(profile: string | null = null) {
 const cookie = { url: "https://gemini.google.com/", name: "test", value: "test-only" };
 
 describe("AI Hub reauth session routing", () => {
+  it("denies camera and microphone requests from arbitrary task-pane websites while preserving Hub media", async () => {
+    const { manager } = makeManager();
+    const focused = vi.fn();
+    manager.subscribe(focused);
+    await manager.openEmbeddedPage("task-pane-left", "https://example.com/", { allowMedia: false });
+    (mock.views[0] as any).webContents.emit("focus");
+    expect(focused).toHaveBeenCalledWith({ type: "focused", siteId: "task-pane-left" });
+    const taskSession = mock.sessions.get("persist:embedded-task-pane-left")!;
+    const taskPermission = taskSession.setPermissionRequestHandler.mock.calls.at(-1)![0];
+    const denied = vi.fn();
+    taskPermission({}, "media", denied);
+    expect(denied).toHaveBeenCalledWith(false);
+    await manager.openSite("deepseek");
+    const hubSession = mock.sessions.get("persist:aihub-deepseek")!;
+    const hubPermission = hubSession.setPermissionRequestHandler.mock.calls.at(-1)![0];
+    const permitted = vi.fn();
+    hubPermission({}, "media", permitted);
+    expect(permitted).toHaveBeenCalledWith(true);
+    const other = vi.fn();
+    hubPermission({}, "geolocation", other);
+    expect(other).toHaveBeenCalledWith(false);
+  });
+
   it("reuses the native view pool for an isolated embedded page without joining Hub layout", async () => {
     const root = mkdtempSync(join(tmpdir(), "hub-manager-embedded-"));
     roots.push(root);
@@ -106,6 +129,10 @@ describe("AI Hub reauth session routing", () => {
 
     manager.setEmbeddedPageBounds("flow-studio", null);
     expect(removeChildView).toHaveBeenCalledWith(mock.views[0]);
+    manager.closeEmbeddedPage("flow-studio");
+    await manager.openEmbeddedPage("flow-studio", "https://example.com/");
+    expect(mock.views).toHaveLength(3);
+    expect((mock.views[2] as any).webContents.loadURL).toHaveBeenCalledWith("https://example.com/");
   });
 
   it("starts managed login without importing browser history or a profile", () => {

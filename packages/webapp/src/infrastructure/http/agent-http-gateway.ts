@@ -1,5 +1,7 @@
 import type { CreateParallelSessionsInput, ParallelSessionGroup, SessionForkPoint, SessionMessageRunOptions } from "@agent/core";
 import type { CollaborationCommand } from "@agent/core/domain/collaboration/types";
+import type { CatalogSession } from "@agent/core/domain/supervision/types";
+import { isAgentType } from "../../../../core/src/domain/agent/agent-type";
 import type {
   AgentApi,
   AgentDefinition,
@@ -17,7 +19,6 @@ import type {
   UnifiedSessionSummary,
 } from "../../domain/ports/agent-port";
 import type { DictationPort } from "../../domain/ports/dictation-port";
-import type { SpeechOutputPort } from "../../domain/ports/speech-output-port";
 import { HttpClient, RequestTimeoutError, listOf } from "./http-client";
 
 import type { LocalSettingsRepository } from "../local/local-settings-repository";
@@ -63,6 +64,10 @@ function isTransportFailure(error: unknown): boolean {
 /** Subset of the port the web gateway intentionally leaves to browser fallbacks. */
 type BrowserHandled = "wakeStart";
 
+export interface AgentHttpGatewayOptions {
+  historyObservation?: "sse" | "polling";
+}
+
 /**
  * Browser adapter for the AgentApi port (DDD ports & adapters).
  *
@@ -83,6 +88,7 @@ type BrowserHandled = "wakeStart";
  * voice service through the authenticated gateway. Wake remains browser-handled.
  */
 export class AgentHttpGateway {
+  readonly sessionHistoryObservationMode: "sse" | "polling";
   private readonly streams = new Map<string, EventSource>();
   private readonly nativeStreamCursors = new Map<string, NativeStreamCursor>();
   private readonly nativeFinalAnswerSnapshots = new Map<string, NativeFinalAnswerSnapshot>();
@@ -103,8 +109,10 @@ export class AgentHttpGateway {
     private readonly projectBridge?: WebProjectBridge,
     private readonly createEventSource: (url: string) => EventSource = (url) => new EventSource(url),
     private readonly dictation?: DictationPort,
-    private readonly speechOutput?: SpeechOutputPort,
-  ) {}
+    options: AgentHttpGatewayOptions = {},
+  ) {
+    this.sessionHistoryObservationMode = options.historyObservation ?? "sse";
+  }
 
   dictationStart(): Promise<{ ok: boolean; reason?: string }> {
     return this.dictation?.dictationStart() ?? Promise.resolve({ ok: false, reason: "语音输入尚未初始化" });
@@ -142,6 +150,16 @@ export class AgentHttpGateway {
   async collaboration(command: CollaborationCommand): Promise<unknown> {
     return this.http.post("/api/collaboration", command);
   }
+
+  async calendarOverview(input: { from: string; to: string }): Promise<import("@agent/core").CalendarOverview> {
+    const params = new URLSearchParams({ from: input.from, to: input.to });
+    return this.http.get(`/api/calendar?${params.toString()}`);
+  }
+  todoList(query: import("@agent/core").TodoListQuery = {}) { return this.http.get<{ items: import("@agent/core").TodoDetail[]; cursor?: string }>(`/api/todos?${new URLSearchParams(Object.entries(query).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)]))}`); }
+  todoGet(id: string) { return this.http.get<import("@agent/core").TodoDetail>(`/api/todos/${encodeURIComponent(id)}`); }
+  todoCommand(command: import("@agent/core").TodoCommand, requestId: string) { return this.http.post<import("@agent/core").TodoDetail>(command.type === "create" ? "/api/todos" : `/api/todos/${encodeURIComponent(command.taskId)}/commands`, { command, requestId }); }
+  notificationList() { return this.http.get<{ items: import("@agent/core").PersistentNotification[] }>("/api/notifications"); }
+  notificationRead(id: string) { return this.http.post(`/api/notifications/${encodeURIComponent(id)}/ack`, { read: true }); }
 
   onEvent(callback: EventListener): Unsubscribe {
     this.listeners.add(callback);
@@ -316,11 +334,7 @@ export class AgentHttpGateway {
 
   async steer(input: string, sessionId: string, _agentName?: string): Promise<boolean> {
     const res = await this.http.post<{ steered: boolean }>("/api/agent/steer", { input, sessionId });
-    if (!res.steered) {
-      // No active run for this session — mirror desktop: start a new run.
-      void this.run(input, sessionId).catch(() => {});
-    }
-    return true;
+    return res.steered;
   }
 
   async steerSessionMessage(id: string, messageId: string): Promise<SessionGoalState> {
@@ -455,17 +469,20 @@ export class AgentHttpGateway {
       }
       const currentNativeResponse = nativeRecovery === this.nativeRunRecoveries.get(id)
         && requestedRunId === nativeRecovery?.runId;
-      if (id.startsWith("runtime:") && currentNativeResponse && typeof session.snapshotRevision === "number") {
+      const observesLatestRun = !query?.before && !query?.after && !query?.anchor && query?.view !== "trace";
+      if (id.startsWith("runtime:") && currentNativeResponse && observesLatestRun && typeof session.snapshotRevision === "number") {
         const snapshotRunId = typeof session.snapshotRunId === "string"
           ? session.snapshotRunId
           : undefined;
         if (snapshotRunId && this.nativeRunIdentities.get(id)?.retired.has(snapshotRunId)) return session;
         const history = session.history as { delivery?: unknown } | undefined;
         const progressive = history?.delivery === "core" || history?.delivery === "trace";
+        const snapshotMatchesTurn = this.snapshotRunMatchesHistoryTurn(session);
         if (
           history?.delivery === "core"
           && !options.lifecycleOnly
           && snapshotRunId
+          && snapshotMatchesTurn
           && this.coreSnapshotContainsTailFinalAnswer(session.messages)
         ) {
           this.rememberNativeFinalAnswerSnapshot(id, session.snapshotRevision, snapshotRunId);
@@ -473,7 +490,10 @@ export class AgentHttpGateway {
         if (!progressive) {
           this.rememberNativeStreamCursor(id, session.snapshotRevision, snapshotRunId);
         }
-        if (session.status === "running" && session.occupancy !== "owned-externally") {
+        // Native editors can start another turn after this retained broker run
+        // finishes. A terminal run cannot supply that turn's live event stream.
+        if (session.status === "running" && session.snapshotRunStatus !== "terminal" && session.occupancy !== "owned-externally"
+          && (!progressive || snapshotMatchesTurn)) {
           const rememberedCursor = this.nativeStreamCursors.get(id);
           const cursor = progressive && snapshotRunId && rememberedCursor?.runId !== snapshotRunId
             ? { sequence: 0, runId: snapshotRunId }
@@ -481,8 +501,16 @@ export class AgentHttpGateway {
               ?? (progressive ? { sequence: 0, ...(snapshotRunId ? { runId: snapshotRunId } : {}) } : undefined);
           void this.openStream(id, cursor).catch(() => undefined);
         }
-        if (nativeRecovery && !query?.before && !query?.after && !query?.anchor && query?.view !== "trace") {
-          await this.reconcileNativeRun(id, nativeRecovery, requestedRunId, session);
+        if (nativeRecovery) {
+          if (snapshotMatchesTurn) {
+            await this.reconcileNativeRun(id, nativeRecovery, requestedRunId, session);
+          } else if (!nativeRecovery.awaitingAdmission && session.snapshotRunStatus === "terminal"
+            && snapshotRunId === requestedRunId) {
+            // Settle our finished run without applying its terminal text or
+            // duration to the newer turn now owned by an external client.
+            this.closeStream(id);
+            this.settle(id);
+          }
         }
       } else if (!id.startsWith("runtime:") && session.status === "active") {
         const activeRun = session.activeRun as { eventId?: unknown; running?: unknown } | undefined;
@@ -495,6 +523,13 @@ export class AgentHttpGateway {
       if ((err as { status?: number }).status === 404) return null;
       throw err;
     }
+  }
+
+  async getSessionImage(id: string, variant: "preview" | "original"): Promise<string> {
+    const result = await this.http.get<{ dataUrl: string }>(
+      `/api/session-images/${encodeURIComponent(id)}?variant=${variant}`,
+    );
+    return result.dataUrl;
   }
 
   async getSessionToolResult(
@@ -692,16 +727,20 @@ export class AgentHttpGateway {
   }
 
   async createSession(title: string, projectId?: string, agentType?: string, cwd?: string): Promise<unknown> {
-    return this.http.post("/api/sessions", {
+    const created = await this.http.post("/api/sessions", {
       title,
       ...(projectId ? { projectId } : {}),
       ...(agentType && agentType !== "customer-agent" ? { agentType } : {}),
       ...(cwd ? { cwd } : {}),
     });
+    this.announceSession(created, { title, projectId, agentType, cwd });
+    return created;
   }
 
   async createParallelSessions(input: CreateParallelSessionsInput): Promise<ParallelSessionGroup<UnifiedSessionSummary>> {
-    return this.http.post("/api/sessions/parallel", input);
+    const group = await this.http.post<ParallelSessionGroup<UnifiedSessionSummary>>("/api/sessions/parallel", input);
+    for (const session of group.members) this.announceSession(session);
+    return group;
   }
 
   async getParallelSessionGroup(sessionId: string): Promise<ParallelSessionGroup<UnifiedSessionSummary> | null> {
@@ -709,7 +748,9 @@ export class AgentHttpGateway {
   }
 
   async forkSession(id: string, point?: SessionForkPoint): Promise<unknown> {
-    return this.http.post(`/api/sessions/${encodeURIComponent(id)}/${point ? "fork-at" : "fork"}`, point ? { point } : {});
+    const forked = await this.http.post(`/api/sessions/${encodeURIComponent(id)}/${point ? "fork-at" : "fork"}`, point ? { point } : {});
+    this.announceSession(forked);
+    return forked;
   }
 
   async releaseCodexSession(id: string): Promise<void> {
@@ -930,39 +971,6 @@ export class AgentHttpGateway {
     return { ok: true, conversation: on };
   }
 
-  async ttsSpeak(text: string): Promise<{ ok: boolean }> {
-    if (!this.speechOutput) throw new Error("语音播报尚未初始化");
-    return this.speechOutput.ttsSpeak(text);
-  }
-
-  async ttsStop(): Promise<{ ok: boolean }> {
-    return this.speechOutput?.ttsStop() ?? { ok: true };
-  }
-
-  async ttsPlaybackEnded(generation: number): Promise<{ ok: boolean }> {
-    return this.speechOutput?.ttsPlaybackEnded(generation) ?? { ok: true };
-  }
-
-  onTtsStart(callback: Parameters<SpeechOutputPort["onTtsStart"]>[0]): Unsubscribe {
-    return this.speechOutput?.onTtsStart(callback) ?? (() => {});
-  }
-
-  onTtsPcm(callback: Parameters<SpeechOutputPort["onTtsPcm"]>[0]): Unsubscribe {
-    return this.speechOutput?.onTtsPcm(callback) ?? (() => {});
-  }
-
-  onTtsStreamEnd(callback: Parameters<SpeechOutputPort["onTtsStreamEnd"]>[0]): Unsubscribe {
-    return this.speechOutput?.onTtsStreamEnd(callback) ?? (() => {});
-  }
-
-  onTtsFlush(callback: Parameters<SpeechOutputPort["onTtsFlush"]>[0]): Unsubscribe {
-    return this.speechOutput?.onTtsFlush(callback) ?? (() => {});
-  }
-
-  onTtsEnd(callback: Parameters<SpeechOutputPort["onTtsEnd"]>[0]): Unsubscribe {
-    return this.speechOutput?.onTtsEnd(callback) ?? (() => {});
-  }
-
   onWake(): Unsubscribe {
     return () => {};
   }
@@ -972,6 +980,25 @@ export class AgentHttpGateway {
   }
 
   // ── SSE plumbing ───────────────────────────────────────────────────────
+
+  private announceSession(value: unknown, defaults: { title?: string; projectId?: string; agentType?: string; cwd?: string } = {}): void {
+    if (!value || typeof value !== "object") return;
+    const row = value as Record<string, unknown>;
+    if (typeof row.id !== "string") return;
+    const agentType = row.agentType ?? defaults.agentType ?? "customer-agent";
+    if (!isAgentType(agentType)) return;
+    const status = row.status === "active" || row.status === "running" ? "running"
+      : row.status === "completed" || row.status === "failed" ? row.status : "idle";
+    const session: CatalogSession = {
+      id: row.id, agentType, status,
+      title: typeof row.title === "string" ? row.title : defaults.title ?? "未命名会话",
+      cwd: typeof row.cwd === "string" ? row.cwd : defaults.cwd ?? "",
+      projectId: typeof row.projectId === "string" ? row.projectId : defaults.projectId,
+      updated: typeof row.updated === "string" ? row.updated : new Date().toISOString(),
+      canResume: row.canResume !== false,
+    };
+    this.dispatch(session.id, { type: "session_summary", session });
+  }
 
   private dispatch(sessionId: string, event: Record<string, unknown>): void {
     const stamped = { ...event, _sid: sessionId };
@@ -1248,6 +1275,7 @@ export class AgentHttpGateway {
           rejectGate = reject;
           gateTimer = setTimeout(() => {
             gatePending = false;
+            if (this.streams.get(sessionId) === source) this.closeStream(sessionId);
             reject(new Error("事件流连接超时"));
           }, 8000);
         })
@@ -1402,6 +1430,18 @@ export class AgentHttpGateway {
     if (sameRun && sequence <= previous.sequence) return false;
     this.rememberNativeStreamCursor(sessionId, sequence, runId);
     return true;
+  }
+
+  private snapshotRunMatchesHistoryTurn(session: Record<string, unknown>): boolean {
+    if (typeof session.snapshotTurnId !== "string" || !session.snapshotTurnId || !Array.isArray(session.messages)) return true;
+    const latestUser = (session.messages as Array<{
+      role?: unknown;
+      presentation?: { executionTrace?: { turnId?: unknown } };
+    }>).slice().reverse().find((message) => message?.role === "user");
+    const turnId = latestUser?.presentation?.executionTrace?.turnId;
+    // A retained broker run can be terminal while Codex Desktop is already
+    // running another turn. Its replay cursor belongs only to its native turn.
+    return typeof turnId !== "string" || turnId === session.snapshotTurnId;
   }
 
   private coreSnapshotContainsTailFinalAnswer(messages: unknown): boolean {

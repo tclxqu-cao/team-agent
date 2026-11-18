@@ -27,7 +27,6 @@ export type {
   RuntimeBackgroundJobOutput,
   RuntimeBackgroundJobStopResult,
   UnifiedSessionSummary,
-  TtsStreamMetadata,
 } from "../../../../desktop/renderer/global";
 
 /** Synthetic project id the web shell files every session under. */

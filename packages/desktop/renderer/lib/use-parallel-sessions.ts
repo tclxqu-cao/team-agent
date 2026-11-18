@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CreateParallelSessionsInput, ParallelConversation, SessionGoalState, UnifiedSessionSummary } from "../global";
 import type { ParallelAgentStatus } from "../components/ParallelAgentTabs";
-import { useAgentStore, type StreamEvent } from "../stores/agentStore";
+import { useAgentStore as useGlobalAgentStore, type AgentStore, type StreamEvent } from "../stores/agentStore";
 import { hasPendingSessionQuestion } from "./sidebar-session-status";
 import { isPageActive } from "./page-activity";
 import { dispatchParallelMessages, type FailedParallelMessage, type ParallelMessage } from "./parallel-message-dispatch";
@@ -9,11 +9,12 @@ import { parallelRunOptions } from "./parallel-run-options";
 import { ParallelFailedMessageRepository } from "./parallel-failed-messages";
 import { IndexedDbSessionImageDraftRepository } from "./session-image-draft";
 
-export function useParallelSessions({ sessionId, onSelect, onQueueState, profileId }: {
+export function useParallelSessions({ sessionId, onSelect, onQueueState, profileId, agentStore = useGlobalAgentStore }: {
   sessionId: string | null;
   onSelect?: (session: UnifiedSessionSummary) => void | Promise<void>;
   onQueueState: (state: SessionGoalState, id: string) => void;
   profileId?: string;
+  agentStore?: AgentStore;
 }) {
   const [storedGroup, setGroup] = useState<ParallelConversation | null>(null);
   const group = sessionId && storedGroup?.members.some(member => member.id === sessionId) ? storedGroup : null;
@@ -96,10 +97,10 @@ export function useParallelSessions({ sessionId, onSelect, onQueueState, profile
       else if (event.type === "done" || event.type === "turn_aborted") {
         updateStatus(event._sid, event.type === "turn_aborted" || (event.result && "status" in event.result && event.result.status !== "completed") ? "failed" : "completed");
       } else if (["run_admitted", "thinking", "text_chunk", "tool_call", "approval_resolved"].includes(event.type)) {
-        updateStatus(event._sid, hasPendingSessionQuestion(useAgentStore.getState().getMessagesForSession(event._sid)) ? "needs-input" : "running");
+        updateStatus(event._sid, hasPendingSessionQuestion(agentStore.getState().getMessagesForSession(event._sid)) ? "needs-input" : "running");
       }
     });
-  }, [group?.id, updateStatus]);
+  }, [group?.id, updateStatus, agentStore]);
 
   useEffect(() => {
     if (!group) return;
@@ -112,7 +113,7 @@ export function useParallelSessions({ sessionId, onSelect, onQueueState, profile
           const revision = statusRevisions.current.get(member.id) ?? 0;
           const state = await window.agentApi.getSessionGoals(member.id);
           if (cancelled || revision !== (statusRevisions.current.get(member.id) ?? 0)) return;
-          const question = hasPendingSessionQuestion(useAgentStore.getState().getMessagesForSession(member.id));
+          const question = hasPendingSessionQuestion(agentStore.getState().getMessagesForSession(member.id));
           const last = state.history.reduce<SessionGoalState["history"][number] | undefined>((latest, item) => !latest || item.updatedAt > latest.updatedAt ? item : latest, undefined);
           updateStatus(member.id, question ? "needs-input" : state.active ? "running"
             : last ? last.status === "completed" ? "completed" : "failed" : "idle");
@@ -122,7 +123,7 @@ export function useParallelSessions({ sessionId, onSelect, onQueueState, profile
     void refresh();
     const timer = setInterval(() => { void refresh(); }, 5000);
     return () => { cancelled = true; clearInterval(timer); };
-  }, [group?.id, updateStatus]);
+  }, [group?.id, updateStatus, agentStore]);
 
   const create = async (input: CreateParallelSessionsInput) => {
     const value = await window.agentApi.createParallelSessions(input);
@@ -156,7 +157,7 @@ export function useParallelSessions({ sessionId, onSelect, onQueueState, profile
     failureGeneration.current += 1;
     try {
       if (targetGroup && !previousFailures.length) previousFailures = await failureRepository.current?.read(targetGroup) ?? [];
-      const store = useAgentStore.getState();
+      const store = agentStore.getState();
       for (const { member, message } of attempts) {
         const existing = store.getMessagesForSession(member.id).find(item => item.id === message.sourceMessageId);
         if (existing) store.updateMessage(existing.id, item => ({ ...item, sendState: "pending" }), member.id);

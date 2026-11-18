@@ -15,7 +15,6 @@ describe("messageActionPolicy", () => {
   it("gives user messages copy only", () => {
     expect(messageActionPolicy([message("u1", "user", "hello")], 0, false)).toEqual({
       showCopy: true,
-      showSpeak: false,
       showCompletion: false,
       compact: false,
     });
@@ -33,13 +32,12 @@ describe("messageActionPolicy", () => {
 
     expect(messageActionPolicy(messages, 1, false)).toEqual({
       showCopy: false,
-      showSpeak: false,
       showCompletion: false,
       compact: true,
     });
   });
 
-  it("gives a completed final assistant response speech and copy", () => {
+  it("gives a completed final assistant response completion actions and copy", () => {
     const messages = [
       message("u1", "user", "first"),
       message("a1", "assistant", "First answer."),
@@ -48,7 +46,6 @@ describe("messageActionPolicy", () => {
 
     expect(messageActionPolicy(messages, 1, true)).toEqual({
       showCopy: true,
-      showSpeak: true,
       showCompletion: true,
       compact: false,
     });
@@ -62,13 +59,11 @@ describe("messageActionPolicy", () => {
 
     expect(messageActionPolicy(messages, 1, true)).toEqual({
       showCopy: false,
-      showSpeak: false,
       showCompletion: false,
       compact: true,
     });
     expect(messageActionPolicy(messages, 1, false)).toEqual({
       showCopy: true,
-      showSpeak: true,
       showCompletion: true,
       compact: false,
     });
@@ -84,7 +79,6 @@ describe("messageActionPolicy", () => {
 
     expect(messageActionPolicy(messages, 1, false)).toEqual({
       showCopy: false,
-      showSpeak: false,
       showCompletion: false,
       compact: true,
     });

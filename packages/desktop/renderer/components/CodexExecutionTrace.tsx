@@ -57,6 +57,7 @@ export default function CodexExecutionTrace({
   const pendingRef = useRef<Promise<ChatMessage[]> | null>(null);
   const [loading, setLoading] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[] | null>(null);
+  const [loadedRevision, setLoadedRevision] = useState<string | null>(null);
   const [loadedToolResults, setLoadedToolResults] = useState<Record<string, SessionToolResultBody>>({});
   const [error, setError] = useState<string | null>(null);
   const { expanded, setExpanded } = useExecutionTraceDisclosure(scope, isRunning);
@@ -66,6 +67,7 @@ export default function CodexExecutionTrace({
     pendingRef.current = null;
     setLoading(false);
     setMessages(null);
+    setLoadedRevision(null);
     setLoadedToolResults({});
     setError(null);
     handledRefreshSignalRef.current = refreshSignal;
@@ -102,7 +104,8 @@ export default function CodexExecutionTrace({
   const hasActivity = useMemo(() => executionActivityRows(displayMessages).length > 0, [displayMessages]);
   const hasMessages = messages !== null || liveMessages.length > 0;
   const needsHistory = expanded && (autoLoad || !isRunning)
-    && messages === null && !trace.revision.startsWith("live:");
+    && (messages === null || (!isRunning && loadedRevision !== trace.revision))
+    && !trace.revision.startsWith("live:");
 
   const ensureLoaded = useCallback(async (force = false) => {
     if (!force && messages) return messages;
@@ -116,7 +119,10 @@ export default function CodexExecutionTrace({
     pendingRef.current = pending;
     try {
       const loaded = await pending;
-      if (scopeRef.current === requestedScope && revisionRef.current === requestedRevision) setMessages(loaded);
+      if (scopeRef.current === requestedScope && revisionRef.current === requestedRevision) {
+        setMessages(loaded);
+        setLoadedRevision(requestedRevision);
+      }
       return loaded;
     } catch (loadError) {
       if (scopeRef.current === requestedScope && revisionRef.current === requestedRevision) {

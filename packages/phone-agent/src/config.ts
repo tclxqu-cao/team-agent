@@ -34,8 +34,6 @@ export interface PhoneAgentConfig {
   wakeWord: string;
   /** 语音会话固定的 sessionId */
   voiceSessionId: string;
-  /** TTS 音色 */
-  ttsVoice: string;
   /** ffmpeg 采集麦克风设备号（avfoundation，如 ":0"） */
   micDevice: string;
 }
@@ -68,7 +66,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): PhoneAgentConf
     voiceServiceUrl: str(env, "VOICE_SERVICE_URL", "ws://127.0.0.1:17863"),
     wakeWord: str(env, "PHONE_VOICE_WAKE_WORD", "小智"),
     voiceSessionId: str(env, "PHONE_VOICE_SESSION", "phone-butler"),
-    ttsVoice: str(env, "PHONE_TTS_VOICE", "Serena"),
     micDevice: str(env, "PHONE_MIC", ":0"),
   };
 }

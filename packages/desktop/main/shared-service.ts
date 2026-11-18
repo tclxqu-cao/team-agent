@@ -9,6 +9,7 @@ export interface ServiceDescriptor {
 }
 export type ServiceChoice = Pick<ServiceDescriptor, "instanceId" | "url" | "dataDir">;
 export type StreamFrame = { id: string; type: "open" | "data" | "end" | "error"; data?: string };
+export interface NotificationReadScope { serviceId: string; ownerId: string; }
 
 export function validDescriptor(value: unknown): value is ServiceDescriptor {
   if (!value || typeof value !== "object") return false;
@@ -94,6 +95,29 @@ export class SharedServiceConnection {
     return { status: res.status, body: await res.text() };
   }
 
+  /** Scope verification and acknowledgement must use one captured credential.
+   * Selecting another service while the check is in flight cannot redirect a write. */
+  async readNotification(id: string, expected: NotificationReadScope): Promise<{ ok: true }> {
+    if (typeof id !== "string" || !id || id.length > 400 || /[\0\r\n]/.test(id)
+      || !expected || typeof expected.serviceId !== "string" || !expected.serviceId
+      || typeof expected.ownerId !== "string" || !expected.ownerId
+      || expected.serviceId.length > 400 || expected.ownerId.length > 400
+      || /[\0\r\n]/.test(expected.serviceId + expected.ownerId)) throw new Error("Invalid notification read scope");
+    const descriptor = await this.connection();
+    const headers = { "content-type": "application/json", "x-agentroam-desktop-token": descriptor.token };
+    const identity = await this.request(serviceApiUrl(descriptor.url, "/api/notifications"), {
+      method: "GET", headers, signal: AbortSignal.timeout(30_000), redirect: "error",
+    });
+    if (!identity.ok) throw new Error("Notification read identity check failed");
+    const scope = await identity.json() as Partial<NotificationReadScope>;
+    if (scope.serviceId !== expected.serviceId || scope.ownerId !== expected.ownerId) throw new Error("Notification scope changed");
+    const response = await this.request(serviceApiUrl(descriptor.url, `/api/notifications/${encodeURIComponent(id)}/ack`), {
+      method: "POST", headers, body: JSON.stringify({ read: true }), signal: AbortSignal.timeout(30_000), redirect: "error",
+    });
+    if (!response.ok && response.status !== 404) throw new Error("Notification read acknowledgement failed");
+    return { ok: true };
+  }
+
   async mobilePairing() {
     const descriptor = await this.connection();
     const tunnel = await this.tunnelStatus();
@@ -116,7 +140,7 @@ export class SharedServiceConnection {
 
   async stream(id: string, path: string, lastEventId: string, send: (frame: StreamFrame) => void): Promise<void> {
     if (!/^[a-zA-Z0-9-]{1,100}$/.test(id) || typeof lastEventId !== "string" || /[\r\n]/.test(lastEventId)) throw new Error("Invalid stream request");
-    if (!(path.startsWith("/api/agent/stream?") || /^\/api\/sessions\/[^/]+\/changes(?:\?|$)/.test(path))) throw new Error("Invalid stream path");
+    if (!(path.startsWith("/api/agent/stream?") || path === "/api/notifications/stream" || /^\/api\/sessions\/[^/]+\/changes(?:\?|$)/.test(path))) throw new Error("Invalid stream path");
     this.stop(id);
     const controller = new AbortController(); this.streams.set(id, controller);
     try {

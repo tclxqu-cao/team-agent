@@ -17,8 +17,7 @@ export default defineConfig(({ mode }) => {
     devMobilePairing({ backend, accessUrl: env.AGENT_MOBILE_ACCESS_URL }),
   ],
   base: "./",
-  // The renderer's PcmStreamPlayer loads ./pcm-audio-worklet.js relative to
-  // the page — reuse the desktop renderer's public assets.
+  // Reuse the desktop renderer's shared icons and dictation worklet.
   publicDir: resolve(__dirname, "../desktop/renderer/public"),
   build: {
     outDir: "dist",

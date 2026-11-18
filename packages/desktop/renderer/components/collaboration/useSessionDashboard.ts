@@ -3,9 +3,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { SessionDashboardSnapshot } from "../../../../core/src/domain/supervision/types";
 import { collaborationRequest } from "./client";
 import { useErrorNotice } from "../../lib/use-error-notice";
+import { useSessionActivity } from "../../lib/use-session-activity";
+import { applyDashboardActivity } from "../../lib/session-activity";
 
 export function useSessionDashboard() {
   const active = usePageActive();
+  const activity = useSessionActivity();
   const [snapshot, setSnapshot] = useState<SessionDashboardSnapshot | null>(null);
   const { notice, report, recover, dismiss } = useErrorNotice();
   const [loading, setLoading] = useState(true);
@@ -49,5 +52,5 @@ export function useSessionDashboard() {
       window.removeEventListener("focus", focus);
     };
   }, [active, refresh, recover]);
-  return { snapshot, notice, dismissError: dismiss, loading, refresh };
+  return { snapshot: applyDashboardActivity(snapshot, activity), notice, dismissError: dismiss, loading, refresh };
 }

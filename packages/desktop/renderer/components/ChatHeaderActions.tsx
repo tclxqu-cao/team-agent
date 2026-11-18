@@ -57,6 +57,7 @@ interface ChatHeaderActionsProps {
   onOpenHub?: () => void;
   onOpenCollaborationDashboard?: () => void;
   onOpenSessionDashboard?: () => void;
+  onOpenTaskSplit?: () => void;
   onOpenDesktopLive?: () => void;
   desktopLiveOpen?: boolean;
   filesOpen?: boolean;
@@ -78,6 +79,7 @@ export default function ChatHeaderActions({
   onOpenHub,
   onOpenCollaborationDashboard,
   onOpenSessionDashboard,
+  onOpenTaskSplit,
   onOpenDesktopLive,
   desktopLiveOpen = false,
   filesOpen = false,
@@ -99,6 +101,7 @@ export default function ChatHeaderActions({
       {webAppActions}
       {typeof window !== "undefined" && window.sharedServiceApi?.mobilePairing && <MobilePairingButton />}
       {onOpenSessionDashboard && <button type="button" onClick={onOpenSessionDashboard} title="进行中的 Agent 会话" aria-label="打开进行中的 Agent 会话" className="ui-icon-button chat-header-action"><RunningSessionsIcon size={17} aria-hidden="true"/></button>}
+      {onOpenTaskSplit && <button type="button" onClick={onOpenTaskSplit} title="任务分屏" aria-label="打开任务分屏" className="ui-icon-button chat-header-action"><PanelsTopLeft size={17} aria-hidden="true" /></button>}
       {onOpenCollaborationDashboard && <button
         type="button"
         onClick={onOpenCollaborationDashboard}

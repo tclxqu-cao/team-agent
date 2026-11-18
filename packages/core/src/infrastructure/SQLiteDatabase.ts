@@ -1,6 +1,7 @@
 import Database from "better-sqlite3";
 import { join } from "node:path";
 import { mkdirSync } from "node:fs";
+import { migrateTodoTables } from "./SQLiteTodoUnitOfWork";
 
 export class SQLiteDatabase {
   readonly db: Database.Database;
@@ -12,7 +13,9 @@ export class SQLiteDatabase {
     try {
       this.db.pragma("journal_mode = WAL");
       this.db.pragma("foreign_keys = ON");
-      this.migrate();
+      // Startup/build workers can open the same data root concurrently. Hold
+      // the write lock across schema inspection and ALTER, not just the DDL.
+      this.db.transaction(() => this.migrate()).immediate();
     } catch (error) {
       this.db.close();
       throw error;
@@ -329,6 +332,7 @@ export class SQLiteDatabase {
     this.migratePinnedCommands();
     this.migrateCommandHistoryExitCode();
     this.migrateEngineSwitch();
+    migrateTodoTables(this.db);
   }
 
   /** exit_code arrived after the first command_history release; NULL = captured before exit codes existed. */

@@ -2,7 +2,7 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AgentEvent } from "@agent/core";
 import { WorkBuddyClient } from "./workbuddy-client.js";
 import { WorkBuddyRuntimeAdapter } from "./workbuddy-runtime-adapter.js";
@@ -52,6 +52,21 @@ describe("WorkBuddy native stream-json adapter", () => {
     expect(second.at(-1)).toEqual({ type: "done", finalText: "CheckingAnswer" });
   });
 
+  it("keeps child text, tools and terminal packets out of the parent answer while exposing native task activity", async () => {
+    const { client, root } = await fixture();
+    const session = await client.create({ title: "Parent task", cwd: root });
+    const events = await collect(client.run(session.id, "SUBAGENT"));
+    expect(events.filter(event => event.type === "text_chunk")).toEqual([{ type: "text_chunk", text: "parent answer" }]);
+    expect(events.filter(event => event.type === "done")).toEqual([{ type: "done", finalText: "parent answer" }]);
+    expect(events.filter(event => event.type === "tool_call").map(event => event.toolCall.id)).toEqual(["parent-agent"]);
+    const activities = events.filter(event => event.type === "native_subagent_update").map(event => event.activity);
+    expect(activities[0]).toMatchObject({ taskId: "child-task", parentToolCallId: "parent-agent", status: "running", messages: [] });
+    expect(activities.at(-1)).toMatchObject({ status: "completed", summary: "child complete" });
+    expect(activities.at(-1)?.messages.map(message => message.content)).toEqual(["child answer", "", "child file"]);
+    expect(activities.at(-1)?.messages[1].toolCalls?.[0].id).toBe("child-read");
+    expect(activities.at(-1)?.messages[2]).toMatchObject({ role: "tool", toolCallId: "child-read" });
+  });
+
   it.each([
     ["NATIVE_AUTH_REQUIRED", "AUTHENTICATION_REQUIRED", "required"],
     ["NATIVE_AUTH_FAILED", "AUTHENTICATION_FAILED", "failed"],
@@ -77,6 +92,47 @@ describe("WorkBuddy native stream-json adapter", () => {
     const resumed = makeClient();
     const events = await collect(resumed.run(created.id, "RECALL"));
     expect(events.at(-1)).toEqual({ type: "done", finalText: "AGENTROAM_NATIVE_CONTEXT" });
+  });
+
+  it("passes scoped MCP command, arguments and environment to both new and resumed native launches", async () => {
+    const { client, root, makeClient } = await fixture();
+    const session = await client.create({ title: "Scoped Todo", cwd: root });
+    const todoMcp = { command: "C:\\Program Files\\Node\\node.exe", args: ["C:\\Agent Roam\\todo.mjs"], env: { AGENTROAM_TODO_DESCRIPTOR: "C:\\Scoped Data\\todo.json" } };
+    expect((await collect(client.run(session.id, "VERIFY_TODO_MCP", undefined, { todoMcp }))).at(-1))
+      .toEqual({ type: "done", finalText: "TODO_MCP_DECLARED" });
+    await client.dispose();
+    expect((await collect(makeClient().run(session.id, "VERIFY_TODO_MCP", undefined, { todoMcp }))).at(-1))
+      .toEqual({ type: "done", finalText: "TODO_MCP_DECLARED" });
+  });
+
+  it("does not send a model prompt after the native Todo MCP initialization reports failure", async () => {
+    const { client, root } = await fixture();
+    const session = await client.create({ title: "Failed Todo MCP", cwd: root });
+    const events = await collect(client.run(session.id, "VERIFY_TODO_MCP", undefined, {
+      todoMcp: { command: "node", args: ["todo.mjs"], env: { AGENTROAM_TODO_DESCRIPTOR: "/scoped/todo.json", FIXTURE_TODO_MCP_FAILURE: "1" } },
+    }));
+    expect(events).toEqual([{ type: "error", code: "NATIVE_PROTOCOL_ERROR", message: expect.stringContaining("Todo MCP could not initialize") }]);
+    expect((await client.read(session.id)).messages).toEqual([]);
+  });
+
+  it("retains a new draft's scoped Todo MCP even when run has no repeated configuration", async () => {
+    const { client, root } = await fixture();
+    const todoMcp = { command: "node", args: ["todo.mjs"], env: { AGENTROAM_TODO_DESCRIPTOR: "/scoped/draft.json" } };
+    const session = await client.create({ title: "Scoped draft", cwd: root, todoMcp });
+    expect((await collect(client.run(session.id, "VERIFY_TODO_MCP"))).at(-1))
+      .toEqual({ type: "done", finalText: "TODO_MCP_DECLARED" });
+  });
+
+  it("does not send after Stop when Todo MCP initialization finishes before the interrupt reply", async () => {
+    const { client, root } = await fixture();
+    const session = await client.create({ title: "Cancel initialization", cwd: root });
+    const completed = collect(client.run(session.id, "Never send", undefined, {
+      todoMcp: { command: "node", args: ["todo.mjs"], env: { AGENTROAM_TODO_DESCRIPTOR: "/scoped/todo.json", FIXTURE_INITIALIZE_DELAY: "50", FIXTURE_INTERRUPT_DELAY: "150" } },
+    }));
+    await vi.waitFor(() => expect((client as unknown as { runs: Map<string, unknown> }).runs.has(session.id)).toBe(true));
+    await client.abort(session.id);
+    expect(await completed).toEqual([{ type: "turn_aborted" }]);
+    expect((await client.read(session.id)).messages).toEqual([]);
   });
 
   it("requires an explicit permission answer even if arbitrary tool input contains questions", async () => {

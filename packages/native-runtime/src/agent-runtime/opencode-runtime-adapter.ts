@@ -59,6 +59,7 @@ import type {
   WorkspaceSessionQuery,
 } from "./types.js";
 import { RuntimeSessionError } from "./types.js";
+import type { NativeTodoMcpConfiguration } from "./runtime-tool-injection.js";
 
 const execFileAsync = promisify(execFile);
 // Kept in sync with the CLI minimum by checkRuntimeVersionDrift.
@@ -107,6 +108,7 @@ interface OpenCodePagerState {
 
 export interface OpenCodeServerPort {
   client(): Promise<OpenCodeRuntimeClient>;
+  waitForTodoMcp?(directory: string, signal?: AbortSignal): Promise<void>;
   subscribe(
     listener: (event: OpenCodeServerEvent) => void,
     onFailure?: (error: Error) => void,
@@ -137,6 +139,13 @@ export class OpenCodeRuntimeAdapter implements AgentRuntimeAdapter {
   private readonly pagerStates = new Map<string, OpenCodePagerState>();
   private unsubscribe: (() => void) | null = null;
   private availabilityPromise: Promise<void> | null = null;
+  private disposed = false;
+  private disposePromise?: Promise<void>;
+  private readonly todoConfigurations = new Map<string, NativeTodoMcpConfiguration>();
+  private readonly todoRuns = new Map<string, OpenCodeRuntimeAdapter>();
+  private readonly runAdmissions = new Map<string, { controller: AbortController; adapter?: OpenCodeRuntimeAdapter }>();
+  private readonly beforePrompt?: (sessionId: string, directory: string) => Promise<void>;
+  private readonly todoServerFactory: (configuration: NativeTodoMcpConfiguration) => OpenCodeServerPort;
 
   constructor(options: {
     server?: OpenCodeServerPort;
@@ -145,17 +154,23 @@ export class OpenCodeRuntimeAdapter implements AgentRuntimeAdapter {
     environment?: NodeJS.ProcessEnv;
     dataRoot?: string;
     onApprovalResolved?: (questionId: string) => void;
+    todoServerFactory?: (configuration: NativeTodoMcpConfiguration) => OpenCodeServerPort;
+    beforePrompt?: (sessionId: string, directory: string) => Promise<void>;
   } = {}) {
     this.executable = options.executable?.trim() || "opencode";
     this.unavailableError = options.unavailableError?.trim() || undefined;
     this.validateExecutable = options.server === undefined;
     this.onApprovalResolved = options.onApprovalResolved;
+    this.beforePrompt = options.beforePrompt;
     this.dataRoot = options.dataRoot ?? resolveOpenCodeDataRoot(options.environment);
     this.server = options.server ?? new OpenCodeServerClient({
       executable: this.executable,
       unavailableError: this.unavailableError,
       environment: options.environment,
     });
+    this.todoServerFactory = options.todoServerFactory ?? (todoMcp => new OpenCodeServerClient({
+      executable: this.executable, unavailableError: this.unavailableError, environment: options.environment, todoMcp,
+    }));
   }
 
   async health(): Promise<RuntimeHealth> {
@@ -283,6 +298,8 @@ export class OpenCodeRuntimeAdapter implements AgentRuntimeAdapter {
   }
 
   async getSessionSummary(nativeSessionId: string): Promise<UnifiedSessionSummary> {
+    const todoRun = this.todoRuns.get(nativeSessionId);
+    if (todoRun) return todoRun.getSessionSummary(nativeSessionId);
     const client = await this.getClient();
     const directory = await this.resolveDirectory(nativeSessionId);
     try {
@@ -298,6 +315,8 @@ export class OpenCodeRuntimeAdapter implements AgentRuntimeAdapter {
   }
 
   async getSession(nativeSessionId: string): Promise<UnifiedSessionDetail> {
+    const todoRun = this.todoRuns.get(nativeSessionId);
+    if (todoRun) return todoRun.getSession(nativeSessionId);
     const client = await this.getClient();
     const directory = await this.resolveDirectory(nativeSessionId);
     try {
@@ -327,6 +346,8 @@ export class OpenCodeRuntimeAdapter implements AgentRuntimeAdapter {
    * per message fingerprint so flipping pages skips re-mapping.
    */
   async getSessionPaged(nativeSessionId: string, query: SessionHistoryQuery): Promise<UnifiedSessionDetail> {
+    const todoRun = this.todoRuns.get(nativeSessionId);
+    if (todoRun) return todoRun.getSessionPaged(nativeSessionId, query);
     const client = await this.getClient();
     const directory = await this.resolveDirectory(nativeSessionId);
     let session: Session;
@@ -407,6 +428,7 @@ export class OpenCodeRuntimeAdapter implements AgentRuntimeAdapter {
       throwOnError: true,
     })).data;
     this.sessionDirectories.set(session.id, session.directory);
+    if (options.todoMcp) this.todoConfigurations.set(session.id, options.todoMcp);
     return openCodeSessionToSummary(session, { type: "idle" });
   }
 
@@ -441,13 +463,78 @@ export class OpenCodeRuntimeAdapter implements AgentRuntimeAdapter {
     _agentName?: string,
     options?: RuntimeRunOptions,
   ): AsyncIterable<AgentEvent> {
-    if (this.activeRuns.has(nativeSessionId)) {
+    if (this.disposed) throw new RuntimeSessionError("OpenCode runtime has been disposed", "RUNTIME_UNAVAILABLE");
+    // Reserve before the first await for both plain and Todo-enabled turns.
+    if (this.runAdmissions.has(nativeSessionId)) {
       throw new RuntimeSessionError("OpenCode session is already running", "SESSION_ALREADY_RUNNING");
     }
+    const admission = { controller: new AbortController(), adapter: undefined as OpenCodeRuntimeAdapter | undefined };
+    this.runAdmissions.set(nativeSessionId, admission);
+    try {
+      yield* this.runAdmitted(nativeSessionId, input, images, _agentIds, _agentName, options, admission);
+    } catch (error) {
+      if (admission.controller.signal.aborted) yield { type: "turn_aborted" };
+      else throw error;
+    } finally {
+      try { await admission.adapter?.dispose(); }
+      finally {
+        this.runAdmissions.delete(nativeSessionId);
+        this.todoRuns.delete(nativeSessionId);
+        this.ownedSessions.delete(nativeSessionId);
+      }
+    }
+  }
+
+  private async *runAdmitted(
+    nativeSessionId: string,
+    input: string,
+    images: string[] | undefined,
+    agentIds: string[] | undefined,
+    agentName: string | undefined,
+    options: RuntimeRunOptions | undefined,
+    admission: { controller: AbortController; adapter?: OpenCodeRuntimeAdapter },
+  ): AsyncIterable<AgentEvent> {
+    const signal = admission.controller.signal;
+    const todoMcp = options?.todoMcp ?? this.todoConfigurations.get(nativeSessionId);
+    if (todoMcp) {
+      const detail = await this.getSessionSummary(nativeSessionId);
+      if (signal.aborted) { yield { type: "turn_aborted" }; return; }
+      if (detail.occupancy === "owned-externally") throw new RuntimeSessionError("OpenCode session is open in another client", "SESSION_OCCUPIED");
+      const server = this.todoServerFactory(todoMcp);
+      const adapter = new OpenCodeRuntimeAdapter({
+        server, executable: this.executable, dataRoot: this.dataRoot, onApprovalResolved: this.onApprovalResolved,
+        // Isolated hosts do not see tasks started in the shared host. Recheck
+        // that host after initialization, immediately before the actual send.
+        beforePrompt: async (id, directory) => {
+          const client = await this.getClient();
+          const statuses = (await client.session.status({ query: { directory }, throwOnError: true })).data;
+          const status = statuses[id];
+          if (status?.type === "busy" || status?.type === "retry") {
+            throw new RuntimeSessionError("OpenCode session is open in another client", "SESSION_OCCUPIED");
+          }
+        },
+      });
+      admission.adapter = adapter;
+      this.todoRuns.set(nativeSessionId, adapter);
+      this.todoConfigurations.set(nativeSessionId, todoMcp);
+      this.ownedSessions.add(nativeSessionId);
+      // OpenCode scopes MCP to its host/location. Give this turn its own host
+      // rather than installing a credential into the shared discovery host.
+      if (!server.waitForTodoMcp) throw new RuntimeSessionError("OpenCode Todo MCP discovery is unavailable", "OPERATION_NOT_SUPPORTED");
+      await server.waitForTodoMcp(detail.cwd, signal);
+      if (signal.aborted) { yield { type: "turn_aborted" }; return; }
+      yield* adapter.run(nativeSessionId, input, images, agentIds, agentName, { ...options, todoMcp: undefined });
+      return;
+    }
     const detail = await this.getSessionSummary(nativeSessionId);
+    if (signal.aborted) { yield { type: "turn_aborted" }; return; }
     if (detail.occupancy === "owned-externally") {
       throw new RuntimeSessionError("OpenCode session is open in another client", "SESSION_OCCUPIED");
     }
+    const client = await this.getClient();
+    if (signal.aborted) { yield { type: "turn_aborted" }; return; }
+    await this.beforePrompt?.(nativeSessionId, detail.cwd);
+    if (signal.aborted) { yield { type: "turn_aborted" }; return; }
     const queue = new AsyncEventQueue<AgentEvent>();
     const run: ActiveRun = {
       queue,
@@ -462,7 +549,6 @@ export class OpenCodeRuntimeAdapter implements AgentRuntimeAdapter {
     this.activeRuns.set(nativeSessionId, run);
     this.ownedSessions.add(nativeSessionId);
     try {
-      const client = await this.getClient();
       const messageID = `msg_${randomUUID()}`;
       run.messageRoles.set(messageID, "user");
       const imageParts = parseImageDataUrls(images).map((image, index) => ({
@@ -485,6 +571,7 @@ export class OpenCodeRuntimeAdapter implements AgentRuntimeAdapter {
       });
       for await (const event of queue) yield event;
     } catch (error) {
+      if (signal.aborted) { yield { type: "turn_aborted" }; return; }
       logGlobal("error", "opencode-adapter", "opencode run failed", error, {
         nativeSessionId,
         message: errorMessage(error),
@@ -500,18 +587,25 @@ export class OpenCodeRuntimeAdapter implements AgentRuntimeAdapter {
     }
   }
 
-  async steer(nativeSessionId: string, input: string): Promise<boolean> {
+  readonly supportsImageSteering = true;
+
+  async steer(nativeSessionId: string, input: string, _messageId?: string, images?: string[]): Promise<boolean> {
+    const todoRun = this.todoRuns.get(nativeSessionId);
+    if (todoRun) return todoRun.steer(nativeSessionId, input, _messageId, images);
     const run = this.activeRuns.get(nativeSessionId);
-    if (!run || !input.trim()) return false;
+    if (!run || (!input.trim() && !images?.length)) return false;
     const client = await this.getClient();
-    if (this.activeRuns.get(nativeSessionId) !== run) return false;
+    if (this.activeRuns.get(nativeSessionId) !== run || this.runAdmissions.get(nativeSessionId)?.controller.signal.aborted) return false;
     const messageID = `msg_${randomUUID()}`;
     run.messageRoles.set(messageID, "user");
     try {
       await client.session.promptAsync({
         path: { id: nativeSessionId },
         query: { directory: run.cwd },
-        body: { messageID, parts: [{ type: "text", text: input }] },
+        body: { messageID, parts: [{ type: "text", text: input }, ...parseImageDataUrls(images).map((image, index) => ({
+          type: "file" as const, mime: image.mimeType, filename: `image-${index + 1}.${image.extension}`,
+          url: `data:${image.mimeType};base64,${image.base64}`,
+        }))] },
         throwOnError: true,
       });
       return true;
@@ -522,7 +616,21 @@ export class OpenCodeRuntimeAdapter implements AgentRuntimeAdapter {
   }
 
   async abort(nativeSessionId: string): Promise<void> {
+    if (!nativeSessionId) {
+      await Promise.all([...this.runAdmissions.keys()].map(id => this.abort(id)));
+      return;
+    }
+    const admission = this.runAdmissions.get(nativeSessionId);
+    if (!admission && !this.activeRuns.has(nativeSessionId)) return;
+    admission?.controller.abort();
+    if (admission?.adapter) {
+      await admission.adapter.abort(nativeSessionId);
+      await admission.adapter.dispose();
+      return;
+    }
+    if (admission && !this.activeRuns.has(nativeSessionId)) return;
     const ids = nativeSessionId ? [nativeSessionId] : [...this.activeRuns.keys()];
+    if (!ids.length) return;
     const client = await this.getClient();
     await Promise.all(ids.map(async (id) => {
       const directory = await this.resolveDirectory(id);
@@ -536,6 +644,9 @@ export class OpenCodeRuntimeAdapter implements AgentRuntimeAdapter {
   }
 
   async answerQuestion(questionId: string, answer: RuntimeQuestionAnswer): Promise<boolean> {
+    for (const adapter of this.todoRuns.values()) {
+      if (await adapter.answerQuestion(questionId, answer)) return true;
+    }
     const question = this.pendingQuestions.get(questionId);
     if (question) {
       const { group, index } = question;
@@ -589,18 +700,30 @@ export class OpenCodeRuntimeAdapter implements AgentRuntimeAdapter {
   }
 
   async dispose(): Promise<void> {
-    this.unsubscribe?.();
-    this.unsubscribe = null;
-    this.pendingQuestions.clear();
-    this.resolvedQuestionRequests.clear();
-    await this.server.dispose();
+    if (this.disposePromise) return this.disposePromise;
+    this.disposed = true;
+    this.disposePromise = (async () => {
+      for (const admission of this.runAdmissions.values()) admission.controller.abort();
+      for (const run of this.activeRuns.values()) { run.queue.push({ type: "turn_aborted" }); run.queue.close(); }
+      await Promise.all([...this.todoRuns.values()].map(adapter => adapter.dispose()));
+      this.todoRuns.clear();
+      this.todoConfigurations.clear();
+      this.unsubscribe?.();
+      this.unsubscribe = null;
+      this.pendingQuestions.clear();
+      this.resolvedQuestionRequests.clear();
+      await this.server.dispose();
+    })();
+    return this.disposePromise;
   }
 
   private async getClient() {
+    if (this.disposed) throw new RuntimeSessionError("OpenCode runtime has been disposed", "RUNTIME_UNAVAILABLE");
     if (this.validateExecutable) {
       this.availabilityPromise ??= this.ensureCompatibleExecutable();
       await this.availabilityPromise;
     }
+    if (this.disposed) throw new RuntimeSessionError("OpenCode runtime has been disposed", "RUNTIME_UNAVAILABLE");
     if (!this.unsubscribe) {
       this.unsubscribe = this.server.subscribe(
         (event) => this.handleEvent(event),

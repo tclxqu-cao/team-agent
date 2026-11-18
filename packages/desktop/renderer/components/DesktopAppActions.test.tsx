@@ -18,8 +18,20 @@ describe("DesktopAppActions", () => {
     expect(html).toContain("desktop-app-action--flow-studio");
   });
 
+  it("exposes the shared calendar in both desktop navigation layouts", () => {
+    const html = renderToStaticMarkup(createElement(DesktopAppActions, {
+      onOpenFlowStudio: () => {}, onOpenCalendar: () => {},
+    }));
+    expect(html).toContain('aria-label="打开日历"');
+    expect(app.match(/onOpenCalendar=\{openCalendar\}/g)).toHaveLength(3);
+    expect(app).toContain("<CalendarView loadOverview={loadCalendarOverview}");
+    expect(app).toContain("display: hubOpen || calendarOpen");
+    expect(app).toContain("useEffect(() => { setCalendarOpen(false); }, [selectedSessionId, selectedProjectId])");
+  });
+
   it("keeps the application toolbar out of the shared web shell", () => {
-    expect(app).toContain("{!webShell && (");
+    expect(app).toContain('{!webShell && navigationLayout === "classic" && (');
+    expect(app).toContain('headerAppActions={!webShell && navigationLayout !== "classic"');
     expect(app).toContain("<DesktopAppActions");
     expect(app).toContain("onOpenFlowStudio={handleOpenFlowStudio}");
     expect(app).toContain("openingFlowStudio={flowStudioOpening}");

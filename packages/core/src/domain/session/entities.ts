@@ -34,6 +34,8 @@ export interface SessionHistoryQuery {
   revision?: string;
   /** Native turn selected for on-demand execution-trace hydration. */
   turnId?: string;
+  /** Internal display projection; preserve full images for model/history consumers. */
+  imageView?: "source";
 }
 
 export interface SessionToolResultRef {

@@ -28,14 +28,19 @@ import { MacAccessibilityAdapter } from "./computer-use/mac-accessibility-adapte
 import { readDesktopLiveState, writeDesktopLiveState } from "./desktop-live-state.js";
 import { DesktopLiveCliProxy } from "./desktop-live-cli-proxy.js";
 import { SharedServiceConnection } from "./shared-service.js";
+import { DesktopRendererWindows, newSessionWindowQuery } from "./new-session-window.js";
 import { DesktopCodexSharingSetup } from "./codex-sharing-setup.js";
 import { DesktopRuntimeBootstrap } from "./runtime-bootstrap.js";
 import { DesktopUpdateService } from "./update-service.js";
 import { DesktopTaskCompletionNotifier } from "./task-completion-notifier.js";
+import { createDesktopNotificationSound } from "./notification-sound.js";
+import { DesktopNotificationSubscription } from "./notification-subscription.js";
 import { resolveTaskNotificationPreferences, type TaskCompletionNotification } from "@agent/core";
 import { directoryOpenMenuLabel, revealDirectoryWithShell, resolveDirectoryForOpen } from "./directory-context-menu.js";
+import { fileRevealMenuLabel, resolveFileForReveal } from "./file-context-menu.js";
 import { createDesktopPreviewResponse, DesktopFileWorkspaceService } from "./file-workspace-service.js";
 import { AIHubManager, type HubPaneRect } from "./ai-hub/manager.js";
+import { registerTaskPanePageIpc } from "./task-pane-pages.js";
 import { normalizeRelayImages, startAiHubRelay, type AiHubRelay } from "./ai-hub/relay.js";
 import { BrowserProfileImporter, HUB_PROFILE_DIR_NAME } from "./ai-hub/browser-profile-importer.js";
 import { ProfileImportStateStore } from "./ai-hub/import-state.js";
@@ -44,19 +49,15 @@ import { ChromeHubBridge } from "./ai-hub/chrome-bridge.js";
 import { isChromeHubSite, validChromeHubInput } from "./ai-hub/chrome-bridge-protocol.js";
 import { openExistingChrome, openChromeExtensions } from "./ai-hub/existing-chrome.js";
 import {
-  getTtsListeningMode,
   getVoiceCaptureSilenceTimeout,
   getWakeCommandSuffix,
   getVoiceCaptureAction,
   isWakeMatch,
   parseWakeControlLine,
   parseWakeTranscriptLine,
-  prepareTtsListening,
   replaceWakeCommandSuffix,
   routeVoiceServiceResult,
   shouldFinalizeVoiceCapture,
-  shouldAcceptBargeIn,
-  shouldAcceptTtsPlayback,
   shouldInvalidateVoiceProvider,
   shouldRearmIgnoredWakeKeyword,
   shouldRearmWakeOnlyCapture,
@@ -69,7 +70,6 @@ import {
 import {
   findVoiceServiceEntry,
   findVoiceServiceRuntime,
-  getVoiceServiceTtsEnvironment,
   VoiceServiceManager,
   type VoiceProvider,
 } from "./voice-service-manager.js";
@@ -106,6 +106,7 @@ const taskCompletionNotifier = new DesktopTaskCompletionNotifier(
   Notification,
   () => mainWindow,
   (message, error) => globalLogger.warn(message, error),
+  createDesktopNotificationSound(() => shell.beep(), (message, error) => globalLogger.warn(message, error)),
 );
 const desktopUpdateService = new DesktopUpdateService({
   version: app.getVersion(),
@@ -133,6 +134,7 @@ const aiHubManager = new AIHubManager({
   requestBrowserLogin: (siteId) => { void openAiHubInChrome(siteId).catch(() => {}); },
 });
 const FLOW_STUDIO_PAGE_ID = "flow-studio";
+registerTaskPanePageIpc(ipcMain, aiHubManager, () => mainWindow);
 aiHubManager.subscribe((event) => {
   mainWindow?.webContents.send("hub:event", event);
   if (event.siteId === FLOW_STUDIO_PAGE_ID) {
@@ -160,6 +162,8 @@ const appIconPath = [
   join(process.resourcesPath, "app.asar.unpacked", "assets", "app-icon.png"),
 ].find((candidate) => existsSync(candidate));
 const sharedService = new SharedServiceConnection(join(app.getPath("userData"), "shared-service.json"));
+const rendererWindows = new DesktopRendererWindows(id => sharedService.stop(id));
+const notificationSubscription = new DesktopNotificationSubscription(sharedService, join(app.getPath("userData"), "notification-cursors.json"), (n, prefs, serviceId, onRead) => taskCompletionNotifier.notifyPersistent(n, prefs, serviceId, onRead), error => globalLogger.warn("Notification subscription failed", error));
 const runtimeBootstrap = new DesktopRuntimeBootstrap(app.isPackaged, process.resourcesPath);
 const codexSharingSetup = new DesktopCodexSharingSetup({
   request: body => sharedService.json("/api/agent/codex-sharing", "POST", body),
@@ -185,7 +189,7 @@ const fileWorkspaceService = new DesktopFileWorkspaceService({
   },
 });
 const trustedServiceSender = (event: import("electron").IpcMainInvokeEvent) => {
-  if (event.sender !== mainWindow?.webContents || event.senderFrame !== event.sender.mainFrame) throw new Error("Untrusted desktop sender");
+  rendererWindows.assertSender(event);
 };
 ipcMain.handle("service:status", (event) => { trustedServiceSender(event); return sharedService.status(); });
 ipcMain.handle("service:mobile-pairing", async (event) => {
@@ -206,17 +210,21 @@ ipcMain.handle("service:bootstrap", async (event) => {
 ipcMain.handle("service:select", async (event, id: string) => {
   trustedServiceSender(event);
   const selected = await sharedService.select(id);
+  taskCompletionNotifier.setVisible({});
+  notificationSubscription.reconnect();
   await desktopLiveProxy.refresh().catch(() => undefined);
   return selected;
 });
 ipcMain.handle("service:request", (event, path: string, method: string, body?: string) => { trustedServiceSender(event); return sharedService.json(path, method, body); });
+ipcMain.handle("notification:visible", (event, target: { sessionId?: string; taskId?: string }) => { trustedServiceSender(event); taskCompletionNotifier.setVisible({ sessionId: typeof target?.sessionId === "string" ? target.sessionId.slice(0, 400) : undefined, taskId: typeof target?.taskId === "string" ? target.taskId.slice(0, 200) : undefined }); });
+ipcMain.handle("notification:read", (event, id: string, scope: import("./shared-service.js").NotificationReadScope) => { trustedServiceSender(event); return sharedService.readNotification(id, scope); });
 ipcMain.handle("service:stream", (event, id: string, path: string, lastEventId: string) => {
-  trustedServiceSender(event);
-  void sharedService.stream(id, path, lastEventId, (frame) => { if (!event.sender.isDestroyed()) event.sender.send("service:stream-frame", frame); }).catch(() => {
+  const internalId = rendererWindows.streamId(event, id);
+  void sharedService.stream(internalId, path, lastEventId, (frame) => { if (!event.sender.isDestroyed()) event.sender.send("service:stream-frame", { ...frame, id }); }).catch(() => {
     if (!event.sender.isDestroyed()) event.sender.send("service:stream-frame", { id, type: "error" });
   });
 });
-ipcMain.handle("service:stream-stop", (event, id: string) => { trustedServiceSender(event); sharedService.stop(id); });
+ipcMain.handle("service:stream-stop", (event, id: string) => rendererWindows.stopStream(event, id));
 ipcMain.handle("tool-policies:list", async (event) => {
   trustedServiceSender(event);
   return parseServiceJson(await sharedService.json("/api/tool-policies", "GET"));
@@ -256,12 +264,6 @@ const voiceServiceManager = new VoiceServiceManager({
   env: {
     VOICE_ASR_MODEL_DIR: process.env.VOICE_ASR_MODEL_DIR
       ?? join(app.getAppPath(), ".agent-data", "asr-models", "sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30"),
-    ...getVoiceServiceTtsEnvironment({
-      appPath: app.getAppPath(),
-      resourcesPath: process.resourcesPath,
-      isPackaged: app.isPackaged,
-      env: process.env,
-    }),
   },
 });
 let activeVoiceProvider: VoiceProvider | null = null;
@@ -303,6 +305,7 @@ function createWindow(): void {
     title: "agentroam",
   });
   const window = mainWindow;
+  rendererWindows.register(window);
   // 渲染进程崩溃与消失严格落盘(按天错误日志)。
   window.webContents.on("render-process-gone", (_event, details) => {
     globalLogger.error("renderer process gone", undefined, {
@@ -315,7 +318,6 @@ function createWindow(): void {
   });
   window.on("closed", () => {
     if (mainWindow === window) mainWindow = null;
-    sharedService.closeStreams();
   });
 
   const port = process.env.VITE_PORT ?? "5173";
@@ -327,6 +329,45 @@ function createWindow(): void {
     mainWindow.loadFile(join(__dirname, "../../renderer-dist/index.html"));
   }
 }
+
+ipcMain.handle("window:new-session", async (event, options: unknown) => {
+  trustedServiceSender(event);
+  const query = newSessionWindowQuery(options);
+  const opener = process.platform === "darwin" ? BrowserWindow.fromWebContents(event.sender) : null;
+  const window = new BrowserWindow({
+    width: 680,
+    height: 480,
+    minWidth: 460,
+    minHeight: 360,
+    resizable: true,
+    fullscreenable: false,
+    // A modeless child can stay in the opener's macOS full-screen Space.
+    parent: opener?.isFullScreen() ? opener : undefined,
+    show: false,
+    title: "新建会话 · AgentRoam",
+    ...(appIconPath ? { icon: appIconPath } : {}),
+    webPreferences: {
+      preload: join(__dirname, "preload.cjs"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+    },
+  });
+  rendererWindows.register(window);
+  // This renderer owns IPC capabilities; links must never replace it with a remote page.
+  window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  window.webContents.on("will-navigate", event => event.preventDefault());
+  window.webContents.on("will-redirect", event => event.preventDefault());
+  window.once("ready-to-show", () => { if (!window.isDestroyed()) { window.show(); window.focus(); } });
+  try {
+    const isDev = process.env.NODE_ENV !== "production" && !app.isPackaged;
+    if (isDev) await window.loadURL(`http://localhost:${process.env.VITE_PORT ?? "5173"}/?${new URLSearchParams(query)}`);
+    else await window.loadFile(join(__dirname, "../../renderer-dist/index.html"), { query });
+  } catch (error) {
+    if (!window.isDestroyed()) window.destroy();
+    throw error;
+  }
+});
 
 // ── IPC: Window control (hide/restore for voice-wake background mode) ──
 
@@ -480,7 +521,6 @@ let wakeVariants: string[] = ["小智"];
 // true while the renderer asked for wake listening; used to auto-restart
 // the helper if it crashes while the window stays hidden.
 let wakeDesired = false;
-let wakeSuspendedForTts = false;
 let dictationActive = false;
 
 // Homophone groups for common wake-word characters, so ASR mishearings like
@@ -561,15 +601,15 @@ function finalizeCapture(): void {
   } else {
     console.warn("[wake] capture ended with no command");
   }
-  if (!ttsSpeaking && wakeProcMode === "barge-in") {
+  if (wakeProcMode === "barge-in") {
     setTimeout(() => {
-      if (ttsSpeaking || wakeProcMode !== "barge-in") return;
+      if (wakeProcMode !== "barge-in") return;
       stopWakeProc();
       if (wakeDesired) launchWakeListener("wake");
     }, 0);
-  } else if (!ttsSpeaking && wakeProcMode === "wake" && wakeVoiceClient) {
+  } else if (wakeProcMode === "wake" && wakeVoiceClient) {
     setTimeout(() => {
-      if (ttsSpeaking || wakeProcMode !== "wake" || !wakeVoiceClient) return;
+      if (wakeProcMode !== "wake" || !wakeVoiceClient) return;
       stopWakeProc();
       if (wakeDesired) void launchWakeListener("wake");
     }, 0);
@@ -598,9 +638,7 @@ function replaceCaptureText(heard: string): void {
 
 function desiredWakeHelperMode(): WakeHelperMode {
   if (dictationActive) return "dictation";
-  return ttsSpeaking && getTtsListeningMode(conversation) === "barge-in"
-    ? "barge-in"
-    : "wake";
+  return "wake";
 }
 
 async function launchWakeListener(
@@ -725,14 +763,11 @@ async function launchWakeListener(
   onLine = (line: string) => {
     const control = parseWakeControlLine(line);
     if (control === "barge-in") {
-      interruptTtsForBargeIn();
+      if (conversation && !capturing) startCapture("", true);
       return;
     }
     const transcript = parseWakeTranscriptLine(line);
     if (transcript) {
-      // Echo protection: while the app is speaking, the mic hears the
-      // speaker — those transcripts must never trigger anything.
-      if (ttsSpeaking) return;
       const { heard, isFinal } = transcript;
       console.warn("[wake] heard:", heard);
       if (dictationActive) {
@@ -819,9 +854,9 @@ async function launchWakeListener(
     if (capturing) finalizeCapture();
     // Auto-recover: relaunch the helper after an unexpected exit/crash
     // while wake listening is desired (warm recognizer = reliable wake).
-    if (shouldRestartWakeListener(wakeDesired, wakeSuspendedForTts)) {
+    if (shouldRestartWakeListener(wakeDesired, false)) {
       setTimeout(() => {
-        if (shouldRestartWakeListener(wakeDesired, wakeSuspendedForTts) && !wakeProc) {
+        if (shouldRestartWakeListener(wakeDesired, false) && !wakeProc) {
           console.warn("[wake] auto-restarting helper");
           void launchWakeListener();
         }
@@ -885,160 +920,14 @@ ipcMain.handle("task-notification:show", (_event, rawNotification: unknown, rawP
   return taskCompletionNotifier.notify(notification, preferences);
 });
 
-// ── Service TTS + two-way voice conversation ────────────────────────────
-let ttsSpeaking = false;
-let ttsGraceTimer: NodeJS.Timeout | null = null;
-let ttsAbortController: AbortController | null = null;
-let ttsGeneration = 0;
+// ── Voice conversation routing ─────────────────────────────────────────
 let conversation = false;
 let conversationTimer: NodeJS.Timeout | null = null;
-
-function cancelActiveTts(): number {
-  const cancelledGeneration = ttsGeneration;
-  ttsGeneration += 1;
-  ttsAbortController?.abort();
-  ttsAbortController = null;
-  if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) {
-    mainWindow.webContents.send("tts:flush", { generation: cancelledGeneration });
-  }
-  return cancelledGeneration;
-}
-
-function resumeWakeAfterTts(): void {
-  wakeSuspendedForTts = false;
-  ttsSpeaking = false;
-  if (wakeProcMode === "barge-in") stopWakeProc();
-  if (shouldRestartWakeListener(wakeDesired, wakeSuspendedForTts) && !wakeProc) {
-    void launchWakeListener("wake");
-  }
-}
-
-function interruptTtsForBargeIn(): void {
-  if (!shouldAcceptBargeIn(ttsSpeaking, conversation)) return;
-  console.warn("[tts] barge-in detected, stopping current speech");
-  const generation = cancelActiveTts();
-  if (ttsGraceTimer) { clearTimeout(ttsGraceTimer); ttsGraceTimer = null; }
-  ttsSpeaking = false;
-  wakeSuspendedForTts = false;
-  if (!capturing) startCapture("", true);
-  mainWindow?.webContents.send("tts:end", { generation });
-}
-
-function finishTtsPlayback(generation: number): void {
-  if (!shouldAcceptTtsPlayback(generation, ttsGeneration, ttsSpeaking)) return;
-  ttsAbortController = null;
-  ttsSpeaking = false;
-  mainWindow?.webContents.send("tts:end", { generation });
-  if (ttsGraceTimer) clearTimeout(ttsGraceTimer);
-  ttsGraceTimer = setTimeout(resumeWakeAfterTts, 100);
-}
-
-function synthesizeAndStream(
-  text: string,
-  generation: number,
-  controller: AbortController,
-): Promise<boolean> {
-  let resolveStarted!: (started: boolean) => void;
-  const started = new Promise<boolean>((resolve) => { resolveStarted = resolve; });
-  let startSettled = false;
-  let provider: VoiceProvider | null = null;
-  const settleStart = (value: boolean) => {
-    if (startSettled) return;
-    startSettled = true;
-    resolveStarted(value);
-  };
-
-  void (async () => {
-    try {
-      provider = await connectVoiceProvider();
-      if (provider.kind !== "service") throw new Error("TTS model service is unavailable");
-      await provider.client.streamSynthesize({
-        sessionId: `tts-${process.pid}`,
-        generation,
-        text,
-        voice: "Serena",
-        speed: 1,
-      }, controller.signal, {
-        onStarted: (metadata) => {
-          if (!shouldAcceptTtsPlayback(generation, ttsGeneration, ttsSpeaking)) {
-            controller.abort();
-            settleStart(false);
-            return;
-          }
-          console.warn("[tts] stream started", { generation, sampleRate: metadata.sampleRate });
-          mainWindow?.webContents.send("tts:start", metadata);
-          settleStart(true);
-        },
-        onPcm: (pcm) => {
-          if (!shouldAcceptTtsPlayback(generation, ttsGeneration, ttsSpeaking)) return;
-          const bytes = pcm.buffer.slice(pcm.byteOffset, pcm.byteOffset + pcm.byteLength);
-          mainWindow?.webContents.send("tts:pcm", { generation, pcm: bytes });
-        },
-      });
-      if (!shouldAcceptTtsPlayback(generation, ttsGeneration, ttsSpeaking)) return;
-      ttsAbortController = null;
-      mainWindow?.webContents.send("tts:stream-end", { generation });
-    } catch (error) {
-      settleStart(false);
-      if (controller.signal.aborted) return;
-      if (provider) invalidateVoiceProvider(provider);
-      console.warn("[tts] model stream failed; playback cancelled:", error);
-      if (shouldAcceptTtsPlayback(generation, ttsGeneration, ttsSpeaking)) {
-        ttsAbortController = null;
-        mainWindow?.webContents.send("tts:flush", { generation });
-        mainWindow?.webContents.send("tts:end", { generation });
-        resumeWakeAfterTts();
-      }
-    }
-  })();
-  return started;
-}
 
 function endConversation(): void {
   conversation = false;
   if (conversationTimer) { clearTimeout(conversationTimer); conversationTimer = null; }
 }
-
-ipcMain.handle("tts:speak", async (_event, text: string) => {
-  const clean = (text || "")
-    .replace(/[*_#`>~\[\](){}|]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 600);
-  if (!clean) return { ok: false };
-  cancelActiveTts();
-  const generation = ttsGeneration;
-  const controller = new AbortController();
-  ttsAbortController = controller;
-  if (ttsGraceTimer) { clearTimeout(ttsGraceTimer); ttsGraceTimer = null; }
-  ttsSpeaking = true;
-  const listeningMode = getTtsListeningMode(conversation);
-  wakeSuspendedForTts = listeningMode === "suspended";
-  await prepareTtsListening(
-    listeningMode,
-    wakeProcMode,
-    stopWakeProc,
-    () => launchWakeListener("barge-in"),
-  );
-  if (!shouldAcceptTtsPlayback(generation, ttsGeneration, ttsSpeaking)) {
-    return { ok: false };
-  }
-  return { ok: await synthesizeAndStream(clean, generation, controller) };
-});
-
-ipcMain.handle("tts:stop", () => {
-  const generation = cancelActiveTts();
-  if (ttsGraceTimer) { clearTimeout(ttsGraceTimer); ttsGraceTimer = null; }
-  ttsSpeaking = false;
-  mainWindow?.webContents.send("tts:end", { generation });
-  resumeWakeAfterTts();
-  return { ok: true };
-});
-
-ipcMain.handle("tts:playback-ended", (_event, generation: number) => {
-  finishTtsPlayback(generation);
-  return { ok: true };
-});
 
 // Conversation mode: while on, any utterance is captured as a follow-up
 // command (no wake word needed). Auto-expires after 90s; the renderer
@@ -1055,8 +944,11 @@ ipcMain.handle("wake:conversation", (_event, on: boolean) => {
 });
 
 // Business operations use the shared service. Only device file pickers stay local.
-ipcMain.handle("file:dialog:open", async () => {
-  const result = await dialog.showOpenDialog(mainWindow!, { properties: ["openDirectory", "createDirectory"], title: "选择项目文件夹", buttonLabel: "选择此文件夹" });
+ipcMain.handle("file:dialog:open", async (event) => {
+  trustedServiceSender(event);
+  const owner = BrowserWindow.fromWebContents(event.sender);
+  if (!owner) throw new Error("Directory picker window is unavailable");
+  const result = await dialog.showOpenDialog(owner, { properties: ["openDirectory", "createDirectory"], title: "选择项目文件夹", buttonLabel: "选择此文件夹" });
   return result.canceled ? null : result.filePaths[0];
 });
 ipcMain.handle("file-workspace:request", (event, method, params) => {
@@ -1074,6 +966,23 @@ ipcMain.handle("directory:show-context-menu", async (event, path: unknown) => {
         revealDirectoryWithShell(directory, (target) => shell.showItemInFolder(target));
       } catch (error) {
         globalLogger.error("failed to open project directory", error instanceof Error ? error : new Error(String(error)), { directory });
+      }
+    },
+  }]);
+  menu.popup(owner ? { window: owner } : undefined);
+  return { shown: true };
+});
+ipcMain.handle("file:show-context-menu", async (event, path: unknown) => {
+  trustedServiceSender(event);
+  const file = await resolveFileForReveal(path);
+  const owner = BrowserWindow.fromWebContents(event.sender) ?? mainWindow ?? undefined;
+  const menu = Menu.buildFromTemplate([{
+    label: fileRevealMenuLabel(),
+    click: () => {
+      try {
+        shell.showItemInFolder(file);
+      } catch (error) {
+        globalLogger.error("failed to reveal artifact file", error instanceof Error ? error : new Error(String(error)), { file });
       }
     },
   }]);
@@ -1251,6 +1160,7 @@ function registerAiHubWakeShortcut(): void {
 
 app.whenReady().then(async () => {
   await sharedService.initialize();
+  notificationSubscription.start();
   desktopLiveProxy.start();
   protocol.handle("agentroam-preview", (request) => createDesktopPreviewResponse(fileWorkspaceService, request));
   // 暴露完整辅助功能树（AX 驱动/自动化测试依赖）
@@ -1315,6 +1225,7 @@ let quitCleanupStarted = false;
 let quitCleanupFinished = false;
 
 app.on("before-quit", (event) => {
+  notificationSubscription.stop();
   if (quitCleanupFinished) return;
   event.preventDefault();
   if (quitCleanupStarted) return;
@@ -1326,9 +1237,6 @@ app.on("before-quit", (event) => {
   wakeDesired = false;
   dictationActive = false;
   endConversation();
-  if (ttsGraceTimer) { clearTimeout(ttsGraceTimer); ttsGraceTimer = null; }
-  ttsSpeaking = false;
-  cancelActiveTts();
   stopWakeProc();
   voiceServiceManager.close();
   aiHubRelay?.close();
@@ -1350,7 +1258,7 @@ app.on("window-all-closed", () => {
 });
 
 app.on("activate", () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
+  if (!mainWindow || mainWindow.isDestroyed()) {
     createWindow();
   } else if (mainWindow && !mainWindow.isVisible()) {
     // Dock click while hidden in voice-wake background mode → restore

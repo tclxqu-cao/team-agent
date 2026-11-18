@@ -284,12 +284,12 @@ describe("tool activity rows", () => {
   });
 });
 
-describe("native Claude Agent card", () => {
-  it("stays running after launch and renders nested public tool output", () => {
+describe("native subagent card", () => {
+  it.each(["Agent", "Task", "Workflow"])("keeps %s running after launch and renders nested public tool output", (name) => {
     const html = renderToStaticMarkup(createElement(ToolCallCard, {
       toolCall: {
         id: "agent-tool",
-        name: "Agent",
+        name,
         arguments: { prompt: "Inspect files", run_in_background: true },
         result: "Agent launched successfully",
       },
@@ -321,9 +321,9 @@ describe("native Claude Agent card", () => {
     expect(html).not.toContain("查看子会话");
   });
 
-  it("uses the child lifecycle for terminal labels and keeps an empty running layout stable", () => {
+  it.each(["Agent", "Task", "Workflow"])("uses %s child lifecycle for terminal labels and keeps an empty running layout stable", (name) => {
     const runningHtml = renderToStaticMarkup(createElement(ToolCallCard, {
-      toolCall: { id: "agent-tool", name: "Agent", arguments: {} },
+      toolCall: { id: "agent-tool", name, arguments: {} },
       nativeSubagent: {
         taskId: "task-1",
         parentToolCallId: "agent-tool",
@@ -333,7 +333,7 @@ describe("native Claude Agent card", () => {
       },
     }));
     const failedHtml = renderToStaticMarkup(createElement(ToolCallCard, {
-      toolCall: { id: "agent-tool", name: "Agent", arguments: {} },
+      toolCall: { id: "agent-tool", name, arguments: {} },
       nativeSubagent: {
         taskId: "task-1",
         parentToolCallId: "agent-tool",
@@ -347,5 +347,30 @@ describe("native Claude Agent card", () => {
     expect(runningHtml).toContain("子 agent 正在工作");
     expect(failedHtml).toContain("错误");
     expect(failedHtml).toContain("Unable to inspect");
+  });
+
+  it.each(["running", "completed", "failed"] as const)("uses %s child status in a collapsed activity after the launch tool returns", (status) => {
+    const html = renderToStaticMarkup(createElement(ToolCallActivity, {
+      toolCall: { id: "task-tool", name: "Task", arguments: {}, result: "Task launched" },
+      nativeSubagent: { taskId: "child", parentToolCallId: "task-tool", description: "Inspect", status, messages: [] },
+    }));
+    if (status === "running") expect(html).toContain('aria-busy="true"');
+    else expect(html).not.toContain('aria-busy="true"');
+    if (status === "failed") expect(html).toContain("var(--danger)");
+  });
+
+  it("preserves the native error flag on nested child tool results", () => {
+    const html = renderToStaticMarkup(createElement(ToolCallCard, {
+      toolCall: { id: "task-tool", name: "Task", arguments: {} },
+      nativeSubagent: {
+        taskId: "child", parentToolCallId: "task-tool", description: "Inspect", status: "failed",
+        messages: [
+          { role: "assistant", content: "", toolCalls: [{ id: "read", name: "Read", arguments: { file_path: "missing.txt" } }] },
+          { role: "tool", content: "File missing", toolCallId: "read", isError: true },
+        ],
+      },
+    }));
+    expect(html).toContain("native-subagent-activity__tool-result--error");
+    expect(html).toContain("File missing");
   });
 });

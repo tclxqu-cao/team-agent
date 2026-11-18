@@ -44,7 +44,7 @@ describe("SessionExecutionTrace", () => {
       renderContent={text => text} runtimeProgress={[]} nativeSubagents={{}} onLoadResult={vi.fn()}
     />);
     expect(html).toContain('aria-busy="true"');
-    expect(html).not.toContain("已工作");
+    expect(html).toContain("已工作 0 秒");
   });
 
   it("keeps a running process visible", () => {
@@ -52,9 +52,10 @@ describe("SessionExecutionTrace", () => {
     expect(html).toContain('data-message-id="session-execution:user:0"');
     expect(html).toContain("核对发送入口");
     expect(html).toContain("execution-activity-block");
-    expect(html.match(/execution-activity-block__preview--active/g)).toHaveLength(1);
+    expect(html.match(/execution-activity-block__preview--active/g)).toHaveLength(2);
     expect(html).not.toContain("rg sendTurn");
-    expect(html).not.toContain("execution-trace__summary");
+    expect(html).toContain("execution-trace__summary");
+    expect(html).toContain("已工作 0 秒");
   });
 
   it("unmounts a completed process and shows an accessible disclosure with timing", () => {

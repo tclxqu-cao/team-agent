@@ -3,6 +3,8 @@
 import type { ReasoningEffort } from "../model/entities.js";
 
 export interface TaskNotificationPreferences {
+  approvalEnabled?: boolean;
+  todoEnabled?: boolean;
   completionEnabled: boolean;
   soundEnabled: boolean;
   notifyWhileForeground: boolean;

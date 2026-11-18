@@ -46,6 +46,11 @@ export class UnifiedSessionService {
   private readonly activeSessionIds = new Set<string>();
   private healthCache: RuntimeHealth[] = [];
   private discoveryPromise: Promise<UnifiedSessionSummary[]> | null = null;
+  private readonly liveCatalog = new Map<AgentType, {
+    sessions?: UnifiedSessionSummary[];
+    pending?: Promise<UnifiedSessionSummary[]>;
+    expiresAt: number;
+  }>();
   private readonly detailCache = new Map<string, UnifiedSessionDetail>();
   private readonly queryIndexCache = new SessionQueryIndexCache();
 
@@ -129,6 +134,19 @@ export class UnifiedSessionService {
     return this.list(projectId);
   }
 
+  /** Each adapter publishes independently; a slow client cannot block other Agents. */
+  async liveSessions(): Promise<{ sessions: UnifiedSessionSummary[]; agentTypes: AgentType[] }> {
+    const projects = await this.listProjects();
+    for (const adapter of this.adapters.values()) {
+      const entry = this.liveCatalog.get(adapter.agentType);
+      if (!entry?.pending && (!entry || entry.expiresAt <= Date.now())) {
+        void this.discoverAdapter(adapter, projects);
+      }
+    }
+    const ready = [...this.liveCatalog].filter(([, entry]) => entry.sessions !== undefined);
+    return { sessions: ready.flatMap(([, entry]) => entry.sessions!), agentTypes: ready.map(([agentType]) => agentType) };
+  }
+
   invalidate(id: string): void {
     this.detailCache.delete(id);
     this.queryIndexCache.invalidate(id);
@@ -153,21 +171,33 @@ export class UnifiedSessionService {
 
   private async performDiscovery(): Promise<UnifiedSessionSummary[]> {
     const projects = await this.listProjects();
-    const batches = await Promise.all([...this.adapters.values()].map(async (adapter) => {
-      try {
-        const primary = await adapter.discoverSessions();
-        const sessions = adapter.agentType === "codex" && this.codexCompatibility
-          ? this.codexCompatibility.supplement(primary)
-          : primary;
-        return sessions.map((session) => associateProject(session, projects));
-      } catch (error) {
-        this.recordFailure(adapter.agentType, error);
-        return [];
-      }
-    }));
+    const batches = await Promise.all([...this.adapters.values()].map(adapter => this.discoverAdapter(adapter, projects)));
     return batches
       .flat()
       .sort((left, right) => right.updated.localeCompare(left.updated));
+  }
+
+  private discoverAdapter(adapter: AgentRuntimeAdapter, projects: ProjectLike[]): Promise<UnifiedSessionSummary[]> {
+    let entry = this.liveCatalog.get(adapter.agentType);
+    if (entry?.pending) return entry.pending;
+    if (!entry) {
+      entry = { expiresAt: 0 };
+      this.liveCatalog.set(adapter.agentType, entry);
+    }
+    const current = entry;
+    const request = Promise.resolve().then(() => adapter.discoverSessions()).then(primary => {
+      const sessions = adapter.agentType === "codex" && this.codexCompatibility
+        ? this.codexCompatibility.supplement(primary) : primary;
+      current.sessions = sessions.map(session => associateProject(session, projects));
+      current.expiresAt = Date.now() + 2_000;
+      return current.sessions;
+    }).catch(error => {
+      this.recordFailure(adapter.agentType, error);
+      current.expiresAt = Date.now() + 15_000;
+      return current.sessions ?? [];
+    }).finally(() => { if (current.pending === request) current.pending = undefined; });
+    current.pending = request;
+    return request;
   }
 
   async listChildren(parentId: string): Promise<UnifiedSessionSummary[]> {
@@ -437,7 +467,7 @@ export class UnifiedSessionService {
     this.invalidate(id);
   }
 
-  async steer(id: string, input: string, messageId?: string): Promise<boolean> {
+  async steer(id: string, input: string, messageId?: string, images?: string[]): Promise<boolean> {
     const { adapter, nativeSessionId } = this.resolveAdapter(id);
     if (!adapter.steer) {
       throw new RuntimeSessionError(
@@ -445,11 +475,15 @@ export class UnifiedSessionService {
         "OPERATION_NOT_SUPPORTED",
       );
     }
+    if (images?.length && !adapter.supportsImageSteering) {
+      throw new RuntimeSessionError("当前 Agent 不支持带图片的插入消息，原消息已保留在队列中", "OPERATION_NOT_SUPPORTED");
+    }
     if (!this.activeSessionIds.has(id) && adapter.agentType !== "copilot") {
       if (adapter.agentType !== "zcode") return false;
       const summary = adapter.getSessionSummary ? await adapter.getSessionSummary(nativeSessionId) : await adapter.getSession(nativeSessionId);
       if (!summary.externalGuideSupported || summary.readOnly || summary.status !== "running") return false;
     }
+    if (images?.length) return adapter.steer(nativeSessionId, input, messageId, images);
     return messageId === undefined
       ? adapter.steer(nativeSessionId, input)
       : adapter.steer(nativeSessionId, input, messageId);

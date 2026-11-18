@@ -1,9 +1,9 @@
 /**
- * Speech utilities — voice input (ASR) and voice output (TTS).
+ * Speech utilities — voice input (ASR) and wake-word listening.
  *
  * Desktop dictation prefers the native macOS Speech helper because Chromium's
  * recognition service is unavailable on the target network. Web Speech remains
- * a browser fallback; speech synthesis is used when native TTS is unavailable.
+ * a browser fallback.
  */
 
 // ── Types for the (untyped) webkitSpeechRecognition API ──────────────────
@@ -231,12 +231,4 @@ export function startWakeListener(opts: {
       try { rec?.abort(); } catch { /* already stopped */ }
     },
   };
-}
-
-// ── TTS: voice output ─────────────────────────────────────────────────────
-
-export function stopSpeaking(): void {
-  if (typeof window !== "undefined" && "speechSynthesis" in window) {
-    window.speechSynthesis.cancel();
-  }
 }

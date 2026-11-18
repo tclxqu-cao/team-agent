@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { postWebArtifactOpen, resolveWebArtifactPath } from "../../lib/artifact-links";
 import { parseRichInlineTokens, type RichInlineToken } from "../../lib/markdown-links";
+import { isPlainWebLinkClick, requestTaskPaneWebLink } from "../../lib/task-pane-web-links";
 
 const PREVIEW_LINES = 8;
 
@@ -41,7 +42,9 @@ export default function CollaborationMessageText({ text, cwd }: { text: string; 
       {messageTokens(text, cwd).map((token, index) => {
         if (token.type === "text") return token.value;
         if (token.type === "code") return <code key={index}>{token.value}</code>;
-        if (token.type === "link") return <a key={index} href={token.href} target="_blank" rel="noopener noreferrer">{token.label}</a>;
+        if (token.type === "link") return <a key={index} href={token.href} target="_blank" rel="noopener noreferrer" onClick={event => {
+          if (isPlainWebLinkClick(event) && requestTaskPaneWebLink(token.href)) event.preventDefault();
+        }}>{token.label}</a>;
         const path = resolveWebArtifactPath(token.path, cwd);
         if (!path) return token.raw;
         return <button key={index} type="button" className="collab-message-path" title={token.line ? `${path}:${token.line}` : path} aria-label={`查看文件：${token.label}`} onClick={() => {

@@ -69,7 +69,7 @@ export class SharedSettingsService {
           throw new SettingsValidationError("taskNotifications 必须是对象");
         }
         const raw = input.taskNotifications as Record<string, unknown>;
-        for (const key of ["completionEnabled", "soundEnabled", "notifyWhileForeground"] as const) {
+        for (const key of ["completionEnabled", "approvalEnabled", "todoEnabled", "soundEnabled", "notifyWhileForeground"] as const) {
           if (raw[key] !== undefined && typeof raw[key] !== "boolean") {
             throw new SettingsValidationError(`taskNotifications.${key} 必须是布尔值`);
           }

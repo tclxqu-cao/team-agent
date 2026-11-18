@@ -38,6 +38,8 @@ import {
 import type { CodexAppServerLaunchMode } from "./codex-app-server-launcher.js";
 import { CodexDesktopTools } from "./codex-desktop-tools.js";
 import { CodexDesktopContinuation } from "./codex-desktop-continuation.js";
+import { assertCodexTodoMcpReady, codexTodoMcpConfiguration, resumeCodexThreadWithTodo } from "./codex-todo-mcp.js";
+import type { NativeTodoMcpConfiguration } from "./runtime-tool-injection.js";
 import { codexAsyncQuestionId, codexQuestionHistory, codexQuestionReply, parseCodexAsyncQuestionId } from "./codex-questions.js";
 import {
   CodexRolloutActivityReader,
@@ -185,6 +187,7 @@ export function resolveCodexHome(
 
 export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
   readonly agentType = "codex" as const;
+  readonly supportsImageSteering = true;
   private readonly client: CodexAppServerClient;
   private readonly discoveryClient: CodexDiscoveryClient;
   private readonly desktopTools: Pick<CodexDesktopTools, "connect"> | null;
@@ -204,6 +207,9 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
   private readonly rolloutCommentaryReader: Pick<CodexRolloutCommentaryReader, "read">;
   private readonly rolloutUserMessageReader: Pick<CodexRolloutUserMessageReader, "read"> & Partial<Pick<CodexRolloutUserMessageReader, "readAsyncMessages" | "readCompletionDurations">>;
   private readonly agentMessagePhases = new Map<string, "commentary" | "final_answer">();
+  private readonly emittedSubagentItems = new Map<string, Set<string>>();
+  private readonly todoMcp = new Map<string, NativeTodoMcpConfiguration>();
+  private readonly freshTodoThreads = new Set<string>();
   /** Flipped off permanently only when the app-server lacks the paginated turn protocol. */
   private nativePagingSupported = true;
   /** Progressive full-item hydration per session; the summary skeleton stays the ordinal source of truth. */
@@ -216,6 +222,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
   /** Final responses observed on disk before Codex publishes task_complete. */
   private readonly finalizingAnswers = new Map<string, CodexRolloutFinalAnswer>();
   private readonly activeQueues = new Map<string, AsyncEventQueue<AgentEvent>>();
+  private readonly pendingTodoRuns = new Map<string, AbortController>();
   private readonly activeTurnIds = new Map<string, string>();
   private readonly runUsages = new Map<string, CodexRunUsage>();
   private readonly locallyInterruptedTurnIds = new Map<string, string>();
@@ -302,6 +309,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     this.client.onNotification((message) => this.handleNotification(message));
     this.client.setServerRequestHandler((message) => this.handleServerRequest(message));
     this.client.onExit((error) => {
+      this.freshTodoThreads.clear();
       for (const [id, queue] of this.activeQueues) {
         if (this.desktopContinuations.has(id)) continue;
         queue.push({ type: "error", code: "NATIVE_PROTOCOL_ERROR", message: error.message, ...this.runUsageMetadata(id) });
@@ -668,7 +676,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       : [];
 
     if (query.view === "core") {
-      const imageAttachments = await this.loadCoreImageAttachments(selectedSummaryTurns);
+      const imageAttachments = await this.loadCoreImageAttachments(selectedSummaryTurns, query.imageView === "source");
       const messages = codexSummaryTurnsToMessages(selectedSummaryTurns, imageAttachments, nativeSessionId, questionHistory);
       this.assignNativeHistoryIds(messages, skeleton, start, end);
       return {
@@ -859,7 +867,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
    * reported as an `omitted` attachment so the renderer can keep whatever it
    * already loaded and show a lightweight placeholder for the rest.
    */
-  private async loadCoreImageAttachments(turns: CodexTurn[]): Promise<Map<string, MessageAttachment>> {
+  private async loadCoreImageAttachments(turns: CodexTurn[], sourcesOnly = false): Promise<Map<string, MessageAttachment>> {
     const newestFirstPaths: string[] = [];
     const seen = new Set<string>();
     for (const turn of [...turns].reverse()) {
@@ -894,6 +902,10 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       }
       if (size < 0 || size > MAX_LOCAL_IMAGE_BYTES) {
         attachments.set(path, { type: "image", name, unavailable: true });
+        continue;
+      }
+      if (sourcesOnly) {
+        attachments.set(path, { type: "image", name, localImagePath: path });
         continue;
       }
       if (size > remaining) {
@@ -1181,16 +1193,32 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
 
   async create(options: CreateRuntimeSessionOptions): Promise<UnifiedSessionSummary> {
     this.ensureAvailable();
+    const injection = options.todoMcp ? codexTodoMcpConfiguration(options.todoMcp) : undefined;
     const response = await this.client.request<{ thread: CodexThread }>("thread/start", {
       cwd: options.cwd,
       threadSource: "customer-agent",
       ...(options.projectId ? { projectId: options.projectId } : {}),
+      ...(injection ? { config: injection.config } : {}),
     });
+    if (injection && options.todoMcp) {
+      if (options.todoMcp.readiness !== "background") {
+        try { await assertCodexTodoMcpReady(this.client, response.thread.id, injection.serverName); }
+        catch (error) {
+          await this.client.request("thread/unsubscribe", { threadId: response.thread.id }).catch(() => undefined);
+          throw error;
+        }
+      }
+      this.todoMcp.set(response.thread.id, { ...options.todoMcp, args: [...options.todoMcp.args], env: { ...options.todoMcp.env } });
+      // A never-sent native thread may not have a rollout yet. Keep its
+      // resident subscribed until the first real user turn. Optional MCPs
+      // initialize natively without holding up creation or the first send.
+      this.freshTodoThreads.add(response.thread.id);
+    }
     await this.client.request("thread/name/set", {
       threadId: response.thread.id,
       name: options.title,
     }).catch(() => undefined);
-    await this.client.request("thread/unsubscribe", { threadId: response.thread.id }).catch(() => undefined);
+    if (!injection) await this.client.request("thread/unsubscribe", { threadId: response.thread.id }).catch(() => undefined);
     return this.toSummary(
       { ...response.thread, name: options.title, projectId: response.thread.projectId ?? options.projectId },
       new Set(),
@@ -1264,23 +1292,44 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     // takeover so a stale marker does not block the send, and let a genuine
     // second writer fail the resume with SESSION_OCCUPIED below.
     const detail = await this.getSession(nativeSessionId);
+    const todoMcp = options?.todoMcp ?? this.todoMcp.get(nativeSessionId);
+    const requiresTodoMcp = Boolean(todoMcp && todoMcp.readiness !== "background");
+    if (requiresTodoMcp && detail.status === "running") {
+      throw new RuntimeSessionError("Codex 会话正在运行，不能替换该会话的待办工具配置。", "SESSION_OCCUPIED");
+    }
     const parsedImages = parseImageDataUrls(images);
 
     const queue = new AsyncEventQueue<AgentEvent>();
     const permissionMode = normalizeToolPermissionMode(options?.permissionMode);
+    const todoPreparation = requiresTodoMcp ? new AbortController() : undefined;
     let imageDirectory: string | null = null;
     let imageDirectoryReferencedByTurn = false;
     this.activeQueues.set(nativeSessionId, queue);
+    if (todoPreparation) this.pendingTodoRuns.set(nativeSessionId, todoPreparation);
     this.activePermissionModes.set(nativeSessionId, permissionMode);
     this.ownedThreads.add(nativeSessionId);
     if (options?.brokerRunId) this.activeBrokerRunIds.set(nativeSessionId, options.brokerRunId);
     try {
       try {
-        await this.client.request("thread/resume", {
-          threadId: nativeSessionId,
-          excludeTurns: true,
-        });
+        if (todoMcp) {
+          if (this.freshTodoThreads.has(nativeSessionId)) {
+            if (requiresTodoMcp) await assertCodexTodoMcpReady(this.client, nativeSessionId, codexTodoMcpConfiguration(todoMcp).serverName, todoPreparation?.signal);
+          } else if (requiresTodoMcp) {
+            await resumeCodexThreadWithTodo(this.client, nativeSessionId, todoMcp, todoPreparation?.signal);
+          } else {
+            // Cold threads pick up optional tools during their normal resume.
+            // Loaded threads retain native rejoin semantics: no unsubscribe,
+            // forced rebuild, readiness wait or background mutation races.
+            await this.client.request("thread/resume", {
+              threadId: nativeSessionId, excludeTurns: true, config: codexTodoMcpConfiguration(todoMcp).config,
+            });
+          }
+          this.todoMcp.set(nativeSessionId, { ...todoMcp, args: [...todoMcp.args], env: { ...todoMcp.env } });
+        } else {
+          await this.client.request("thread/resume", { threadId: nativeSessionId, excludeTurns: true });
+        }
       } catch (error) {
+        if (requiresTodoMcp) throw error;
         if (!(error instanceof RuntimeSessionError) || error.code !== "SESSION_OCCUPIED" || !this.desktopTools) throw error;
         const connection = await this.desktopTools.connect(nativeSessionId, detail.cwd);
         if (!connection) throw new RuntimeSessionError(
@@ -1297,6 +1346,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
         yield* continuation.run(input, options);
         return;
       }
+      todoPreparation?.signal.throwIfAborted();
       if (options?.goal) {
         await this.client.request("thread/goal/set", {
           threadId: nativeSessionId,
@@ -1325,6 +1375,8 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
         partial: false,
       };
       this.runUsages.set(nativeSessionId, runUsage);
+      todoPreparation?.signal.throwIfAborted();
+      if (this.pendingTodoRuns.get(nativeSessionId) === todoPreparation) this.pendingTodoRuns.delete(nativeSessionId);
       const response = await this.client.request<{ turn: { id: string } }>("turn/start", {
         threadId: nativeSessionId,
         input: [
@@ -1339,6 +1391,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
         ...codexTurnPermissionOptions(permissionMode, detail.cwd),
       });
       imageDirectoryReferencedByTurn = imageDirectory !== null;
+      this.freshTodoThreads.delete(nativeSessionId);
       runUsage.initialTurnId = response.turn.id;
       runUsage.startedTurnIds.add(response.turn.id);
       // Notifications can precede the turn/start response. Replay only once the
@@ -1351,6 +1404,13 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       }
       for await (const event of queue) yield event;
     } catch (error) {
+      if (todoPreparation?.signal.aborted) {
+        if (this.activeGoalThreads.has(nativeSessionId)) {
+          await this.client.request("thread/goal/clear", { threadId: nativeSessionId }).catch(() => undefined);
+        }
+        yield { type: "turn_aborted" };
+        return;
+      }
       const normalized = normalizeCodexError(error);
       logGlobal("error", "codex-adapter", "codex turn failed", error, {
         nativeSessionId,
@@ -1359,10 +1419,12 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       });
       yield { type: "error", message: normalized.message, code: normalized.code, ...this.runUsageMetadata(nativeSessionId) };
     } finally {
+      if (this.pendingTodoRuns.get(nativeSessionId) === todoPreparation) this.pendingTodoRuns.delete(nativeSessionId);
       this.desktopContinuations.get(nativeSessionId)?.close();
       this.desktopContinuations.delete(nativeSessionId);
       this.clearAsyncInputs(nativeSessionId);
       this.activeTurnIds.delete(nativeSessionId);
+      this.emittedSubagentItems.delete(nativeSessionId);
       this.runUsages.delete(nativeSessionId);
       this.clearLocalInterruptionTimer(nativeSessionId);
       this.locallyInterruptedTurnIds.delete(nativeSessionId);
@@ -1374,25 +1436,38 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       this.completedGoalTurns.delete(nativeSessionId);
       this.lastGoalTurnText.delete(nativeSessionId);
       this.goalTerminalStates.delete(nativeSessionId);
-      await this.client.request("thread/unsubscribe", { threadId: nativeSessionId }).catch(() => undefined);
+      if (!this.freshTodoThreads.has(nativeSessionId)) {
+        await this.client.request("thread/unsubscribe", { threadId: nativeSessionId }).catch(() => undefined);
+      }
       if (imageDirectory && !imageDirectoryReferencedByTurn) {
         await rm(imageDirectory, { recursive: true, force: true }).catch(() => undefined);
       }
     }
   }
 
-  async steer(nativeSessionId: string, input: string): Promise<boolean> {
+  async steer(nativeSessionId: string, input: string, _messageId?: string, images?: string[]): Promise<boolean> {
     const turnId = this.activeTurnIds.get(nativeSessionId);
-    if (!turnId || !input.trim()) return false;
-    await this.client.request("turn/steer", {
-      threadId: nativeSessionId,
-      expectedTurnId: turnId,
-      input: [{ type: "text", text: input, text_elements: [] }],
-    });
-    return true;
+    if (!turnId || (!input.trim() && !images?.length)) return false;
+    const parsedImages = parseImageDataUrls(images);
+    const persisted = parsedImages.length ? await persistCodexImages(parsedImages, this.imageStorageRoot) : null;
+    try {
+      await this.client.request("turn/steer", {
+        threadId: nativeSessionId,
+        expectedTurnId: turnId,
+        input: [
+          ...(input.trim() ? [{ type: "text", text: input, text_elements: [] }] : []),
+          ...(persisted?.inputs ?? []),
+        ],
+      });
+      return true;
+    } catch (error) {
+      if (persisted) await rm(persisted.directory, { recursive: true, force: true }).catch(() => undefined);
+      throw error;
+    }
   }
 
   async abort(nativeSessionId: string): Promise<void> {
+    this.pendingTodoRuns.get(nativeSessionId)?.abort();
     if (this.desktopContinuations.has(nativeSessionId)) {
       throw new RuntimeSessionError("原会话由 Codex 桌面端执行，请在原客户端停止；手机仍会同步执行结果。", "OPERATION_NOT_SUPPORTED");
     }
@@ -1523,8 +1598,14 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
   }
 
   async dispose(): Promise<void> {
+    for (const preparation of this.pendingTodoRuns.values()) preparation.abort();
+    this.pendingTodoRuns.clear();
     for (const continuation of this.desktopContinuations.values()) continuation.close();
     this.desktopContinuations.clear();
+    this.emittedSubagentItems.clear();
+    await Promise.all([...this.freshTodoThreads].map(threadId => this.client.request("thread/unsubscribe", { threadId }).catch(() => undefined)));
+    this.freshTodoThreads.clear();
+    this.todoMcp.clear();
     const clients = new Set<CodexDiscoveryClient>([this.client, this.discoveryClient]);
     await Promise.all([...clients].map((client) => client.dispose()));
   }
@@ -1729,6 +1810,25 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     }
     const eventTurnId = notificationTurnId ?? this.activeTurnIds.get(threadId);
 
+    if (message.method === "turn/plan/updated" && Array.isArray(params.plan)) {
+      const activeTurnId = this.activeTurnIds.get(threadId);
+      if (notificationTurnId && activeTurnId && notificationTurnId !== activeTurnId) return;
+      queue.push({
+        type: "todo_update",
+        todos: params.plan.flatMap((value, index) => {
+          const item = asRecord(value);
+          if (typeof item.step !== "string" || !item.step.trim()) return [];
+          return [{
+            id: `plan-${index}`,
+            title: item.step,
+            status: item.status === "completed" ? "completed" as const
+              : item.status === "inProgress" || item.status === "in_progress" ? "in-progress" as const : "pending" as const,
+          }];
+        }),
+      });
+      return;
+    }
+
     const progressEvent = codexProgressNotificationToEvent(message);
     if (progressEvent) queue.push(progressEvent);
     const notificationItem = params.item as CodexItem | undefined;
@@ -1797,12 +1897,35 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     }
     if (message.method === "item/started") {
       const toolCall = codexItemToToolCall(params.item as CodexItem | undefined);
-      if (toolCall) queue.push({ type: "tool_call", toolCall, ...(eventTurnId ? { turnId: eventTurnId } : {}) });
+      if (toolCall) {
+        if (isCodexSubagentItem(notificationItem)) {
+          const emitted = this.emittedSubagentItems.get(threadId) ?? new Set<string>();
+          const key = `${eventTurnId ?? ""}:${toolCall.id}`;
+          if (emitted.has(key)) return;
+          emitted.add(key);
+          this.emittedSubagentItems.set(threadId, emitted);
+        }
+        queue.push({ type: "tool_call", toolCall, ...(eventTurnId ? { turnId: eventTurnId } : {}) });
+      }
       return;
     }
     if (message.method === "item/completed") {
       if (notificationItem?.type === "agentMessage" && typeof notificationItem.id === "string") {
         this.agentMessagePhases.delete(`${threadId}:${notificationItem.id}`);
+      }
+      if (isCodexSubagentItem(notificationItem) && notificationItem?.id) {
+        const emitted = this.emittedSubagentItems.get(threadId) ?? new Set<string>();
+        const key = `${eventTurnId ?? ""}:${notificationItem.id}`;
+        if (emitted.has(`${key}:completed`)) return;
+        // Instantaneous sub-agent activities can arrive with only item/completed.
+        // A result without its call has no visible execution row in the client.
+        const toolCall = codexItemToToolCall(notificationItem);
+        if (!emitted.has(key) && toolCall) {
+          queue.push({ type: "tool_call", toolCall, ...(eventTurnId ? { turnId: eventTurnId } : {}) });
+          emitted.add(key);
+        }
+        emitted.add(`${key}:completed`);
+        this.emittedSubagentItems.set(threadId, emitted);
       }
       const result = codexItemToToolResult(notificationItem);
       if (result) queue.push({ type: "tool_result", result, ...(eventTurnId ? { turnId: eventTurnId } : {}) });
@@ -1814,6 +1937,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       const metadata = this.runUsageMetadata(threadId);
       const locallyInterrupted = this.consumeLocalInterruption(threadId, turn?.id);
       this.activeTurnIds.delete(threadId);
+      this.emittedSubagentItems.delete(threadId);
       for (const key of this.agentMessagePhases.keys()) {
         if (key.startsWith(`${threadId}:`)) this.agentMessagePhases.delete(key);
       }
@@ -2899,6 +3023,32 @@ export function codexProgressNotificationToEvent(message: RpcNotification): Agen
 
 function codexItemToToolCall(item?: CodexItem): ToolCall | null {
   if (!item?.id) return null;
+  if (item.type === "subAgentActivity") {
+    return {
+      id: item.id,
+      name: "codex:subagentActivity",
+      arguments: {
+        kind: item.kind,
+        agentThreadId: item.agentThreadId,
+        agentPath: item.agentPath,
+        ...(typeof item.model === "string" ? { model: item.model } : {}),
+        ...(typeof item.reasoningEffort === "string" ? { reasoningEffort: item.reasoningEffort } : {}),
+      },
+    };
+  }
+  if (item.type === "collabAgentToolCall") {
+    return {
+      id: item.id,
+      name: `codex:${String(item.tool)}`,
+      arguments: {
+        senderThreadId: item.senderThreadId,
+        receiverThreadIds: item.receiverThreadIds,
+        ...(typeof item.prompt === "string" ? { prompt: item.prompt } : {}),
+        ...(typeof item.model === "string" ? { model: item.model } : {}),
+        ...(typeof item.reasoningEffort === "string" ? { reasoningEffort: item.reasoningEffort } : {}),
+      },
+    };
+  }
   if (item.type === "commandExecution") {
     const actions = Array.isArray(item.commandActions) ? item.commandActions : [];
     const readAction = actions.length === 1 ? asRecord(actions[0]) : null;
@@ -2934,6 +3084,20 @@ function codexItemToToolCall(item?: CodexItem): ToolCall | null {
 
 function codexItemToToolResult(item?: CodexItem): { toolCallId: string; content: string; isError?: boolean } | null {
   if (!item?.id) return null;
+  if (item.type === "subAgentActivity") {
+    return {
+      toolCallId: item.id,
+      content: JSON.stringify({ kind: item.kind, agentThreadId: item.agentThreadId, agentPath: item.agentPath }),
+    };
+  }
+  if (item.type === "collabAgentToolCall") {
+    if (item.status === "inProgress") return null;
+    return {
+      toolCallId: item.id,
+      content: JSON.stringify({ status: item.status, receiverThreadIds: item.receiverThreadIds, agentsStates: item.agentsStates }),
+      isError: item.status === "failed",
+    };
+  }
   if (item.type === "commandExecution") {
     return {
       toolCallId: item.id,
@@ -2952,6 +3116,10 @@ function codexItemToToolResult(item?: CodexItem): { toolCallId: string; content:
     };
   }
   return null;
+}
+
+function isCodexSubagentItem(item?: CodexItem): boolean {
+  return item?.type === "subAgentActivity" || item?.type === "collabAgentToolCall";
 }
 
 function codexTurnUsage(turn: unknown): TokenUsage | undefined {

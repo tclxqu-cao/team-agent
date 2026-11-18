@@ -7,7 +7,7 @@
 //   READY           listener up and authorized
 //   TEXT <t>        partial transcript (main matches the full wake word)
 //   FINAL <t>       final transcript (also allows safe truncated matching)
-//   BARGE_IN        sustained speech detected while TTS is playing
+//   BARGE_IN        sustained speech detected in barge-in capture mode
 //   ERROR <desc>    non-fatal issue; the loop keeps retrying
 // Exit codes: 2 speech-auth denied, 3 mic denied
 

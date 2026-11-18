@@ -1,7 +1,7 @@
 export interface ConsoleTab {
   id: string;
   title: string;
-  kind?: "webapp" | "aihub" | "flowstudio" | "remote-desktop" | "collaboration" | "collaboration-dashboard" | "session-dashboard";
+  kind?: "webapp" | "aihub" | "flowstudio" | "remote-desktop" | "collaboration" | "collaboration-dashboard" | "session-dashboard" | "calendar";
   groupId?: string;
   discussionId?: string;
   initialCommand?: string;
@@ -17,7 +17,7 @@ export function parseWorkspaceSnapshot(raw: string | null): WorkspaceSnapshot | 
     const value = JSON.parse(raw || "null");
     if (!value || !Array.isArray(value.tabs)) return null;
     const ids = new Set<string>();
-    const kinds = new Set(["webapp", "aihub", "flowstudio", "remote-desktop", "collaboration", "collaboration-dashboard", "session-dashboard"]);
+    const kinds = new Set(["webapp", "aihub", "flowstudio", "remote-desktop", "collaboration", "collaboration-dashboard", "session-dashboard", "calendar"]);
     const tabs: ConsoleTab[] = [];
     for (const tab of value.tabs.slice(0, 100)) {
       if (!tab || typeof tab.id !== "string" || typeof tab.title !== "string" || ids.has(tab.id)) continue;
@@ -60,4 +60,9 @@ export function withCollaborationDashboard(tabs: ConsoleTab[]): ConsoleTab[] {
 export const SESSION_DASHBOARD_TAB = { id: "session-dashboard", title: "Dashboard", kind: "session-dashboard" } as const;
 export function withSessionDashboard(tabs: ConsoleTab[]): ConsoleTab[] {
   return tabs.some(tab => tab.id === SESSION_DASHBOARD_TAB.id) ? tabs : [...tabs, { ...SESSION_DASHBOARD_TAB }];
+}
+
+export const CALENDAR_TAB = { id: "calendar", title: "日历", kind: "calendar" } as const;
+export function withCalendarTab(tabs: ConsoleTab[]): ConsoleTab[] {
+  return tabs.some(tab => tab.id === CALENDAR_TAB.id) ? tabs : [...tabs, { ...CALENDAR_TAB }];
 }

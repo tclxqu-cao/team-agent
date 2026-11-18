@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { provisionedTodoTools } from "../../native-runtime/src/todo-mcp/provisioned-todo-tools.js";
 import { promises as fsp } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { HarnessServiceClient } from "../../core/src/infrastructure/HarnessServiceClient.js";
@@ -191,6 +192,7 @@ export class TuiRuntime implements TuiRuntimeHost {
         builder.withToolExecutorDecorator((executor) => new CheckpointAwareToolExecutor(executor, journal));
       }
       const agent = await builder.build();
+      for (const tool of await provisionedTodoTools(process.env.AGENTROAM_TODO_DESCRIPTOR)) builder.getToolRegistry().register(tool);
 
       const entries = host.getMcpServers();
       if (entries.length > 0) {
@@ -305,6 +307,7 @@ export class TuiRuntime implements TuiRuntimeHost {
     if (journal) {
       builder.withToolExecutorDecorator((executor) => new CheckpointAwareToolExecutor(executor, journal));
     }
+    for (const tool of await provisionedTodoTools(process.env.AGENTROAM_TODO_DESCRIPTOR)) builder.withTool(tool);
     return builder.build();
   }
 

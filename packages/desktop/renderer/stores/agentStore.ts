@@ -1,14 +1,14 @@
 import { create } from "zustand";
 import type {
   AgentEvent,
-  type AskUserField,
-  type ContextUsageSnapshot,
-  type MessagePresentation,
-  type NativeSubagentActivity,
-  type RuntimeProgress,
-  type RunResult,
-  type TokenUsage,
-  type SessionToolResultRef,
+  AskUserField,
+  ContextUsageSnapshot,
+  MessagePresentation,
+  NativeSubagentActivity,
+  RuntimeProgress,
+  RunResult,
+  TokenUsage,
+  SessionToolResultRef,
 } from "@agent/core";
 import type { CronTask } from "../global";
 import {
@@ -154,6 +154,8 @@ export interface ChatMessage {
   isSteering?: boolean;
   /** True when this user message has been steered into the running loop */
   isSteered?: boolean;
+  /** Original queue identity retained when native history assigns a new row ID. */
+  sourceMessageId?: string;
   /** Transient client-side state while the server accepts a newly sent message. */
   sendState?: "pending" | "failed";
   /** Admission does not confirm that a history snapshot already contains this input. */
@@ -189,6 +191,8 @@ interface AgentState {
   contextUsageBySession: Record<string, ContextUsageSnapshot>;
   runtimeProgressBySession: Record<string, RuntimeProgress[]>;
   nativeSubagentsBySession: Record<string, Record<string, NativeSubagentActivity>>;
+  modelProfileBySession: Record<string, string>;
+  setSessionModelProfile: (sessionId: string, profileId: string) => void;
   /** The sessionId currently being streamed; null when idle */
   runningSessionId: string | null;
   currentText: string;
@@ -357,13 +361,17 @@ function applyReasoningSummaryToList(
     : message);
 }
 
-export const useAgentStore = create<AgentState>((set, get) => ({
+type InitialAgentState = Partial<Pick<AgentState, "sessionId" | "runningSessionId" | "messages" | "messagesBySession">>;
+
+export const createAgentStore = (initial: InitialAgentState = {}) => create<AgentState>((set, get) => ({
   messages: [],
   messagesBySession: {},
   historyWindowsBySession: {},
   contextUsageBySession: {},
   runtimeProgressBySession: {},
   nativeSubagentsBySession: {},
+  modelProfileBySession: {},
+  setSessionModelProfile: (sessionId, profileId) => set(state => ({ modelProfileBySession: { ...state.modelProfileBySession, [sessionId]: profileId } })),
   runningSessionId: null,
   currentText: "",
   sessionId: null,
@@ -636,4 +644,9 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   setTodos: (todos) => set({ todos }),
 
   setCronTasks: (tasks) => set({ cronTasks: tasks }),
+  ...initial,
 }));
+
+/** Single-session callers retain the shared store; desktop panes own separate stores. */
+export const useAgentStore = createAgentStore();
+export type AgentStore = ReturnType<typeof createAgentStore>;

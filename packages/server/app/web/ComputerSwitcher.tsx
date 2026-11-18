@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Camera, Check, Globe, Monitor, Pencil, Plus, X, Trash2, ExternalLink, ChevronLeft, ChevronDown, ChevronRight, SlidersHorizontal, MessagesSquare, RefreshCw, MonitorUp, Palette, PanelRight, LayoutGrid, Bot, Smartphone, UsersRound } from "lucide-react";
+import { Camera, Check, Globe, Monitor, Pencil, Plus, X, Trash2, ExternalLink, ChevronLeft, ChevronDown, ChevronRight, SlidersHorizontal, MessagesSquare, RefreshCw, MonitorUp, Palette, PanelRight, LayoutGrid, Bot, Smartphone, UsersRound, CalendarDays } from "lucide-react";
 import RunningSessionsIcon from "../../../desktop/renderer/components/RunningSessionsIcon";
 import CodexSharingStatus from "./CodexSharingStatus";
 import ComputerPageDialog, { type ComputerPage } from "./ComputerPageDialog";
@@ -22,6 +22,7 @@ const TOOL_OPTIONS = [
   { id: "remote", name: "远程桌面", Icon: MonitorUp },
   { id: "theme", name: "皮肤", Icon: Palette },
   { id: "files", name: "文件树", Icon: PanelRight },
+  { id: "calendar", name: "日历", Icon: CalendarDays },
   { id: "ai-hub", name: "AI Hub", Icon: LayoutGrid },
   { id: "flow", name: "数字人", Icon: Bot },
   { id: "install", name: "添加到主屏幕", Icon: Smartphone },

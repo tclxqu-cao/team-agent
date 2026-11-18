@@ -7,6 +7,9 @@ import type { NativeJsonPacket } from "./native-stdio-channel.js";
 import { RuntimeSessionError, type RuntimeModelInfo } from "./types.js";
 import type { QoderModelCatalogLoader } from "./qoder-model-catalog.js";
 import { encodeUnifiedSessionId } from "./session-id.js";
+import type { QoderActivityReader } from "./qoder-desktop-activity.js";
+
+const noExternalActivity: QoderActivityReader = { readMany: async () => new Map() };
 
 class RpcFixture implements NativeRpcConnection {
   calls: Array<{ method: string; params: NativeJsonPacket }> = [];
@@ -24,8 +27,8 @@ class RpcFixture implements NativeRpcConnection {
   ];
   historyReads = 0;
   modelCatalog = vi.fn<QoderModelCatalogLoader>(async () => [{ id: "catalog-model", displayName: "Catalog model" }]);
-  client(workspaces = { list: async (): Promise<string[]> => [] }) {
-    return new QoderClient(this, workspaces, { read: async () => { this.historyReads++; return structuredClone(this.history); } }, this.modelCatalog);
+  client(workspaces = { list: async (): Promise<string[]> => [] }, activity: QoderActivityReader = noExternalActivity) {
+    return new QoderClient(this, workspaces, { read: async () => { this.historyReads++; return structuredClone(this.history); } }, this.modelCatalog, activity);
   }
   async request(method: string, params: NativeJsonPacket): Promise<NativeJsonPacket> {
     this.calls.push({ method, params });
@@ -51,7 +54,174 @@ class RpcFixture implements NativeRpcConnection {
 
 async function collect(events: AsyncIterable<AgentEvent>) { const result: AgentEvent[] = []; for await (const event of events) result.push(event); return result; }
 
+const todoMcp = () => ({ command: "C:\\Program Files\\Node\\node.exe", args: ["C:\\Agent Roam\\todo.mjs"],
+  env: { AGENTROAM_TODO_DESCRIPTOR: "C:\\Scoped Data\\todo.json", AGENTROAM_DISCOVERY_DIR: "C:\\Service Registry" } });
+
+describe("Qoder scoped Todo MCP lifecycle", () => {
+  it("declares scoped MCP servers at session creation and reuses the unchanged native resident", async () => {
+    const rpc = new RpcFixture(), client = rpc.client(), configuration = todoMcp();
+    await client.create({ title: "Scoped", cwd: "/native/workspace", todoMcp: configuration });
+    await collect(client.run("native-1", "first", undefined, { todoMcp: structuredClone(configuration) }));
+    await collect(client.run("native-1", "next", undefined, { todoMcp: structuredClone(configuration) }));
+    expect(rpc.calls.find(call => call.method === "session/new")?.params.mcpServers).toEqual([
+      { name: "agentroam-todo", command: configuration.command, args: configuration.args,
+        env: Object.entries(configuration.env).map(([name, value]) => ({ name, value })) },
+    ]);
+    expect(rpc.calls.some(call => call.method === "session/close" || call.method === "session/resume")).toBe(false);
+  });
+
+  it("releases an idle loaded writer before attaching MCP to the same existing session", async () => {
+    const rpc = new RpcFixture(), client = rpc.client();
+    let resident = false;
+    const request = rpc.request.bind(rpc);
+    rpc.request = async (method, params) => {
+      if (method === "session/close") resident = false;
+      if (method === "session/resume") { if (resident) throw new Error("SESSION_ALREADY_OPEN"); resident = true; }
+      return request(method, params);
+    };
+    await client.read("native-1");
+    await collect(client.run("native-1", "continue", undefined, { todoMcp: todoMcp() }));
+    expect(rpc.calls.filter(call => ["session/close", "session/resume", "session/prompt"].includes(call.method)).map(call => call.method))
+      .toEqual(["session/resume", "session/close", "session/resume", "session/prompt"]);
+    expect(rpc.calls.filter(call => call.method === "session/resume").at(-1)?.params).toMatchObject({ sessionId: "native-1", mcpServers: [{ name: "agentroam-todo" }] });
+    expect(rpc.calls.some(call => call.method === "session/delete")).toBe(false);
+  });
+
+  it("reconfigures changed command, arguments and discovery environment even with the same descriptor path", async () => {
+    const rpc = new RpcFixture(), client = rpc.client(), original = todoMcp();
+    await client.create({ title: "Scoped", cwd: "/native/workspace", todoMcp: original });
+    const changed = { ...original, command: "/runtime/node", args: ["/another root/todo.mjs"], env: { ...original.env, AGENTROAM_DISCOVERY_DIR: "/new registry" } };
+    await collect(client.run("native-1", "continue", undefined, { todoMcp: changed }));
+    expect(rpc.calls.filter(call => call.method === "session/close")).toHaveLength(1);
+    expect(rpc.calls.find(call => call.method === "session/resume")?.params.mcpServers).toEqual([
+      { name: "agentroam-todo", command: changed.command, args: changed.args,
+        env: Object.entries(changed.env).map(([name, value]) => ({ name, value })) },
+    ]);
+  });
+
+  it("does not close or reconfigure a native session owned by another process", async () => {
+    const rpc = new RpcFixture(); let external = false;
+    const client = rpc.client(undefined, { readMany: async () => new Map([["native-1", external]]) });
+    await client.read("native-1"); external = true;
+    await expect(collect(client.run("native-1", "never send", undefined, { todoMcp: todoMcp() }))).rejects.toMatchObject({ code: "SESSION_OCCUPIED" });
+    expect(rpc.calls.some(call => call.method === "session/close" || call.method === "session/prompt")).toBe(false);
+  });
+
+  it("keeps the old resident and refuses the prompt if native close cannot safely release it", async () => {
+    const rpc = new RpcFixture(), client = rpc.client();
+    await client.read("native-1");
+    const request = rpc.request.bind(rpc);
+    rpc.request = async (method, params) => { if (method === "session/close") throw new Error("Close rejected"); return request(method, params); };
+    await expect(collect(client.run("native-1", "never send", undefined, { todoMcp: todoMcp() }))).rejects.toThrow("Close rejected");
+    expect(rpc.calls.filter(call => call.method === "session/resume")).toHaveLength(1);
+    expect(rpc.calls.some(call => call.method === "session/prompt")).toBe(false);
+  });
+
+  it("waits for an older history resume before replacing its MCP declaration", async () => {
+    const rpc = new RpcFixture(), client = rpc.client();
+    const request = rpc.request.bind(rpc);
+    let release = () => {};
+    let first = true;
+    rpc.request = async (method, params) => {
+      const result = await request(method, params);
+      if (method === "session/resume" && first) {
+        first = false;
+        await new Promise<void>(resolve => { release = resolve; });
+      }
+      return result;
+    };
+    const reading = client.read("native-1");
+    await vi.waitFor(() => expect(rpc.calls.some(call => call.method === "session/resume")).toBe(true));
+    const running = collect(client.run("native-1", "continue", undefined, { todoMcp: todoMcp() }));
+    await Promise.resolve();
+    expect(rpc.calls.some(call => call.method === "session/prompt")).toBe(false);
+    release();
+    await Promise.all([reading, running]);
+    expect(rpc.calls.filter(call => ["session/resume", "session/close", "session/prompt"].includes(call.method)).map(call => call.method))
+      .toEqual(["session/resume", "session/close", "session/resume", "session/prompt"]);
+  });
+
+  it.each(["history", "close", "resume"])("does not send after Stop during Todo MCP %s preparation", async phase => {
+    const rpc = new RpcFixture(), client = rpc.client();
+    const request = rpc.request.bind(rpc);
+    const methodToBlock = phase === "history" ? "session/resume" : `session/${phase}`;
+    let armed = phase === "history", paused = false;
+    let release = () => {};
+    rpc.request = async (method, params) => {
+      const result = await request(method, params);
+      if (armed && method === methodToBlock) {
+        armed = false; paused = true;
+        await new Promise<void>(resolve => { release = resolve; });
+      }
+      return result;
+    };
+    const reading = client.read("native-1");
+    if (phase === "history") await vi.waitFor(() => expect(paused).toBe(true));
+    else { await reading; armed = true; }
+    const completed = collect(client.run("native-1", "Never send", undefined, { todoMcp: todoMcp() }));
+    await vi.waitFor(() => expect(paused).toBe(true));
+    await client.abort("native-1");
+    release();
+    expect(await completed).toEqual([{ type: "turn_aborted" }]);
+    await reading;
+    expect(rpc.calls.some(call => call.method === "session/prompt")).toBe(false);
+    expect((await collect(client.run("native-1", "retry", undefined, { todoMcp: todoMcp() }))).at(-1))
+      .toEqual({ type: "done", finalText: "native answer" });
+  });
+});
+
+describe("Qoder native plans", () => {
+  it("projects ACP plan entries and explicit plan clearing into shared events", async () => {
+    const rpc = new RpcFixture();
+    const client = rpc.client();
+    await client.read("native-1");
+    rpc.prompt = async () => {
+      rpc.update({ sessionUpdate: "plan", entries: [
+        { content: "检查", status: "completed", priority: "high" },
+        { content: "手机适配", status: "in_progress", priority: "medium" },
+      ] });
+      rpc.update({ sessionUpdate: "plan", entries: [] });
+      return { stopReason: "end_turn" };
+    };
+    const events = await collect(client.run("native-1", "plan"));
+    expect(events.filter(event => event.type === "todo_update")).toEqual([
+      { type: "todo_update", todos: [
+        { id: "plan-0", title: "检查", status: "completed" },
+        { id: "plan-1", title: "手机适配", status: "in-progress" },
+      ] }, { type: "todo_update", todos: [] },
+    ]);
+  });
+});
+
 describe("Qoder cwd-scoped discovery", () => {
+  it("projects an external main turn into the same running state for history and the sidebar without resuming it", async () => {
+    const rpc = new RpcFixture();
+    let running = true;
+    const client = rpc.client(undefined, { readMany: async () => new Map([["native-1", running]]) });
+    const adapter = new QoderRuntimeAdapter(client);
+    expect((await adapter.discoverSessions())[0]).toMatchObject({ status: "running", occupancy: "owned-externally", canResume: false });
+    const detail = await adapter.getSession("native-1");
+    expect(detail).toMatchObject({ status: "running", occupancy: "owned-externally", messages: rpc.history });
+    await expect(collect(adapter.run("native-1", "Do not take over"))).rejects.toMatchObject({ code: "SESSION_OCCUPIED" });
+    expect(rpc.calls.some(call => ["session/resume", "session/prompt"].includes(call.method))).toBe(false);
+    running = false;
+    expect((await adapter.discoverSessions())[0]).toMatchObject({ status: "idle", occupancy: "available", canResume: true });
+    expect((await adapter.getSession("native-1")).status).toBe("idle");
+  });
+
+  it("protects a previously loaded session when the native desktop starts its next turn", async () => {
+    const rpc = new RpcFixture();
+    let running = false;
+    const client = rpc.client(undefined, { readMany: async () => new Map([["native-1", running]]) });
+    await client.read("native-1");
+    const resumes = rpc.calls.filter(call => call.method === "session/resume").length;
+    running = true;
+    expect((await client.read("native-1")).session.running).toBe(true);
+    await expect(collect(client.run("native-1", "Do not send"))).rejects.toMatchObject({ code: "SESSION_OCCUPIED" });
+    expect(rpc.calls.filter(call => call.method === "session/resume")).toHaveLength(resumes);
+    expect(rpc.calls.some(call => call.method === "session/prompt")).toBe(false);
+  });
+
   it("queries every native workspace and paginates within each cwd without duplicate sessions", async () => {
     const rpc = new RpcFixture();
     const original = rpc.request.bind(rpc);
@@ -207,7 +377,7 @@ describe("Qoder native ACP adapter", () => {
     const client = new QoderClient(rpc, { list: async () => [] }, { read: async () => {
       if (!persisted) throw new RuntimeSessionError("Qoder session not found", "SESSION_NOT_FOUND");
       return [{ role: "user", content: "First prompt", historyId: "first-user" }, { role: "assistant", content: "First answer", historyId: "first-answer" }];
-    } }, rpc.modelCatalog);
+    } }, rpc.modelCatalog, noExternalActivity);
     const adapter = new QoderRuntimeAdapter(client);
     await adapter.create({ title: "Blank draft", cwd: "/native/workspace" });
     expect((await adapter.getSession("native-1")).messages).toEqual([]);
@@ -227,7 +397,7 @@ describe("Qoder native ACP adapter", () => {
 
   it("does not treat corrupt fresh-session history as an empty transcript", async () => {
     const rpc = new RpcFixture();
-    const client = new QoderClient(rpc, { list: async () => [] }, { read: async () => { throw new Error("Corrupt draft history"); } }, rpc.modelCatalog);
+    const client = new QoderClient(rpc, { list: async () => [] }, { read: async () => { throw new Error("Corrupt draft history"); } }, rpc.modelCatalog, noExternalActivity);
     await client.create({ title: "Blank draft", cwd: "/native/workspace" });
     await expect(client.read("native-1")).rejects.toThrow("Corrupt draft history");
     await expect(collect(client.run("native-1", "Do not send"))).rejects.toThrow("Corrupt draft history");
@@ -480,7 +650,7 @@ describe("Qoder native ACP adapter", () => {
 
   it("fails closed when native history cannot be read instead of prompting with an incomplete snapshot", async () => {
     const rpc = new RpcFixture();
-    const client = new QoderClient(rpc, { list: async () => [] }, { read: async () => { throw new Error("Corrupt native history"); } }, rpc.modelCatalog);
+    const client = new QoderClient(rpc, { list: async () => [] }, { read: async () => { throw new Error("Corrupt native history"); } }, rpc.modelCatalog, noExternalActivity);
     await expect(client.read("native-1")).rejects.toThrow("Corrupt native history");
     await expect(collect(client.run("native-1", "Do not send"))).rejects.toThrow("Corrupt native history");
     expect(rpc.calls.filter(call => call.method === "session/resume")).toHaveLength(1);

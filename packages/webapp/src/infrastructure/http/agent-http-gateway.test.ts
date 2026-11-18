@@ -35,6 +35,17 @@ function emit(source: ObservableEventSource, event: Record<string, unknown>): vo
 }
 
 describe("AgentHttpGateway", () => {
+  it.each(["customer-agent", "codex", "claude-code", "opencode", "deepseek-harness", "qoder", "zcode", "workbuddy", "copilot"])(
+    "publishes a creation receipt immediately for %s", async agentType => {
+      const session = { id: `${agentType}:created`, agentType, title: "New task", updated: "2026-11-17", status: "idle", cwd: "/repo", canResume: true };
+      const gateway = new AgentHttpGateway(new HttpClient(async () => new Response(JSON.stringify(session))), {} as never);
+      const events: unknown[] = [];
+      gateway.onEvent(event => events.push(event));
+      expect(await gateway.createSession("New task", undefined, agentType, "/repo")).toEqual(session);
+      expect(events).toContainEqual(expect.objectContaining({ type: "session_summary", _sid: session.id, session: expect.objectContaining({ id: session.id, agentType, status: "idle" }) }));
+    },
+  );
+
   it("ends an unconfirmed send even when the confirmation request also hangs", async () => {
     vi.useFakeTimers();
     const transport = vi.fn(() => new Promise<Response>(() => {}));
@@ -1500,6 +1511,15 @@ describe("AgentHttpGateway", () => {
     });
   });
 
+  it.each([true, false])("returns the steering acknowledgement without starting another run (accepted=%s)", async accepted => {
+    const http = { post: vi.fn().mockResolvedValue({ steered: accepted }) };
+    const gateway = new AgentHttpGateway(http as never, {} as never);
+    const run = vi.spyOn(gateway, "run");
+    await expect(gateway.steer("follow up", "runtime:codex:c291cmNl")).resolves.toBe(accepted);
+    expect(http.post).toHaveBeenCalledOnce();
+    expect(run).not.toHaveBeenCalled();
+  });
+
   it("requests a bounded history page with an encoded cursor", async () => {
     const detail = { messages: [], events: [], history: { hasMore: true } };
     const http = { get: vi.fn().mockResolvedValue(detail) };
@@ -1513,6 +1533,16 @@ describe("AgentHttpGateway", () => {
     expect(http.get).toHaveBeenCalledWith(
       "/api/sessions/runtime%3Acodex%3Ac291cmNl?before=history.v1.50&limit=50",
     );
+  });
+
+  it("loads a preview or original through the authenticated HTTP transport only when requested", async () => {
+    const http = { get: vi.fn().mockResolvedValue({ dataUrl: "data:image/webp;base64,AQID" }) };
+    const gateway = new AgentHttpGateway(http as never, {} as never);
+    expect(http.get).not.toHaveBeenCalled();
+    await expect(gateway.getSessionImage("image/1", "preview")).resolves.toBe("data:image/webp;base64,AQID");
+    expect(http.get).toHaveBeenCalledWith("/api/session-images/image%2F1?variant=preview");
+    await gateway.getSessionImage("image/1", "original");
+    expect(http.get).toHaveBeenLastCalledWith("/api/session-images/image%2F1?variant=original");
   });
 
   it("serializes progressive history views and lazy tool-result locators", async () => {

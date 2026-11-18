@@ -21,6 +21,7 @@ export async function steerQueuedMessage(
   if (message.queueItemId) {
     return api.steerSessionMessage(sessionId, message.queueItemId);
   }
+  if (message.images?.length) throw new Error("当前服务不支持带图片的插入消息，请保留在队列中等待执行");
   if (!await api.steer(message.content, sessionId, message.agentName)) {
     throw new Error("当前运行不支持插队消息");
   }

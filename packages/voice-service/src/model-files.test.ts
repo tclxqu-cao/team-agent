@@ -2,7 +2,7 @@ import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { findAsrModelFiles, findKwsModelFiles, findTtsModelFiles } from "./model-files";
+import { findAsrModelFiles, findKwsModelFiles } from "./model-files";
 
 describe("findAsrModelFiles", () => {
   it("returns the four Zipformer files from a real directory", () => {
@@ -88,21 +88,5 @@ describe("findKwsModelFiles", () => {
     const dir = mkdtempSync(join(tmpdir(), "voice-kws-"));
     writeFileSync(join(dir, "encoder.int8.onnx"), "encoder");
     expect(() => findKwsModelFiles(dir)).toThrow("decoder, joiner, tokens, keywords");
-  });
-});
-
-describe("findTtsModelFiles", () => {
-  it("finds Melo VITS model, tokens, lexicon, and dictionary data", () => {
-    const dir = mkdtempSync(join(tmpdir(), "voice-tts-"));
-    writeFileSync(join(dir, "model.onnx"), "model");
-    writeFileSync(join(dir, "tokens.txt"), "tokens");
-    writeFileSync(join(dir, "lexicon.txt"), "lexicon");
-    mkdirSync(join(dir, "dict"));
-    expect(findTtsModelFiles(dir)).toEqual({
-      model: join(dir, "model.onnx"),
-      tokens: join(dir, "tokens.txt"),
-      lexicon: join(dir, "lexicon.txt"),
-      dictDir: join(dir, "dict"),
-    });
   });
 });

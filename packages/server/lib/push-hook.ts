@@ -6,6 +6,9 @@ import {
   resolveTaskNotificationPreferences,
 } from "@agent/core";
 import { sharedSettings } from "./shared-settings";
+import { readRuntimeTodoContext } from "./todo/runtime-todo-context";
+import { todoServices } from "./todo/todo-service";
+import { anonymousPrincipal } from "./web-auth/anonymous";
 
 let hooked = false;
 const completionDeduper = new NotificationDeduper();
@@ -36,6 +39,7 @@ export function ensurePushHook(): void {
         return;
       }
       if (event.type === "done") {
+        if (event.result?.status !== "completed" || readRuntimeTodoContext(sessionId)?.executionId) return;
         if (context.source === "goal") return;
         const preferences = resolveTaskNotificationPreferences(sharedSettings().read().taskNotifications);
         const notification = context.runId ? createTaskCompletionNotification({
@@ -55,6 +59,7 @@ export function ensurePushHook(): void {
         return;
       }
       if (event.type === "goal_updated" && event.goal.status === "complete") {
+        todoServices().notifications.ingest({ ownerId: anonymousPrincipal().userId, sourceEventId: `${sessionId}:goal:${event.goal.createdAt}:complete`, kind: "completion", sessionId, title: "目标已完成", body: event.goal.objective.slice(0, 500), createdAt: Date.now() });
         const preferences = resolveTaskNotificationPreferences(sharedSettings().read().taskNotifications);
         const notification = createTaskCompletionNotification({
           sessionId,

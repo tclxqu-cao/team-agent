@@ -37,6 +37,20 @@ describe("CodexExecutionTrace", () => {
     expect(loadTrace).not.toHaveBeenCalled();
   });
 
+  it.each(["started", "interacted", "completed"])("preserves a completed trace containing only %s child task activity", (kind) => {
+    const html = renderToStaticMarkup(<CodexExecutionTrace
+      trace={{ turnId: "turn-1", revision: "rev-1", historyItemKeys: [], liveMessages: [{
+        id: "child-activity", role: "assistant", content: "", timestamp: 1, toolCalls: [{
+          id: "child-activity", name: "codex:subagentActivity",
+          arguments: { kind, agentThreadId: "child-thread", agentPath: "/root/question_card_ui" }, result: "",
+        }],
+      }] }}
+      loadTrace={vi.fn(async () => [])} loadToolResult={vi.fn()}
+      renderContent={text => text} runtimeProgress={[]} nativeSubagents={{}}
+    />);
+    expect(html).toContain("已工作");
+  });
+
   it("collapses completed history without requesting trace data", () => {
     const loadTrace = vi.fn(async () => []);
     const html = renderToStaticMarkup(createElement(CodexExecutionTrace, {
@@ -74,7 +88,8 @@ describe("CodexExecutionTrace", () => {
     expect(html).toContain('aria-busy="true"');
     expect(html).toContain("正在处理这条消息");
     expect(html).not.toContain("查看执行过程");
-    expect(html).not.toContain("<button");
+    expect(html).toContain("execution-trace__summary");
+    expect(html).toContain("已工作 0 秒");
   });
 
   it("loads on demand, reuses loaded messages, and exposes retry state", () => {

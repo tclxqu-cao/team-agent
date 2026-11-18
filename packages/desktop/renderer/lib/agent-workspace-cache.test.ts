@@ -211,6 +211,13 @@ describe("agent workspace cache", () => {
     }, false, "page-two")).toBe("page-two");
   });
 
+  it("keeps loaded historical rows and their cursor while a fresh native head awaits supplemental history", () => {
+    const old = session("legacy");
+    const head = { data: [session("newest")], nextCursor: null, watermark: "new", refreshing: true };
+    expect(reconcileSessionPage([old], head, true).map(row => row.id)).toEqual(["newest", "legacy"]);
+    expect(reconcileSessionNextCursor([old], head, true, "older")).toBe("older");
+  });
+
   it("appends every session page without duplicates or a total-row cap", () => {
     const current = Array.from({ length: 300 }, (_, index) => session(String(index)));
     const result = reconcileSessionPage(current, {

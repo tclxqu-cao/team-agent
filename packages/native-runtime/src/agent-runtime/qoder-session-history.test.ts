@@ -90,6 +90,23 @@ describe("Qoder native transcript history", () => {
     expect(messages.map(message => message.content)).toEqual(["Question", "Complete", "Next question"]);
   });
 
+  it("preserves a tool-only parent Agent task without pulling sidechain child messages into its answer", () => {
+    const messages = decodeQoderHistory([
+      row("u", null, "user", "Inspect files"),
+      { uuid: "agent", parentUuid: "u", type: "assistant", message: { content: [
+        { type: "tool_use", id: "agent-call", name: "Agent", input: { description: "Inspect", subagent_type: "Explore" } },
+      ] } },
+      { ...row("child", "agent", "assistant", "Child answer"), isSidechain: true, parent_tool_use_id: "agent-call" },
+      { uuid: "result", parentUuid: "agent", type: "user", message: { content: [
+        { type: "tool_result", tool_use_id: "agent-call", content: "Inspected" },
+      ] } },
+      { type: "active-leaf", sessionId: "native", leafUuid: "result" },
+    ], "native");
+    expect(messages.map(message => message.role)).toEqual(["user", "assistant", "tool"]);
+    expect(messages[1].toolCalls?.[0]).toMatchObject({ id: "agent-call", name: "Agent" });
+    expect(messages[2]).toMatchObject({ toolCallId: "agent-call", content: "Inspected" });
+  });
+
   it("fails closed for corrupt selected branches instead of mixing branches", () => {
     expect(() => decodeQoderHistory([
       row("a", "b", "assistant", "A"), row("b", "a", "assistant", "B"),

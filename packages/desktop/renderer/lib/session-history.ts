@@ -42,6 +42,7 @@ export interface PersistedHistoryEvent {
   options?: Array<{ label: string; description: string }>;
   fields?: Array<{ name: string; label: string; description?: string; type?: "text" | "secret" }>;
   multiSelect?: boolean;
+  todos?: unknown;
 }
 
 export interface SessionHistoryDetail {
@@ -120,6 +121,7 @@ export async function loadProgressiveSessionHistoryPage(
   onPage: (detail: SessionHistoryDetail | null, phase: ProgressiveHistoryPhase) => void,
   isCurrent: () => boolean,
   coreLoader?: () => Promise<SessionHistoryDetail | null>,
+  retainedMessages: ChatMessage[] = [],
 ): Promise<void> {
   if (agentType !== "codex") {
     const detail = coreLoader
@@ -129,11 +131,66 @@ export async function loadProgressiveSessionHistoryPage(
     return;
   }
 
-  const core = coreLoader
+  let core: SessionHistoryDetail | null = coreLoader
     ? await coreLoader()
     : await api.getSession(sessionId, { ...query, view: "core" }) as SessionHistoryDetail | null;
   if (!isCurrent()) return;
   onPage(core, "core");
+
+  // A latest-turn page may have advanced past the retained running turn while
+  // this view was hidden. Fill the intervening core pages so its final answer
+  // cannot remain missing after the next input starts another native turn.
+  const retainedTurnId = retainedMessages.findLast(message => message.role === "user"
+    && !message.isQueued && message.id.startsWith("history-message.v1.")
+    && message.presentation?.executionTrace)?.presentation?.executionTrace?.turnId;
+  if (!retainedTurnId || query.before || query.after || query.anchor || core?.history?.delivery !== "core") return;
+  const includesRetainedTurn = (detail: SessionHistoryDetail | null) => detail?.messages?.some(message => (
+    message.presentation?.executionTrace?.turnId === retainedTurnId
+  ));
+  const seen = new Set<string>();
+  let cursor = core.history.nextCursor;
+  let restarts = 0;
+  while (cursor && !includesRetainedTurn(core) && !seen.has(cursor)) {
+    if (!isCurrent()) return;
+    seen.add(cursor);
+    const older = await api.getSession(sessionId, {
+      before: cursor,
+      limit: seen.size === 1 ? 1 : SESSION_HISTORY_PAGE_SIZE,
+      view: "core",
+    }) as SessionHistoryDetail | null;
+    if (!isCurrent()) return;
+    if (older?.history?.delivery !== "core") return;
+    if (older.history.revision !== core.history?.revision) {
+      if (restarts++ >= 1) {
+        throw Object.assign(new Error("会话内容已更新，请刷新后重试"), { code: "STALE_SESSION_ANCHOR" });
+      }
+      core = await api.getSession(sessionId, { ...query, view: "core" }) as SessionHistoryDetail | null;
+      if (!isCurrent()) return;
+      onPage(core, "core");
+      if (core?.history?.delivery !== "core") return;
+      seen.clear();
+      cursor = core.history.nextCursor;
+      continue;
+    }
+    const latestIds: Set<string> = new Set((core.messages ?? []).flatMap(message => message.historyId ? [message.historyId] : []));
+    const messages: NonNullable<SessionHistoryDetail["messages"]> = [
+      ...(older.messages ?? []).filter(message => !message.historyId || !latestIds.has(message.historyId)),
+      ...(core.messages ?? []),
+    ];
+    core = {
+      ...core,
+      messages,
+      history: {
+        ...core.history,
+        nextCursor: older.history.nextCursor,
+        olderCursor: older.history.olderCursor ?? older.history.nextCursor,
+        hasMore: older.history.hasMore,
+        pageSize: messages.length,
+      },
+    };
+    onPage(core, "core");
+    cursor = older.history.nextCursor;
+  }
 }
 
 export function resolveOlderHistoryCursor(
@@ -158,7 +215,7 @@ export function mergeProgressiveSessionHistoryPage(
     && Boolean(history?.revision);
   const hasVisibleHistory = current.some((message) => !message.isQueued);
   if (traceWillFollow && hasVisibleHistory) {
-    return mergeCoreSessionHistory(current, refreshed);
+    return retainAnsweredSessionQuestions(current, mergeCoreSessionHistory(current, refreshed));
   }
   return mergeRefreshedSessionHistory(current, refreshed);
 }
@@ -238,7 +295,8 @@ function mergeCoreSessionHistory(
   if (currentTurnStart < 0) {
     // A new native turn can appear between core refreshes. Keep the previous
     // turn's trace and append the new core-only turn until its trace arrives.
-    return [...currentHistory, ...refreshed.slice(refreshedTurnStart), ...queued];
+    return [...mergeCoreSessionHistory(currentHistory, refreshed.slice(0, refreshedTurnStart)),
+      ...refreshed.slice(refreshedTurnStart), ...queued];
   }
 
   const confirmsSend = (currentHistory[currentTurnStart].sendState || currentHistory[currentTurnStart].awaitingHistory)
@@ -249,7 +307,7 @@ function mergeCoreSessionHistory(
       currentTurnStart,
     );
 
-  const mergedPrefix = mergeRefreshedSessionHistory(
+  const mergedPrefix = mergeCoreSessionHistory(
     currentHistory.slice(0, currentTurnStart),
     refreshed.slice(0, refreshedTurnStart),
   );
@@ -367,9 +425,10 @@ export function shouldDeferLiveHistoryRefresh(
   agentType: AgentType | undefined,
   sessionId: string,
   runningSessionId: string | null,
+  ownsLiveStream = true,
 ): boolean {
   return (agentType === "deepseek-harness" || agentType === "codex")
-    && sessionId === runningSessionId;
+    && sessionId === runningSessionId && ownsLiveStream;
 }
 
 export function restoreCodexExecutionTrace(detail: SessionHistoryDetail | null): ChatMessage[] {
@@ -490,6 +549,67 @@ function restoreSessionMessages(
   return restored;
 }
 
+/** Native snapshots can omit resolved interactions before a transcript card exists. */
+export function retainAnsweredSessionQuestions(
+  current: readonly ChatMessage[],
+  refreshed: ChatMessage[],
+): ChatMessage[] {
+  let merged = refreshed;
+  const matched = new Set<string>();
+  const aliases = new Map<string, string>();
+  const anchorIndex = (message: ChatMessage): number => {
+    const id = aliases.get(message.id) ?? message.id;
+    const identity = merged.findIndex(candidate => candidate.id === id
+      || Boolean(message.askUser && candidate.askUser?.questionId === message.askUser.questionId));
+    if (identity >= 0) return identity;
+    if (message.askUser || message.isQueued) return -1;
+    const candidates = merged.flatMap((candidate, index) => !candidate.askUser && !candidate.isQueued
+      && sessionHistoryMessagesAlign(message, candidate, sessionHistoryMessageMatchKey(candidate)) ? [index] : []);
+    return candidates.length === 1 ? candidates[0] : -1;
+  };
+  current.forEach((message, index) => {
+    const question = message.askUser;
+    if (!question?.answered || message.isQueued) return;
+    let target = merged.findIndex(candidate => candidate.askUser?.questionId === question.questionId);
+    let before = -1;
+    let after = -1;
+    if (target < 0) {
+      for (let cursor = index - 1; cursor >= 0 && before < 0; cursor -= 1) before = anchorIndex(current[cursor]);
+      for (let cursor = index + 1; cursor < current.length && after < 0; cursor += 1) after = anchorIndex(current[cursor]);
+      // A native transcript can assign a new question ID. Reconcile only one
+      // settled occurrence inside the same surrounding message anchors.
+      if (before >= 0 || after >= 0) target = merged.findIndex((candidate, candidateIndex) => (
+        candidateIndex > before && (after < 0 || candidateIndex < after)
+        && !matched.has(candidate.id) && candidate.presentation?.question?.status === "answered"
+        && candidate.askUser?.answered && candidate.askUser.question === question.question
+        && candidate.askUser.answer === question.answer
+        && JSON.stringify(candidate.askUser.options) === JSON.stringify(question.options)
+        && JSON.stringify(candidate.askUser.fields) === JSON.stringify(question.fields)
+        && Boolean(candidate.askUser.multiSelect) === Boolean(question.multiSelect)
+      ));
+    }
+    if (target >= 0) {
+      const native = merged[target];
+      matched.add(native.id);
+      aliases.set(message.id, native.id);
+      if (native.askUser?.answered && native.askUser.answer && native.askUser.answer !== "已处理") return;
+      merged = merged.slice();
+      merged[target] = {
+        ...native,
+        askUser: { ...native.askUser, ...question, questionId: native.askUser!.questionId, cancelled: false },
+        ...(native.presentation?.question ? { presentation: { ...native.presentation,
+          question: { ...native.presentation.question, status: "answered", answer: question.answer },
+        } } : {}),
+      };
+      return;
+    }
+    const insertionIndex = after >= 0 ? after : before >= 0 ? before + 1 : Math.min(index, merged.length);
+    merged = [...merged.slice(0, insertionIndex), message, ...merged.slice(insertionIndex)];
+    matched.add(message.id);
+  });
+  return merged;
+}
+
 export function mergeRefreshedSessionHistory(
   current: ChatMessage[],
   refreshed: ChatMessage[],
@@ -531,7 +651,7 @@ export function mergeRefreshedSessionHistory(
   const stableRefreshed = refreshed.map((message, index) => {
     const previous = current[replacementStart + index];
     if (!previous || !sessionHistoryMessagesAlign(previous, message, refreshedKeys[index])) return message;
-    const hasPersistedImage = message.presentation?.attachments?.some((attachment) => attachment.dataUrl);
+    const hasPersistedImage = message.presentation?.attachments?.some((attachment) => attachment.imageId || attachment.dataUrl);
     const toolCalls = message.toolCalls?.map((toolCall) => {
       const previousToolCall = previous.toolCalls?.find((candidate) => candidate.id === toolCall.id);
       return previousToolCall?.result === undefined
@@ -545,33 +665,32 @@ export function mergeRefreshedSessionHistory(
       timestamp: previous.timestamp,
       images: hasPersistedImage ? undefined : message.images ?? previous.images,
       presentation: mergeRunResultPresentation(previous.presentation, carried.presentation),
+      ...(previous.isSteered ? { isSteered: true, sourceMessageId: previous.sourceMessageId ?? previous.id } : {}),
       ...(toolCalls ? { toolCalls } : {}),
     };
   });
   const queued = current.filter((message) => message.isQueued);
   const currentTail = current.slice(replacementStart).filter((message) => !message.isQueued);
   const reconciledRefreshed = preserveTrailingAssistantSuffix(currentTail, stableRefreshed);
-  const optimisticTurnStart = current.findLastIndex((message, index) => (
-    index >= replacementStart
-    && message.role === "user"
-    && (message.awaitingHistory || message.sendState === "pending" || message.sendState === "failed")
-    && !message.isQueued
-    && !refreshedHistoryConfirmsOptimisticUser(
-      current,
-      stableRefreshed,
-      replacementStart,
-      index,
-    )
-  ));
-  const optimisticTurn = optimisticTurnStart < 0
-    ? []
-    : current.slice(optimisticTurnStart).filter((message) => !message.isQueued);
-  return [
+  // Queue admission and steering can acknowledge several inputs before the
+  // native transcript catches up. Retain each unconfirmed turn independently.
+  const optimisticTurn: ChatMessage[] = [];
+  let retainTurn = false;
+  current.forEach((message, index) => {
+    if (message.isQueued) return;
+    if (message.role === "user" && !message.isCompactionSummary) {
+      retainTurn = index >= replacementStart
+        && Boolean(message.awaitingHistory || message.sendState === "pending" || message.sendState === "failed")
+        && !refreshedHistoryConfirmsOptimisticUser(current, stableRefreshed, replacementStart, index);
+    }
+    if (retainTurn) optimisticTurn.push(message);
+  });
+  return retainAnsweredSessionQuestions(current, [
     ...current.slice(0, replacementStart).filter((message) => !message.isQueued),
     ...reconciledRefreshed,
     ...optimisticTurn,
     ...queued,
-  ];
+  ]);
 }
 
 function refreshedHistoryConfirmsOptimisticUser(
@@ -612,15 +731,15 @@ function carryOverOmittedAttachmentImages(
   const refreshedAttachments = refreshed.presentation?.attachments;
   const previousAttachments = previous?.presentation?.attachments;
   if (!refreshedAttachments?.length || !previousAttachments?.length) return refreshed;
-  if (refreshedAttachments.every((attachment) => attachment.dataUrl || attachment.unavailable)) {
+  if (refreshedAttachments.every((attachment) => attachment.imageId || attachment.dataUrl || attachment.unavailable)) {
     return refreshed;
   }
   const carried = refreshedAttachments.map((attachment) => {
-    if (attachment.dataUrl || attachment.unavailable || !attachment.omitted) return attachment;
+    if (attachment.imageId || attachment.dataUrl || attachment.unavailable || !attachment.omitted) return attachment;
     const match = previousAttachments.find((candidate) => (
-      candidate.name === attachment.name && candidate.dataUrl
+      candidate.name === attachment.name && (candidate.imageId || candidate.dataUrl)
     ));
-    return match ? { ...attachment, dataUrl: match.dataUrl, omitted: undefined } : attachment;
+    return match ? { ...attachment, dataUrl: match.dataUrl, imageId: match.imageId, omitted: undefined } : attachment;
   });
   return { ...refreshed, presentation: { ...refreshed.presentation, attachments: carried } };
 }
@@ -700,6 +819,9 @@ function findUserBoundaryMatch(
 ): number | null {
   const refreshedBoundary = refreshed[0];
   if (refreshedBoundary?.role !== "user") return null;
+  const sameIdentity = current.findIndex(message => message.role === "user"
+    && !message.isQueued && message.id === refreshedBoundary.id);
+  if (sameIdentity >= 0) return sameIdentity;
   const refreshedKey = sessionHistoryUserBoundaryKey(refreshedBoundary);
   let best: { start: number; distance: number } | null = null;
   for (let currentIndex = 0; currentIndex < current.length; currentIndex += 1) {
@@ -716,6 +838,9 @@ function sessionHistoryMessagesAlign(
   refreshed: ChatMessage,
   refreshedKey: string,
 ): boolean {
+  if (current.askUser || refreshed.askUser) {
+    return Boolean(current.askUser && current.askUser.questionId === refreshed.askUser?.questionId);
+  }
   if (sessionHistoryMessageMatchKey(current) === refreshedKey) return true;
   if (
     current.role === "assistant"
@@ -749,6 +874,7 @@ function sessionHistoryMessageMatchKey(message: ChatMessage): string {
     name: message.name,
     agentName: message.agentName,
     presentation: message.role === "user" ? undefined : message.presentation,
+    questionId: message.askUser?.questionId,
     isCompactionSummary: message.isCompactionSummary,
   });
 }

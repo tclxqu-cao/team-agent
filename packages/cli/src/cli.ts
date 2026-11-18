@@ -32,6 +32,10 @@ import { withCliProgress } from "../bin/cli-progress.mjs";
 const VERSION = AGENTROAM_VERSION;
 
 export async function main(argv: string[]): Promise<void> {
+  if (argv[0] === "mcp" && argv[1] === "todo") {
+    const { runTodoMcpCommand } = await import("./todo-mcp-command.js");
+    return runTodoMcpCommand(argv.slice(2));
+  }
   if (argv.includes("--help") || argv.includes("-h")) {
     console.log(`AgentRoam
   agentroam [start] [--local-only] [--test-no-pairing] [--data-dir PATH]

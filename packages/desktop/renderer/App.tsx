@@ -4,6 +4,7 @@ import { createPortal } from "react-dom";
 import { History, LoaderCircle, Plus, Search } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import ChatView from "./components/ChatView";
+import DesktopTaskWorkspace from "./components/desktop-task-split/DesktopTaskWorkspace";
 import AllSessionsSidebar from "./components/AllSessionsSidebar";
 import SidebarRefreshButton from "./components/SidebarRefreshButton";
 import SidebarSessionPagination from "./components/SidebarSessionPagination";
@@ -13,6 +14,8 @@ import SupervisionNotifier from "./components/collaboration/SupervisionNotifier"
 import { collaborationRequest } from "./components/collaboration/client";
 import { getCachedDashboardSession, resolveDashboardSession, initialSessionNavigation } from "./lib/dashboard-session-navigation";
 import { postDashboardIntent } from "./lib/dashboard-navigation-delivery";
+import { openNewSessionWindow } from "./lib/new-session-window";
+import { requestTaskPaneNotification } from "./lib/task-pane-notification";
 import type { SessionHistorySeed } from "./lib/session-history";
 import type { AgentRailSessions } from "./lib/agent-rail-sessions";
 import { isAgentType } from "../../core/src/domain/agent/agent-type";
@@ -48,6 +51,8 @@ import {
 } from "./lib/session-deletion";
 import DesktopLiveDialog from "./components/DesktopLiveDialog";
 import WakeOverlay from "./components/WakeOverlay";
+import ToastNotifications from "./components/ToastNotifications";
+import { useNotificationToasts } from "./lib/use-notification-toasts";
 import AgentWorkspaceSwitcher from "./components/AgentWorkspaceSwitcher";
 import { agentUnavailableMessage } from "./lib/agent-availability";
 import AgentWorkspaceHeader from "./components/AgentWorkspaceHeader";
@@ -89,7 +94,8 @@ import { useAgentStore } from "./stores/agentStore";
 import { useUIStore, SKINS, LAYOUTS } from "./stores/uiStore";
 import { startWakeListener, isASRSupported, type WakeListenerHandle } from "./lib/speech";
 import { getDesktopDirectoryContextMenuPath } from "./lib/sidebar-directory-context-menu";
-import { isWebShell, useNarrowViewport } from "./web/webLayout";
+import { isBrowserRuntime, isWebShell, useNarrowViewport } from "./web/webLayout";
+import { useWebTaskSplitEnabled } from "./web/webTaskSplit";
 import { createElectronFileWorkspaceGateway } from "./lib/electron-file-workspace-gateway";
 import { resolveDesktopFlowStudioEntryUrl } from "./lib/desktop-flow-studio-entry";
 import { postWebArtifactOpen, resolveWebArtifactPath } from "./lib/artifact-links";
@@ -107,6 +113,13 @@ const CollaborationDashboard = lazy(() => import("./components/collaboration/Col
 const SessionDashboard = lazy(() => import("./components/collaboration/SessionDashboard"));
 const CollaborationPage = lazy(() => import("./components/collaboration/CollaborationPage"));
 const AIHubView = lazy(() => import("./components/AIHubView"));
+const CalendarView = lazy(() => import("./components/CalendarView"));
+
+const loadCalendarOverview = async (from: string, to: string) => {
+  const api = window.agentApi;
+  if (!api?.calendarOverview) throw new Error("当前服务不支持日历，请更新共享服务。");
+  return api.calendarOverview({ from, to });
+};
 const SettingsPanel = lazy(() => import("./components/SettingsPanel"));
 const MCPServerList = lazy(() => import("./components/MCPServerList"));
 const MemoryViewer = lazy(() => import("./components/MemoryViewer"));
@@ -358,14 +371,54 @@ export default function App() {
   const [showDesktopLive, setShowDesktopLive] = useState(false);
   // AI Hub（多 AI 网页聚合）：打开时内容区切换为 AIHubView，ChatView 保持挂载仅隐藏
   const [hubOpen, setHubOpen] = useState(false);
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  const [notificationTaskId, setNotificationTaskId] = useState<string>();
+  const [calendarFocusKey, setCalendarFocusKey] = useState(0);
+  const openCalendar = () => { setHubOpen(false); setNotificationTaskId(undefined); setCalendarFocusKey(k => k + 1); setCalendarOpen(true); };
+  useEffect(() => {
+    let navigationVersion = 0;
+    const open = (target: { taskId?: string; sessionId?: string }) => {
+      if (!target.taskId && !target.sessionId) return;
+      const version = ++navigationVersion;
+      setFlowStudioEntryUrl(null);
+      setSessionDashboardOpen(false);
+      setCollaborationDashboardOpen(false);
+      setActiveCollaboration(null);
+      setHubOpen(false);
+      if (target.taskId) {
+        navigationRequest.current?.abort();
+        navigationRequest.current = null;
+        navigationHistory.current = null;
+        setPendingSessionNavigation(null);
+        setNotificationTaskId(target.taskId);
+        setCalendarOpen(true);
+        setCalendarFocusKey(k => k + 1);
+      } else if (target.sessionId) {
+        setCalendarOpen(false);
+        if (requestTaskPaneNotification(target.sessionId)) return;
+        void window.agentApi.getSession(target.sessionId, { limit: 1 }).then(value => {
+          if (version !== navigationVersion) return;
+          const session = value as UnifiedSessionSummary;
+          dashboardNavigation.current({ kind: "session", session: { id: session.id, agentType: session.agentType ?? "customer-agent", title: session.title, cwd: session.cwd ?? "", projectId: session.projectId ?? undefined } });
+        }).catch(() => undefined);
+      }
+    };
+    const handler = (event: Event) => open((event as CustomEvent).detail);
+    window.addEventListener("agentroam:notification-open", handler);
+    const off = window.agentApi?.onNotificationOpen?.(open);
+    return () => { navigationVersion++; window.removeEventListener("agentroam:notification-open", handler); off?.(); };
+  }, []);
+  useEffect(() => { setCalendarOpen(false); }, [selectedSessionId, selectedProjectId]);
   const [collaborationTabs, setCollaborationTabs] = useState<CollaborationGroup[]>([]);
   const [activeCollaboration, setActiveCollaboration] = useState<string | null>(null);
   const [collaborationDashboardOpen, setCollaborationDashboardOpen] = useState(false);
   const [collaborationDashboardVisible, setCollaborationDashboardVisible] = useState(false);
   const [sessionDashboardOpen, setSessionDashboardOpen] = useState(false);
   const [sessionDashboardVisible, setSessionDashboardVisible] = useState(false);
+  useEffect(() => { void window.agentApi?.setNotificationVisible?.({ sessionId: !calendarOpen && !hubOpen && !sessionDashboardOpen && !collaborationDashboardOpen && !activeCollaboration ? selectedSessionId ?? undefined : undefined }); }, [selectedSessionId, calendarOpen, hubOpen, sessionDashboardOpen, collaborationDashboardOpen, activeCollaboration]);
   /** 新建会话输入框聚焦序号：从 Dashboard 等入口进入时递增，触发 composer focus。 */
   const [newSessionFocusNonce, setNewSessionFocusNonce] = useState(0);
+  const [taskSplitOpen, setTaskSplitOpen] = useState(false);
   const [initialSessionHistory, setInitialSessionHistory] = useState<SessionHistorySeed>();
   const [pendingSessionNavigation, setPendingSessionNavigation] = useState<{ id: string; title: string } | null>(null);
   /** 进入新建会话态后，等待目标 Agent 的目录列表就绪再落定目录。 */
@@ -386,6 +439,7 @@ export default function App() {
   const chatNavigationInstance = useRef(`${Date.now()}-${Math.random().toString(36).slice(2)}`);
   const hasWorkspaceTabs = sessionDashboardVisible || collaborationDashboardVisible || collaborationTabs.length > 0;
   const openSessionDashboard = () => {
+    setCalendarOpen(false);
     if (isWebShell() && window.parent !== window) {
       window.parent.postMessage({ type: SESSION_DASHBOARD_NAVIGATE, intent: { kind: "dashboard" } }, window.location.origin);
       return;
@@ -394,6 +448,7 @@ export default function App() {
     setCollaborationDashboardOpen(false); setActiveCollaboration(null);
   };
   const openCollaborationDashboard = () => {
+    setCalendarOpen(false);
     setCollaborationDashboardVisible(true);
     setCollaborationDashboardOpen(true);
     setActiveCollaboration(null);
@@ -426,8 +481,6 @@ export default function App() {
   const setLayout = useUIStore((s) => s.setLayout);
   const setWakeEnabled = useUIStore((s) => s.setWakeEnabled);
   const setWakeWord = useUIStore((s) => s.setWakeWord);
-  const autoSpeak = useUIStore((s) => s.autoSpeak);
-  const setAutoSpeak = useUIStore((s) => s.setAutoSpeak);
   const runningFirst = useUIStore((s) => s.runningFirst);
   const setRunningFirst = useUIStore((s) => s.setRunningFirst);
   const pinnedSessionIds = useUIStore((s) => s.pinnedSessionIds);
@@ -484,6 +537,7 @@ export default function App() {
   // ── Web shell (packages/webapp): drawer sidebar on phone-width screens ──
   // Gated on the web-shell flag so the Electron app keeps its exact layout.
   const webShell = isWebShell();
+  const notifications = useNotificationToasts(!webShell);
   useEffect(() => {
     if (!webShell || window.parent === window) return;
     const onMessage = (event: MessageEvent) => {
@@ -495,6 +549,7 @@ export default function App() {
     return () => window.removeEventListener("message", onMessage);
   }, [webShell]);
   const narrowViewport = useNarrowViewport();
+  const webTaskSplitEnabled = useWebTaskSplitEnabled();
   const mobileDrawer = webShell && narrowViewport;
   const [sidebarDrawerOpen, setSidebarDrawerOpen] = useState(false);
   const [fileDrawerOpen, setFileDrawerOpen] = useState(false);
@@ -669,6 +724,7 @@ export default function App() {
   useEffect(() => {
     if (!window.agentApi?.onWakeAiHub) return;
     return window.agentApi.onWakeAiHub(() => {
+      setCalendarOpen(false);
       setHubOpen(true);
       setLayout("focus");
     });
@@ -704,8 +760,6 @@ export default function App() {
       }
       setSelectedSessionId(null);
       pendingVoiceConvo.current = true;
-      // Voice-originated sessions speak their replies back (two-way voice)
-      setAutoSpeak(true);
       setVoiceCommand({ text, projectId: proj?.id ?? null, nonce: Date.now() });
       setNotice(`语音指令：${text.length > 40 ? text.slice(0, 40) + "…" : text}${proj ? `（项目：${proj.name}）` : ""}`);
       setNoticeType("success");
@@ -869,6 +923,7 @@ export default function App() {
       const entryUrl = await resolveDesktopFlowStudioEntryUrl();
       if (entryUrl) {
         setHubOpen(false);
+        setCalendarOpen(false);
         setSidebarDrawerOpen(false);
         setFlowStudioEntryUrl(entryUrl);
         return;
@@ -882,6 +937,7 @@ export default function App() {
   }, [flowStudioOpening]);
 
   const applySidebarSelection = (selection: SidebarSelection) => {
+    setCalendarOpen(false);
     const entry = selection.sessionId ? engineThreadIndexRef.current?.get(selection.sessionId) : undefined;
     const active = entry ? activeThreadSession(entry) : undefined;
     if (active) {
@@ -1254,6 +1310,7 @@ export default function App() {
     options: {
       refresh?: boolean;
       background?: boolean;
+      force?: boolean;
       cursor?: string | null;
       pendingSession?: Session;
     } = {},
@@ -1264,7 +1321,7 @@ export default function App() {
     // the native runtime cannot list. Their history is refreshed by ChatView.
     if (isSessionOnlyWorkspace(workspaceCacheRef.current.agents[activeAgentRef.current]?.workspaces
       .find(workspace => workspace.workspaceId === projectId))) return;
-    if ((options.cursor || options.background) && loadingProjectIdsRef.current.has(projectId)) return;
+    if (!options.force && (options.cursor || options.background) && loadingProjectIdsRef.current.has(projectId)) return;
     const agentType = activeAgentRef.current;
     const requestKey = `${agentType}:${projectId}`;
     const requestId = (projectSessionRequestIds.current.get(requestKey) ?? 0) + 1;
@@ -1304,74 +1361,72 @@ export default function App() {
         ...currentRoots,
         ...[...previousRootIds].flatMap((rootId) => childSessionsByParentRef.current[rootId] ?? []),
       ];
-      const page = options.refresh && !options.cursor
-        ? await refreshCachedRunningSessionPages(
-            current,
-            firstPage,
-            (cursor) => agentApi.listAgentWorkspaceSessions(agentType, projectId, {
-              cursor,
-              limit: 200,
-              refresh: false,
-            }) as Promise<WorkspacePage<Session>>,
-            pendingSession?.id,
-          )
-        : firstPage;
-      if (activeAgentRef.current !== agentType || projectSessionRequestIds.current.get(requestKey) !== requestId) return;
+      const publishPage = (page: WorkspacePage<Session>) => {
+        if (activeAgentRef.current !== agentType || projectSessionRequestIds.current.get(requestKey) !== requestId) return;
+        const list = reconcileSessionPage(current, page, !options.cursor,
+          selectedProjectIdRef.current === projectId ? selectedSessionIdRef.current : null)
+          .map((session) => ({ ...session, projectId: session.projectId ?? projectId }));
+        const refreshedRoots = orderSessionsForAgent(
+          list.filter((session) => !session.parentSessionId),
+          agentType,
+        );
+        const activeProjectId = selectedProjectIdRef.current;
+        const activeSessionId = selectedSessionIdRef.current;
+        const roots = preservePendingNativeSession(refreshedRoots, pendingSession) as Session[];
+        if (
+          activeProjectId === projectId
+          && activeSessionId
+          && createdSessionReceiptRef.current?.id !== activeSessionId
+          // Engine-switch thread members live in other rails' discovery; never
+          // clear the selection just because this rail's page lacks them.
+          && !engineThreadIndexRef.current?.has(activeSessionId)
+          && !list.some((session) => session.id === activeSessionId)
+          && !roots.some((session) => session.id === activeSessionId)
+        ) {
+          applySidebarSelection(EMPTY_SIDEBAR_SELECTION);
+        }
+        const freshChildGroups: Record<string, Session[]> = {};
+        for (const child of list.filter((session) => session.parentSessionId)) {
+          (freshChildGroups[child.parentSessionId!] ??= []).push(child);
+        }
+        for (const children of Object.values(freshChildGroups)) {
+          children.sort((left, right) => left.created.localeCompare(right.created));
+        }
 
-      const list = reconcileSessionPage(current, page, !options.cursor,
-        selectedProjectIdRef.current === projectId ? selectedSessionIdRef.current : null)
-        .map((session) => ({ ...session, projectId: session.projectId ?? projectId }));
-      const refreshedRoots = orderSessionsForAgent(
-        list.filter((session) => !session.parentSessionId),
-        agentType,
-      );
-      const activeProjectId = selectedProjectIdRef.current;
-      const activeSessionId = selectedSessionIdRef.current;
-      const roots = preservePendingNativeSession(refreshedRoots, pendingSession) as Session[];
-      if (
-        activeProjectId === projectId
-        && activeSessionId
-        && createdSessionReceiptRef.current?.id !== activeSessionId
-        // Engine-switch thread members live in other rails' discovery; never
-        // clear the selection just because this rail's page lacks them.
-        && !engineThreadIndexRef.current?.has(activeSessionId)
-        && !list.some((session) => session.id === activeSessionId)
-        && !roots.some((session) => session.id === activeSessionId)
-      ) {
-        applySidebarSelection(EMPTY_SIDEBAR_SELECTION);
+        setSessionNextCursors((prev) => ({
+          ...prev,
+          [projectId]: reconcileSessionNextCursor(current, page, !options.cursor, prev[projectId]),
+        }));
+        setStaleProjectIds((prev) => {
+          const next = new Set(prev);
+          if (page.stale) next.add(projectId); else next.delete(projectId);
+          return next;
+        });
+        const nextSessionsByProject = { ...sessionsByProjectRef.current, [projectId]: roots };
+        const nextChildSessionsByParent = { ...childSessionsByParentRef.current };
+        for (const rootId of previousRootIds) delete nextChildSessionsByParent[rootId];
+        for (const [rootId, children] of Object.entries(freshChildGroups)) {
+          nextChildSessionsByParent[rootId] = children;
+        }
+        sessionsByProjectRef.current = nextSessionsByProject;
+        childSessionsByParentRef.current = nextChildSessionsByParent;
+        setSessionsByProject(nextSessionsByProject);
+        setChildSessionsByParent(nextChildSessionsByParent);
+        setLoadedProjectIds((prev) => {
+          const next = new Set(prev).add(projectId);
+          loadedProjectIdsRef.current = next;
+          return next;
+        });
+      };
+      // Publish the newest head before reconciling running rows on older pages.
+      publishPage(firstPage);
+      if (options.refresh && !options.cursor) {
+        const page = await refreshCachedRunningSessionPages(current, firstPage,
+          cursor => agentApi.listAgentWorkspaceSessions(agentType, projectId, {
+            cursor, limit: 200, refresh: false,
+          }) as Promise<WorkspacePage<Session>>, pendingSession?.id);
+        if (page !== firstPage) publishPage(page);
       }
-      const freshChildGroups: Record<string, Session[]> = {};
-      for (const child of list.filter((session) => session.parentSessionId)) {
-        (freshChildGroups[child.parentSessionId!] ??= []).push(child);
-      }
-      for (const children of Object.values(freshChildGroups)) {
-        children.sort((left, right) => left.created.localeCompare(right.created));
-      }
-
-      setSessionNextCursors((prev) => ({
-        ...prev,
-        [projectId]: reconcileSessionNextCursor(current, page, !options.cursor, prev[projectId]),
-      }));
-      setStaleProjectIds((prev) => {
-        const next = new Set(prev);
-        if (page.stale) next.add(projectId); else next.delete(projectId);
-        return next;
-      });
-      const nextSessionsByProject = { ...sessionsByProjectRef.current, [projectId]: roots };
-      const nextChildSessionsByParent = { ...childSessionsByParentRef.current };
-      for (const rootId of previousRootIds) delete nextChildSessionsByParent[rootId];
-      for (const [rootId, children] of Object.entries(freshChildGroups)) {
-        nextChildSessionsByParent[rootId] = children;
-      }
-      sessionsByProjectRef.current = nextSessionsByProject;
-      childSessionsByParentRef.current = nextChildSessionsByParent;
-      setSessionsByProject(nextSessionsByProject);
-      setChildSessionsByParent(nextChildSessionsByParent);
-      setLoadedProjectIds((prev) => {
-        const next = new Set(prev).add(projectId);
-        loadedProjectIdsRef.current = next;
-        return next;
-      });
     } catch (error) {
       if (projectSessionRequestIds.current.get(requestKey) !== requestId) return;
       setStaleProjectIds((prev) => new Set(prev).add(projectId));
@@ -1401,13 +1456,25 @@ export default function App() {
     }));
   };
 
+  const newSessionInWindow = taskSplitOpen && !hubOpen && !calendarOpen && !sessionDashboardOpen
+    && !collaborationDashboardOpen && !activeCollaboration;
   const handleNewRuntimeSession = (projectId: string, agentType: AgentType) => {
     const workspace = projectsRef.current.find(project => project.id === projectId);
     if (!workspace || workspace.canCreateSession === false) return;
+    if (newSessionInWindow) { handleNewSessionWindow(agentType, workspace.description || undefined); return; }
     enterNewSessionComposer(agentType, projectId);
   };
 
-  const handleBottomNewSession = () => postDashboardIntent({ kind: "new-session" });
+  const handleNewSessionWindow = (agentType: AgentType = activeAgentRef.current, workspacePath = selectedWorkspacePath || undefined) => {
+    void openNewSessionWindow({ agentType, workspacePath }).catch(error => {
+      setNotice(error instanceof Error ? error.message : "无法打开新会话窗口，请重试");
+      setNoticeType("error");
+    });
+  };
+  const handleBottomNewSession = () => {
+    if (newSessionInWindow) handleNewSessionWindow();
+    else postDashboardIntent({ kind: "new-session" });
+  };
 
   useEffect(() => {
     if (!window.agentApi) return;
@@ -1500,15 +1567,9 @@ export default function App() {
       if (opening) next.add(projectId); else next.delete(projectId);
       return next;
     });
-    if (opening && !loadingProjectIdsRef.current.has(projectId)) {
+    if (opening) {
       const hasCache = loadedProjectIdsRef.current.has(projectId);
-      const project = projectsRef.current.find((candidate) => candidate.id === projectId);
-      const shouldRefresh = shouldRefreshWorkspaceSessions(
-        activeAgentRef.current,
-        project,
-        hasCache,
-      );
-      void loadSessions(projectId, { refresh: shouldRefresh, background: hasCache });
+      void loadSessions(projectId, { refresh: true, background: hasCache, force: true });
     }
   };
 
@@ -1831,11 +1892,15 @@ export default function App() {
         }}/> : activeCollaboration && <CollaborationPage key={`${activeCollaboration}-${collaborationGroupsRevision}`} groupId={activeCollaboration} initialDiscussionId={initialDiscussions[activeCollaboration]}/>}</Suspense></div>
       </div>}
       <DesktopLiveControlBanner />
-      {!allSessionsLayout && !mobileDrawer && !flowStudioEntryUrl && <AgentSessionRail hidden={!sidebarHidden}
+      {!mobileDrawer && !flowStudioEntryUrl && <AgentSessionRail hidden={!sidebarHidden}
         value={activeAgent} health={runtimeHealth} selectedSessionId={selectedSessionId}
         getActivity={sessionActivity} onChange={handleAgentChange}
         onUnavailable={message => { setNotice(message); setNoticeType("info"); setTimeout(() => setNotice(null), 3000); }}
         onSelect={openAgentSession}
+        onNewSession={agentType => {
+          if (newSessionInWindow) handleNewSessionWindow(agentType);
+          else enterNewSessionComposer(agentType);
+        }}
       />}
       {/* Web mobile: drawer mask + hamburger */}
       {!flowStudioEntryUrl && mobileDrawer && sidebarDrawerOpen && (
@@ -1938,6 +2003,7 @@ export default function App() {
               {!webShell && navigationLayout === "classic" && (
                 <DesktopAppActions
                   onOpenFlowStudio={handleOpenFlowStudio}
+                  onOpenCalendar={openCalendar}
                   openingFlowStudio={flowStudioOpening}
                 />
               )}
@@ -2509,10 +2575,31 @@ export default function App() {
           style={{
           height: "100%",
           paddingTop: 0,
-          display: hubOpen ? "none" : undefined,
+          display: hubOpen || calendarOpen ? "none" : undefined,
           background: "var(--chat-history-bg)",
         }}>
-          <ChatView
+          <DesktopTaskWorkspace
+            onSplitChange={setTaskSplitOpen}
+            enabled={webTaskSplitEnabled || (!webShell && !isBrowserRuntime())}
+            onOpenCalendar={openCalendar}
+            onFocusSession={session => {
+              selectedSessionIdRef.current = session.id;
+              selectedProjectIdRef.current = session.projectId ?? null;
+              setCreatedSessionReceipt(session);
+              setSelectedSessionId(session.id);
+              setSelectedProjectId(session.projectId ?? null);
+            }}
+            onNavigateSession={session => dashboardNavigation.current({ kind: "session", session })}
+            onSessionCreated={session => {
+              if (session.projectId && session.agentType === activeAgentRef.current) {
+                const projectId = session.projectId;
+                setSessionsByProject(previous => ({ ...previous, [projectId]: [
+                  session, ...(previous[projectId] ?? []).filter(item => item.id !== session.id),
+                ] }));
+              }
+              setAllSessionsRevision(revision => revision + 1);
+            }}
+          ><ChatView
             sidebarCollapsed={sidebarHidden}
             onToggleSidebar={!mobileDrawer && !flowStudioEntryUrl ? () => {
               if (layout === "focus") {
@@ -2560,8 +2647,8 @@ export default function App() {
             } : undefined}
             onOpenDesktopLive={!webShell && window.agentApi?.desktopLiveGetStatus ? () => setShowDesktopLive(true) : undefined}
             onHideToBackground={() => void hideToBackground()}
-            onOpenHub={window.agentApi?.hubGetConfig ? () => setHubOpen(true) : undefined}
-            headerAppActions={!webShell && navigationLayout !== "classic" ? <DesktopAppActions onOpenFlowStudio={handleOpenFlowStudio} openingFlowStudio={flowStudioOpening} /> : undefined}
+            onOpenHub={window.agentApi?.hubGetConfig ? () => { setCalendarOpen(false); setHubOpen(true); } : undefined}
+            headerAppActions={!webShell && navigationLayout !== "classic" ? <DesktopAppActions onOpenFlowStudio={handleOpenFlowStudio} onOpenCalendar={openCalendar} openingFlowStudio={flowStudioOpening} /> : undefined}
             onToggleAppearance={toggleAppearance}
             appearanceOpen={showAppearance}
             hideToBackgroundTitle={wakeEnabled ? `隐藏到后台（说“${wakeWord}”唤醒）` : "隐藏到后台"}
@@ -2653,8 +2740,12 @@ export default function App() {
                 await loadSessions(projectId, { refresh: true, background: true });
               }
             }}
-          />
+          /></DesktopTaskWorkspace>
         </div>
+
+        {calendarOpen && (
+          <Suspense fallback={<SessionLoading label="正在打开日历" />}><CalendarView loadOverview={loadCalendarOverview} onClose={() => setCalendarOpen(false)} initialTaskId={notificationTaskId} focusKey={calendarFocusKey} /></Suspense>
+        )}
 
         {pendingSessionNavigation && <SessionLoading className="session-navigation-loading" />}
 
@@ -2691,6 +2782,7 @@ export default function App() {
 
       {showSettings && createPortal(
           <div
+            data-task-page-overlay=""
             onClick={() => setShowSettings(false)}
             style={{
               position: "fixed",
@@ -2768,6 +2860,7 @@ export default function App() {
       {/* ── Appearance panel (skins / layout / voice) ── */}
       {showAppearance && appearanceAnchor && createPortal(
         <div
+          data-task-page-overlay=""
           onClick={() => setShowAppearance(false)}
           style={{ position: "fixed", inset: 0, zIndex: 10000, WebkitAppRegion: "no-drag" } as React.CSSProperties}
         >
@@ -2837,10 +2930,6 @@ export default function App() {
             <div style={{ display: "flex", flexDirection: "column", gap: 10, borderTop: "1px solid var(--border-subtle)", paddingTop: 12 }}>
               <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase" as const, letterSpacing: "0.08em" }}>语音</div>
               <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12, color: "var(--text-secondary)", cursor: "pointer" }}>
-                助手回复自动播报
-                <input className="appearance-switch" type="checkbox" checked={autoSpeak} onChange={(e) => setAutoSpeak(e.target.checked)} />
-              </label>
-              <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12, color: "var(--text-secondary)", cursor: "pointer" }}>
                 隐藏后语音唤醒
                 <input className="appearance-switch" type="checkbox" checked={wakeEnabled} onChange={(e) => setWakeEnabled(e.target.checked)} />
               </label>
@@ -2878,8 +2967,21 @@ export default function App() {
 
       <WakeOverlay trigger={wakeTrigger} heardText={wakeHeard} />
 
+      {notifications.items.length > 0 && createPortal(
+        <ToastNotifications
+          items={notifications.items}
+          onDismiss={notifications.consume}
+          onClearAll={notifications.clearAll}
+          onOpen={notification => {
+            notifications.consume(notification);
+            window.dispatchEvent(new CustomEvent("agentroam:notification-open", { detail: notification }));
+          }}
+        />,
+        document.body,
+      )}
+
       {/* ── Toast notifications (bottom-right) ── */}
-      {toasts.length > 0 && createPortal(
+      {toasts.length > 0 && notifications.items.length === 0 && createPortal(
         <div style={{
           position: "fixed",
           bottom: 24,

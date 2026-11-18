@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { startSessionHistoryPolling } from "./session-history-polling";
+import { refreshSessionHistoryWhenReady, startSessionHistoryPolling } from "./session-history-polling";
 
 afterEach(() => vi.useRealTimers());
 
@@ -38,4 +38,39 @@ it("stops refreshing when the reader switches away from the session", () => {
   stop();
   vi.advanceTimersByTime(10_000);
   expect(refresh).toHaveBeenCalledTimes(1);
+});
+
+it("reads a resumed session immediately even without another transcript change", () => {
+  vi.useFakeTimers();
+  const refresh = vi.fn();
+  const stop = refreshSessionHistoryWhenReady(refresh, () => true);
+  vi.advanceTimersByTime(10_000);
+  expect(refresh).toHaveBeenCalledTimes(1);
+  stop();
+});
+
+it("defers a resume read until the initial snapshot has settled", () => {
+  vi.useFakeTimers();
+  let ready = false;
+  const refresh = vi.fn();
+  const stop = refreshSessionHistoryWhenReady(refresh, () => ready);
+  vi.advanceTimersByTime(1_000);
+  expect(refresh).not.toHaveBeenCalled();
+  ready = true;
+  vi.advanceTimersByTime(50);
+  expect(refresh).toHaveBeenCalledTimes(1);
+  vi.advanceTimersByTime(1_000);
+  expect(refresh).toHaveBeenCalledTimes(1);
+  stop();
+});
+
+it("cancels a deferred resume read when the session is hidden or replaced", () => {
+  vi.useFakeTimers();
+  let ready = false;
+  const refresh = vi.fn();
+  const stop = refreshSessionHistoryWhenReady(refresh, () => ready);
+  stop();
+  ready = true;
+  vi.advanceTimersByTime(1_000);
+  expect(refresh).not.toHaveBeenCalled();
 });

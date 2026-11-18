@@ -30,6 +30,14 @@ contextBridge.exposeInMainWorld("desktopDeviceApi", {
   hideWindow: () => ipcRenderer.invoke("window:hide"),
   showWindow: () => ipcRenderer.invoke("window:show"),
   isWindowVisible: () => ipcRenderer.invoke("window:isVisible"),
+  openNewSessionWindow: (options: { agentType: string; workspacePath?: string }) => ipcRenderer.invoke("window:new-session", options),
+  setNotificationVisible: (target: { sessionId?: string; taskId?: string }) => ipcRenderer.invoke("notification:visible", target),
+  notificationRead: (id: string, scope?: { serviceId: string; ownerId: string }) => ipcRenderer.invoke("notification:read", id, scope),
+  onNotificationOpen: (callback: (target: { sessionId?: string; taskId?: string; questionId?: string }) => void) => {
+    const handler = (_event: unknown, target: { sessionId?: string; taskId?: string; questionId?: string }) => callback(target);
+    ipcRenderer.on("notification:open", handler);
+    return () => ipcRenderer.removeListener("notification:open", handler);
+  },
   // 用系统浏览器打开 http(s) 链接（如 Flow Studio 免登入口）
   openExternal: (url: string) => ipcRenderer.invoke("shell:open-external", url),
   notifyTaskCompletion: (notification: unknown, preferences: unknown) =>
@@ -65,36 +73,6 @@ contextBridge.exposeInMainWorld("desktopDeviceApi", {
     const handler = (_e: unknown, message: string) => callback(message);
     ipcRenderer.on("dictation:error", handler);
     return () => ipcRenderer.removeListener("dictation:error", handler);
-  },
-
-  // Model-backed TTS via the voice service
-  ttsSpeak: (text: string) => ipcRenderer.invoke("tts:speak", text),
-  ttsStop: () => ipcRenderer.invoke("tts:stop"),
-  ttsPlaybackEnded: (generation: number) => ipcRenderer.invoke("tts:playback-ended", generation),
-  onTtsStart: (callback: (payload: unknown) => void): (() => void) => {
-    const handler = (_event: unknown, payload: unknown) => callback(payload);
-    ipcRenderer.on("tts:start", handler);
-    return () => ipcRenderer.removeListener("tts:start", handler);
-  },
-  onTtsPcm: (callback: (payload: unknown) => void): (() => void) => {
-    const handler = (_event: unknown, payload: unknown) => callback(payload);
-    ipcRenderer.on("tts:pcm", handler);
-    return () => ipcRenderer.removeListener("tts:pcm", handler);
-  },
-  onTtsStreamEnd: (callback: (payload: unknown) => void): (() => void) => {
-    const handler = (_event: unknown, payload: unknown) => callback(payload);
-    ipcRenderer.on("tts:stream-end", handler);
-    return () => ipcRenderer.removeListener("tts:stream-end", handler);
-  },
-  onTtsFlush: (callback: (payload: unknown) => void): (() => void) => {
-    const handler = (_event: unknown, payload: unknown) => callback(payload);
-    ipcRenderer.on("tts:flush", handler);
-    return () => ipcRenderer.removeListener("tts:flush", handler);
-  },
-  onTtsEnd: (callback: (payload: unknown) => void): (() => void) => {
-    const handler = (_event: unknown, payload: unknown) => callback(payload);
-    ipcRenderer.on("tts:end", handler);
-    return () => ipcRenderer.removeListener("tts:end", handler);
   },
 
   // Agent control
@@ -210,6 +188,7 @@ contextBridge.exposeInMainWorld("desktopDeviceApi", {
   // File operations
   openFileDialog: () => ipcRenderer.invoke("file:dialog:open"),
   showDirectoryContextMenu: (path: string) => ipcRenderer.invoke("directory:show-context-menu", path),
+  showFileContextMenu: (path: string) => ipcRenderer.invoke("file:show-context-menu", path),
   fileWorkspaceRequest: (method: string, params?: Record<string, unknown>) =>
     ipcRenderer.invoke("file-workspace:request", method, params),
   onFileWorkspaceEvent: (callback: (event: unknown) => void): (() => void) => {
@@ -259,6 +238,11 @@ contextBridge.exposeInMainWorld("desktopDeviceApi", {
   flowStudioSetBounds: (rect: { x: number; y: number; width: number; height: number } | null) =>
     ipcRenderer.invoke("flow-studio:set-bounds", rect),
   flowStudioReload: () => ipcRenderer.invoke("flow-studio:reload"),
+  taskPageOpen: (paneId: string, url: string) => ipcRenderer.invoke("task-page:open", paneId, url),
+  taskPageSetBounds: (paneId: string, rect: { x: number; y: number; width: number; height: number } | null) =>
+    ipcRenderer.invoke("task-page:set-bounds", paneId, rect),
+  taskPageReload: (paneId: string) => ipcRenderer.invoke("task-page:reload", paneId),
+  taskPageClose: (paneId: string) => ipcRenderer.invoke("task-page:close", paneId),
   onFlowStudioEvent: (callback: (event: unknown) => void): (() => void) => {
     const handler = (_event: unknown, data: unknown) => callback(data);
     ipcRenderer.on("flow-studio:event", handler);

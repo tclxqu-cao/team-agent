@@ -10,6 +10,42 @@ import type {
 import { RuntimeSessionError } from "./types.js";
 import { UnifiedSessionService } from "./unified-session-service.js";
 
+describe("independent live discovery", () => {
+  it("publishes fast Agents while a slow Agent is still pending, and coalesces refreshes", async () => {
+    const codex = adapter("codex", [summary("codex", "new", "/repo", "2026-11-17", { status: "running" })]);
+    const slow = adapter("qoder", []);
+    let release!: (sessions: UnifiedSessionSummary[]) => void;
+    slow.discoverSessions = vi.fn(() => new Promise<UnifiedSessionSummary[]>(resolve => { release = resolve; }));
+    const service = new UnifiedSessionService([codex, slow], async () => []);
+    await service.liveSessions();
+    await vi.waitFor(async () => expect((await service.liveSessions()).agentTypes).toContain("codex"));
+    const partial = await service.liveSessions();
+    expect(partial.sessions.map(session => session.nativeSessionId)).toEqual(["new"]);
+    expect(partial.agentTypes).not.toContain("qoder");
+    expect(slow.discoverSessions).toHaveBeenCalledTimes(1);
+    release([summary("qoder", "external", "/repo", "2026-11-17", { status: "running" })]);
+    await vi.waitFor(async () => expect((await service.liveSessions()).sessions).toHaveLength(2));
+    expect(codex.discoverSessions).toHaveBeenCalledTimes(1);
+  });
+
+  it("notices external creation and completion after the live interval without clearing history caches", async () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(100_000);
+    try {
+      const codex = adapter("codex", []);
+      const service = new UnifiedSessionService([codex], async () => []);
+      await service.list();
+      vi.mocked(codex.discoverSessions).mockResolvedValue([summary("codex", "external", "/repo", "2026-11-17", { status: "running" })]);
+      clock.mockReturnValue(102_001);
+      await service.liveSessions();
+      await vi.waitFor(async () => expect((await service.liveSessions()).sessions[0]?.status).toBe("running"));
+      vi.mocked(codex.discoverSessions).mockResolvedValue([summary("codex", "external", "/repo", "2026-11-17")]);
+      clock.mockReturnValue(104_002);
+      await service.liveSessions();
+      await vi.waitFor(async () => expect((await service.liveSessions()).sessions[0]?.status).toBe("idle"));
+    } finally { clock.mockRestore(); }
+  });
+});
+
 interface AdapterOverrides {
   events?: AgentEvent[];
   runError?: unknown;
@@ -491,6 +527,23 @@ describe("UnifiedSessionService", () => {
 
     await expect(service.steer(encodeUnifiedSessionId("codex", "cx-1"), "guide"))
       .rejects.toMatchObject({ code: "OPERATION_NOT_SUPPORTED" });
+  });
+
+  it("routes image steering only to an adapter that declares image support", async () => {
+    const claude = { ...adapter("claude-code", [summary("claude-code", "cc-1", "/repo", "2026-01-01")], {
+      events: [{ type: "text_chunk" as const, text: "working" }], steerResult: true,
+    }), supportsImageSteering: true };
+    const service = new UnifiedSessionService([claude], async () => []);
+    const id = encodeUnifiedSessionId("claude-code", "cc-1");
+    const running = service.run(id, "start")[Symbol.asyncIterator](); await running.next();
+    const images = ["data:image/png;base64,iVBORw0KGgoB"];
+    try {
+      await expect(service.steer(id, "inspect", undefined, images)).resolves.toBe(true);
+      expect(claude.steer).toHaveBeenCalledWith("cc-1", "inspect", undefined, images);
+      claude.supportsImageSteering = false;
+      await expect(service.steer(id, "inspect", undefined, images)).rejects.toMatchObject({ code: "OPERATION_NOT_SUPPORTED" });
+      expect(claude.steer).toHaveBeenCalledTimes(1);
+    } finally { await running.return?.(); }
   });
 
   it("routes deletion through both native and customer-agent adapters", async () => {

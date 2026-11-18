@@ -29,6 +29,20 @@ describe("VS Code Copilot projection", () => {
     expect(messages[3]).toMatchObject({ toolCallId: "bash", content: "OK" });
   });
 
+  it("preserves official subagent result metadata in both history and live output", () => {
+    const child = { type: "subagent", resource: "ahp-chat:/worker", title: "Research worker",
+      agentName: "native-worker", description: "Inspect the source" } as const;
+    const delegation = { ...tool, toolName: "test-native-tool", content: [child] } as ToolCallState;
+    const t = { ...turn(), state: TurnState.Complete,
+      responseParts: [{ kind: ResponsePartKind.ToolCall, toolCall: delegation }] } as Turn;
+    const chat: ChatState = { resource: "ahp-chat:/c", title: "test", modifiedAt: "", status: SessionStatus.Idle, turns: [t] };
+    const historyResult = copilotHistory(chat).find(message => message.role === "tool");
+    const liveResult = new CopilotEventProjection().consume(t).find(event => event.type === "tool_result");
+
+    expect(JSON.parse(historyResult!.content)).toEqual(child);
+    expect(liveResult?.type === "tool_result" && JSON.parse(liveResult.result.content)).toEqual(child);
+  });
+
   it("keeps cancellation/error terminal states and producer usage/duration", () => {
     const p = new CopilotEventProjection();
     const t = { ...turn(), duration: 850, state: TurnState.Cancelled, usage: { inputTokens: 10, outputTokens: 4, cacheReadTokens: 3 } } as Turn;

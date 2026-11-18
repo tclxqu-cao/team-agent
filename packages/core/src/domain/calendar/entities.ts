@@ -1,5 +1,5 @@
 // ── Calendar Domain ──
-// Read-only aggregation of every agent's scheduled tasks, runs and todos.
+// Read-only schedules, runs, and independent Todo dates/reminders. Session plans are excluded.
 
 export type CalendarSourceId =
   | "customer-agent"
@@ -24,7 +24,7 @@ export const CALENDAR_SOURCE_LABELS: Record<CalendarSourceId, string> = {
   deepseek: "DeepSeek",
 };
 
-export type CalendarEntryKind = "cron" | "run" | "todo";
+export type CalendarEntryKind = "cron" | "run" | "reminder" | "due" | "todo";
 
 export type CalendarEntryState =
   | "upcoming"
@@ -37,6 +37,8 @@ export type CalendarEntryState =
   | "unscheduled";
 
 export interface CalendarEntry {
+  taskId?: string;
+  scheduleRef?: string;
   id: string;
   kind: CalendarEntryKind;
   source: CalendarSourceId;
@@ -51,6 +53,9 @@ export interface CalendarEntry {
   cwd?: string;
   recurring?: boolean;
   dueAt?: number;
+  scheduleId?: string;
+  scheduledAt?: number;
+  executedAt?: number;
 }
 
 export interface CalendarTodoGroup {

@@ -1,10 +1,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import type { CalendarEntry } from "@agent/core";
-import { expandWhen } from "./schedule-expand";
+import { expandWhen, type CalendarEntry, type CalendarRange, type CalendarSourceResult } from "@agent/core";
 import { clip, readRows, str, timeMs } from "./sqlite";
-import type { CalendarRange, CalendarSourceResult } from "./types";
-import { readTodoGroups } from "./zcode-source";
 
 /** OpenCode schedules and session todos from opencode.db (read-only). */
 export async function readOpenCodeSource(range: CalendarRange, dataRoot: string): Promise<CalendarSourceResult> {
@@ -42,6 +39,5 @@ export async function readOpenCodeSource(range: CalendarRange, dataRoot: string)
     }
   }
 
-  const groups = readTodoGroups(dbPath, "opencode", range, "s.time_archived IS NULL");
-  return { entries, groups };
+  return { entries, groups: [] };
 }

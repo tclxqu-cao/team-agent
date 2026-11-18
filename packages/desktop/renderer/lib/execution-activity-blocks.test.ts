@@ -68,6 +68,16 @@ describe("execution activity blocks", () => {
     expect(executionActivityRows([tool("one")])[0]).toMatchObject({ summary: "运行了命令" });
   });
 
+  it.each(["started", "interacted", "completed"])("keeps a %s native child task as visible execution activity", (kind) => {
+    const activity: ChatMessage = { ...tool("child-activity", "codex:subagentActivity"), toolCalls: [{
+      id: "child-activity", name: "codex:subagentActivity",
+      arguments: { kind, agentThreadId: "child-thread", agentPath: "/root/question_card_ui" }, result: "",
+    }] };
+    const rows = executionActivityRows([activity]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ kind: "activity", summary: "更新了子任务状态", toolCalls: activity.toolCalls });
+  });
+
   it("uses the newest section and cleans summary markup", () => {
     expect(executionSummaryPreview("Keeping default text renderer\n\nChecking runtime compatibility\n\nChecking mobile SSR response"))
       .toBe("Checking mobile SSR response");

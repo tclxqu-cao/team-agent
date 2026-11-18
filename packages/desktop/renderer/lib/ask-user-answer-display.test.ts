@@ -106,9 +106,57 @@ describe("presentQuestionAnswers", () => {
     const matching = card(undefined, false);
     const visible = presentQuestionAnswers([user(desktopReply()), wrongItem, wrongIndex, matching], true);
     expect(visible).toHaveLength(3);
-    expect(visible[0]).toBe(wrongItem);
-    expect(visible[1]).toBe(wrongIndex);
-    expect(visible[2].askUser).toMatchObject({ answered: true, answer });
+    expect(visible[0].askUser).toMatchObject({ questionId: matching.askUser!.questionId, answered: true, answer });
+    expect(visible[1]).toBe(wrongItem);
+    expect(visible[2]).toBe(wrongIndex);
+  });
+
+  it("anchors an event-only answered card before later assistant messages after reload", () => {
+    const reply = user(desktopReply(), "reply");
+    const later = { id: "later", role: "assistant" as const, content: "已按这个范围继续。", timestamp: 3 };
+    const pending = { ...card(undefined, false), askUser: { ...card(undefined, false).askUser!,
+      fields: [{ name: "key", label: "密钥", type: "secret" as const }] } };
+    const visible = presentQuestionAnswers([user("开始", "start"), reply, later, pending], true);
+    expect(visible.map(message => message.id)).toEqual(["start", pending.id, "later"]);
+    expect(visible[1].askUser).toMatchObject({ answered: true, answer, fields: pending.askUser.fields });
+    expect(pending.askUser.answered).toBe(false);
+    expect(presentQuestionAnswers(visible, true)).toEqual(visible);
+  });
+
+  it("positions live answers at their matching replies when work continues between questions", () => {
+    const first = card("native:run:async:first:0");
+    const second = card("native:run:async:second:0", false);
+    const working = { id: "working", role: "assistant" as const, content: "仍在处理", timestamp: 2 };
+    const messages = [first, second, working,
+      user(desktopReply([{ itemId: "first", index: 0, question, answer }]), "first-reply"),
+      { ...working, id: "next-work" },
+      user(desktopReply([{ itemId: "second", index: 0, question, answer: "另一个回答" }]), "second-reply"),
+      { ...working, id: "finished" }];
+    const visible = presentQuestionAnswers(messages, true);
+    expect(visible.map(message => message.id)).toEqual(["working", first.id, "next-work", second.id, "finished"]);
+    expect(visible.filter(message => message.askUser).map(message => message.askUser!.answer))
+      .toEqual([answer, "另一个回答"]);
+  });
+
+  it("keeps a restored reply in the same turn through a later history page refresh", () => {
+    const questionId = "native:run:async:item:0";
+    const detail = {
+      agentType: "codex" as const,
+      messages: [
+        { historyId: "start", role: "user", content: "开始" },
+        { historyId: "reply", role: "user", content: desktopReply() },
+        { historyId: "result", role: "assistant", content: "处理完成" },
+        { historyId: "follow-up", role: "user", content: "再检查一下" },
+      ],
+      events: [{ type: "ask_user", questionId, question }],
+    };
+    const restored = restoreSessionHistoryPage(detail);
+    expect(restored.at(-1)?.askUser?.questionId).toBe(questionId);
+    const visible = presentQuestionAnswers(restored, true);
+    expect(visible.map(message => message.id)).toEqual(["start", `question:${questionId}`, "result", "follow-up"]);
+    const refreshed = mergeProgressiveSessionHistoryPage(restored, restoreSessionHistoryPage(detail), "full");
+    expect(presentQuestionAnswers(refreshed, true).map(message => message.id))
+      .toEqual(visible.map(message => message.id));
   });
 
   it("restores all desktop answers after a full reload and keeps their history text", () => {

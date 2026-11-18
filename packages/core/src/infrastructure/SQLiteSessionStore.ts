@@ -4,11 +4,12 @@ import type { Message } from '../domain/model/entities.js';
 import type { AgentEvent } from '../domain/agent/entities.js';
 import { consumePendingAutoTitle } from '../domain/session/SessionTitle.js';
 import { getDatabase } from './SQLiteDatabase.js';
+import type Database from "better-sqlite3";
 
 export class SQLiteSessionStore implements ISessionStore {
   private readonly baseDir: string;
 
-  constructor(baseDir: string) {
+  constructor(baseDir: string, private readonly eventCommit?: (db: Database.Database, sessionId: string, event: AgentEvent, at: number) => void) {
     this.baseDir = baseDir;
     getDatabase(baseDir);
   }
@@ -142,9 +143,11 @@ export class SQLiteSessionStore implements ISessionStore {
 
   async addEvent(sessionId: string, event: AgentEvent): Promise<void> {
     const db = getDatabase(this.baseDir);
-    db.db.prepare(
-      "INSERT INTO events (session_id, type, data, timestamp) VALUES (?,?,?,?)"
-    ).run(sessionId, event.type, JSON.stringify(event), Date.now());
+    db.db.transaction(() => {
+      const at = Date.now();
+      db.db.prepare("INSERT INTO events (session_id, type, data, timestamp) VALUES (?,?,?,?)").run(sessionId, event.type, JSON.stringify(event), at);
+      this.eventCommit?.(db.db, sessionId, event, at);
+    })();
   }
 
   async replaceMessages(sessionId: string, messages: Message[]): Promise<void> {

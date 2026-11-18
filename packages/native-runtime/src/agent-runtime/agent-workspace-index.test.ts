@@ -100,15 +100,35 @@ class MemoryImportedWorkspaceRepository implements ImportedAgentWorkspaceReposit
 }
 
 describe("AgentWorkspaceIndexService", () => {
-  it("waits for supplemental Codex sessions on an explicit first-page refresh", async () => {
+  it.each(["codex", "claude-code"] as const)("keeps a fresh %s directory result when an older request finishes later", async agentType => {
+    const native = adapter(agentType, [workspace(agentType, "repo", 0)]);
+    let release!: (value: { data: UnifiedSessionSummary[]; nextCursor: null; watermark: string }) => void;
+    native.listWorkspaceSessions = vi.fn()
+      .mockImplementationOnce(() => new Promise(resolve => { release = resolve; }))
+      .mockResolvedValue({ data: [session(agentType, "newest")], nextCursor: null, watermark: "new" });
+    const service = new AgentWorkspaceIndexService([native]);
+    await service.listWorkspaces(agentType);
+    const old = service.listWorkspaceSessions(agentType, "repo", { refresh: true });
+    await vi.waitFor(() => expect(native.listWorkspaceSessions).toHaveBeenCalledTimes(1));
+    const fresh = await service.listWorkspaceSessions(agentType, "repo", { refresh: true });
+    expect(fresh.data[0].id).toBe("newest");
+    release({ data: [session(agentType, "outdated")], nextCursor: null, watermark: "old" });
+    await old;
+    expect((await service.listWorkspaceSessions(agentType, "repo")).data[0].id).toBe("newest");
+  });
+
+  it("publishes the latest native Codex page before supplemental history discovery finishes", async () => {
     const codex = adapter("codex", [workspace("codex", "repo", 0)]);
-    codex.discoverSessions = vi.fn(async () => [session("codex", "external")]);
+    let release!: (sessions: UnifiedSessionSummary[]) => void;
+    codex.discoverSessions = vi.fn(() => new Promise<UnifiedSessionSummary[]>(resolve => { release = resolve; }));
     const service = new AgentWorkspaceIndexService([codex]);
 
     const page = await service.listWorkspaceSessions("codex", "repo", { refresh: true });
 
-    expect(page.data.map((item) => item.id)).toEqual(["codex-1", "external"]);
+    expect(page.data.map((item) => item.id)).toEqual(["codex-1"]);
     expect(page.nextCursor).toBeNull();
+    release([session("codex", "external")]);
+    await vi.waitFor(async () => expect((await service.listWorkspaceSessions("codex", "repo")).data.map(item => item.id)).toContain("external"));
   });
 
   it("keeps direct Codex results when supplemental discovery fails during refresh", async () => {
@@ -119,7 +139,7 @@ describe("AgentWorkspaceIndexService", () => {
     const page = await service.listWorkspaceSessions("codex", "repo", { refresh: true });
 
     expect(page.data.map((item) => item.id)).toEqual(["codex-1"]);
-    expect(page.stale).toBe(true);
+    expect(page.stale).not.toBe(true);
   });
 
   it("isolates Agent requests and preserves adapter workspace order", async () => {
@@ -236,9 +256,9 @@ describe("AgentWorkspaceIndexService", () => {
     const restartedService = new AgentWorkspaceIndexService([codex], repository, "darwin");
 
     await restartedService.listWorkspaces("codex");
-    const project = await restartedService.listWorkspaceSessions("codex", "repo", { refresh: true });
-
-    expect(project.data).toContainEqual(expect.objectContaining({ id: "historical", projectId: "repo" }));
+    await restartedService.listWorkspaceSessions("codex", "repo", { refresh: true });
+    await vi.waitFor(async () => expect((await restartedService.listWorkspaceSessions("codex", "repo")).data)
+      .toContainEqual(expect.objectContaining({ id: "historical", projectId: "repo" })));
     expect(repository.listWorkspaceRootAliases("codex", "repo")).toEqual(["/repo", "/repo-renamed"]);
   });
 

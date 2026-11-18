@@ -1,9 +1,44 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { GlobalEvent, OpencodeClient } from "@opencode-ai/sdk";
 import {
   OpenCodeServerClient,
   subscribeToOpenCodeEvents,
 } from "./opencode-server-client.js";
+
+const nativeProcess = vi.hoisted(() => ({
+  version: undefined as ((signal?: AbortSignal) => Promise<{ stdout: string; stderr: string }>) | undefined,
+  spawn: vi.fn(),
+}));
+
+vi.mock("node:child_process", async importOriginal => {
+  const actual = await importOriginal<typeof import("node:child_process")>();
+  const { promisify } = await import("node:util");
+  const run = promisify(actual.execFile);
+  const wrappedExecFile = (...args: Parameters<typeof actual.execFile>) => actual.execFile(...args);
+  Object.defineProperty(wrappedExecFile, promisify.custom, { value: async (
+    file: string, args: string[], options: import("node:child_process").ExecFileOptions,
+  ) => {
+    if (file === "opencode-lifecycle-fixture") {
+      if (!nativeProcess.version) throw new Error("Missing lifecycle fixture");
+      return nativeProcess.version(options.signal);
+    }
+    return run(file, args, options);
+  } });
+  return { ...actual, execFile: wrappedExecFile, spawn: (...args: Parameters<typeof actual.spawn>) => {
+    if (args[0] === "opencode-lifecycle-fixture") {
+      nativeProcess.spawn();
+      throw new Error("Disposed lifecycle fixture must not spawn a host");
+    }
+    return actual.spawn(...args);
+  } };
+});
+
+afterEach(() => {
+  nativeProcess.version = undefined;
+  nativeProcess.spawn.mockClear();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 const connectedEvent = {
   directory: "/repo",
@@ -28,6 +63,58 @@ async function* events(...values: GlobalEvent[]): AsyncGenerator<GlobalEvent> {
 }
 
 describe("OpenCodeServerClient", () => {
+  it("does not spawn a host when disposed during the version lookup", async () => {
+    let release!: (version: { stdout: string; stderr: string }) => void;
+    let signal: AbortSignal | undefined;
+    nativeProcess.version = incoming => {
+      signal = incoming;
+      return new Promise(resolve => { release = resolve; });
+    };
+    const server = new OpenCodeServerClient({ executable: "opencode-lifecycle-fixture" });
+    const starting = server.client();
+    await server.dispose();
+    expect(signal?.aborted).toBe(true);
+    release({ stdout: "opencode v2.3.0", stderr: "" });
+    await expect(starting).rejects.toMatchObject({ code: "RUNTIME_UNAVAILABLE" });
+    expect(nativeProcess.spawn).not.toHaveBeenCalled();
+    await expect(server.client()).rejects.toMatchObject({ code: "RUNTIME_UNAVAILABLE" });
+  });
+
+  it.each([
+    { v2: true, directory: "D:\\Workspaces\\Other Project", query: "location[directory]", path: "/api/mcp" },
+    { v2: false, directory: "/srv/another project", query: "directory", path: "/mcp" },
+  ])("verifies Todo MCP in the requested native location: $query", async ({ v2, directory, query, path }) => {
+    const server = new OpenCodeServerClient({ todoMcp: { command: "node", args: ["todo.mjs"], env: {} } });
+    vi.spyOn(server, "client").mockResolvedValue({} as never);
+    Object.assign(server, { connection: { url: "http://127.0.0.1:12345", v2 } });
+    const fetcher = vi.fn(async (input: URL) => {
+      expect(input.pathname).toBe(path);
+      expect(input.searchParams.get(query)).toBe(directory);
+      expect(input.searchParams.has(v2 ? "directory" : "location[directory]")).toBe(false);
+      return Response.json(v2 ? { data: [{ name: "agentroam-todo", status: { status: "connected" } }] }
+        : { "agentroam-todo": { status: "connected" } });
+    });
+    vi.stubGlobal("fetch", fetcher);
+    await server.waitForTodoMcp(directory);
+    expect(fetcher).toHaveBeenCalledOnce();
+    await server.dispose();
+  });
+
+  it("does not discover MCP after cancellation while its client is starting", async () => {
+    const server = new OpenCodeServerClient({ todoMcp: { command: "node", args: ["todo.mjs"], env: {} } });
+    let release!: () => void;
+    vi.spyOn(server, "client").mockImplementation(() => new Promise(resolve => { release = () => resolve({} as never); }));
+    const fetcher = vi.fn();
+    vi.stubGlobal("fetch", fetcher);
+    const controller = new AbortController();
+    const pending = server.waitForTodoMcp("/workspace", controller.signal);
+    controller.abort();
+    release();
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    expect(fetcher).not.toHaveBeenCalled();
+    await server.dispose();
+  });
+
   it("reports a missing executable without waiting for the health timeout", async () => {
     const client = new OpenCodeServerClient({ executable: "/definitely/missing/agentroam-opencode" });
     const started = Date.now();

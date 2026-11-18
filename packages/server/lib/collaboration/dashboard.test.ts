@@ -4,12 +4,14 @@ import { tmpdir } from "node:os";
 import { afterEach, expect, it, vi } from "vitest";
 import { SQLiteCollaborationRepository, getDatabase, type CatalogSession } from "@agent/core";
 import { groupFixture, stateFixture } from "../../../core/src/domain/collaboration/__tests__/fixtures";
-const mocks = vi.hoisted(() => ({ dir: "", sessions: [] as unknown[] }));
+const mocks = vi.hoisted(() => ({ dir: "", sessions: [] as unknown[], activity: { sessions: [] as unknown[], agentTypes: [] as string[] } }));
 vi.mock("../server-data-dir", () => ({ getServerBaseDir: () => mocks.dir }));
-vi.mock("../session-catalog", () => ({ catalogSessions: async () => ({ sessions: mocks.sessions }) }));
+vi.mock("../session-catalog", () => ({ catalogSessions: vi.fn(async () => ({ sessions: mocks.sessions })) }));
+vi.mock("../session-activity", () => ({ sessionActivity: async () => mocks.activity }));
 vi.mock("../supervision/service", () => ({ supervisionService: () => ({ repository: { get: () => null } }) }));
 vi.mock("./visibility", () => ({ collaborationSessionIds: () => new Set(["internal"]) }));
 import { sessionDashboard } from "./dashboard";
+import { catalogSessions } from "../session-catalog";
 afterEach(() => { if (mocks.dir) { getDatabase(mocks.dir).close(); rmSync(mocks.dir, { recursive: true, force: true }); } });
 
 it("aggregates every discussion, prioritizes older active work over newer idle history, and applies only display filters", async () => {
@@ -30,4 +32,14 @@ it("aggregates every discussion, prioritizes older active work over newer idle h
   expect(snapshot.groups.find(group => group.group.id === "g1")?.questions[0]).toMatchObject({ questionId: "original-q", discussionId: "decision-old" });
   expect(snapshot.agents.find(agent => agent.agentType === "codex")?.sessions.map(session => session.id)).toEqual(["original"]);
   expect(snapshot.decisionTotal).toBe(1);
+});
+
+it("uses a bounded catalog and overlays new external runs before the history scan completes", async () => {
+  mocks.dir = mkdtempSync(join(tmpdir(), "session-dashboard-live-"));
+  const session: CatalogSession = { id: "new-external", agentType: "qoder", title: "原生新建", cwd: "/project", status: "running", updated: "2026-11-17", canResume: false };
+  mocks.sessions = [{ ...session, id: "old", status: "running" }];
+  mocks.activity = { sessions: [session], agentTypes: ["qoder"] };
+  const snapshot = await sessionDashboard();
+  expect(catalogSessions).toHaveBeenCalledWith(true, true);
+  expect(snapshot.agents.find(agent => agent.agentType === "qoder")?.sessions).toEqual([session]);
 });

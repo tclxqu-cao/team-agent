@@ -86,7 +86,7 @@ describe("shouldRestartWakeListener", () => {
     shouldRestartWakeListener?: (desired: boolean, suspended: boolean) => boolean;
   }).shouldRestartWakeListener;
 
-  it("does not restart the microphone while TTS has suspended listening", () => {
+  it("does not restart the microphone while listening is suspended", () => {
     expect(typeof shouldRestartWakeListener).toBe("function");
     expect(shouldRestartWakeListener?.(true, true)).toBe(false);
     expect(shouldRestartWakeListener?.(true, false)).toBe(true);
@@ -165,62 +165,6 @@ describe("shouldFinalizeVoiceCapture", () => {
   });
 });
 
-describe("TTS barge-in state", () => {
-  const getTtsListeningMode = (voiceState as unknown as {
-    getTtsListeningMode?: (conversation: boolean) => "barge-in" | "suspended";
-  }).getTtsListeningMode;
-  const shouldAcceptBargeIn = (voiceState as unknown as {
-    shouldAcceptBargeIn?: (ttsSpeaking: boolean, conversation: boolean) => boolean;
-  }).shouldAcceptBargeIn;
-
-  it("keeps listening for barge-in only during voice-conversation TTS", () => {
-    expect(typeof getTtsListeningMode).toBe("function");
-    expect(getTtsListeningMode?.(true)).toBe("barge-in");
-    expect(getTtsListeningMode?.(false)).toBe("suspended");
-  });
-
-  it("accepts barge-in only while a voice-conversation reply is speaking", () => {
-    expect(typeof shouldAcceptBargeIn).toBe("function");
-    expect(shouldAcceptBargeIn?.(true, true)).toBe(true);
-    expect(shouldAcceptBargeIn?.(true, false)).toBe(false);
-    expect(shouldAcceptBargeIn?.(false, true)).toBe(false);
-    expect(shouldAcceptBargeIn?.(false, false)).toBe(false);
-  });
-});
-
-describe("prepareTtsListening", () => {
-  const prepareTtsListening = (voiceState as unknown as {
-    prepareTtsListening?: (
-      mode: "barge-in" | "suspended",
-      currentMode: "wake" | "dictation" | "barge-in" | null,
-      stop: () => void,
-      launch: () => Promise<unknown>,
-    ) => Promise<void>;
-  }).prepareTtsListening;
-
-  it("does not resolve until barge-in listening is ready", async () => {
-    let markReady = () => {};
-    const ready = new Promise<void>((resolve) => { markReady = resolve; });
-    const calls: string[] = [];
-
-    const preparing = prepareTtsListening?.(
-      "barge-in",
-      "wake",
-      () => calls.push("stop"),
-      async () => {
-        calls.push("launch");
-        await ready;
-      },
-    ).then(() => calls.push("ready"));
-
-    await Promise.resolve();
-    expect(calls).toEqual(["stop", "launch"]);
-    markReady();
-    await preparing;
-    expect(calls).toEqual(["stop", "launch", "ready"]);
-  });
-});
-
 describe("parseWakeControlLine", () => {
   const parseWakeControlLine = (voiceState as unknown as {
     parseWakeControlLine?: (line: string) => "barge-in" | null;
@@ -294,22 +238,5 @@ describe("routeVoiceServiceResult", () => {
     expect(routeVoiceServiceResult?.(current, {
       type: "keyword", sessionId: "voice-2", generation: 8,
     })).toEqual({ action: "ignore", lastFinalUtteranceId: 4 });
-  });
-});
-
-describe("shouldAcceptTtsPlayback", () => {
-  const shouldAcceptTtsPlayback = (voiceState as unknown as {
-    shouldAcceptTtsPlayback?: (
-      resultGeneration: number,
-      currentGeneration: number,
-      speaking: boolean,
-    ) => boolean;
-  }).shouldAcceptTtsPlayback;
-
-  it("rejects synthesized audio after barge-in or a newer reply", () => {
-    expect(typeof shouldAcceptTtsPlayback).toBe("function");
-    expect(shouldAcceptTtsPlayback?.(4, 4, true)).toBe(true);
-    expect(shouldAcceptTtsPlayback?.(3, 4, true)).toBe(false);
-    expect(shouldAcceptTtsPlayback?.(4, 4, false)).toBe(false);
   });
 });

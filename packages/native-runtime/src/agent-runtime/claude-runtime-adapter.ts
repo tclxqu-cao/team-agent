@@ -135,7 +135,7 @@ interface ClaudePagerState {
   tail: string;
   fileStamp: string;
   messages: Message[];
-  /** Subagent recovery is expensive; cache it until the transcript changes. */
+  /** Subagent recovery is expensive; cache it until parent or child transcripts change. */
   events?: AgentEvent[];
   eventsStamp?: string;
 }
@@ -303,6 +303,7 @@ export class ClaudeRuntimeAdapter implements AgentRuntimeAdapter {
   private readonly sessionRoot: string;
   private contextUsageRequestIndex = 0;
   private readonly drafts = new Map<string, UnifiedSessionSummary>();
+  private readonly todoMcpBySession = new Map<string, NonNullable<RuntimeRunOptions["todoMcp"]>>();
   private readonly workspaces = new Map<string, AgentWorkspace>();
   private readonly ownedSessions = new Set<string>();
   private readonly activeQueries = new Map<string, Query>();
@@ -600,6 +601,7 @@ export class ClaudeRuntimeAdapter implements AgentRuntimeAdapter {
       );
     }
     this.drafts.delete(nativeSessionId);
+    this.todoMcpBySession.delete(nativeSessionId);
     this.sessionPaths.delete(nativeSessionId);
     this.sessionInfoCache.delete(nativeSessionId);
     this.pagerStates.delete(nativeSessionId);
@@ -624,6 +626,7 @@ export class ClaudeRuntimeAdapter implements AgentRuntimeAdapter {
       canDelete: true,
     };
     this.drafts.set(nativeSessionId, summary);
+    if (options.todoMcp) this.todoMcpBySession.set(nativeSessionId, structuredClone(options.todoMcp));
     return summary;
   }
 
@@ -671,11 +674,13 @@ export class ClaudeRuntimeAdapter implements AgentRuntimeAdapter {
           runOptions?.brokerRunId,
         );
     const inputQueue = new AsyncEventQueue<SDKUserMessage>();
-    inputQueue.push(initialMessage);
+    const todoMcp = runOptions?.todoMcp ?? this.todoMcpBySession.get(nativeSessionId);
+    if (!todoMcp) inputQueue.push(initialMessage);
     const activeQuery = query({
       prompt: inputQueue,
       options: {
         cwd: detail.cwd,
+        ...(todoMcp ? { mcpServers: { "agentroam-todo": todoMcp } } : {}),
         ...(isDraft ? { sessionId: nativeSessionId } : { resume: nativeSessionId }),
         includePartialMessages: true,
         forwardSubagentText: true,
@@ -691,7 +696,7 @@ export class ClaudeRuntimeAdapter implements AgentRuntimeAdapter {
       } as Parameters<typeof query>[0]["options"],
     });
     this.activeQueries.set(nativeSessionId, activeQuery);
-    this.activeInputs.set(nativeSessionId, inputQueue);
+    if (!todoMcp) this.activeInputs.set(nativeSessionId, inputQueue);
     this.ownedSessions.add(nativeSessionId);
     const permissionQueue = new AsyncEventQueue<AgentEvent>();
     this.permissionEvents.set(nativeSessionId, (event) => permissionQueue.push(event));
@@ -702,6 +707,23 @@ export class ClaudeRuntimeAdapter implements AgentRuntimeAdapter {
     const subagents = new ClaudeSubagentTracker();
     let mainResult: Extract<SDKMessage, { type: "result" }> | null = null;
     try {
+      if (todoMcp) {
+        // Initialize and discover scoped tools before the user's first prompt
+        // can reach the model; a configured process is not a connected MCP.
+        await activeQuery.initializationResult();
+        if (this.abortedSessions.has(nativeSessionId)) { yield { type: "turn_aborted" }; return; }
+        const configured = await activeQuery.setMcpServers({ "agentroam-todo": todoMcp });
+        if (this.abortedSessions.has(nativeSessionId)) { yield { type: "turn_aborted" }; return; }
+        if (configured.errors["agentroam-todo"]) throw new RuntimeSessionError(`Claude Code Todo MCP: ${configured.errors["agentroam-todo"]}`, "NATIVE_PROTOCOL_ERROR");
+        const server = (await activeQuery.mcpServerStatus()).find(server => server.name === "agentroam-todo");
+        if (this.abortedSessions.has(nativeSessionId)) { yield { type: "turn_aborted" }; return; }
+        if (server?.status !== "connected" || !server.tools?.some(tool => tool.name === "todo_get" || tool.name.endsWith("__todo_get"))) {
+          throw new RuntimeSessionError("Claude Code Todo MCP is unavailable or did not expose todo_get", "NATIVE_PROTOCOL_ERROR");
+        }
+        inputQueue.push(initialMessage);
+        this.todoMcpBySession.set(nativeSessionId, structuredClone(todoMcp));
+        this.activeInputs.set(nativeSessionId, inputQueue);
+      }
       const sdkIterator = activeQuery[Symbol.asyncIterator]();
       const permissionIterator = permissionQueue[Symbol.asyncIterator]();
       let sdkNext = sdkIterator.next();
@@ -778,6 +800,7 @@ export class ClaudeRuntimeAdapter implements AgentRuntimeAdapter {
       }
       this.drafts.delete(nativeSessionId);
     } catch (error) {
+      if (todoMcp && this.abortedSessions.has(nativeSessionId)) { yield { type: "turn_aborted" }; return; }
       const message = error instanceof Error ? error.message : String(error);
       const code = error instanceof RuntimeSessionError ? error.code : "NATIVE_PROTOCOL_ERROR";
       logGlobal("error", "claude-adapter", "claude run failed", error, {
@@ -799,10 +822,12 @@ export class ClaudeRuntimeAdapter implements AgentRuntimeAdapter {
     }
   }
 
-  async steer(nativeSessionId: string, input: string): Promise<boolean> {
+  readonly supportsImageSteering = true;
+
+  async steer(nativeSessionId: string, input: string, _messageId?: string, images?: string[]): Promise<boolean> {
     const inputQueue = this.activeInputs.get(nativeSessionId);
     if (!inputQueue) return false;
-    inputQueue.push(claudeUserMessage(input, "now"));
+    inputQueue.push(claudeUserMessage(input, "now", images));
     return true;
   }
 
@@ -842,6 +867,7 @@ export class ClaudeRuntimeAdapter implements AgentRuntimeAdapter {
     for (const activeQuery of this.activeQueries.values()) activeQuery.close();
     this.activeQueries.clear();
     this.ownedSessions.clear();
+    this.todoMcpBySession.clear();
     this.pagerStates.clear();
     for (const [questionId, pending] of this.pendingPermissions) {
       pending.resolve({ behavior: "deny", message: "Customer Agent is shutting down", interrupt: true });
@@ -917,16 +943,34 @@ export class ClaudeRuntimeAdapter implements AgentRuntimeAdapter {
     return messages;
   }
 
-  /** Subagent recovery for paged windows, cached until the transcript changes. */
+  /** Child agents can keep writing while the parent transcript is unchanged. */
   private async pagerEvents(nativeSessionId: string, cwd: string, messages: Message[]): Promise<AgentEvent[]> {
     const state = this.pagerStates.get(nativeSessionId);
-    if (state?.events && state.eventsStamp === state.fileStamp) return state.events;
+    const hasSubagents = messages.some((message) => message.toolCalls?.some((toolCall) => toolCall.name === "Agent"));
+    const childStamp = state && hasSubagents
+      ? await this.subagentTranscriptStamp(nativeSessionId, state.path)
+      : "";
+    const eventsStamp = `${state?.fileStamp ?? ""}:${childStamp}`;
+    if (state?.events && state.eventsStamp === eventsStamp) return state.events;
     const events = await this.recoverSubagentActivities(nativeSessionId, cwd, messages).catch(() => []);
     if (state) {
       state.events = events;
-      state.eventsStamp = state.fileStamp;
+      state.eventsStamp = eventsStamp;
     }
     return events;
+  }
+
+  private async subagentTranscriptStamp(nativeSessionId: string, sessionPath: string): Promise<string> {
+    const directory = join(dirname(sessionPath), nativeSessionId, "subagents");
+    const names = await readdir(directory).catch(() => [] as string[]);
+    const stamps = await Promise.all(names
+      .filter((name) => /^agent-[a-z0-9_-]+\.(?:meta\.json|jsonl)$/i.test(name))
+      .sort()
+      .map(async (name) => {
+        const entry = await stat(join(directory, name)).catch(() => null);
+        return entry ? `${name}:${entry.ino}:${entry.mtimeMs}:${entry.size}` : `${name}:missing`;
+      }));
+    return stamps.join("|");
   }
 
   private async findSession(nativeSessionId: string): Promise<SDKSessionInfo | undefined> {

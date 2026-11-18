@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
-import type { CalendarEntry } from "@agent/core";
+import { EMPTY_RESULT, type CalendarEntry, type CalendarRange, type CalendarSourceResult } from "@agent/core";
 import { clip } from "./sqlite";
-import { EMPTY_RESULT, type CalendarRange, type CalendarSourceResult } from "./types";
 
 export interface DeepSeekEndpoint { origin: string; cookie: string }
 export type DeepSeekDiscover = () => Promise<DeepSeekEndpoint | null>;

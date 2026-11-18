@@ -8,7 +8,13 @@ export interface CatalogSession extends MonitoredSession {
   readOnly?: boolean;
   occupancy?: "available" | "owned-by-customer-agent" | "owned-externally";
 }
-export interface SessionCatalogPage { data: CatalogSession[]; nextCursor: string | null; total: number }
+export interface SessionCatalogPage { data: CatalogSession[]; nextCursor: string | null; total: number; refreshing?: boolean }
+/** Independent live summaries; an absent Agent has not completed discovery yet. */
+export interface SessionActivitySnapshot {
+  sessions: CatalogSession[];
+  agentTypes: AgentType[];
+  updatedAt: string;
+}
 export interface SupervisionQuestion {
   id: string;
   text: string;

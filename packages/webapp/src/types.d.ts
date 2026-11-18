@@ -14,6 +14,12 @@ declare module "@desktop/renderer/App" {
   export default App;
 }
 
+declare module "@desktop/renderer/NewSessionWindow" {
+  import type { ComponentType } from "react";
+  const NewSessionWindow: ComponentType;
+  export default NewSessionWindow;
+}
+
 declare module "@desktop/renderer/stores/uiStore" {
   export type SkinId = "pearl" | "scifi" | "noir" | "mist" | "pine" | "graphite" | "glass";
   interface UIStateSlice {
@@ -40,7 +46,7 @@ declare module "@desktop/renderer/components/browser-live-header-context" {
 
 declare module "@desktop/renderer/components/BrowserLivePanel" {
   import type { ComponentType } from "react";
-  const BrowserLivePanel: ComponentType<{ open: boolean; active?: boolean; agentSessionId?: string | null; onClose: () => void; onFullscreenChange?: (fullscreen: boolean) => void }>;
+  const BrowserLivePanel: ComponentType<{ open: boolean; active?: boolean; embedded?: boolean; agentSessionId?: string | null; onClose: () => void; onFullscreenChange?: (fullscreen: boolean) => void }>;
   export default BrowserLivePanel;
 }
 

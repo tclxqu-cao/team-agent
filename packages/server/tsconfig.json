@@ -43,6 +43,8 @@
     ".next-remote-desktop-20261019/types/**/*.ts",
     ".next-slider-20261022/types/**/*.ts",
     ".next-remote-original-acceptance/types/**/*.ts",
-    ".next-3700/types/**/*.ts"
+    ".next-3700/types/**/*.ts",
+    ".next-calendar-release-20261117-1500/types/**/*.ts",
+    ".next-task-panel-controls-20261117/types/**/*.ts"
   ]
 }

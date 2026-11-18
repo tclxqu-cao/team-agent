@@ -166,6 +166,7 @@ export interface WorkspacePage<T> {
   nextCursor: string | null;
   watermark: string | null;
   stale?: boolean;
+  refreshing?: boolean;
 }
 export type ToolPermissionMode = "request-approval" | "auto-approval" | "full-access";
 export type SessionCompatibilityStatus = "checking" | "direct" | "migratable" | "incompatible";
@@ -269,6 +270,7 @@ export interface AgentApi {
   hideWindow(): Promise<void>;
   showWindow(): Promise<void>;
   isWindowVisible(): Promise<boolean>;
+  openNewSessionWindow?(options: { agentType: AgentType; workspacePath?: string }): Promise<void>;
   // Open an http(s) link in the system browser (e.g. Flow Studio entry)
   openExternal(url: string): Promise<{ ok: boolean }>;
   notifyTaskCompletion?(
@@ -288,18 +290,17 @@ export interface AgentApi {
   dictationStop(): Promise<{ ok: boolean }>;
   onDictation(callback: (payload: { text: string; isFinal: boolean }) => void): () => void;
   onDictationError(callback: (message: string) => void): () => void;
-  // Model-backed TTS via the voice service
-  ttsSpeak(text: string): Promise<{ ok: boolean }>;
-  ttsStop(): Promise<{ ok: boolean }>;
-  ttsPlaybackEnded(generation: number): Promise<{ ok: boolean }>;
-  onTtsStart(callback: (payload: TtsStreamMetadata) => void): () => void;
-  onTtsPcm(callback: (payload: { generation: number; pcm: ArrayBuffer }) => void): () => void;
-  onTtsStreamEnd(callback: (payload: { generation: number }) => void): () => void;
-  onTtsFlush(callback: (payload: { generation: number }) => void): () => void;
-  onTtsEnd(callback: (payload: { generation: number }) => void): () => void;
   run(input: string, sessionId: string, agentIds?: string[], agentName?: string, images?: string[], nativeOptions?: NativeRunOptions): Promise<unknown[]>;
   listAgentModels(agentType: AgentType): Promise<{ agentType: AgentType; models: RuntimeModelInfo[]; supported?: boolean }>;
   collaboration(command: CollaborationCommand): Promise<unknown>;
+  calendarOverview?(input: { from: string; to: string }): Promise<import("@agent/core").CalendarOverview>;
+  todoList?(query?: import("@agent/core").TodoListQuery): Promise<{ items: import("@agent/core").TodoDetail[]; cursor?: string }>;
+  todoGet?(id: string): Promise<import("@agent/core").TodoDetail>;
+  todoCommand?(command: import("@agent/core").TodoCommand, requestId: string): Promise<import("@agent/core").TodoDetail>;
+  notificationList?(): Promise<{ items: import("@agent/core").PersistentNotification[] }>;
+  notificationRead?(id: string, scope?: { serviceId: string; ownerId: string }): Promise<unknown>;
+  setNotificationVisible?(target: { sessionId?: string; taskId?: string }): Promise<void>;
+  onNotificationOpen?(callback: (target: { sessionId?: string; taskId?: string; questionId?: string }) => void): () => void;
   steer(input: string, sessionId: string, agentName?: string): Promise<boolean>;
   abort(sessionId?: string, trigger?: "button" | "keyboard"): Promise<void>;
   answerQuestion(questionId: string, answer: string, selectedIndices?: number[]): Promise<boolean>;
@@ -327,6 +328,7 @@ export interface AgentApi {
   deleteToolPolicy(policyId: string): Promise<{ deleted: boolean; policyId: string }>;
   openFileDialog(): Promise<string | null>;
   showDirectoryContextMenu?(path: string): Promise<{ shown: true }>;
+  showFileContextMenu?(path: string): Promise<{ shown: true }>;
   fileWorkspaceRequest<T = unknown>(method: FileWorkspaceMethod, params?: Record<string, unknown>): Promise<T>;
   onFileWorkspaceEvent(callback: (event: FileWorkspaceEventMessage) => void): () => void;
   readFile(path: string): Promise<string>;
@@ -371,6 +373,9 @@ export interface AgentApi {
     ref: { turnId: string; itemId: string; revision: string },
   ): Promise<{ turnId: string; itemId: string; revision: string; byteSize: number; isError?: boolean; content: string }>;
   getSessionQueryIndex?(id: string): Promise<SessionQueryIndex>;
+  getSessionImage?(id: string, variant: "preview" | "original"): Promise<string>;
+  /** Desktop Web preserves HTTP slots by polling history instead of opening one SSE per pane. */
+  readonly sessionHistoryObservationMode?: "sse" | "polling";
   observeSession?(
     id: string,
     callback: (change: { type: "session_history_changed"; revision: number }) => void,
@@ -463,6 +468,10 @@ export interface AgentApi {
   flowStudioOpen(url: string): Promise<{ ok: boolean }>;
   flowStudioSetBounds(rect: EmbeddedPageRect | null): Promise<{ ok: boolean }>;
   flowStudioReload(): Promise<{ ok: boolean }>;
+  taskPageOpen(paneId: string, url: string): Promise<{ ok: boolean }>;
+  taskPageSetBounds(paneId: string, rect: EmbeddedPageRect | null): Promise<{ ok: boolean }>;
+  taskPageReload(paneId: string): Promise<{ ok: boolean }>;
+  taskPageClose(paneId: string): Promise<{ ok: boolean }>;
   onFlowStudioEvent(callback: (event: FlowStudioEvent) => void): () => void;
   // AI Hub 浏览器 Profile 导入 + 托管 Google 重登录
   hubListProfileSources(): Promise<BrowserProfileSourceView[]>;
@@ -561,7 +570,7 @@ export interface HubBroadcastResult {
 }
 
 export interface HubEvent {
-  type: "loading" | "loaded" | "load-failed" | "title" | "google-auth-external" | "google-reauth" | "profile-import";
+  type: "loading" | "loaded" | "load-failed" | "title" | "focused" | "google-auth-external" | "google-reauth" | "profile-import";
   siteId?: string;
   errorCode?: number;
   title?: string;
@@ -653,14 +662,6 @@ export interface BrowserLiveApi {
     payload?: Record<string, unknown>,
   ): Promise<T>;
   onEvent(listener: (event: Record<string, unknown> & { type: string }) => void): () => void;
-}
-
-export interface TtsStreamMetadata {
-  sessionId: string;
-  generation: number;
-  sampleRate: 24_000;
-  channels: 1;
-  sampleFormat: "s16le";
 }
 
 declare global {

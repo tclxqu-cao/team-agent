@@ -16,6 +16,7 @@ import { collaborationService } from "../../../lib/collaboration/service";
 import { supervisionService } from "../../../lib/supervision/service";
 import { querySessionCatalog } from "../../../lib/session-catalog";
 import { sessionDashboard } from "../../../lib/collaboration/dashboard";
+import { sessionActivity } from "../../../lib/session-activity";
 
 const id = z.string().min(1).max(200);
 const groupSchema = z.object({
@@ -56,7 +57,8 @@ const groupSchema = z.object({
 });
 const mode = z.enum(["task-graph", "chat"]);
 const schema = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("sessionCatalog"), query: z.string().max(1000).optional(), cursor: z.string().max(300).optional(), limit: z.number().int().min(1).max(100).optional() }),
+  z.object({ action: z.literal("sessionCatalog"), query: z.string().max(1000).optional(), cursor: z.string().max(300).optional(), limit: z.number().int().min(1).max(100).optional(), backgroundRefresh: z.boolean().optional() }),
+  z.object({ action: z.literal("sessionActivity") }),
   z.object({ action: z.literal("dashboard") }),
   z.object({ action: z.literal("supervisionAlerts") }),
   z.object({ action: z.literal("supervision"), groupId: id }),
@@ -116,6 +118,7 @@ const schema = z.discriminatedUnion("action", [
 export async function POST(request: Request) {
   try {
     const body = schema.parse(await request.json()) as CollaborationCommand;
+    if (body.action === "sessionActivity") return NextResponse.json(await sessionActivity());
     const supervision = supervisionService();
     switch (body.action) {
       case "sessionCatalog": return NextResponse.json(await querySessionCatalog(body));

@@ -3,6 +3,13 @@ import type { AgentApi } from "../global";
 import { createSharedAgentApi, ServiceEventSource, type SharedServiceApi } from "./shared-service";
 afterEach(() => vi.useRealTimers());
 describe("desktop SSE transport", () => {
+  it("loads calendar data through the authenticated shared-service transport", async () => {
+    const overview = { days: {}, sources: {}, unscheduled: [], unscheduledSchedules: [] };
+    const request = vi.fn(async () => ({ status: 200, body: JSON.stringify(overview) }));
+    const api = createSharedAgentApi({ request } as unknown as SharedServiceApi, {} as AgentApi);
+    await expect(api.calendarOverview!({ from: "2026-11-01", to: "2026-11-30" })).resolves.toEqual(overview);
+    expect(request).toHaveBeenCalledWith("/api/calendar?from=2026-11-01&to=2026-11-30", "GET", undefined);
+  });
   it("handles split multiline frames and resumes with the last event id", async () => {
     vi.useFakeTimers();
     let frame: (value: { id: string; type: string; data?: string }) => void = () => {};
@@ -52,6 +59,40 @@ describe("desktop SSE transport", () => {
     await agentApi.openExternal!("https://flow.example/auth/entry?token=t&view=dh");
 
     expect(openExternal).toHaveBeenCalledWith("https://flow.example/auth/entry?token=t&view=dh");
+  });
+
+  it("keeps split-pane website operations on the local native view bridge", async () => {
+    const request = vi.fn();
+    const taskPageOpen = vi.fn(async () => ({ ok: true }));
+    const taskPageSetBounds = vi.fn(async () => ({ ok: true }));
+    const taskPageClose = vi.fn(async () => ({ ok: true }));
+    const api = createSharedAgentApi({ request } as unknown as SharedServiceApi, { taskPageOpen, taskPageSetBounds, taskPageClose } as unknown as AgentApi);
+    await api.taskPageOpen("left", "https://example.com");
+    await api.taskPageSetBounds("left", null);
+    await api.taskPageClose("left");
+    expect(taskPageOpen).toHaveBeenCalledWith("left", "https://example.com");
+    expect(taskPageSetBounds).toHaveBeenCalledWith("left", null);
+    expect(taskPageClose).toHaveBeenCalledWith("left");
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it("keeps artifact file menus on the trusted desktop bridge", async () => {
+    const showFileContextMenu = vi.fn(async () => ({ shown: true as const }));
+    const request = vi.fn();
+    const api = createSharedAgentApi({ request } as unknown as SharedServiceApi, { showFileContextMenu } as unknown as AgentApi);
+    await expect(api.showFileContextMenu!("/tmp/Word 优化版.docx")).resolves.toEqual({ shown: true });
+    expect(showFileContextMenu).toHaveBeenCalledWith("/tmp/Word 优化版.docx");
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it("forwards notification reads and their expected scope through the pinned device operation", async () => {
+    const notificationRead = vi.fn(async () => ({ ok: true }));
+    const request = vi.fn();
+    const api = createSharedAgentApi({ request } as unknown as SharedServiceApi, { notificationRead } as unknown as AgentApi);
+    const scope = { serviceId: "service-one", ownerId: "owner-one" };
+    await expect(api.notificationRead!("n", scope)).resolves.toEqual({ ok: true });
+    expect(notificationRead).toHaveBeenCalledWith("n", scope);
+    expect(request).not.toHaveBeenCalled();
   });
 
   it("carries the selected fork point through the shared server transport", async () => {

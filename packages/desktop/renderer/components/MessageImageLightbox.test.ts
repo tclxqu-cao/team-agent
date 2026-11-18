@@ -11,7 +11,7 @@ describe("MessageImageLightbox", () => {
     expect(lightbox).toContain('role="dialog"');
     expect(lightbox).toContain('aria-modal="true"');
     expect(lightbox).toContain('className="message-image-lightbox__image"');
-    expect(lightbox).toContain("src={image.src}");
+    expect(lightbox).toContain("src={src}");
   });
 
   it("closes from Escape, backdrop, or the icon button and restores scrolling", () => {

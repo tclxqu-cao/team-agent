@@ -12,13 +12,6 @@ export interface KwsModelFiles extends AsrModelFiles {
   keywords: string;
 }
 
-export interface TtsModelFiles {
-  model: string;
-  tokens: string;
-  lexicon: string;
-  dictDir: string;
-}
-
 export function findAsrModelFiles(modelDir: string): AsrModelFiles {
   const dir = resolve(modelDir);
   if (!existsSync(dir) || !statSync(dir).isDirectory()) {
@@ -97,22 +90,4 @@ export function findKwsModelFiles(modelDir: string): KwsModelFiles {
     .map(([name]) => name);
   if (missing.length > 0) throw new Error(`KWS model is missing: ${missing.join(", ")}`);
   return candidates as KwsModelFiles;
-}
-
-export function findTtsModelFiles(modelDir: string): TtsModelFiles {
-  const dir = resolve(modelDir);
-  if (!existsSync(dir) || !statSync(dir).isDirectory()) {
-    throw new Error(`TTS model directory does not exist: ${dir}`);
-  }
-  const required = {
-    model: resolve(dir, "model.onnx"),
-    tokens: resolve(dir, "tokens.txt"),
-    lexicon: resolve(dir, "lexicon.txt"),
-    dictDir: resolve(dir, "dict"),
-  };
-  const missing = Object.entries(required)
-    .filter(([, path]) => !existsSync(path))
-    .map(([name]) => name);
-  if (missing.length > 0) throw new Error(`TTS model is missing: ${missing.join(", ")}`);
-  return required;
 }

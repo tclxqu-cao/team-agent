@@ -301,6 +301,7 @@ interface SnapshotProjection {
  * particular Next.js route or Electron renderer instance.
  */
 class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, CodexSessionCatalogRepository {
+  readonly todoOutbox: RuntimeNotificationOutbox;
   private readonly database: SQLiteDatabase;
   private closed = false;
   readonly engineSwitch: SQLiteEngineSwitchRepository;
@@ -312,6 +313,7 @@ class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, Code
     mkdirSync(directory, { recursive: true, mode: 0o700 });
     try { chmodSync(directory, 0o700); } catch { /* Best effort on filesystems without POSIX modes. */ }
     this.database = new SQLiteDatabase(directory);
+    this.todoOutbox = new RuntimeNotificationOutbox(this.database.db);
     this.engineSwitch = new SQLiteEngineSwitchRepository(this.database.db);
     this.database.db.exec(`
       CREATE TABLE IF NOT EXISTS native_runtime_message_receipt (
@@ -451,6 +453,7 @@ class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, Code
   }
 
   close(): void {
+    this.todoOutbox.close();
     if (this.closed) return;
     this.closed = true;
     this.database.close();
@@ -881,6 +884,28 @@ class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, Code
     return this.updateGoalState(sessionId, (state) => promoteNextSessionQueueItem(state, this.now()));
   }
 
+  deferMessageAdmission(sessionId: string, messageId: string): SessionGoalState {
+    return this.database.db.transaction(() => {
+      const state = this.getGoalState(sessionId);
+      const item = state.active;
+      if (item?.id !== messageId || item.kind !== "message" || this.activeRun(sessionId)) return state;
+      const receipt = this.database.db.prepare(
+        "SELECT run_id FROM native_runtime_message_receipt WHERE session_id=? AND queue_item_id=?",
+      ).get(sessionId, messageId) as { run_id: string | null } | undefined;
+      if (receipt?.run_id) return state;
+      const pending = { ...item, status: "queued" as const, updatedAt: this.now() };
+      const next = this.updateGoalState(sessionId, () => readSessionGoalState({ goalState: {
+        active: null,
+        queued: [pending, ...state.queued].map((entry, position) => ({ ...entry, position })),
+        history: state.history,
+      } }));
+      this.database.db.prepare(
+        "UPDATE native_runtime_message_receipt SET item=?,status='queued' WHERE session_id=? AND queue_item_id=? AND run_id IS NULL",
+      ).run(JSON.stringify(pending), sessionId, messageId);
+      return next;
+    })();
+  }
+
   queuedMessages(sessionId: string): SessionGoal[] {
     return queuedSessionMessages(this.getGoalState(sessionId));
   }
@@ -1006,6 +1031,7 @@ class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, Code
         recordedEvent = { ...event, durationMs: result.durationMs, usage: result.usage, result };
       }
       const sequence = run.nextSequence + 1;
+      this.todoOutbox.append(run.sessionId, runId, sequence, recordedEvent, eventAt);
       this.database.db.prepare(
         "INSERT INTO native_runtime_event(run_id, sequence, payload, created_at) VALUES (?, ?, ?, ?)",
       ).run(runId, sequence, JSON.stringify(recordedEvent), eventAt);
@@ -1181,6 +1207,13 @@ class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, Code
     return row?.active === 1;
   }
 
+  sessionRunActivity(sessionId: string): { runId: string; active: boolean; updated: string } | null {
+    const row = this.database.db.prepare(
+      "SELECT run_id, status, created_at, terminal_at FROM native_runtime_run WHERE session_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1",
+    ).get(sessionId) as { run_id: string; status: string; created_at: number; terminal_at: number | null } | undefined;
+    return row ? { runId: row.run_id, active: row.status === "active", updated: new Date(row.terminal_at ?? row.created_at).toISOString() } : null;
+  }
+
   sessionIdForRun(runId: string): string | null {
     return this.getRunById(runId)?.sessionId ?? null;
   }
@@ -1212,7 +1245,7 @@ class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, Code
     return { ...lock, sampleState: nextSample, sampleAt };
   }
 
-  applySummary(summary: UnifiedSessionSummary): UnifiedSessionSummary {
+  applySummary(summary: UnifiedSessionSummary, options: { includeQueue?: boolean } = {}): UnifiedSessionSummary {
     const observed = summary.occupancy === "owned-externally";
     const lock = this.observeDiscovery(summary.id, observed);
     const policy = this.getPermissionMode(summary.id);
@@ -1229,7 +1262,7 @@ class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, Code
       permissionMode: policy,
       occupancyRevision: lock.revision,
       controller: active?.controller ?? null,
-      goalState: this.getGoalState(summary.id),
+      ...(options.includeQueue === false ? {} : { goalState: this.getGoalState(summary.id) }),
       messageQueueVersion: 1,
     };
   }
@@ -1307,6 +1340,10 @@ class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, Code
       : detail.agentType === "deepseek-harness" && mergeProjection
       ? restoreHarnessRunInputIdentity(completedMessages, projection.run, harnessInputReceipt?.source_message_id)
       : completedMessages;
+    let snapshotTurnId: string | null = null;
+    for (const { event } of projection.events) {
+      if ("turnId" in event && typeof event.turnId === "string" && event.turnId) snapshotTurnId = event.turnId;
+    }
     return {
       ...detail,
       ...summary,
@@ -1332,6 +1369,8 @@ class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, Code
           : detail.events,
       snapshotRevision: projection.run?.nextSequence ?? 0,
       snapshotRunId: projection.run?.runId ?? null,
+      snapshotRunStatus: projection.run?.status ?? null,
+      snapshotTurnId,
     };
   }
 
@@ -1426,6 +1465,14 @@ class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, Code
   }
 }
 
+function activityMetadata(session: UnifiedSessionSummary): UnifiedSessionSummary {
+  return { id: session.id, agentType: session.agentType, nativeSessionId: session.nativeSessionId,
+    title: session.title, cwd: session.cwd, projectId: session.projectId, parentSessionId: session.parentSessionId,
+    created: session.created, updated: session.updated, status: session.status, occupancy: session.occupancy,
+    sourceLabel: session.sourceLabel, canResume: session.canResume, canDelete: session.canDelete,
+    readOnly: session.readOnly, compatibility: session.compatibility };
+}
+
 export class NativeRuntimeBrokerHost {
   private readonly state: NativeRuntimeBrokerState;
   private readonly runtime: UnifiedSessionService;
@@ -1437,6 +1484,7 @@ export class NativeRuntimeBrokerHost {
   private readonly subscribers = new Map<Socket, BrokerSubscription>();
   private readonly localSubscribers = new Set<LocalBrokerSubscription>();
   private readonly pendingCreations = new Map<string, UnifiedSessionSummary>();
+  private readonly recentRunSessions = new Map<string, UnifiedSessionSummary>();
   private readonly cancellationConfirmationTimeouts = new Set<string>();
   private readonly queryIndexCache = new SessionQueryIndexCache();
   private server: Server | null = null;
@@ -1533,6 +1581,23 @@ export class NativeRuntimeBrokerHost {
       .map((session) => this.state.applySummary(session));
   }
 
+  async liveSessions(): Promise<{ sessions: UnifiedSessionSummary[]; agentTypes: AgentType[] }> {
+    const live = await this.runtime.liveSessions();
+    const rows = new Map([...live.sessions, ...this.pendingCreations.values()].map(session => [session.id, session]));
+    for (const [id, remembered] of this.recentRunSessions) {
+      const activity = this.state.sessionRunActivity(id);
+      const row = rows.get(id) ?? remembered;
+      const external = live.sessions.some(session => session.id === id && session.status === "running" && session.occupancy === "owned-externally");
+      if (activity) rows.set(id, { ...row, updated: activity.updated > row.updated ? activity.updated : row.updated,
+        status: activity.active || external ? "running" : remembered.status === "running" ? "idle" : remembered.status });
+    }
+    const recent = Date.now() - 60_000;
+    const sessions = this.state.filterHiddenSessions([...rows.values()].filter(session => session.status === "running"
+      || this.pendingCreations.has(session.id) || this.recentRunSessions.has(session.id)
+      || Date.parse(session.created) >= recent || Date.parse(session.updated) >= recent));
+    return { sessions: sessions.map(session => this.state.applySummary(activityMetadata(session), { includeQueue: false })), agentTypes: live.agentTypes };
+  }
+
   listWorkspaces(agentType: NativeAgentType, query?: WorkspaceQuery): Promise<WorkspacePage<AgentWorkspace>> {
     return this.runtime.listWorkspaces(agentType, query);
   }
@@ -1558,6 +1623,7 @@ export class NativeRuntimeBrokerHost {
     let nextCursor: string | null = cursor;
     let watermark: string | null = null;
     let stale = false;
+    let refreshing = false;
     let firstPage = true;
 
     while (firstPage || (nextCursor && this.state.filterHiddenSessions(discovered).length < limit)) {
@@ -1576,6 +1642,7 @@ export class NativeRuntimeBrokerHost {
       });
       if (firstPage) watermark = page.watermark;
       stale ||= page.stale === true;
+      refreshing ||= page.refreshing === true;
       for (const session of page.data) {
         if (seenSessionIds.has(session.id)) continue;
         seenSessionIds.add(session.id);
@@ -1591,6 +1658,7 @@ export class NativeRuntimeBrokerHost {
       nextCursor,
       watermark,
       ...(stale ? { stale: true } : {}),
+      ...(refreshing ? { refreshing: true } : {}),
       data: this.state.filterHiddenSessions(this.mergePending(
         discovered,
         undefined,
@@ -1609,9 +1677,23 @@ export class NativeRuntimeBrokerHost {
   }
 
   async create(options: CreateRuntimeSessionOptions & { agentType: NativeAgentType }): Promise<UnifiedSessionSummary> {
+    const c = options.todoContext;
+    if (!c?.executionId) return this.createRuntimeSession(options);
+    const previous = this.state.todoOutbox.sessionForExecution(c);
+    if (previous) return this.getSummary(previous);
+    const key = `${c.serviceId}:${c.ownerId}:${c.executionId}`;
+    const existing = this.todoDraftCreations.get(key); if (existing) return existing;
+    const operation = this.createRuntimeSession(options); this.todoDraftCreations.set(key, operation);
+    try { return await operation; } finally { this.todoDraftCreations.delete(key); }
+  }
+  private readonly todoDraftCreations = new Map<string, Promise<UnifiedSessionSummary>>();
+  private async createRuntimeSession(options: CreateRuntimeSessionOptions & { agentType: NativeAgentType }): Promise<UnifiedSessionSummary> {
     console.log(`[broker-host ${new Date().toISOString().slice(11,23)}] create enter: agentType=${options.agentType} cwd=${options.cwd}`);
     try {
-      const created = await this.runtime.create(options);
+      const injection = options.todoContext ? await prepareTodoInjection(options.todoContext, options.agentType).catch(error => { if (options.todoContext?.executionId) throw error; return undefined; }) : undefined;
+      if (options.todoContext?.executionId && injection?.status !== "configured") throw new Error("Scheduled Todo MCP injection is unavailable for this Agent");
+      const created = await this.runtime.create({ ...options, ...(injection?.status === "configured" ? { todoMcp: injection.configuration } : {}) });
+      if (options.todoContext) this.state.todoOutbox.set(created.id, options.todoContext);
       console.log(`[broker-host ${new Date().toISOString().slice(11,23)}] create exit: ${created.id}`);
       this.pendingCreations.set(created.id, created);
       if (supportsPersistedDraft(created.agentType)) this.state.savePendingSession(created);
@@ -1744,8 +1826,10 @@ export class NativeRuntimeBrokerHost {
       await settlingExecution;
     }
     const decoded = decodeNativeSessionId(sessionId);
+    let runSummary: UnifiedSessionSummary;
     try {
       const detail = await this.runtime.getRunSummary(sessionId);
+      runSummary = detail;
       if (this.cancellationConfirmationTimeouts.has(sessionId)) {
         if (detail.status === "running") {
           throw new RuntimeSessionError("Codex session is still stopping", "SESSION_ALREADY_RUNNING");
@@ -1783,6 +1867,9 @@ export class NativeRuntimeBrokerHost {
       controller,
       goalId,
     });
+    this.recentRunSessions.delete(sessionId);
+    this.recentRunSessions.set(sessionId, activityMetadata(runSummary!));
+    if (this.recentRunSessions.size > 256) this.recentRunSessions.delete(this.recentRunSessions.keys().next().value!);
     this.state.clearStopIntent(sessionId);
     if (decoded.agentType === "codex" && admission.autoTitle) {
       await this.runtime.rename(sessionId, admission.autoTitle).catch(() => undefined);
@@ -1818,7 +1905,7 @@ export class NativeRuntimeBrokerHost {
       state = this.state.promoteNextItem(sessionId);
     }
     if (state.active && !this.state.activeRun(sessionId)) {
-      if (!await this.canResumeTimedOutQueue(sessionId)) return state;
+      if (!await this.canResumeTimedOutQueue(sessionId)) return this.state.deferMessageAdmission(sessionId, state.active.id);
       await this.startQueueItemAfterSettling(state.active, controller);
     }
     return this.state.getGoalState(sessionId);
@@ -1856,7 +1943,9 @@ export class NativeRuntimeBrokerHost {
     const state = this.state.enqueueMessage(sessionId, input);
     if (this.state.startedMessage(sessionId, input.sourceMessageId)) return { state };
     if (!state.active || this.state.activeRun(sessionId)) return { state };
-    if (!await this.canResumeTimedOutQueue(sessionId)) return { state };
+    if (!await this.canResumeTimedOutQueue(sessionId)) return {
+      state: this.state.deferMessageAdmission(sessionId, state.active.id),
+    };
     if (this.state.startedMessage(sessionId, input.sourceMessageId)) return { state: this.state.enqueueMessage(sessionId, input) };
     const started = await this.startQueueItemAfterSettling(state.active, controller);
     return {
@@ -1897,7 +1986,9 @@ export class NativeRuntimeBrokerHost {
     const copilot = native.agentType === "copilot";
     const durableSteering = copilot || native.agentType === "zcode";
     const runId = this.state.activeRun(sessionId)?.runId ?? null;
-    const steered = durableSteering
+    const steered = item.messagePayload?.images?.length
+      ? await this.runtime.steer(sessionId, item.objective, durableSteering ? messageId : undefined, item.messagePayload.images)
+      : durableSteering
       ? await this.runtime.steer(sessionId, item.objective, messageId)
       : await this.runtime.steer(sessionId, item.objective);
     return {
@@ -1943,6 +2034,9 @@ export class NativeRuntimeBrokerHost {
 
   snapshot(sessionId: string, afterSequence = 0): NativeRuntimeBrokerSnapshot {
     return this.state.getSnapshot(sessionId, afterSequence);
+  }
+  messageSnapshot(sessionId: string, sourceMessageId: string, afterSequence = 0, queueItemId?: string) {
+    return this.state.messageSnapshot(sessionId, sourceMessageId, afterSequence, queueItemId);
   }
 
   async answerQuestion(questionId: string, answer: RuntimeQuestionAnswer): Promise<boolean> {
@@ -2156,6 +2250,29 @@ export class NativeRuntimeBrokerHost {
           },
         } : {}),
       };
+      const todoContext = this.state.todoOutbox.get(run.sessionId);
+      if (todoContext) {
+        await this.state.todoOutbox.bindRun(run.sessionId, run.runId);
+        let todoInjectionUnavailable = false;
+        try {
+          const injection = await prepareTodoInjection(todoContext, run.agentType);
+          if (injection.status === "configured") options.todoMcp = injection.configuration;
+          else if (todoContext.executionId) throw new Error(injection.reason);
+          else todoInjectionUnavailable = true;
+        } catch (error) {
+          if (todoContext.executionId) throw error;
+          todoInjectionUnavailable = true;
+        }
+        if (todoInjectionUnavailable) {
+          const warning = this.state.appendEvent(run.runId, {
+            type: "runtime_progress", progressId: "todo-mcp:unavailable", phase: "status", status: "failed",
+            label: "个人待办工具未接入",
+            detail: "当前会话未能连接个人待办服务，本轮不能确认创建了 AgentRoam 日历待办。",
+          });
+          if (warning) this.broadcast(warning);
+        }
+        if (todoContext.model && !options.model) options.model = { id: todoContext.model };
+      }
       for await (const event of this.runtime.run(run.sessionId, delivery.input, delivery.images, agentIds, agentName, options)) {
         try { delivery.confirm(event); }
         catch (error) { logGlobal("warn", "native-broker", "Failed to persist context delivery; retained for retry", error, { runId: run.runId }); }
@@ -2268,7 +2385,10 @@ export class NativeRuntimeBrokerHost {
     controller: NativeRuntimeController,
   ): Promise<BrokerRunStart | undefined> {
     if (this.state.activeRun(item.sessionId)) return undefined;
-    if (!await this.canResumeTimedOutQueue(item.sessionId)) return undefined;
+    if (!await this.canResumeTimedOutQueue(item.sessionId)) {
+      this.state.deferMessageAdmission(item.sessionId, item.id);
+      return undefined;
+    }
     const existing = this.queueAdmissions.get(item.sessionId);
     if (existing) {
       if (existing.itemId === item.id) return existing.promise;
@@ -2295,6 +2415,7 @@ export class NativeRuntimeBrokerHost {
           // A shared Codex app-server can keep the native turn alive across a
           // broker restart. Retain this durable queue item until the next
           // reconciliation observes the native turn as idle.
+          this.state.deferMessageAdmission(item.sessionId, item.id);
           return undefined;
         }
         logGlobal("error", "native-broker", "goal queue run failed", error, {
@@ -2433,8 +2554,10 @@ export class NativeRuntimeBrokerHost {
         workspaceSessionQueryParam(request.params),
       );
       case "list": return this.list(stringParam(request.params, "projectId") || undefined);
+      case "liveSessions": return this.liveSessions();
       case "refresh": return this.refresh(stringParam(request.params, "projectId") || undefined);
       case "create": return this.create({
+        ...(request.params.todoContext ? { todoContext: request.params.todoContext as RuntimeTodoContext } : {}),
         agentType: nativeAgentTypeParam(request.params, "agentType"),
         title: stringParam(request.params, "title") || "New session",
         cwd: stringParam(request.params, "cwd") || "",
@@ -2462,6 +2585,10 @@ export class NativeRuntimeBrokerHost {
         runOverridesParam(request.params),
       );
       case "listModels": return this.listModels(nativeAgentTypeParam(request.params, "agentType"));
+      case "bindTodoContext": {
+        this.state.todoOutbox.set(requireSessionId(sessionId), request.params.context as RuntimeTodoContext);
+        return { ok: true };
+      }
       case "snapshot": return this.snapshot(requireSessionId(sessionId), numberParam(request.params, "afterSequence") ?? 0);
       case "messageSnapshot": return this.state.messageSnapshot(requireSessionId(sessionId),
         requiredStringParam(request.params, "sourceMessageId"), numberParam(request.params, "afterSequence") ?? 0,
@@ -2549,6 +2676,14 @@ export class NativeRuntimeBrokerHost {
   private broadcast(event: BrokerRunEvent): void {
     const sessionId = this.state.sessionIdForRun(event.runId);
     if (!sessionId) return;
+    if (["done", "error", "turn_aborted"].includes(event.event.type)) {
+      const remembered = this.recentRunSessions.get(sessionId);
+      const activity = this.state.sessionRunActivity(sessionId);
+      if (remembered && activity?.runId === event.runId && !activity.active) {
+        this.recentRunSessions.set(sessionId, { ...remembered, updated: activity.updated,
+          status: event.event.type === "error" ? "failed" : event.event.type === "done" ? "completed" : "idle" });
+      }
+    }
     for (const [socket, subscription] of this.subscribers) {
       if (subscription.sessionId !== sessionId) continue;
       // A browser may attach while the retained previous run is terminal and
@@ -2620,6 +2755,10 @@ export class NativeRuntimeBrokerClient {
 
   async refresh(projectId?: string): Promise<UnifiedSessionSummary[]> {
     return this.request("refresh", projectId ? { projectId } : {});
+  }
+
+  liveSessions(): Promise<{ sessions: UnifiedSessionSummary[]; agentTypes: AgentType[] }> {
+    return this.request("liveSessions", {});
   }
 
   async create(options: CreateRuntimeSessionOptions & { agentType: NativeAgentType }): Promise<UnifiedSessionSummary> {
@@ -2760,6 +2899,9 @@ export class NativeRuntimeBrokerClient {
 
   async snapshot(id: string, afterSequence = 0): Promise<NativeRuntimeBrokerSnapshot> {
     return this.request("snapshot", { sessionId: id, afterSequence });
+  }
+  async bindTodoContext(id: string, context: RuntimeTodoContext): Promise<void> {
+    await this.request("bindTodoContext", { sessionId: id, context });
   }
 
   async messageSnapshot(id: string, sourceMessageId: string, afterSequence = 0, queueItemId?: string): Promise<{
@@ -3812,3 +3954,5 @@ function openBrokerSocket(path: string): Promise<Socket> {
     socket.once("error", onError);
   });
 }
+import { RuntimeNotificationOutbox } from "./runtime-notification-outbox";
+import { prepareTodoInjection, type RuntimeTodoContext } from "./runtime-tool-injection";

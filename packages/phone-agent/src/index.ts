@@ -9,5 +9,5 @@ export { SnapshotStore } from "./perception/snapshot.js";
 export { createVisionAnnotator } from "./perception/vision.js";
 export { buildPhoneTools, type ToolDef, type ToolResult } from "./agent/phone-tools.js";
 export { createMessageHandler, serveStdio } from "./mcp/server.js";
-export { VoiceGateway, runOnce, pcmToWav } from "./voice/gateway.js";
+export { VoiceGateway, runOnce } from "./voice/gateway.js";
 export { loadAppCatalog, resolveApp } from "./apps/catalog.js";

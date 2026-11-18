@@ -1,17 +1,17 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import {
-  CALENDAR_SOURCES, localDateKey,
-  type CalendarEntry, type CalendarOverview, type CalendarSourceId, type CalendarSourceStatus, type CalendarTodoGroup,
+  CALENDAR_SOURCES, localDateKey, reconcileCalendarEntries, sourceError,
+  type CalendarEntry, type CalendarOverview, type CalendarRange, type CalendarSourceId, type CalendarSourceResult, type CalendarSourceStatus, type CalendarTodoGroup,
 } from "@agent/core";
 import { readClaudeSource } from "./claude-source";
 import { readCodexSource } from "./codex-source";
 import { readCustomerAgentSource } from "./customer-agent-source";
 import { readDeepSeekSource, type DeepSeekDiscover } from "./deepseek-source";
 import { readOpenCodeSource } from "./opencode-source";
-import { sourceError, type CalendarRange, type CalendarSourceResult } from "./types";
 import { readWorkBuddySource } from "./workbuddy-source";
 import { readZCodeSource } from "./zcode-source";
+import { readTodoCalendar } from "./todo-reminder-source";
 
 export interface CalendarHomes {
   codex?: string;
@@ -22,6 +22,7 @@ export interface CalendarHomes {
 }
 
 export interface BuildCalendarOptions {
+  ownerId?: string;
   range: CalendarRange;
   serverBaseDir: string;
   projectRoots: string[];
@@ -63,14 +64,13 @@ export async function buildCalendarOverview(options: BuildCalendarOptions): Prom
   const sourceOrder = new Map(CALENDAR_SOURCES.map((source, index) => [source, index]));
 
   for (const { source, result, error } of results) {
-    const datedTodos = result.entries.filter(entry => entry.kind === "todo").length;
-    const groupTodos = result.groups.reduce((sum, group) => sum + group.todos.length, 0);
-    sources[source] = { ok: !error, ...(error ? { error } : {}), entries: result.entries.length, todos: datedTodos + groupTodos };
-    for (const entry of result.entries) {
+    const own = source === "customer-agent" ? readTodoCalendar(options.range, options.serverBaseDir, options.ownerId) : [];
+    const entries = reconcileCalendarEntries([...result.entries.filter(e => e.kind !== "todo"), ...own], options.range.nowMs);
+    sources[source] = { ok: !error, ...(error ? { error } : {}), entries: entries.length, todos: 0 };
+    for (const entry of entries) {
       const key = localDateKey(entry.at);
-      (days[key] ??= []).push(entry);
+      (days[key] ??= []).push({ ...entry, ...(entry.scheduleId && !entry.scheduleRef ? { scheduleRef: `${entry.source}:${entry.scheduleId}` } : {}) });
     }
-    unscheduled.push(...result.groups);
     unscheduledSchedules.push(...(result.unscheduledSchedules ?? []));
   }
 

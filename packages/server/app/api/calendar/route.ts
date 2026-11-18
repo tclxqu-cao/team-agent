@@ -2,6 +2,7 @@ import { discoverHarnessEndpoint } from "@agent/native-runtime";
 import { SQLiteProjectStore } from "@agent/core";
 import { buildCalendarOverview } from "../../../lib/calendar/aggregate";
 import { getAgentWorkingDirectory, getServerBaseDir } from "../../../lib/server-data-dir";
+import { anonymousPrincipal } from "../../../lib/web-auth/anonymous";
 
 export const dynamic = "force-dynamic";
 
@@ -56,6 +57,7 @@ export async function GET(request: Request) {
   const overview = await buildCalendarOverview({
     range: { fromMs, toMs, nowMs },
     serverBaseDir: baseDir,
+    ownerId: anonymousPrincipal().userId,
     projectRoots,
     discoverDeepSeek: () => discoverHarnessEndpoint(),
   });

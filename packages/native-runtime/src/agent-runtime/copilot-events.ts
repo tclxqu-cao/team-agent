@@ -19,6 +19,7 @@ export function copilotToolOutput(tool: ToolCallState): string {
   if (tool.status === "cancelled") return copilotText(tool.reasonMessage) || "Tool cancelled";
   if (!("content" in tool)) return "";
   return tool.content?.map(content => content.type === "text" ? content.text
+    : content.type === "subagent" ? JSON.stringify(content, null, 2)
     : "uri" in content ? `[${content.type}] ${content.uri}` : `[${content.type}]`).join("\n")
     || ("error" in tool ? tool.error?.message : "") || ("pastTenseMessage" in tool ? copilotText(tool.pastTenseMessage) : "");
 }

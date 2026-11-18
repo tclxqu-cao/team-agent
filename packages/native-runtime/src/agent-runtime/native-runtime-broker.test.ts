@@ -264,6 +264,63 @@ describe("resolveNativeRuntimeSocketPath", () => {
 });
 
 describe("NativeRuntimeBrokerHost", () => {
+  it("starts an ordinary Codex turn with optional Todo configuration when its service is unavailable", async () => {
+    const path = await directory();
+    const runtime = new FakeNativeRuntime();
+    runtime.immediateTerminal = true;
+    const host = new NativeRuntimeBrokerHost(path, runtime as unknown as UnifiedSessionService);
+    try {
+      await host.start();
+      const client = new NativeRuntimeBrokerClient({ directory: path });
+      await client.bindTodoContext(sessionId, { serviceId: "unavailable-service", ownerId: "owner", descriptorPath: join(path, "missing-credential.json") });
+      await host.startRun(sessionId, "ordinary task");
+      await waitFor(() => expect(host.snapshot(sessionId).events.some(({ event }) => event.type === "done")).toBe(true));
+      expect(runtime.runInputs).toHaveLength(1);
+      expect(runtime.runOptions[0].todoMcp).toMatchObject({
+        readiness: "background",
+        env: { AGENTROAM_TODO_DESCRIPTOR: join(path, "missing-credential.json") },
+      });
+    } finally { await host.stop(); }
+  });
+
+  it("does not start scheduled work when its scoped Todo tools cannot be injected", async () => {
+    const path = await directory();
+    const runtime = new FakeNativeRuntime();
+    runtime.immediateTerminal = true;
+    const host = new NativeRuntimeBrokerHost(path, runtime as unknown as UnifiedSessionService);
+    try {
+      await host.start();
+      const client = new NativeRuntimeBrokerClient({ directory: path });
+      await client.bindTodoContext(sessionId, {
+        serviceId: "unavailable-service", ownerId: "owner", executionId: "occurrence",
+        descriptorPath: join(path, "missing-credential.json"),
+      });
+      await host.startRun(sessionId, "scheduled work");
+      await waitFor(() => expect(host.snapshot(sessionId).events.some(({ event }) => event.type === "error")).toBe(true));
+      expect(runtime.runInputs).toHaveLength(0);
+    } finally { await host.stop(); }
+  });
+
+  it("publishes admitted and finished runs without waiting for global native discovery", async () => {
+    const runtime = new FakeNativeRuntime();
+    const live = vi.fn(async () => ({ sessions: [] as UnifiedSessionSummary[], agentTypes: [] as AgentType[] }));
+    Object.assign(runtime, { liveSessions: live });
+    const host = new NativeRuntimeBrokerHost(await directory(), runtime as unknown as UnifiedSessionService);
+    try {
+      await host.startRun(sessionId, "new task");
+      const active = await host.liveSessions();
+      expect(active.sessions.find(row => row.id === sessionId)?.status).toBe("running");
+      expect(active.sessions[0]).not.toHaveProperty("messages");
+      expect(active.sessions[0]).not.toHaveProperty("events");
+      expect(active.sessions[0]).not.toHaveProperty("goalState");
+      await host.abort(sessionId);
+      await waitFor(() => expect(host.snapshot(sessionId).controller).toBeNull());
+      expect((await host.liveSessions()).sessions.find(row => row.id === sessionId)?.status).toBe("completed");
+      live.mockResolvedValue({ sessions: [summary("owned-externally", "running")], agentTypes: ["codex"] });
+      expect((await host.liveSessions()).sessions.find(row => row.id === sessionId)?.status).toBe("running");
+    } finally { await host.stop(); }
+  });
+
   it.each(["deepseek-harness", "codex", "zcode"] as const)(
     "links the accepted queue input to its source only for Harness (%s)", async agentType => {
       const id = encodeUnifiedSessionId(agentType, "queued-input");
@@ -1573,6 +1630,24 @@ describe("NativeRuntimeBrokerHost", () => {
     }
   });
 
+  it("forwards queued images to native steering without consuming a rejected message", async () => {
+    const runtime = new FakeNativeRuntime();
+    const host = new NativeRuntimeBrokerHost(await directory(), runtime as unknown as UnifiedSessionService);
+    const images = ["data:image/png;base64,iVBORw0KGgoB"];
+    const steer = vi.spyOn(runtime, "steer").mockResolvedValue(false);
+    try {
+      await host.startRun(sessionId, "current");
+      await waitFor(() => expect(host.snapshot(sessionId).events).toHaveLength(1));
+      const queued = await host.enqueueMessage(sessionId, { sourceMessageId: "image-steer", content: "inspect", messagePayload: { images } });
+      const queueId = queued.state.queued[0].id;
+      await expect(host.steerMessage(sessionId, queueId)).resolves.toMatchObject({ steered: false });
+      expect(steer).toHaveBeenCalledWith(sessionId, "inspect", undefined, images);
+      expect((await host.getGoals(sessionId)).queued[0].messagePayload?.images).toEqual(images);
+      steer.mockResolvedValue(true);
+      await expect(host.steerMessage(sessionId, queueId)).resolves.toMatchObject({ steered: true, state: { queued: [] } });
+    } finally { await host.stop(); }
+  });
+
   it("passes the ZCode queue identity through and completes the receipt only after native admission", async () => {
     const id = encodeUnifiedSessionId("zcode", "sess-guide");
     const runtime = new FakeNativeRuntime();
@@ -2006,13 +2081,22 @@ describe("NativeRuntimeBrokerHost", () => {
       const queued = await host.enqueueMessage(sessionId, {
         sourceMessageId: "chat-after-restart",
         content: "start after native idle",
+        messagePayload: { images: ["data:image/png;base64,AAAA"], agentName: "reviewer" },
       });
 
       expect(queued.started).toBeUndefined();
-      expect(queued.state.active).toMatchObject({
-        kind: "message",
+      expect(queued.state.active).toBeNull();
+      expect(queued.state.queued).toEqual([expect.objectContaining({
+        kind: "message", status: "queued", sourceMessageId: "chat-after-restart",
         objective: "start after native idle",
-      });
+        messagePayload: { images: ["data:image/png;base64,AAAA"], agentName: "reviewer" },
+      })]);
+      for (let attempt = 0; attempt < 2; attempt++) {
+        expect(await host.getGoals(sessionId)).toMatchObject({
+          active: null,
+          queued: [expect.objectContaining({ id: queued.state.queued[0].id, status: "queued" })],
+        });
+      }
       expect(runtime.runInputs).toEqual([]);
 
       runtime.status = "idle";
@@ -2020,6 +2104,7 @@ describe("NativeRuntimeBrokerHost", () => {
       await host.getGoals(sessionId);
       await waitFor(() => expect(runtime.runInputs).toHaveLength(1));
       expect(runtime.runInputs[0].input).toBe("start after native idle");
+      expect(runtime.runInputs[0].images).toEqual(["data:image/png;base64,AAAA"]);
     } finally {
       await host.stop();
     }
@@ -2034,13 +2119,18 @@ describe("NativeRuntimeBrokerHost", () => {
       const client = new NativeRuntimeBrokerClient({ directory: path });
       const queued = await client.enqueueMessage(sessionId, { sourceMessageId: "supervision:original-action", content: "核对后继续" });
       expect(queued.started).toBeUndefined();
+      await expect(client.messageSnapshot(sessionId, "supervision:original-action")).resolves.toMatchObject({
+        item: { status: "queued", sourceMessageId: "supervision:original-action" }, runId: null,
+      });
       runtime.status = "idle";
-      expect((await client.getGoals(sessionId, "web", false)).active?.id).toBe(queued.state.active?.id);
+      expect(await client.getGoals(sessionId, "web", false)).toMatchObject({
+        active: null, queued: [expect.objectContaining({ id: queued.state.queued[0].id })],
+      });
       expect(runtime.runInputs).toHaveLength(0);
       expect((await client.snapshot(sessionId)).runId).toBeNull();
       await client.getGoals(sessionId);
       await waitFor(() => expect(runtime.runInputs).toHaveLength(1));
-      expect(await client.snapshot(sessionId)).toMatchObject({ runId: expect.any(String), queueItemId: queued.state.active!.id });
+      expect(await client.snapshot(sessionId)).toMatchObject({ runId: expect.any(String), queueItemId: queued.state.queued[0].id });
     } finally { await host.stop(); }
   });
 
@@ -2181,10 +2271,11 @@ describe("NativeRuntimeBrokerHost", () => {
       expect(runtime.runInputs).toHaveLength(1);
       runtime.getFailuresRemaining = 1;
       await expect(host.getGoals(sessionId)).resolves.toMatchObject({
-        active: expect.objectContaining({
+        active: null,
+        queued: [expect.objectContaining({
           kind: "message",
           objective: "wait until Codex is idle",
-        }),
+        })],
       });
       await host.enqueueMessage(sessionId, {
         sourceMessageId: "chat-still-stopping",
@@ -3031,6 +3122,35 @@ describe("NativeRuntimeBrokerHost native paged get", () => {
         "previous answer",
       ]);
       expect(detail.messages.some((message) => message.content === "rejected input")).toBe(false);
+    } finally {
+      await host.stop();
+    }
+  });
+
+  it("keeps the retained broker turn identity distinct from a newer external native turn", async () => {
+    const path = await directory();
+    const runtime = new FakeNativeRuntime();
+    runtime.eventsBeforeApproval = [{ type: "text_chunk", text: "previous output", turnId: "previous-turn" }];
+    const host = new NativeRuntimeBrokerHost(path, runtime as unknown as UnifiedSessionService);
+    try {
+      await host.startRun(sessionId, "previous input");
+      await waitFor(() => expect(host.snapshot(sessionId).events.some(({ event }) => event.type === "ask_user")).toBe(true));
+      const question = host.snapshot(sessionId).events.find(({ event }) => event.type === "ask_user")!;
+      await host.answerQuestion((question.event as Extract<AgentEvent, { type: "ask_user" }>).questionId, { answer: "allow" });
+      await waitFor(() => expect(host.snapshot(sessionId).events.some(({ event }) => event.type === "done")).toBe(true));
+      (runtime as unknown as Record<string, unknown>).getPagedDetail = async () => ({
+        ...pagedSummary(), status: "running",
+        history: { ...pagedSummary().history, delivery: "core" },
+        messages: [{ role: "user", content: "external input", presentation: { executionTrace: { turnId: "external-turn" } } }],
+        events: [],
+      });
+
+      const detail = await host.get(sessionId, { limit: 1, view: "core" });
+      expect(detail.snapshotRunId).toBe(question.runId);
+      expect(detail.snapshotRunStatus).toBe("terminal");
+      expect(detail.snapshotTurnId).toBe("previous-turn");
+      expect(detail.messages).toEqual([expect.objectContaining({ content: "external input" })]);
+      expect(detail.events).toEqual([]);
     } finally {
       await host.stop();
     }

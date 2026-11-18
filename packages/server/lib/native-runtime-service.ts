@@ -5,6 +5,7 @@ import { homedir } from "node:os";
 import { delimiter, join, resolve, sep, win32 } from "node:path";
 import { resolveExternalCli } from "./external-cli-probe";
 import { serverLogger } from "./global-logger";
+import { WorkspaceSessionCache } from "./workspace-session-cache";
 import {
   CODEX_MINIMUM_VERSION,
   type ExternalCliResolution,
@@ -81,6 +82,7 @@ export interface NativeRunOverrides {
 
 /** Operations the web application needs from a native runtime host. */
 export interface NativeRuntimePort {
+  bindTodoContext?(id: string, context: import("@agent/native-runtime").RuntimeTodoContext): Promise<void>;
   health(): Promise<RuntimeHealth[]>;
   listModels(agentType: Exclude<AgentType, "customer-agent">): Promise<RuntimeModelInfo[]>;
   listWorkspaces(agentType: Exclude<AgentType, "customer-agent">, query?: WorkspaceQuery): Promise<WorkspacePage<AgentWorkspace>>;
@@ -95,6 +97,7 @@ export interface NativeRuntimePort {
     name?: string,
   ): Promise<ImportAgentWorkspaceResult>;
   list(projectId?: string): Promise<UnifiedSessionSummary[]>;
+  liveSessions?(): Promise<{ sessions: UnifiedSessionSummary[]; agentTypes: AgentType[] }>;
   refresh(projectId?: string): Promise<UnifiedSessionSummary[]>;
   create(options: CreateRuntimeSessionOptions & { agentType: AgentType }): Promise<UnifiedSessionSummary>;
   fork(id: string, point?: SessionForkPoint): Promise<UnifiedSessionSummary>;
@@ -177,6 +180,7 @@ export interface NativeRuntimePort {
  */
 export class NativeRuntimeService implements NativeRuntimePort {
   private readonly pendingCreations = new Map<string, UnifiedSessionSummary>();
+  private readonly workspaceSessions = new WorkspaceSessionCache();
 
   constructor(
     private readonly runtime: Pick<NativeRuntimePort, keyof NativeRuntimePort>,
@@ -199,7 +203,7 @@ export class NativeRuntimeService implements NativeRuntimePort {
     return this.runtime.listWorkspaces(agentType, query);
   }
 
-  importWorkspace(
+  async importWorkspace(
     agentType: Exclude<AgentType, "customer-agent">,
     path: string,
     name?: string,
@@ -207,7 +211,9 @@ export class NativeRuntimeService implements NativeRuntimePort {
     if (!this.runtime.importWorkspace) {
       throw new RuntimeSessionError("Native workspace import is unavailable", "OPERATION_NOT_SUPPORTED");
     }
-    return this.runtime.importWorkspace(agentType, path, name);
+    const imported = await this.runtime.importWorkspace(agentType, path, name);
+    this.workspaceSessions.clear();
+    return imported;
   }
 
   async listWorkspaceSessions(
@@ -215,7 +221,9 @@ export class NativeRuntimeService implements NativeRuntimePort {
     workspaceId: string,
     query?: WorkspaceSessionQuery,
   ): Promise<WorkspacePage<UnifiedSessionSummary>> {
-    const page = await this.runtime.listWorkspaceSessions(agentType, workspaceId, query);
+    const key = JSON.stringify([agentType, workspaceId, query?.limit ?? 50]);
+    const page = await this.workspaceSessions.read(key, query ?? {},
+      options => this.runtime.listWorkspaceSessions(agentType, workspaceId, options));
     if (query?.cursor) return page;
     const discoveredIds = new Set(page.data.map((session) => session.id));
     const data = page.data.map((session) => {
@@ -256,7 +264,20 @@ export class NativeRuntimeService implements NativeRuntimePort {
     );
   }
 
+  async liveSessions(): Promise<{ sessions: UnifiedSessionSummary[]; agentTypes: AgentType[] }> {
+    const [live, projects] = await Promise.all([
+      this.runtime.liveSessions?.() ?? Promise.resolve({ sessions: [], agentTypes: [] }),
+      this.listProjects(),
+    ]);
+    return { ...live, sessions: this.withPendingCreations(live.sessions)
+      .map(session => associateLocalProject(session, projects, this.platform)) };
+  }
+
   async create(options: CreateRuntimeSessionOptions & { agentType: AgentType }): Promise<UnifiedSessionSummary> {
+    if (this.runtime.bindTodoContext && !options.todoContext) {
+      const { createRuntimeTodoContext } = await import("./todo/runtime-todo-context");
+      options = { ...options, todoContext: createRuntimeTodoContext() };
+    }
     const projects = await this.listProjects();
     const localProject = projects.find(project => project.id === options.projectId);
     // Local project IDs are UI associations, not Codex project registry IDs.
@@ -270,6 +291,11 @@ export class NativeRuntimeService implements NativeRuntimePort {
     );
     const created = options.projectId ? { ...associated, projectId: options.projectId } : associated;
     this.pendingCreations.set(created.id, created);
+    this.workspaceSessions.clear();
+    if (this.runtime.bindTodoContext && options.todoContext) {
+      const { storedRuntimeTodoContext } = await import("./todo/runtime-todo-context");
+      await this.runtime.bindTodoContext(created.id, storedRuntimeTodoContext(created.id, options.todoContext));
+    }
     return created;
   }
 
@@ -286,12 +312,14 @@ export class NativeRuntimeService implements NativeRuntimePort {
       this.platform,
     );
     this.pendingCreations.set(forked.id, forked);
+    this.workspaceSessions.clear();
     return forked;
   }
 
   async delete(id: string): Promise<void> {
     await this.runtime.delete(id);
     this.pendingCreations.delete(id);
+    this.workspaceSessions.clear();
   }
 
   async get(id: string, query?: SessionHistoryQuery): Promise<UnifiedSessionDetail> {
@@ -368,6 +396,7 @@ export class NativeRuntimeService implements NativeRuntimePort {
     if (!this.runtime.startRun) {
       throw new RuntimeSessionError("Native runtime broker is unavailable", "RUNTIME_UNAVAILABLE");
     }
+    await this.prepareTodoContext(id);
     return this.runtime.startRun(id, input, images, controller, runOverrides);
   }
 
@@ -480,7 +509,13 @@ export class NativeRuntimeService implements NativeRuntimePort {
     if (!this.runtime.enqueueMessage) {
       throw new RuntimeSessionError("Message queue is unavailable", "OPERATION_NOT_SUPPORTED");
     }
+    await this.prepareTodoContext(id);
     return this.runtime.enqueueMessage(id, input, controller);
+  }
+  private async prepareTodoContext(id: string): Promise<void> {
+    if (!this.runtime.bindTodoContext) return;
+    const { storedRuntimeTodoContext } = await import("./todo/runtime-todo-context");
+    await this.runtime.bindTodoContext(id, storedRuntimeTodoContext(id));
   }
 
   async reorderMessages(id: string, orderedIds: readonly string[]): Promise<SessionGoalState> {

@@ -13,12 +13,14 @@ import { parseNativeGoalMutation, type NativeGoalMutation, type NativeSessionGoa
 import { parseImageDataUrls } from "./image-input.js";
 import { encodeUnifiedSessionId } from "./session-id.js";
 import { normalizeAgentWorkspacePath, paginateByOffset } from "./agent-workspace-index.js";
+import { prepareTodoCommandBridge, type TodoPromptBridge } from "../todo-mcp/command-bridge.js";
 import type { NativeSessionPermissions } from "./types.js";
 import { RuntimeSessionError, type AgentRuntimeAdapter, type AgentWorkspace, type CreateRuntimeSessionOptions, type RuntimeHealth, type RuntimeModelInfo, type RuntimeQuestionAnswer, type RuntimeRunOptions, type UnifiedSessionDetail, type UnifiedSessionSummary, type WorkspacePage, type WorkspaceQuery, type WorkspaceSessionQuery } from "./types.js";
 
 type HarnessSessionAddress =
   | { kind: "session"; sessionId: string }
   | { kind: "subagent"; parentSessionId: string; childSessionId: string; mode: "one-shot" | "continuable" | "unknown" };
+interface HarnessRunAdmission { cancelled: boolean; started: boolean; sending?: Promise<unknown> }
 
 function harnessSessionAddress(row: HarnessRecord): HarnessSessionAddress {
   const sessionId = String(row.sessionId);
@@ -35,9 +37,12 @@ function harnessSessionAddress(row: HarnessRecord): HarnessSessionAddress {
 export class DeepSeekHarnessRuntimeAdapter implements AgentRuntimeAdapter {
   readonly agentType = "deepseek-harness" as const;
   private readonly running = new Set<string>();
+  private readonly admissions = new Map<string, HarnessRunAdmission>();
   private readonly workspaces = new Map<string, AgentWorkspace>();
+  private readonly todoBridges = new Map<string, TodoPromptBridge>();
   private readonly interactions: HarnessInteractions;
-  constructor(private readonly client: HarnessConnection = new DeepSeekHarnessClient()) { this.interactions = new HarnessInteractions(client); }
+  constructor(private readonly client: HarnessConnection = new DeepSeekHarnessClient(),
+    private readonly prepareTodoBridge: typeof prepareTodoCommandBridge = prepareTodoCommandBridge) { this.interactions = new HarnessInteractions(client); }
 
   async health(): Promise<RuntimeHealth> {
     try { await this.client.request("session/list", { _request: {} }); return { agentType: this.agentType, label: "DeepSeek Harness", available: true }; }
@@ -271,24 +276,43 @@ export class DeepSeekHarnessRuntimeAdapter implements AgentRuntimeAdapter {
   }
 
   async *run(nativeSessionId: string, input: string, images?: string[], _agentIds?: string[], _agentName?: string, options?: RuntimeRunOptions): AsyncIterable<AgentEvent> {
-    if (this.running.has(nativeSessionId)) throw new RuntimeSessionError("DeepSeek Harness 会话正在执行", "SESSION_ALREADY_RUNNING");
+    if (this.admissions.has(nativeSessionId) || this.running.has(nativeSessionId)) throw new RuntimeSessionError("DeepSeek Harness 会话正在执行", "SESSION_ALREADY_RUNNING");
+    const admission: HarnessRunAdmission = { cancelled: false, started: false };
+    this.admissions.set(nativeSessionId, admission);
+    try {
+      yield* this.runAdmitted(nativeSessionId, input, images, options, admission);
+    } catch (error) {
+      if (admission.cancelled) yield { type: "turn_aborted" };
+      else throw error;
+    } finally { this.admissions.delete(nativeSessionId); }
+  }
+
+  private async *runAdmitted(nativeSessionId: string, input: string, images: string[] | undefined, options: RuntimeRunOptions | undefined, admission: HarnessRunAdmission): AsyncIterable<AgentEvent> {
     const address = harnessSessionAddress(await this.readSessionRow(nativeSessionId));
+    if (admission.cancelled) { yield { type: "turn_aborted" }; return; }
     if (address.kind === "subagent" && address.mode === "one-shot") {
       throw new RuntimeSessionError("DeepSeek Harness 一次性子会话仅支持查看", "OPERATION_NOT_SUPPORTED");
     }
     if (address.kind === "subagent" && (options?.model || options?.reasoningEffort)) {
       throw new RuntimeSessionError("DeepSeek Harness 子会话沿用原生模型设置，不支持单独切换模型", "OPERATION_NOT_SUPPORTED");
     }
-    // Address discovery awaits the Host; another send may have claimed this session.
-    if (this.running.has(nativeSessionId)) throw new RuntimeSessionError("DeepSeek Harness 会话正在执行", "SESSION_ALREADY_RUNNING");
+    let todoBridge: TodoPromptBridge | undefined;
+    if (options?.todoMcp) {
+      try { todoBridge = await this.prepareTodoBridge(options.todoMcp); }
+      catch (error) { throw new RuntimeSessionError(`DeepSeek Harness 个人待办命令桥不可用：${error instanceof Error ? error.message : String(error)}`, "OPERATION_NOT_SUPPORTED"); }
+    }
+    if (admission.cancelled) { yield { type: "turn_aborted" }; return; }
     this.running.add(nativeSessionId);
-    const stream = await this.client.follow({ address, maxMessages: 1, assistantStream: true }).catch(error => { this.running.delete(nativeSessionId); throw error; });
+    if (todoBridge) this.todoBridges.set(nativeSessionId, todoBridge);
+    const stream = await this.client.follow({ address, maxMessages: 1, assistantStream: true }).catch(error => { this.running.delete(nativeSessionId); this.todoBridges.delete(nativeSessionId); throw error; });
     let streamClosed = false;
     const closeStream = () => { if (!streamClosed) { streamClosed = true; stream.close(); } };
     try {
       await this.interactions.start();
+      if (admission.cancelled) { yield { type: "turn_aborted" }; return; }
       const iterator = stream.values[Symbol.asyncIterator]();
       const opening = await iterator.next();
+      if (admission.cancelled) { yield { type: "turn_aborted" }; return; }
       if (opening.done || opening.value.type !== "snapshot") throw new RuntimeSessionError("DeepSeek Harness 没有返回执行快照", "NATIVE_PROTOCOL_ERROR");
       const queue = new AsyncEventQueue<{ frame?: HarnessRecord; interaction?: AgentEvent; error?: unknown }>();
       const unsubscribe = this.interactions.subscribe(nativeSessionId, interaction => queue.push({ interaction }));
@@ -306,15 +330,19 @@ export class DeepSeekHarnessRuntimeAdapter implements AgentRuntimeAdapter {
       })();
       try {
         if (options?.model) await this.client.request("session/selectModel", { request: { sessionId: nativeSessionId, provider: options.model.providerID || "deepseek-official", model: options.model.id, ...(options.reasoningEffort ? { reasoningEffort: options.reasoningEffort } : {}) } });
+        if (admission.cancelled) { yield { type: "turn_aborted" }; return; }
         // Native permission decisions remain owned by Harness. Do not silently replace its policy.
-        const content = [{ type: "text", text: input }, ...parseImageDataUrls(images).map(image => ({ type: "image", mediaType: image.mimeType, data: image.base64 }))];
+        const content = [{ type: "text", text: todoBridge?.wrap(input) ?? input }, ...parseImageDataUrls(images).map(image => ({ type: "image", mediaType: image.mimeType, data: image.base64 }))];
+        if (admission.cancelled) { yield { type: "turn_aborted" }; return; }
+        admission.started = true;
         if (address.kind === "subagent") {
-          await this.client.request("subagents/prompt", { request: { requestId: randomUUID(),
+          admission.sending = this.client.request("subagents/prompt", { request: { requestId: randomUUID(),
             parentSessionId: address.parentSessionId, childSessionId: address.childSessionId,
             mode: "continuable", delivery: "queue", content } });
         } else {
-          await this.client.request("session/prompt", { request: { requestId: randomUUID(), sessionId: nativeSessionId, mode: "queue", content } });
+          admission.sending = this.client.request("session/prompt", { request: { requestId: randomUUID(), sessionId: nativeSessionId, mode: "queue", content } });
         }
+        await admission.sending;
         yield { type: "thinking", message: "DeepSeek Harness 正在处理" };
         // Durable assistant/message precedes the stream end marker in Harness.
         // Match by turn/step so its committed text does not repeat live deltas.
@@ -374,17 +402,20 @@ export class DeepSeekHarnessRuntimeAdapter implements AgentRuntimeAdapter {
           }
         }
       } finally { stopFrames = true; unsubscribe(); await jobs.close(); await watchingJobs; queue.close(); closeStream(); await frames; }
-    } finally { this.running.delete(nativeSessionId); closeStream(); }
+    } finally { this.running.delete(nativeSessionId); this.todoBridges.delete(nativeSessionId); closeStream(); }
   }
 
-  async steer(nativeSessionId: string, input: string): Promise<boolean> {
-    if (!this.running.has(nativeSessionId) || !input.trim()) return false;
+  readonly supportsImageSteering = true;
+
+  async steer(nativeSessionId: string, input: string, _messageId?: string, images?: string[]): Promise<boolean> {
+    const admission = this.admissions.get(nativeSessionId);
+    if (!this.running.has(nativeSessionId) || !admission?.started || admission.cancelled || (!input.trim() && !images?.length)) return false;
     const address = harnessSessionAddress(await this.readSessionRow(nativeSessionId));
     if (address.kind === "subagent" && address.mode === "one-shot") {
       throw new RuntimeSessionError("DeepSeek Harness 一次性子会话不支持插话", "OPERATION_NOT_SUPPORTED");
     }
-    if (!this.running.has(nativeSessionId)) return false;
-    const content = [{ type: "text", text: input }];
+    if (!this.running.has(nativeSessionId) || this.admissions.get(nativeSessionId) !== admission || admission.cancelled) return false;
+    const content = [{ type: "text", text: this.todoBridges.get(nativeSessionId)?.wrap(input) ?? input }, ...parseImageDataUrls(images).map(image => ({ type: "image", mediaType: image.mimeType, data: image.base64 }))];
     const result = harnessRecord(address.kind === "subagent"
       ? await this.client.request("subagents/prompt", { request: {
           requestId: randomUUID(), parentSessionId: address.parentSessionId,
@@ -404,7 +435,14 @@ export class DeepSeekHarnessRuntimeAdapter implements AgentRuntimeAdapter {
   }
 
   async abort(nativeSessionId: string): Promise<void> {
+    const admission = this.admissions.get(nativeSessionId);
+    if (admission) {
+      admission.cancelled = true;
+      if (!admission.started) return;
+      try { await admission.sending; } catch { /* Do not resend an unconfirmed native prompt. */ }
+    }
     const address = harnessSessionAddress(await this.readSessionRow(nativeSessionId));
+    if (admission && this.admissions.get(nativeSessionId) !== admission) return;
     if (address.kind === "subagent") {
       await this.client.request("subagents/interruptByParent", { childSessionId: address.childSessionId,
         parentSessionId: address.parentSessionId, mode: "continuable" });
@@ -422,5 +460,5 @@ export class DeepSeekHarnessRuntimeAdapter implements AgentRuntimeAdapter {
     return catalog.groups.flatMap(raw => { const group = harnessRecord(raw); return Array.isArray(group.models) ? group.models.map(rawModel => { const model = harnessRecord(rawModel); const reasoning = model.reasoning ? harnessRecord(model.reasoning) : {}; return { id: String(model.id), displayName: String(model.name), providerID: String(group.id), providerDisplayName: String(group.name), description: typeof model.description === "string" ? model.description : undefined, reasoningEfforts: Array.isArray(reasoning.efforts) ? reasoning.efforts.map(rawEffort => String(harnessRecord(rawEffort).id)).filter((id): id is "low" | "high" | "max" => ["low", "high", "max"].includes(id)) : undefined }; }) : []; });
   }
 
-  dispose(): Promise<void> { this.interactions.dispose(); return this.client.dispose(); }
+  dispose(): Promise<void> { for (const admission of this.admissions.values()) admission.cancelled = true; this.interactions.dispose(); return this.client.dispose(); }
 }

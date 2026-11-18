@@ -50,6 +50,13 @@ describe("DeepSeek Harness mid-turn steering", () => {
         content: [{ type: "text", text: "change direction" }],
       } });
       expect(fixture.client.follow).toHaveBeenCalledOnce();
+      await expect(fixture.adapter.steer("native", "inspect image", undefined, ["data:image/png;base64,iVBORw0KGgoB"])).resolves.toBe(true);
+      expect(fixture.request).toHaveBeenLastCalledWith("session/prompt", { request: {
+        requestId: expect.any(String), sessionId: "native", mode: "steer", content: [
+          { type: "text", text: "inspect image" },
+          { type: "image", mediaType: "image/png", data: "iVBORw0KGgoB" },
+        ],
+      } });
       expect(fixture.request.mock.calls.some(([method]) => method === "session/cancel")).toBe(false);
     } finally { await finishHarness(fixture); }
     await expect(fixture.adapter.steer("native", "after completion")).resolves.toBe(false);

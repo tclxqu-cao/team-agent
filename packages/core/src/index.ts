@@ -93,3 +93,8 @@ export type { RunCheckpoint, IRunCheckpointStore } from './domain/agent/run-chec
 export { FileRunCheckpointStore } from './infrastructure/RunCheckpointStore.js';
 export { HarnessServiceClient } from './infrastructure/HarnessServiceClient.js';
 export type { HarnessModelSettings, HarnessServiceStatus } from './infrastructure/HarnessServiceClient.js';
+export * from "./domain/todo/index";
+export * from "./domain/notification/entities";
+export * from "./application/todo/index";
+export * from "./application/notification/NotificationService";
+export * from "./infrastructure/SQLiteTodoUnitOfWork";

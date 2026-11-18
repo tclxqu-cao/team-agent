@@ -1,5 +1,7 @@
 import { useRef, useState } from "react";
 import type { AskUserField } from "@agent/core";
+import { CircleHelp, Pencil } from "lucide-react";
+import "../styles/ask-user-card.css";
 
 interface AskUserCardProps {
   questionId: string;
@@ -14,6 +16,7 @@ interface AskUserCardProps {
 }
 
 export default function AskUserCard({
+  questionId,
   question,
   options,
   fields,
@@ -30,6 +33,11 @@ export default function AskUserCard({
   const submittingRef = useRef(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
+  const hasFields = Boolean(fields?.length);
+  const hasOptions = Boolean(options?.length);
+  const hasAnswer = hasFields
+    ? selectedIndices.size > 0 || Object.values(fieldValues).some((value) => value.trim())
+    : selectedIndices.size > 0 || Boolean(freeText.trim());
 
   const submit = async (value: string, indices?: number[]) => {
     if (settled || submittingRef.current) return;
@@ -46,373 +54,139 @@ export default function AskUserCard({
     }
   };
 
-  const hasOptions = Boolean(options?.length);
-  const hasFields = Boolean(fields?.length);
-
-  const toggleOption = (idx: number) => {
-    if (settled) return;
-    setSelectedIndices((prev) => {
-      const next = new Set(prev);
+  const toggleOption = (index: number) => {
+    if (settled || submittingRef.current) return;
+    setSelectedIndices((previous) => {
+      const next = new Set(previous);
       if (multiSelect) {
-        if (next.has(idx)) next.delete(idx);
-        else next.add(idx);
+        if (next.has(index)) next.delete(index);
+        else next.add(index);
       } else {
         next.clear();
-        next.add(idx);
+        next.add(index);
       }
       return next;
     });
   };
 
-  const handleSubmitOptions = () => {
-    if (selectedIndices.size === 0) return;
-    const labels = Array.from(selectedIndices).map((i) => options![i].label);
-    void submit(labels.join(", "), Array.from(selectedIndices));
+  const handleSubmit = () => {
+    if (!hasAnswer) return;
+    const indices = Array.from(selectedIndices).sort((left, right) => left - right);
+    const selected = indices.map((index) => options![index].label);
+    if (hasFields) {
+      const values = Object.fromEntries(
+        (fields ?? []).map((field) => [field.name, fieldValues[field.name]?.trim() ?? ""]),
+      );
+      if (!values.model && selected.length > 0) values.model = selected[0];
+      void submit(JSON.stringify({ fields: values, selectedOptions: selected }), indices);
+    } else if (freeText.trim()) {
+      void submit(freeText.trim());
+    } else {
+      void submit(selected.join(", "), indices);
+    }
   };
 
-  const handleSubmitFields = () => {
-    const selected = Array.from(selectedIndices).map((i) => options![i].label);
-    const values = Object.fromEntries(
-      (fields ?? []).map((field) => [field.name, fieldValues[field.name]?.trim() ?? ""]),
-    );
-    if (!values.model && selected.length > 0) values.model = selected[0];
-    if (!Object.values(values).some(Boolean) && selected.length === 0) return;
-    void submit(JSON.stringify({ fields: values, selectedOptions: selected }), Array.from(selectedIndices));
-  };
-
-  const handleSubmitText = () => {
-    if (!freeText.trim()) return;
-    void submit(freeText.trim());
-  };
-
-  return (
-    <div style={{ marginBottom: 12 }}>
-      {submitError && !settled && <div role="alert" style={{ color: "var(--danger)", marginBottom: 8 }}>{submitError}</div>}
-      {submitting && <div role="status">正在发送回答…</div>}
-      <div
-        style={{
-          borderRadius: 12,
-          border: "1px solid",
-          borderColor: settled ? "var(--border-subtle)" : "rgba(79,110,247,0.35)",
-          background: settled ? "var(--bg-deep)" : "linear-gradient(135deg, rgba(79,110,247,0.04) 0%, var(--bg-deep) 100%)",
-          overflow: "hidden",
-          transition: "border-color 0.2s ease",
-        }}
-      >
-        {/* Header */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            padding: "10px 14px",
-            borderBottom: settled ? "1px solid var(--border-subtle)" : "1px solid rgba(79,110,247,0.15)",
-          }}
-        >
-          <div
-            style={{
-              width: 24,
-              height: 24,
-              borderRadius: 6,
-              background: settled ? "var(--bg-surface)" : "rgba(79,110,247,0.1)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              flexShrink: 0,
-            }}
-          >
-            {cancelled ? (
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round">
-                <path d="M6 6l12 12M6 18L18 6" />
-              </svg>
-            ) : answered ? (
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2.5" strokeLinecap="round">
-                <polyline points="20 6 9 17 4 12" />
-              </svg>
-            ) : (
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round">
-                <circle cx="12" cy="12" r="10" />
-                <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
-                <line x1="12" y1="17" x2="12.01" y2="17" />
-              </svg>
-            )}
-          </div>
-          <span
-            style={{
-              fontSize: 10,
-              fontWeight: 600,
-              textTransform: "uppercase",
-              letterSpacing: "0.06em",
-              color: settled ? "var(--text-muted)" : "var(--accent)",
-              flex: 1,
-            }}
-          >
-            {cancelled ? "已中断" : answered ? "已回答" : "向你提问"}
-          </span>
-          {multiSelect && !settled && (
-            <span
-              style={{
-                fontSize: 9,
-                padding: "1px 6px",
-                borderRadius: 10,
-                background: "var(--accent-dim)",
-                color: "var(--accent)",
-                fontWeight: 500,
-              }}
-            >
-              可多选
-            </span>
-          )}
-        </div>
-
-        {/* Question */}
-        <div
-          style={{
-            padding: "12px 14px 8px",
-            fontSize: 13,
-            color: "var(--text-primary)",
-            lineHeight: 1.6,
-            fontWeight: 500,
-            whiteSpace: "pre-wrap",
-          }}
-        >
-          {question}
-        </div>
-
-        {/* Answered state — show what was selected */}
-        {answered && (
-          <div
-            style={{
-              padding: "6px 14px 12px",
-              fontSize: 12,
-              color: "var(--text-secondary)",
-              whiteSpace: "pre-wrap",
-              overflowWrap: "anywhere",
-            }}
-          >
-            <span style={{ fontWeight: 500 }}>回答：</span>
+  if (answered && !cancelled) {
+    return (
+      <div className="ask-user-answer" aria-label="已回答的问题" data-question-id={questionId}>
+        <div className="ask-user-answer__bubble">
+          <div className="ask-user-answer__question">{question}</div>
+          <div className="ask-user-answer__text">
             {hasFields ? "配置已提交（敏感字段已隐藏）" : answer}
           </div>
-        )}
-
-        {/* Options */}
-        {cancelled && (
-          <div style={{ padding: "4px 14px 12px", fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6 }}>
-            {options?.map((option, index) => <div key={index}>{option.label}</div>)}
-            <div style={{ marginTop: 6 }}>提问已中断，请让助手重新提问。</div>
-          </div>
-        )}
-
-        {hasOptions && !settled && (
-          <div style={{ padding: "4px 14px 6px", display: "flex", flexDirection: "column", gap: 6 }}>
-            {options!.map((opt, idx) => {
-              const isSelected = selectedIndices.has(idx);
-              return (
-                <button
-                  key={idx}
-                  onClick={() => toggleOption(idx)}
-                  style={{
-                    display: "flex",
-                    alignItems: "flex-start",
-                    gap: 10,
-                    padding: "9px 12px",
-                    borderRadius: 8,
-                    border: "1px solid",
-                    borderColor: isSelected ? "var(--accent)" : "var(--border-subtle)",
-                    background: isSelected ? "rgba(79,110,247,0.06)" : "var(--bg-surface)",
-                    cursor: "pointer",
-                    textAlign: "left",
-                    fontFamily: "var(--font-body)",
-                    transition: "all 0.15s ease",
-                    width: "100%",
-                  }}
-                >
-                  {/* Selection indicator */}
-                  <div
-                    style={{
-                      width: 16,
-                      height: 16,
-                      borderRadius: multiSelect ? 4 : 8,
-                      border: `2px solid ${isSelected ? "var(--accent)" : "var(--border-subtle)"}`,
-                      background: isSelected ? "var(--accent)" : "transparent",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      flexShrink: 0,
-                      marginTop: 1,
-                      transition: "all 0.15s ease",
-                    }}
-                  >
-                    {isSelected && (
-                      <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round">
-                        <polyline points="20 6 9 17 4 12" />
-                      </svg>
-                    )}
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div
-                      style={{
-                        fontSize: 12.5,
-                        fontWeight: isSelected ? 600 : 500,
-                        color: isSelected ? "var(--text-primary)" : "var(--text-secondary)",
-                      }}
-                    >
-                      {opt.label}
-                    </div>
-                    {opt.description && (
-                      <div
-                        style={{
-                          fontSize: 11,
-                          color: "var(--text-muted)",
-                          marginTop: 2,
-                          lineHeight: 1.4,
-                        }}
-                      >
-                        {opt.description}
-                      </div>
-                    )}
-                  </div>
-                </button>
-              );
-            })}
-
-            {!hasFields && (
-              <button
-                onClick={handleSubmitOptions}
-                disabled={submitting || selectedIndices.size === 0}
-                style={{
-                  marginTop: 2,
-                  padding: "7px 16px",
-                  borderRadius: 8,
-                  border: "none",
-                  background: selectedIndices.size > 0 ? "var(--accent)" : "var(--bg-surface)",
-                  color: selectedIndices.size > 0 ? "white" : "var(--text-muted)",
-                  cursor: selectedIndices.size > 0 ? "pointer" : "default",
-                  fontSize: 12,
-                  fontWeight: 600,
-                  fontFamily: "var(--font-body)",
-                  alignSelf: "flex-end",
-                  transition: "all 0.15s ease",
-                }}
-              >
-                确认选择
-              </button>
-            )}
-          </div>
-        )}
-
-        {hasFields && !settled && (
-          <div style={{ padding: "6px 14px 12px", display: "flex", flexDirection: "column", gap: 10 }}>
-            {fields!.map((field) => (
-              <label key={field.name} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                <span style={{ fontSize: 11.5, fontWeight: 600, color: "var(--text-secondary)" }}>
-                  {field.label}
-                </span>
-                <input
-                  type={field.type === "secret" ? "password" : "text"}
-                  value={fieldValues[field.name] ?? ""}
-                  onChange={(e) => setFieldValues((prev) => ({ ...prev, [field.name]: e.target.value }))}
-                  placeholder={field.description}
-                  autoComplete={field.type === "secret" ? "off" : undefined}
-                  style={{
-                    padding: "8px 12px",
-                    borderRadius: 8,
-                    border: "1px solid var(--border-subtle)",
-                    background: "var(--bg-surface)",
-                    color: "var(--text-primary)",
-                    fontSize: 13,
-                    fontFamily: "var(--font-body)",
-                    outline: "none",
-                  }}
-                />
-                {field.description && (
-                  <span style={{ fontSize: 10.5, color: "var(--text-muted)", lineHeight: 1.4 }}>
-                    {field.description}
-                  </span>
-                )}
-              </label>
-            ))}
-            <button
-              onClick={handleSubmitFields}
-              disabled={submitting}
-              style={{
-                padding: "8px 16px",
-                borderRadius: 8,
-                border: "none",
-                background: "var(--accent)",
-                color: "white",
-                cursor: "pointer",
-                fontSize: 12,
-                fontWeight: 600,
-                fontFamily: "var(--font-body)",
-                alignSelf: "flex-end",
-              }}
-            >
-              确认配置
-            </button>
-          </div>
-        )}
-
-        {/* Free text input remains available while the question is pending. */}
-        {!settled && !hasFields && (
-          <div style={{
-            padding: hasOptions ? "4px 14px 12px" : "4px 14px 12px",
-            display: "flex",
-            gap: 8,
-            borderTop: hasOptions ? "1px solid var(--border-subtle)" : "none",
-            marginTop: hasOptions ? 2 : 0,
-          }}>
-            <input
-              type="text"
-              value={freeText}
-              onChange={(e) => setFreeText(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  handleSubmitText();
-                }
-              }}
-              placeholder={hasOptions ? "或输入自定义回答…" : "输入你的回答…"}
-              style={{
-                flex: 1,
-                padding: "8px 12px",
-                borderRadius: 8,
-                border: "1px solid var(--border-subtle)",
-                background: "var(--bg-surface)",
-                color: "var(--text-primary)",
-                fontSize: 13,
-                fontFamily: "var(--font-body)",
-                outline: "none",
-                transition: "border-color 0.15s ease",
-              }}
-              onFocus={(e) => {
-                e.currentTarget.style.borderColor = "var(--accent)";
-              }}
-              onBlur={(e) => {
-                e.currentTarget.style.borderColor = "var(--border-subtle)";
-              }}
-            />
-            <button
-              onClick={handleSubmitText}
-              disabled={submitting || !freeText.trim()}
-              style={{
-                padding: "8px 16px",
-                borderRadius: 8,
-                border: "none",
-                background: freeText.trim() ? "var(--accent)" : "var(--bg-surface)",
-                color: freeText.trim() ? "white" : "var(--text-muted)",
-                cursor: freeText.trim() ? "pointer" : "default",
-                fontSize: 12,
-                fontWeight: 600,
-                fontFamily: "var(--font-body)",
-                transition: "all 0.15s ease",
-              }}
-            >
-              发送
-            </button>
-          </div>
-        )}
+        </div>
       </div>
-    </div>
+    );
+  }
+
+  return (
+    <section
+      className={`ask-user-card${cancelled ? " ask-user-card--cancelled" : ""}`}
+      aria-label={cancelled ? "已中断的问题" : "向你提问"}
+      aria-busy={submitting || undefined}
+      data-question-id={questionId}
+    >
+      <div className="ask-user-card__header">
+        <CircleHelp size={14} aria-hidden="true" />
+        <span>{cancelled ? "已中断" : "问题"}</span>
+        {multiSelect && !settled && <span className="ask-user-card__multi-select">可多选</span>}
+      </div>
+      <div className="ask-user-card__question">{question}</div>
+
+      {cancelled ? (
+        <div className="ask-user-card__cancelled">
+          {options?.map((option, index) => <div key={index}>{option.label}</div>)}
+          <div>提问已中断，请让助手重新提问。</div>
+        </div>
+      ) : (
+        <>
+          {hasOptions && (
+            <div className="ask-user-card__options" role="group" aria-label={multiSelect ? "选择回答（可多选）" : "选择回答"}>
+              {options!.map((option, index) => (
+                <button
+                  key={index}
+                  type="button"
+                  className="ask-user-card__option"
+                  aria-pressed={selectedIndices.has(index)}
+                  disabled={submitting}
+                  onClick={() => toggleOption(index)}
+                >
+                  <span className="ask-user-card__option-number" aria-hidden="true">{index + 1}</span>
+                  <span className="ask-user-card__option-body">
+                    <span className="ask-user-card__option-label">{option.label}</span>
+                    {option.description && <span className="ask-user-card__option-description">{option.description}</span>}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {hasFields && (
+            <div className="ask-user-card__fields">
+              {fields!.map((field) => (
+                <label key={field.name} className="ask-user-card__field">
+                  <span>{field.label}</span>
+                  <input
+                    type={field.type === "secret" ? "password" : "text"}
+                    value={fieldValues[field.name] ?? ""}
+                    onChange={(event) => setFieldValues((previous) => ({ ...previous, [field.name]: event.target.value }))}
+                    placeholder={field.description}
+                    autoComplete={field.type === "secret" ? "off" : undefined}
+                    disabled={submitting}
+                  />
+                  {field.description && <span className="ask-user-card__field-description">{field.description}</span>}
+                </label>
+              ))}
+            </div>
+          )}
+
+          {submitError && <div className="ask-user-card__error" role="alert">{submitError}</div>}
+          <div className="ask-user-card__footer">
+            {!hasFields && (
+              <label className="ask-user-card__custom-answer">
+                <Pencil size={14} aria-hidden="true" />
+                <input
+                  type="text"
+                  aria-label="自定义回答"
+                  value={freeText}
+                  disabled={submitting}
+                  onChange={(event) => setFreeText(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                      event.preventDefault();
+                      handleSubmit();
+                    }
+                  }}
+                  placeholder={hasOptions ? "或自行撰写回复" : "输入你的回答"}
+                />
+              </label>
+            )}
+            <button className="ask-user-card__send" type="button" disabled={submitting || !hasAnswer} onClick={handleSubmit}>
+              {submitting ? "正在发送…" : hasFields ? "确认配置" : "发送"}
+            </button>
+          </div>
+        </>
+      )}
+    </section>
   );
 }

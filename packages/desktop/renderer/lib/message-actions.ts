@@ -2,7 +2,6 @@ import type { ChatMessage } from "../stores/agentStore";
 
 export interface MessageActionPolicy {
   showCopy: boolean;
-  showSpeak: boolean;
   showCompletion: boolean;
   compact: boolean;
 }
@@ -66,11 +65,10 @@ export function messageActionPolicy(
   isRunning: boolean,
 ): MessageActionPolicy {
   const message = messages[index];
-  if (!message) return { showCopy: false, showSpeak: false, showCompletion: false, compact: false };
+  if (!message) return { showCopy: false, showCompletion: false, compact: false };
   if (message.role === "user") {
     return {
       showCopy: Boolean(message.content),
-      showSpeak: false,
       showCompletion: false,
       compact: false,
     };
@@ -79,7 +77,6 @@ export function messageActionPolicy(
   const isFinal = isFinalAssistantResponse(messages, index, isRunning);
   return {
     showCopy: isFinal,
-    showSpeak: isFinal,
     showCompletion: isFinal,
     compact: message.role === "assistant" && !isFinal && !message.isCompactionSummary,
   };

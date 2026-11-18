@@ -112,3 +112,14 @@ describe("navigation layout preferences", () => {
     expect(migrateUIPreferences({}, 4)).not.toHaveProperty("navigationLayout");
   });
 });
+
+
+describe("retired read-aloud preference", () => {
+  it("drops automatic read-aloud while retaining wake preferences", () => {
+    const restored = migrateUIPreferences({
+      skin: "glass", autoSpeak: true, wakeEnabled: true, wakeWord: "小智",
+    }, 4);
+    expect(restored).not.toHaveProperty("autoSpeak");
+    expect(restored).toMatchObject({ skin: "glass", wakeEnabled: true, wakeWord: "小智" });
+  });
+});

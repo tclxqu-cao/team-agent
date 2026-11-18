@@ -10,27 +10,50 @@ interface LiveNativeCatalog {
   pending: boolean;
   expiresAt: number;
   sessions?: UnifiedSessionSummary[];
+  failure?: { error: unknown };
 }
 const liveHost = globalThis as typeof globalThis & { __liveNativeSessionCatalog?: LiveNativeCatalog };
 const LIVE_NATIVE_CATALOG_TTL_MS = 15_000;
+const PICKER_REFRESH_WAIT_MS = 1_000;
+
+/** Keep discovery shared and running after the picker stops waiting for it. */
+async function pickerNativeSessions(entry: LiveNativeCatalog): Promise<UnifiedSessionSummary[]> {
+  if (entry.sessions) return entry.sessions;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      entry.promise,
+      new Promise<UnifiedSessionSummary[]>(resolve => {
+        timer = setTimeout(() => resolve(entry.sessions ?? []), PICKER_REFRESH_WAIT_MS);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 /** Runtime list() is explicitly cached until invalidated. Live views must refresh
  * discovery; coalesce viewers and searches without turning every poll into a scan. */
-function liveNativeSessions(): Promise<UnifiedSessionSummary[]> | UnifiedSessionSummary[] {
+function liveNativeSessions(backgroundRefresh = false): Promise<UnifiedSessionSummary[]> | UnifiedSessionSummary[] {
   const existing = liveHost.__liveNativeSessionCatalog;
   if (existing?.sessions) {
     if (!existing.pending && existing.expiresAt <= Date.now()) {
       existing.pending = true;
       existing.promise = refreshLiveNativeCatalog(existing);
-      void existing.promise.catch(() => undefined);
     }
-    return existing.sessions;
+    if (backgroundRefresh && existing.pending) {
+      void existing.promise.catch(() => undefined);
+      return existing.sessions;
+    }
+    // Status-sensitive consumers still await fresh activity; the picker
+    // follows up in the background while cached tasks remain selectable.
+    return existing.pending ? existing.promise : existing.sessions;
   }
-  if (existing) return existing.promise;
+  if (existing) return backgroundRefresh ? pickerNativeSessions(existing) : existing.promise;
   const entry: LiveNativeCatalog = { promise: Promise.resolve([]), pending: true, expiresAt: 0 };
   entry.promise = refreshLiveNativeCatalog(entry);
   liveHost.__liveNativeSessionCatalog = entry;
-  return entry.promise;
+  return backgroundRefresh ? pickerNativeSessions(entry) : entry.promise;
 }
 
 function refreshLiveNativeCatalog(entry: LiveNativeCatalog): Promise<UnifiedSessionSummary[]> {
@@ -42,7 +65,9 @@ function refreshLiveNativeCatalog(entry: LiveNativeCatalog): Promise<UnifiedSess
     return sessions;
   }, error => {
     if (!entry.sessions) {
-      if (liveHost.__liveNativeSessionCatalog === entry) delete liveHost.__liveNativeSessionCatalog;
+      // A bounded picker request may have returned already. Keep a late
+      // failure until the next reader can report it and offer a retry.
+      entry.failure = { error };
       throw error;
     }
     entry.expiresAt = Date.now() + LIVE_NATIVE_CATALOG_TTL_MS;
@@ -54,7 +79,7 @@ function refreshLiveNativeCatalog(entry: LiveNativeCatalog): Promise<UnifiedSess
 }
 
 /** Shared source for existing chat lists, the selector, and the running Dashboard. */
-export async function discoverSessions(projectId?: string, refresh = false, options: { includeInternal?: boolean; live?: boolean } = {}) {
+export async function discoverSessions(projectId?: string, refresh = false, options: { includeInternal?: boolean; live?: boolean; backgroundRefresh?: boolean } = {}) {
   const hidden = options.includeInternal ? new Set<string>() : collaborationSessionIds();
   const store = agentHost.getSessionStore();
   const summaries = store.listSummaries ? await store.listSummaries(projectId)
@@ -69,21 +94,28 @@ export async function discoverSessions(projectId?: string, refresh = false, opti
   }));
   try {
     const service = getNativeRuntimeService();
-    const native = options.live
-      ? (await liveNativeSessions()).filter(session => !projectId || session.projectId === projectId)
+    const discoveredNative = options.live
+      ? await liveNativeSessions(options.backgroundRefresh)
       : refresh ? await service.refresh(projectId) : await service.list(projectId);
-    return { sessions: [...tagged, ...native.filter(session => !hidden.has(session.id))] };
+    const native = discoveredNative.filter(session => (!projectId || session.projectId === projectId) && !hidden.has(session.id));
+    const entry = liveHost.__liveNativeSessionCatalog;
+    return { sessions: [...tagged, ...native],
+      ...(options.backgroundRefresh && entry && (entry.pending || entry.sessions !== discoveredNative) ? { refreshing: true } : {}) };
   } catch (error) {
+    const failed = liveHost.__liveNativeSessionCatalog;
+    if (options.live && failed?.failure && failed.failure.error === error) delete liveHost.__liveNativeSessionCatalog;
     console.error("Native session discovery failed:", error);
-    return { sessions: tagged, discoveryError: error instanceof Error ? error.message : "原生会话发现失败" };
+    return { sessions: tagged, refreshing: false, discoveryError: error instanceof Error ? error.message : "原生会话发现失败" };
   }
 }
 
-export async function catalogSessions(includeInternal = false): Promise<{ sessions: CatalogSession[]; discoveryError?: string }> {
-  const discovered = await discoverSessions(undefined, false, { includeInternal, live: true });
+export async function catalogSessions(includeInternal = false, backgroundRefresh = false): Promise<{ sessions: CatalogSession[]; discoveryError?: string; refreshing?: boolean }> {
+  const discovered = await discoverSessions(undefined, false, { includeInternal, live: true, backgroundRefresh });
   const projects = await agentHost.getProjectStore().list();
   const paths = new Map(projects.map(p => [p.id, p.description]));
-  return { discoveryError: discovered.discoveryError, sessions: discovered.sessions.map(session => ({
+  return { discoveryError: discovered.discoveryError,
+    ...(discovered.refreshing ? { refreshing: true } : {}),
+    sessions: discovered.sessions.map(session => ({
     id: session.id, agentType: session.agentType, title: session.title || "未命名会话",
     cwd: "cwd" in session ? session.cwd : paths.get(session.projectId) || "",
     projectId: session.projectId, updated: session.updated,
@@ -100,18 +132,20 @@ const shared = globalThis as typeof globalThis & { __sessionCatalogSnapshots?: M
 const snapshots = shared.__sessionCatalogSnapshots ??= new Map();
 
 /** Immutable five-minute result snapshots prevent reordering from skipping/duplicating pages. */
-export async function querySessionCatalog(input: { query?: string; cursor?: string; limit?: number }): Promise<SessionCatalogPage> {
+export async function querySessionCatalog(input: { query?: string; cursor?: string; limit?: number; backgroundRefresh?: boolean }): Promise<SessionCatalogPage> {
   const query = (input.query ?? "").trim().toLocaleLowerCase();
   const limit = Math.min(100, Math.max(1, input.limit ?? 20));
   for (const [id, snapshot] of snapshots) if (snapshot.expiresAt < Date.now()) snapshots.delete(id);
-  let id: string, offset = 0, snapshot: CatalogSnapshot | undefined;
+  let id: string, offset = 0, snapshot: CatalogSnapshot | undefined, refreshing = false;
   if (input.cursor) {
     const match = /^catalog\.([a-f0-9-]+)\.(\d+)$/.exec(input.cursor);
     if (!match) throw new Error("会话分页标记无效，请刷新");
     id = match[1]; offset = Number(match[2]); snapshot = snapshots.get(id);
     if (!snapshot || snapshot.query !== query || !Number.isSafeInteger(offset) || offset > snapshot.sessions.length) throw new Error("会话列表已更新，请刷新重新加载");
   } else {
-    const { sessions, discoveryError } = await catalogSessions();
+    const result = await catalogSessions(false, input.backgroundRefresh);
+    const { sessions, discoveryError } = result;
+    refreshing = result.refreshing ?? false;
     if (discoveryError) throw new Error(`原生会话暂时不可用：${discoveryError}`);
     const filtered = sessions.filter(s => `${s.title} ${s.cwd} ${s.agentType}`.toLocaleLowerCase().includes(query));
     filtered.sort((a, b) => Number(b.status === "running") - Number(a.status === "running") || b.updated.localeCompare(a.updated) || a.id.localeCompare(b.id));
@@ -120,5 +154,6 @@ export async function querySessionCatalog(input: { query?: string; cursor?: stri
     if (snapshots.size > 64) snapshots.delete(snapshots.keys().next().value!);
   }
   const data = snapshot.sessions.slice(offset, offset + limit);
-  return { data, nextCursor: offset + data.length < snapshot.sessions.length ? `catalog.${id}.${offset + data.length}` : null, total: snapshot.sessions.length };
+  return { data, nextCursor: offset + data.length < snapshot.sessions.length ? `catalog.${id}.${offset + data.length}` : null,
+    total: snapshot.sessions.length, ...(refreshing ? { refreshing: true } : {}) };
 }

@@ -7,7 +7,7 @@ import dynamic from "next/dynamic";
 import { CONSOLE_CSS } from "./console-styles";
 import { consoleFrameUrl, consoleOrigin } from "./console-environment";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, ExternalLink, Bot, FolderOpen, PanelRight, X, LayoutGrid, MonitorUp, RefreshCw, UsersRound } from "lucide-react";
+import { ArrowLeft, ExternalLink, Bot, CalendarDays, FolderOpen, PanelRight, X, LayoutGrid, MonitorUp, RefreshCw, UsersRound } from "lucide-react";
 import RunningSessionsIcon from "../../../desktop/renderer/components/RunningSessionsIcon";
 import PwaInstallButton from "./PwaInstallButton";
 import ComputerSwitcher from "./ComputerSwitcher";
@@ -47,7 +47,7 @@ import { readSessionDashboardIntent, SESSION_DASHBOARD_NAVIGATE, type SessionDas
 import FlowStudioLoading from "./FlowStudioLoading";
 import CollaborationPane from "./CollaborationPane";
 import DeferredTabContent from "./DeferredTabContent";
-import { COLLABORATION_DASHBOARD_TAB, withCollaborationDashboard, SESSION_DASHBOARD_TAB, withSessionDashboard, REMOTE_DESKTOP_TAB, withRemoteDesktopTab, parseWorkspaceSnapshot, restoreWorkspaceTabs, type ConsoleTab } from "./console-tabs";
+import { COLLABORATION_DASHBOARD_TAB, withCollaborationDashboard, SESSION_DASHBOARD_TAB, withSessionDashboard, REMOTE_DESKTOP_TAB, withRemoteDesktopTab, CALENDAR_TAB, withCalendarTab, parseWorkspaceSnapshot, restoreWorkspaceTabs, type ConsoleTab } from "./console-tabs";
 import { readRemoteDesktopFullscreen, REMOTE_DESKTOP_CLOSE_TYPE, REMOTE_DESKTOP_VISIBILITY_TYPE, REMOTE_DESKTOP_CONTENT_READY_TYPE } from "../../../core/src/domain/web-console/RemoteDesktopTabBridge";
 import { resolveWebArtifactPath } from "../../../desktop/renderer/lib/artifact-links";
 
@@ -608,6 +608,12 @@ function AuthenticatedConsole({
     setActiveTerminalId(REMOTE_DESKTOP_TAB.id);
   }, []);
 
+
+  const openCalendarTab = useCallback(() => {
+    setTabs(withCalendarTab);
+    setActiveTerminalId(CALENDAR_TAB.id);
+  }, []);
+
   useEffect(() => {
     const off = onEvent("term:exited", (msg: any) => {
       const id = msg?.id;
@@ -749,6 +755,7 @@ function AuthenticatedConsole({
               { id: "flow", content: <button type="button" className="file-drawer-toggle" aria-label="打开数字人" title="数字人 · Flow Studio" onClick={() => { setSelectedPage(null); openFlowStudioTab(); }}><Bot size={17} aria-hidden="true" /></button> },
               { id: "theme", content: <ThemePicker themeId={themeId} onThemeChange={setThemeId} /> },
               { id: "files", content: <button type="button" className="file-drawer-toggle" aria-label={drawerOpen ? "关闭我的文件" : "打开我的文件"} title="我的文件" aria-expanded={drawerOpen} onClick={() => { setSelectedPage(null); setDrawerOpen((open) => !open); }}><FolderOpen size={17} aria-hidden="true" /></button> },
+              { id: "calendar", content: <button type="button" className="file-drawer-toggle" aria-label="打开智能体日历" title="日历 · 定时任务与待办" onClick={() => { setSelectedPage(null); openCalendarTab(); }}><CalendarDays size={17} aria-hidden="true" /></button> },
             ].filter(item => computerConfiguration.settings.visibleTools.some(id => id === item.id)).sort((left, right) => computerConfiguration.settings.visibleTools.findIndex(id => id === left.id) - computerConfiguration.settings.visibleTools.findIndex(id => id === right.id))}
           />
         </div>
@@ -786,6 +793,8 @@ function AuthenticatedConsole({
                   <iframe ref={remoteDesktopFrameRef} className="webapp-frame" style={{ visibility: remoteDesktopContentReady ? "visible" : "hidden" }} src={consoleFrameUrl("/app/?view=remote-desktop")} title="远程桌面" onLoad={postAppearanceToWebapp} />
                   {!remoteDesktopContentReady && <FlowStudioLoading label="REMOTE DESKTOP" title="正在打开远程桌面" caption="正在准备桌面与连接" icon={<MonitorUp size={36} strokeWidth={1.5} />} />}
                 </div>
+              ) : tab.kind === "calendar" ? (
+                <iframe className="webapp-frame" src={consoleFrameUrl("/app/?view=calendar")} title="智能体日历" onLoad={postAppearanceToWebapp} />
               ) : tab.kind === "aihub" ? (
                 <AiHubPane visible={tab.id === activeTerminalId} rpc={rpc} />
               ) : tab.kind === "flowstudio" ? (

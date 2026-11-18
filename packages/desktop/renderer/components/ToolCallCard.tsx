@@ -17,7 +17,7 @@ import {
   UserRound,
   Wrench,
 } from "lucide-react";
-import { useAgentStore } from "../stores/agentStore";
+import { useScopedAgentStore as useAgentStore } from "../stores/AgentStoreContext";
 import { hasToolCallResult } from "../lib/tool-call-status";
 import { canonicalToolName, toolActivityLabel, toolActivityPreview, toolFamily, toolPhrase, toolPreview } from "../lib/tool-call-presentation";
 import RuntimeProgressRow from "./RuntimeProgressRow";
@@ -46,6 +46,10 @@ interface ToolCallProps {
   workspacePath?: string | null;
   onOpenArtifact?: (path: string) => void;
   onLoadResult?: (ref: SessionToolResultRef) => Promise<void>;
+}
+
+function isNativeSubagentTool(name: string): boolean {
+  return name === "Agent" || name === "Task" || name === "Workflow";
 }
 
 // ── Status icon: spinner / checkmark / x-circle ──────────────────────────
@@ -585,7 +589,7 @@ function ArgumentsBlock({ raw }: { raw: string }) {
 function NativeAgentActivity({ activity, workspacePath, onOpenArtifact }: { activity: NativeSubagentActivity; workspacePath?: string | null; onOpenArtifact?: (path: string) => void }) {
   const toolResults = new Map(activity.messages.flatMap((message) => (
     message.role === "tool" && message.toolCallId
-      ? [[message.toolCallId, { content: message.content, isError: message.name === "error" }] as const]
+      ? [[message.toolCallId, { content: message.content, isError: message.isError || message.name === "error" }] as const]
       : []
   )));
   return (
@@ -623,7 +627,7 @@ function NativeAgentActivity({ activity, workspacePath, onOpenArtifact }: { acti
           {message.role === "tool" && message.toolCallId && !activity.messages.some(
             (candidate) => candidate.toolCalls?.some((toolCall) => toolCall.id === message.toolCallId),
           ) && (
-            <CollapsiblePre label="工具结果" content={message.content} error={message.name === "error"} maxPreviewHeight={180} />
+            <CollapsiblePre label="工具结果" content={message.content} error={message.isError || message.name === "error"} maxPreviewHeight={180} />
           )}
         </div>
       ))}
@@ -649,8 +653,8 @@ function GenericToolCard({ toolCall, onSelectSession, nativeSubagent, previewPat
   const runningSessionId = useAgentStore(s => s.runningSessionId);
   const expansion = useToolExpansion(toolCall, onLoadResult, initiallyExpanded ?? Boolean(nativeSubagent));
   const { expanded, setExpanded } = expansion;
-  const isDispatch = toolCall.name === "dispatch_agent";
-  const isNativeAgent = toolCall.name === "Agent" && Boolean(nativeSubagent);
+  const isNativeAgent = isNativeSubagentTool(toolCall.name) && Boolean(nativeSubagent);
+  const isDispatch = toolCall.name === "dispatch_agent" && !isNativeAgent;
   const subAgentStatus = toolCall.arguments.subAgentStatus as "completed"|"failed"|undefined;
   const subAgentDetail = toolCall.arguments.subAgentDetail as string|undefined;
   const subAgentProgress = toolCall.arguments.subAgentProgress as string|undefined;
@@ -673,7 +677,7 @@ function GenericToolCard({ toolCall, onSelectSession, nativeSubagent, previewPat
       : hasResult;
   const statusColor = isDone ? (isError ? "var(--danger)" : "var(--success)") : "var(--accent)";
   const iconColor = isError ? "var(--danger)" : isDone ? "var(--text-muted)" : "var(--accent)";
-  const phrase = isDispatch ? null : toolPhrase(toolCall.name);
+  const phrase = isDispatch || isNativeAgent ? null : toolPhrase(toolCall.name);
   const statusLabel = isError
     ? "错误"
     : phrase
@@ -843,8 +847,10 @@ export function ToolCallActivity(props: ToolCallProps) {
   const [expanded, setExpanded] = useState(props.initiallyExpanded ?? false);
   const { toolCall } = props;
   const preview = toolActivityPreview(toolCall.name, toolCall.arguments);
-  const isDone = hasToolCallResult(toolCall);
-  const color = toolCall.isError ? "var(--danger)" : "currentColor";
+  const nativeSubagent = isNativeSubagentTool(toolCall.name) ? props.nativeSubagent : undefined;
+  const isDone = nativeSubagent ? nativeSubagent.status !== "running" : hasToolCallResult(toolCall);
+  const isError = nativeSubagent ? nativeSubagent.status === "failed" : toolCall.isError;
+  const color = isError ? "var(--danger)" : "currentColor";
   return (
     <div className="tool-call-activity">
       <button type="button" className="tool-call-activity__summary"
@@ -853,7 +859,7 @@ export function ToolCallActivity(props: ToolCallProps) {
         onClick={() => setExpanded((value) => !value)}>
         <ToolActionIcon name={toolCall.name} color={color} size={13} />
         <span className="tool-call-activity__preview">{preview}</span>
-        {(!isDone || toolCall.isError) && <StatusIcon isDone={isDone} isError={toolCall.isError} color={color} />}
+        {(!isDone || isError) && <StatusIcon isDone={isDone} isError={isError} color={color} />}
       </button>
       {expanded && <div className="tool-call-activity__details"><ToolCallCard {...props} detailsOnly initiallyExpanded /></div>}
     </div>

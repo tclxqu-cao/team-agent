@@ -2,8 +2,9 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Check, Copy, X } from "lucide-react";
 import { copyTextToClipboard } from "../lib/clipboard";
+import { isPlainWebLinkClick, requestTaskPaneWebLink } from "../lib/task-pane-web-links";
 
-/** Keep navigation native; a held link offers its original address for copying. */
+/** Empty desktop panes may claim navigation; a held link offers its address for copying. */
 export default function MessageLink({ href, children, code = false }: { href: string; children: ReactNode; code?: boolean }) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -44,7 +45,10 @@ export default function MessageLink({ href, children, code = false }: { href: st
       onPointerUp={(event) => { cancelHold(); if (held.current) event.preventDefault(); }}
       onPointerCancel={cancelHold}
       onContextMenu={(event) => { event.preventDefault(); cancelHold(); show(); }}
-      onClick={(event) => { if (held.current) { event.preventDefault(); held.current = false; } }}
+      onClick={(event) => {
+        if (held.current) { event.preventDefault(); held.current = false; return; }
+        if (isPlainWebLinkClick(event) && requestTaskPaneWebLink(href)) event.preventDefault();
+      }}
     >{children}</a>
     {open && typeof document !== "undefined" && createPortal(
       <div className="message-link-actions-backdrop" data-tab-swipe-ignore

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import type { AgentEvent, Message } from "@agent/core";
 import { AsyncEventQueue } from "./async-event-queue.js";
 import { parseImageDataUrls } from "./image-input.js";
@@ -10,6 +11,7 @@ import { RuntimeSessionError, type CreateRuntimeSessionOptions, type RuntimeMode
 import { QoderWorkspaceCatalog } from "./qoder-workspace-catalog.js";
 import { QoderSessionHistory } from "./qoder-session-history.js";
 import { loadQoderModelCatalog, type QoderModelCatalogLoader } from "./qoder-model-catalog.js";
+import { QoderDesktopActivityReader, type QoderActivityReader } from "./qoder-desktop-activity.js";
 
 interface Run {
   queue: AsyncEventQueue<AgentEvent>;
@@ -44,10 +46,13 @@ export class QoderClient implements NativeSessionProtocol {
   private initializing: Promise<void> | null = null;
   private readonly sessions = new Map<string, NativeProtocolSession>();
   private readonly loaded = new Set<string>();
+  private readonly todoMcp = new Map<string, import("./runtime-tool-injection").NativeTodoMcpConfiguration>();
+  private mcpServers(id: string) { const c = this.todoMcp.get(id); return c ? [{ name: "agentroam-todo", command: c.command, args: c.args, env: Object.entries(c.env).map(([name, value]) => ({ name, value })) }] : []; }
   private readonly unpersistedSessions = new Set<string>();
   private readonly histories = new Map<string, Message[]>();
   private readonly historyLoads = new Map<string, Promise<void>>();
   private readonly runs = new Map<string, Run>();
+  private readonly pendingTodoStarts = new Map<string, { aborted: boolean }>();
   private readonly permissions = new Map<string, Permission>();
   private models: RuntimeModelInfo[] = [];
   private catalogModels: RuntimeModelInfo[] = [];
@@ -60,6 +65,7 @@ export class QoderClient implements NativeSessionProtocol {
     private readonly workspaces: Pick<QoderWorkspaceCatalog, "list"> = new QoderWorkspaceCatalog(),
     private readonly historySource: Pick<QoderSessionHistory, "read"> = new QoderSessionHistory(),
     private readonly modelCatalog: QoderModelCatalogLoader = loadQoderModelCatalog,
+    private readonly activity: QoderActivityReader = new QoderDesktopActivityReader(),
   ) {
     rpc.onRequest((method, params) => this.callback(method, params));
     this.unsubscribe = [rpc.onNotification((method, params) => this.notification(method, params)), rpc.onFailure(error => {
@@ -109,7 +115,17 @@ export class QoderClient implements NativeSessionProtocol {
       } while (cursor);
     }
     for (const session of sessions.values()) this.sessions.set(session.id, session);
-    return [...sessions.values()];
+    return this.refreshActivity([...sessions.values()]);
+  }
+
+  private async refreshActivity(sessions: NativeProtocolSession[]): Promise<NativeProtocolSession[]> {
+    const activity = await this.activity.readMany(sessions);
+    return sessions.map(session => {
+      const external = !this.runs.has(session.id) && activity.get(session.id) === true;
+      const updated = { ...session, running: external, externallyOwned: external };
+      this.sessions.set(session.id, updated);
+      return updated;
+    });
   }
 
   private captureOptions(id: string, result: NativeJsonPacket): void {
@@ -142,13 +158,15 @@ export class QoderClient implements NativeSessionProtocol {
     let session = this.sessions.get(id);
     if (!session) { await this.list(); session = this.sessions.get(id); }
     if (!session) throw new RuntimeSessionError("Qoder session not found", "SESSION_NOT_FOUND");
+    const [observed] = await this.refreshActivity([session]);
+    if (observed.externallyOwned) throw new RuntimeSessionError("Qoder session is owned by another process", "SESSION_OCCUPIED");
     try {
       // session/new creates a live writer before its transcript exists. Resume
       // is only for unopened sessions; repeating it can discard a blank writer
       // or fail with "already open" after the first turn. Refresh JSONL instead.
       const unpersisted = this.unpersistedSessions.has(id) && this.loaded.has(id);
       if (!this.loaded.has(id)) {
-        const result = await this.rpc.request("session/resume", { sessionId: id, cwd: session.cwd, mcpServers: [] });
+        const result = await this.rpc.request("session/resume", { sessionId: id, cwd: session.cwd, mcpServers: this.mcpServers(id) });
         this.captureOptions(id, result); this.loaded.add(id);
       }
       const messages = await this.historySource.read(id).catch(error => {
@@ -163,14 +181,22 @@ export class QoderClient implements NativeSessionProtocol {
   async read(id: string) {
     // Never replace the active native writer; the broker overlays its live events.
     if (this.runs.has(id) && this.sessions.has(id)) return { session: this.sessions.get(id)!, messages: this.histories.get(id) ?? [] };
+    if (!this.sessions.has(id)) await this.list();
+    const session = this.sessions.get(id);
+    if (session) {
+      const [observed] = await this.refreshActivity([session]);
+      if (observed.externallyOwned) return { session: observed, messages: await this.historySource.read(id) };
+    }
     await this.load(id, true);
     return { session: this.sessions.get(id)!, messages: this.histories.get(id) ?? [] };
   }
 
   async create(options: CreateRuntimeSessionOptions): Promise<NativeProtocolSession> {
     await this.available();
-    const result = await this.rpc.request("session/new", { cwd: options.cwd, mcpServers: [] });
+    const c = options.todoMcp;
+    const result = await this.rpc.request("session/new", { cwd: options.cwd, mcpServers: c ? [{ name: "agentroam-todo", command: c.command, args: c.args, env: Object.entries(c.env).map(([name, value]) => ({ name, value })) }] : [] });
     const session = this.session({ ...result, cwd: options.cwd, title: options.title });
+    if (c) this.todoMcp.set(session.id, structuredClone(c));
     this.captureOptions(session.id, result); this.loaded.add(session.id); this.histories.set(session.id, []); this.unpersistedSessions.add(session.id);
     return session;
   }
@@ -197,33 +223,64 @@ export class QoderClient implements NativeSessionProtocol {
   }
 
   async *run(id: string, input: string, images?: string[], options?: RuntimeRunOptions): AsyncIterable<AgentEvent> {
-    await this.load(id);
-    if (this.runs.has(id)) throw new RuntimeSessionError("Qoder session is already running", "SESSION_ALREADY_RUNNING");
-    if (options?.reasoningEffort) throw new RuntimeSessionError("Qoder does not expose per-turn reasoning effort", "OPERATION_NOT_SUPPORTED");
-    if (options?.model) await this.rpc.request("session/set_model", { sessionId: id, modelId: this.modelId(id, options.model.id) });
-    const prompt: NativeJsonPacket[] = [{ type: "text", text: input }, ...parseImageDataUrls(images).map(image => ({ type: "image", mimeType: image.mimeType, data: image.base64 }))];
-    const history = this.histories.get(id) ?? [];
-    const run: Run = { queue: new AsyncEventQueue(), text: "", aborted: false, reasoningId: randomUUID(), reasoningActive: false,
-      historyMessageIds: new Set(history.flatMap(message => message.historyId ? [message.historyId] : [])),
-      historyToolIds: new Set(history.flatMap(message => message.toolCalls?.map(call => call.id) ?? [])) };
-    this.runs.set(id, run);
-    let finished = false;
-    const completion = this.rpc.request("session/prompt", { sessionId: id, prompt }, 15 * 60_000).then(result => {
-      if (run.aborted || result.stopReason === "cancelled") run.queue.push({ type: "turn_aborted" });
-      else run.queue.push({ type: "done", finalText: run.text });
-    }).catch(async error => {
-      try { await this.abort(id); } catch { /* The process may already have exited. */ }
-      run.queue.push({ type: "error", message: error instanceof Error ? error.message : "Qoder prompt failed" });
-    }).finally(() => { finished = true; this.cancelPermissions(id); run.queue.close(); });
-    try { yield* run.queue; }
-    finally {
-      if (!finished) await this.abort(id);
-      if (this.runs.get(id) === run) this.runs.delete(id);
-      await completion;
+    if (this.runs.has(id) || this.pendingTodoStarts.has(id)) throw new RuntimeSessionError("Qoder session is already running", "SESSION_ALREADY_RUNNING");
+    const startup = options?.todoMcp || this.todoMcp.has(id) ? { aborted: false } : undefined;
+    if (startup) this.pendingTodoStarts.set(id, startup);
+    try {
+      // A history view may be materializing this resident with its previous MCP
+      // declaration. Finish that load before deciding whether it needs reopening.
+      if (startup) await this.historyLoads.get(id);
+      if (!this.sessions.has(id)) await this.list();
+      const session = this.sessions.get(id);
+      if (session && (await this.refreshActivity([session]))[0].externallyOwned) {
+        throw new RuntimeSessionError("Qoder session is owned by another process", "SESSION_OCCUPIED");
+      }
+      if (startup?.aborted) { yield { type: "turn_aborted" }; return; }
+      if (options?.todoMcp && !isDeepStrictEqual(this.todoMcp.get(id), options.todoMcp)) {
+        // ACP resume opens a native writer. Release this client's idle resident
+        // before reopening the same persisted ID with a changed MCP declaration.
+        if (this.loaded.has(id)) await this.rpc.request("session/close", { sessionId: id });
+        this.loaded.delete(id);
+        this.todoMcp.set(id, structuredClone(options.todoMcp));
+      }
+      if (startup?.aborted) { yield { type: "turn_aborted" }; return; }
+      await this.load(id);
+      if (startup?.aborted) { yield { type: "turn_aborted" }; return; }
+      if (this.runs.has(id)) throw new RuntimeSessionError("Qoder session is already running", "SESSION_ALREADY_RUNNING");
+      if (options?.reasoningEffort) throw new RuntimeSessionError("Qoder does not expose per-turn reasoning effort", "OPERATION_NOT_SUPPORTED");
+      if (options?.model) await this.rpc.request("session/set_model", { sessionId: id, modelId: this.modelId(id, options.model.id) });
+      if (startup?.aborted) { yield { type: "turn_aborted" }; return; }
+      const prompt: NativeJsonPacket[] = [{ type: "text", text: input }, ...parseImageDataUrls(images).map(image => ({ type: "image", mimeType: image.mimeType, data: image.base64 }))];
+      const history = this.histories.get(id) ?? [];
+      const run: Run = { queue: new AsyncEventQueue(), text: "", aborted: false, reasoningId: randomUUID(), reasoningActive: false,
+        historyMessageIds: new Set(history.flatMap(message => message.historyId ? [message.historyId] : [])),
+        historyToolIds: new Set(history.flatMap(message => message.toolCalls?.map(call => call.id) ?? [])) };
+      this.runs.set(id, run);
+      let finished = false;
+      const completion = this.rpc.request("session/prompt", { sessionId: id, prompt }, 15 * 60_000).then(result => {
+        if (run.aborted || result.stopReason === "cancelled") run.queue.push({ type: "turn_aborted" });
+        else run.queue.push({ type: "done", finalText: run.text });
+      }).catch(async error => {
+        try { await this.abort(id); } catch { /* The process may already have exited. */ }
+        run.queue.push({ type: "error", message: error instanceof Error ? error.message : "Qoder prompt failed" });
+      }).finally(() => { finished = true; this.cancelPermissions(id); run.queue.close(); });
+      try { yield* run.queue; }
+      finally {
+        if (!finished) await this.abort(id);
+        if (this.runs.get(id) === run) this.runs.delete(id);
+        await completion;
+      }
+    } catch (error) {
+      if (startup?.aborted) { yield { type: "turn_aborted" }; return; }
+      throw error;
+    } finally {
+      if (startup && this.pendingTodoStarts.get(id) === startup) this.pendingTodoStarts.delete(id);
     }
   }
 
   async abort(id: string): Promise<void> {
+    const startup = this.pendingTodoStarts.get(id);
+    if (startup) startup.aborted = true;
     const run = this.runs.get(id);
     if (!run) return;
     run.aborted = true;
@@ -253,6 +310,16 @@ export class QoderClient implements NativeSessionProtocol {
       const content = textContent(update.content ?? update.rawOutput);
       const isError = update.status === "failed";
       run?.queue.push({ type: "tool_result", result: { toolCallId: update.toolCallId, content, isError } });
+    } else if (kind === "plan" && Array.isArray(update.entries)) {
+      run?.queue.push({
+        type: "todo_update",
+        todos: update.entries.flatMap((value, index) => {
+          const item = nativeRecord(value);
+          if (typeof item.content !== "string" || !item.content.trim()) return [];
+          return [{ id: `plan-${index}`, title: item.content,
+            status: item.status === "completed" ? "completed" as const : item.status === "in_progress" ? "in-progress" as const : "pending" as const }];
+        }),
+      });
     } else if (kind === "session_info_update") {
       const session = this.sessions.get(id);
       if (session && typeof update.title === "string") session.title = update.title;
@@ -298,6 +365,7 @@ export class QoderClient implements NativeSessionProtocol {
   }
 
   async dispose(): Promise<void> {
+    for (const startup of this.pendingTodoStarts.values()) startup.aborted = true;
     for (const id of this.runs.keys()) this.cancelPermissions(id);
     await this.rpc.dispose();
     for (const unsubscribe of this.unsubscribe) unsubscribe();

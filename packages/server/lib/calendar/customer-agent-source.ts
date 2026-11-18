@@ -1,14 +1,12 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
-  describeCron, listCronFires, parseIntervalMs, todoState,
-  type CalendarEntry, type CalendarTodoGroup, type CronTask, type TodoItem,
+  describeCron, listCronFires, parseIntervalMs,
+  type CalendarEntry, type CalendarRange, type CalendarSourceResult, type CalendarTodoGroup, type CronTask,
 } from "@agent/core";
-import { clip, num, readRows, str } from "./sqlite";
-import type { CalendarRange, CalendarSourceResult } from "./types";
+import { clip } from "./sqlite";
 
-/** AgentRoam's own cron tasks (.agents/scheduled_tasks.json) and todos
- * (latest todo_update event per session in .agent-data/agent.db). */
+/** AgentRoam scheduled task definitions; session plans are deliberately excluded. */
 export async function readCustomerAgentSource(
   range: CalendarRange,
   baseDir: string,
@@ -18,25 +16,6 @@ export async function readCustomerAgentSource(
   const entries: CalendarEntry[] = [];
   const groups: CalendarTodoGroup[] = [];
   const sessionTitles = new Map<string, { title: string; updated: number }>();
-  const latestTodos = new Map<string, { todos: TodoItem[]; timestamp: number }>();
-
-  for (const root of roots) {
-    const dbPath = join(root, ".agent-data", "agent.db");
-    if (!existsSync(dbPath)) continue;
-    for (const row of readRows(dbPath, "SELECT id, title, updated FROM sessions")) {
-      const id = str(row.id);
-      const updated = Date.parse(str(row.updated));
-      if (id && !sessionTitles.has(id)) sessionTitles.set(id, { title: str(row.title), updated: Number.isFinite(updated) ? updated : 0 });
-    }
-    for (const row of readRows(dbPath, "SELECT session_id, data, timestamp FROM events WHERE type = 'todo_update' ORDER BY id ASC")) {
-      const sessionId = str(row.session_id);
-      if (!sessionId) continue;
-      try {
-        const event = JSON.parse(str(row.data)) as { todos?: TodoItem[] };
-        if (Array.isArray(event.todos)) latestTodos.set(sessionId, { todos: event.todos, timestamp: num(row.timestamp) ?? 0 });
-      } catch { /* a live writer may leave a partial row */ }
-    }
-  }
 
   const tasks = new Map<string, CronTask>();
   for (const root of roots) {
@@ -53,7 +32,7 @@ export async function readCustomerAgentSource(
     const scheduleLabel = describeCron(task.cron);
     const session = task.sessionId ? sessionTitles.get(task.sessionId) : undefined;
     const base = {
-      source: "customer-agent" as const, title, scheduleLabel,
+      source: "customer-agent" as const, title, scheduleLabel, scheduleId: task.id,
       sessionId: task.sessionId, sessionTitle: session?.title || undefined,
       detail: clip(task.prompt || "", 200), recurring: task.recurring,
     };
@@ -71,31 +50,6 @@ export async function readCustomerAgentSource(
     }
     if (task.lastFiredAt && task.lastFiredAt >= range.fromMs && task.lastFiredAt <= range.toMs) {
       entries.push({ ...base, id: `${task.id}:run:${task.lastFiredAt}`, kind: "run", at: task.lastFiredAt, state: "completed", scheduleLabel: undefined });
-    }
-  }
-
-  for (const [sessionId, { todos, timestamp }] of latestTodos) {
-    if (!todos.length) continue;
-    const session = sessionTitles.get(sessionId);
-    const mapped: CalendarEntry[] = todos.map(todo => ({
-      id: `customer-agent:${sessionId}:${todo.id}`,
-      kind: "todo", source: "customer-agent",
-      title: clip(todo.title || todo.id, 120),
-      at: todo.dueAt ?? 0,
-      state: todoState(todo.status, todo.dueAt, range.nowMs),
-      dueAt: todo.dueAt,
-      sessionId, sessionTitle: session?.title || undefined,
-      detail: todo.agentName ? `@${todo.agentName}` : undefined,
-    }));
-    const dated = mapped.filter(todo => todo.dueAt !== undefined && todo.at >= range.fromMs && todo.at <= range.toMs);
-    entries.push(...dated);
-    const undated = mapped.filter(todo => todo.dueAt === undefined);
-    if (undated.length) {
-      groups.push({
-        id: `customer-agent:${sessionId}`, source: "customer-agent",
-        title: session?.title || "未命名会话", updatedAt: session?.updated || timestamp,
-        todos: undated,
-      });
     }
   }
 

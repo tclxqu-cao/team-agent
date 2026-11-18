@@ -19,7 +19,7 @@ const { clipboard, nativeImage, session, shell } = electron;
 export type GoogleReauthEventState = "started" | "synchronized" | "canceled" | "timeout" | "failed" | "unavailable";
 
 export type HubEvent =
-  | { type: "loading" | "loaded" | "load-failed" | "title"; siteId: string; errorCode?: number; title?: string }
+  | { type: "loading" | "loaded" | "load-failed" | "title" | "focused"; siteId: string; errorCode?: number; title?: string }
   | { type: "google-auth-external"; siteId: string }
   | { type: "google-reauth"; siteId: string; state: GoogleReauthEventState };
 
@@ -206,7 +206,7 @@ export class AIHubManager {
   }
 
   // AI Hub 外的桌面内嵌页复用同一个 WebContentsView 池，但不进入站点配置、布局或广播。
-  async openEmbeddedPage(pageId: string, rawUrl: string): Promise<void> {
+  async openEmbeddedPage(pageId: string, rawUrl: string, options: { allowMedia?: boolean } = {}): Promise<void> {
     const url = new URL(rawUrl);
     if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("invalid-embedded-page-url");
     const normalizedUrl = url.toString();
@@ -214,6 +214,7 @@ export class AIHubManager {
     const entry = this.ensureView(key, pageId, normalizedUrl, {
       scope: "embedded",
       partition: `persist:embedded-${pageId}`,
+      allowMedia: options.allowMedia,
     });
     const shouldLoad = !entry.loaded || entry.url !== normalizedUrl;
     entry.url = normalizedUrl;
@@ -242,6 +243,12 @@ export class AIHubManager {
     const entry = this.pool.get(embeddedPageKey(pageId));
     if (!entry) return;
     entry.view.webContents.reload();
+  }
+
+  closeEmbeddedPage(pageId: string): void {
+    const key = embeddedPageKey(pageId);
+    const entry = this.pool.get(key);
+    if (entry) this.destroyEntry(key, entry);
   }
 
   // 中继触发（web 控制台转发）：显示窗口、打开目标站点并平铺视图，再注入。
@@ -716,7 +723,7 @@ export class AIHubManager {
     key: string,
     siteId: string,
     url: string,
-    options: { scope: "hub" | "embedded"; partition?: string },
+    options: { scope: "hub" | "embedded"; partition?: string; allowMedia?: boolean },
   ): PoolEntry {
     const existing = this.pool.get(key);
     if (existing) return existing;
@@ -742,7 +749,7 @@ export class AIHubManager {
     // WebContentsView defaults to visible. Keep newly created provider views
     // hidden until an explicit AI Hub layout attaches and reveals them.
     view.setVisible(false);
-    this.hardenSession(view);
+    this.hardenSession(view, options.allowMedia !== false);
     this.wireEvents(key, siteId, url, view, options.scope);
     const entry: PoolEntry = {
       view,
@@ -757,9 +764,9 @@ export class AIHubManager {
     return entry;
   }
 
-  private hardenSession(view: WebContentsView): void {
+  private hardenSession(view: WebContentsView, allowMedia: boolean): void {
     view.webContents.session.setPermissionRequestHandler((_webContents, permission, callback) => {
-      callback(permission === "media");
+      callback(allowMedia && permission === "media");
     });
   }
 
@@ -799,6 +806,7 @@ export class AIHubManager {
       if (scope === "hub") protectNavigation(window.webContents, () => window.close());
     });
     webContents.on("did-start-loading", () => this.emit({ type: "loading", siteId }));
+    webContents.on("focus", () => this.emit({ type: "focused", siteId }));
     webContents.on("did-finish-load", () => this.emit({ type: "loaded", siteId }));
     webContents.on("did-fail-load", (_event, errorCode, _description, _url, isMainFrame) => {
       if (!isMainFrame || errorCode === -3) return; // -3 = 导航被取消（重复导航）

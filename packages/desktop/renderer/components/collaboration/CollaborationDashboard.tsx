@@ -32,11 +32,13 @@ export default function CollaborationDashboard({
   onOpen,
   onChanged,
   onClose,
+  onViewDashboard,
   cwd,
 }: {
   onOpen?: (group: CollaborationGroup) => void;
   onChanged?: (groupId: string, group?: CollaborationGroup) => void;
   onClose?: () => void;
+  onViewDashboard?: () => void;
   cwd?: string;
 }) {
   const { groups, loading, error, refresh } = useCollaborationGroups();
@@ -110,7 +112,7 @@ export default function CollaborationDashboard({
           <p className="collab-muted">找到你的群，继续上次的协作。</p>
         </div>
         <div className="collab-dashboard-tools">
-          <button onClick={() => postDashboardIntent({ kind: "dashboard" })}>Dashboard</button>
+          <button onClick={() => onViewDashboard ? onViewDashboard() : postDashboardIntent({ kind: "dashboard" })}>Dashboard</button>
           <button
             aria-label="刷新群列表"
             title="刷新群列表"

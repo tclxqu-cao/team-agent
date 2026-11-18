@@ -1,9 +1,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import type { CalendarEntry } from "@agent/core";
-import { describeRRule, expandRRule } from "./schedule-expand";
+import { describeRRule, expandRRule, type CalendarEntry, type CalendarRange, type CalendarSourceResult } from "@agent/core";
 import { clip, num, readRows, str } from "./sqlite";
-import type { CalendarRange, CalendarSourceResult } from "./types";
 
 /** WorkBuddy automations / automation_runs, read-only like the session catalog. */
 export async function readWorkBuddySource(range: CalendarRange, root: string): Promise<CalendarSourceResult> {

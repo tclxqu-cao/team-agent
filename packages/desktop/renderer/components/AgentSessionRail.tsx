@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { LoaderCircle, Search } from "lucide-react";
+import { LoaderCircle, Plus, Search } from "lucide-react";
 import type { SessionActivity } from "@agent/core/domain/session/SessionActivity";
 import type { AgentType, RuntimeHealth, UnifiedSessionSummary } from "../global";
 import { loadAgentRailSessions, type AgentRailSessions } from "../lib/agent-rail-sessions";
@@ -18,10 +18,11 @@ interface AgentSessionRailProps {
   getActivity(session: UnifiedSessionSummary): SessionActivity;
   onChange(agentType: AgentType): void;
   onUnavailable(message: string): void;
+  onNewSession(agentType: AgentType): void;
   onSelect(session: UnifiedSessionSummary, snapshot: AgentRailSessions): void;
 }
 
-export default function AgentSessionRail({ hidden, value, health, selectedSessionId, getActivity, onChange, onUnavailable, onSelect }: AgentSessionRailProps) {
+export default function AgentSessionRail({ hidden, value, health, selectedSessionId, getActivity, onChange, onUnavailable, onNewSession, onSelect }: AgentSessionRailProps) {
   const [preview, setPreview] = useState<{ agentType: AgentType; label: string; top: number; unavailableMessage?: string } | null>(null);
   const [snapshot, setSnapshot] = useState<AgentRailSessions | null>(null);
   const [loading, setLoading] = useState(false);
@@ -82,7 +83,15 @@ export default function AgentSessionRail({ hidden, value, health, selectedSessio
     {!hidden && preview && createPortal(<div ref={panel} className="agent-session-flyout" style={{ top: preview.top, maxHeight: Math.min(600, window.innerHeight - preview.top - 12) }}
       role="dialog" aria-label={`${preview.label} 会话`} onPointerEnter={keepOpen} onPointerLeave={scheduleClose}
       onFocus={keepOpen} onBlur={dismissOnBlur} onKeyDown={event => { if (event.key === "Escape") close(); }}>
-      <header><AgentBrandIcon agentType={preview.agentType} size={20} /><strong>{preview.label}</strong><span>会话 {snapshot?.sessions.length ?? ""}</span></header>
+      <header>
+        <AgentBrandIcon agentType={preview.agentType} size={20} /><strong>{preview.label}</strong>
+        <span>会话 {snapshot?.sessions.length ?? ""}</span>
+        <button type="button" className="agent-session-flyout-new" disabled={Boolean(preview.unavailableMessage)}
+          aria-label={`新建 ${preview.label} 会话`} title={preview.unavailableMessage ?? "在小窗口中新建会话"}
+          onClick={() => { onNewSession(preview.agentType); close(); }}>
+          <Plus size={14} aria-hidden="true" /><span>新建会话</span>
+        </button>
+      </header>
       <label className="agent-session-flyout-search"><Search size={15} aria-hidden="true" /><input aria-label={`搜索 ${preview.label} 会话`} placeholder="搜索会话" value={query} onChange={event => setQuery(event.target.value)} /></label>
       <div className="agent-session-flyout-list" aria-busy={loading}>
         {sessions.map(session => {

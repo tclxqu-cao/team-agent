@@ -76,7 +76,7 @@ describe("authenticated voice gateway", () => {
     expect(events[0].text).toBe("最后一个字");
   });
 
-  it("rejects wake/TTS control instead of exposing additional sidecar capabilities", async () => {
+  it("rejects non-dictation controls instead of exposing additional sidecar capabilities", async () => {
     const f = await fixture();
     const socket = await f.open();
     const error = message(socket);

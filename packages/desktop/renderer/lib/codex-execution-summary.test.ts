@@ -8,6 +8,12 @@ const message = (id: string, value: Partial<ChatMessage> = {}): ChatMessage => (
 });
 
 describe("Codex execution completion summaries", () => {
+  it("keeps seconds visible on the live clock after minute and hour boundaries", () => {
+    expect(formatSessionWorkDuration(60_000, true)).toBe("已工作 1 分 0 秒");
+    expect(formatSessionWorkDuration(3_661_000, true)).toBe("已工作 1 时 1 分 1 秒");
+    expect(formatSessionWorkDuration(3_661_000)).toBe("已工作 1 时 1 分");
+  });
+
   it("uses completion timing for each turn, including multiple same-turn input segments", () => {
     const durations = codexExecutionTurnDurations([
       message("user", { role: "user" }),

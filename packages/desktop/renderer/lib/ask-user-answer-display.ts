@@ -1,14 +1,13 @@
 import { parsePersistedQuestionReplies, questionReplyMatches } from "../../../core/src/domain/session/QuestionReply";
 import type { ChatMessage } from "../stores/agentStore";
 
-/** Present Codex's durable answer message as the same answered question card. */
+/** Present Codex's durable answer at its reply position, retaining question identity. */
 export function presentQuestionAnswers(
   messages: readonly ChatMessage[],
   isCodex: boolean,
 ): ChatMessage[] {
-  const visible = hideAnsweredQuestionEchoes(messages);
-  if (!isCodex) return visible;
-  const reconciled = [...visible];
+  if (!isCodex) return hideAnsweredQuestionEchoes(messages);
+  const visible = messages;
   const replacements = new Map<number, ChatMessage[]>();
   const matchedCards = new Set<number>();
   visible.forEach((message, messageIndex) => {
@@ -36,33 +35,35 @@ export function presentQuestionAnswers(
       });
       if (cardIndex >= 0) {
         matchedCards.add(cardIndex);
-        const cardMessage = reconciled[cardIndex];
-        if (!cardMessage.askUser?.answered || cardMessage.askUser.answer !== reply.answer) {
-          reconciled[cardIndex] = {
+        const cardMessage = visible[cardIndex];
+        // Event-only questions may have been appended after the entire native
+        // transcript. The durable user reply is the chronological anchor, so
+        // replace that row instead of leaving the answered card at the tail.
+        restored.push(cardMessage.askUser?.answered && cardMessage.askUser.answer === reply.answer
+          ? cardMessage
+          : {
             ...cardMessage,
             askUser: { ...cardMessage.askUser!, answered: true, answer: reply.answer },
-          };
-        }
+          });
         return;
       }
       restored.push({
         ...message,
         id: replyIndex === 0 ? message.id : `${message.id}:question-reply:${replyIndex}`,
         askUser: {
-          questionId: `answered-history:${message.id}:${replyIndex}`,
+          questionId: replies.length === 1
+            ? `answered-history:${message.id}`
+            : `answered-history:${message.id}:${replyIndex}`,
           question: reply.question,
           answered: true,
           answer: reply.answer,
         },
       });
     });
-    // Retain the original one-question history identity for existing clients.
-    if (replies.length === 1 && restored.length === 1) {
-      restored[0].askUser!.questionId = `answered-history:${message.id}`;
-    }
     replacements.set(messageIndex, restored);
   });
-  return reconciled.flatMap((message, index) => replacements.get(index) ?? [message]);
+  return visible.flatMap((message, index) => replacements.get(index)
+    ?? (matchedCards.has(index) ? [] : [message]));
 }
 
 /** Keep native answer echoes in history, but show an answer once in the chat. */

@@ -1,4 +1,6 @@
 import { sharedCron } from "../../lib/shared-cron";
+import { customerTodoTools } from "../../lib/todo/customer-todo-tools";
+import { commitCustomerNotification } from "../../lib/notifications/customer-notifications";
 import { sharedSettings, type SharedSettings } from "../../lib/shared-settings";
 import { configureSharedRun, effectiveCapabilityPolicy, type SharedRunOptions } from "../../lib/shared-run-config";
 import { businessCatalog } from "../../lib/business-catalog";
@@ -78,6 +80,7 @@ export class ProjectWorkingDirectoryError extends Error {
 const ACTIVE_RUN_METADATA_KEY = "customerAgentActiveRun";
 
 interface CustomerAgentRunMarker {
+  source?: "user" | "goal";
   runId: string;
   eventStart: number;
   startedAt: string;
@@ -149,7 +152,7 @@ class AgentHost {
   private readonly workingDirectory = getAgentWorkingDirectory();
   private builder: AgentBuilder | null = null;
   private runBuilderOverride: AgentBuilder | null = null;
-  private readonly sessionStore = new SQLiteSessionStore(this.baseDir);
+  private readonly sessionStore = new SQLiteSessionStore(this.baseDir, commitCustomerNotification);
   private readonly projectStore = new SQLiteProjectStore(this.baseDir);
   private readonly remoteToolStore = new SQLiteRemoteToolStore(getDatabase(this.baseDir).db);
   private readonly defaultRemoteToolsProjectId = process.env.AGENT_PROJECT_ID ?? "default";
@@ -637,6 +640,7 @@ class AgentHost {
     session = await this.sessionStore.get(sessionId);
     if (!session) throw new Error(`Session not found: ${sessionId}`);
     let marker: CustomerAgentRunMarker = {
+      source: goalSource ? "goal" : "user",
       runId,
       eventStart: session.events.length,
       messageStart: session.messages.length,
@@ -918,9 +922,10 @@ class AgentHost {
     const registry = builder.getToolRegistry();
     let todos: TodoItem[] = [];
     const update = (next: TodoItem[]) => { todos = next; emit({ type: "todo_update", todos: [...next] }, sessionId); };
-    registry.register(new TodoAddTool(() => todos, update));
-    registry.register(new TodoUpdateTool(() => todos, update));
-    registry.register(new TodoListTool(() => todos));
+    for (const legacy of [new TodoAddTool(() => todos, update), new TodoUpdateTool(() => todos, update), new TodoListTool(() => todos)]) {
+      registry.register({ name: `session_plan_${legacy.name.replace(/^todo_/, "")}`, description: `会话临时计划（不是个人待办）：${legacy.description}`, parameters: legacy.parameters, schema: legacy.schema, execute: legacy.execute.bind(legacy) });
+    }
+    for (const tool of customerTodoTools()) registry.register(tool);
     if (dispatcher) {
       registry.register(new DispatchAgentTool((name, task, id) => dispatcher.dispatch(name, task, id)));
       if (dispatcher.dynamicTeamEnabled()) {
@@ -1090,6 +1095,7 @@ class AgentHost {
     const pending = this.pendingQuestions.get(questionId);
     if (!pending) return false;
     this.pendingQuestions.delete(questionId);
+    void this.sessionStore.addEvent(pending.sessionId, { type: "approval_resolved", questionId });
     pending.resolve({ answer, selectedIndices });
     return true;
   }

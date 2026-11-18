@@ -5,7 +5,6 @@ import { createDevicePairingGateway } from "./lib/device-pairing-gateway.mjs";
 import { createDesktopDiscovery } from "./lib/desktop-discovery.mjs";
 import { createTunnelControlGateway } from "./lib/tunnel-control.mjs";
 import { createVoiceAsrGateway } from "./lib/voice-asr-gateway.mjs";
-import { createVoiceTtsGateway } from "./lib/voice-tts-gateway.mjs";
 import { webAppCacheControl } from "./lib/web-app-cache.mjs";
 // ws-server.mjs — custom server for @agent/server.
 // Serves the Next.js app (API + /web console) and multiplexes a WebSocket
@@ -1255,6 +1254,7 @@ const tunnelControl = createTunnelControlGateway({ desktop: desktopDiscovery });
 const pairingGateway = createDevicePairingGateway({ dataDir: serverBaseDir, desktop: desktopDiscovery, owner: anonymousWebStore.getOrCreatePrincipal(), consoleStore, testNoPairing: process.argv.includes("--test-no-pairing"), resolveNativePreviewDevice: pathname => previewTickets.resolve(pathname.split("/")[4])?.nativeDeviceId ?? null });
 if (process.argv.includes("--test-no-pairing")) console.warn("[TEST MODE] 配对已跳过：能访问此端口的用户可直接操作。仅用于受控测试，移除 --test-no-pairing 后恢复认证。");
 // Child runtimes may publish live frames only using this process's local credential.
+process.env.AGENTROAM_SERVICE_ID = desktopDiscovery.serviceId;
 process.env.AGENTROAM_LOCAL_SERVICE_TOKEN = desktopDiscovery.headers()["x-agentroam-desktop-token"];
 const remoteAuthorization = new RemoteAuthorization({ registry: liveViewRegistry, userId: anonymousWebStore.getOrCreatePrincipal().userId, dataDir: serverBaseDir });
 await remoteAuthorization.initialize();
@@ -1263,6 +1263,12 @@ const server = createServer((req, res) => {
   if (!serviceReady) { res.writeHead(503, { "content-type": "application/json" }).end(JSON.stringify({ error: "Service starting" })); return; }
   if (desktopDiscovery.handle(req, res)) return;
   if (tunnelControl.handle(req, res)) return;
+  // A dedicated loopback-only credential is validated by the scoped RPC route.
+  // It grants no access to the device-pairing or ordinary desktop API surface.
+  if (req.url?.split("?")[0] === "/api/internal/todo-mcp") {
+    if (req.method !== "POST" || req.headers.origin || !["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(req.socket.remoteAddress)) { res.writeHead(403).end(); return; }
+    handle(req, res); return;
+  }
   void pairingGateway.handle(req, res)
     .then((handled) => handled || remoteAuthorization.handle(req, res))
     .then((handled) => handled || serveTicketedFilePreview(req, res))
@@ -1277,10 +1283,8 @@ const server = createServer((req, res) => {
 server.once("close", () => tunnelControl.close());
 const wss = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024 });
 const voiceAsrGateway = createVoiceAsrGateway({ pairing: pairingGateway, serviceUrl: process.env.VOICE_SERVICE_URL || `http://127.0.0.1:${process.env.VOICE_SERVICE_PORT || "17863"}`, token: process.env.VOICE_SERVICE_TOKEN || null });
-const voiceTtsGateway = createVoiceTtsGateway({ pairing: pairingGateway, serviceUrl: process.env.VOICE_SERVICE_URL || `http://127.0.0.1:${process.env.VOICE_SERVICE_PORT || "17863"}`, token: process.env.VOICE_SERVICE_TOKEN || null });
 
 server.on("upgrade", (req, socket, head) => {
-  if (voiceTtsGateway.handleUpgrade(req, socket, head)) return;
   if (voiceAsrGateway.handleUpgrade(req, socket, head)) return;
   const url = new URL(req.url, `http://${req.headers.host}`);
   const principal = url.pathname === "/ws" ? pairingGateway.authenticateUpgrade(req) : null;
@@ -1406,7 +1410,6 @@ let ownedServicesClosePromise = null;
 function closeOwnedServices() {
   if (!ownedServicesClosePromise) ownedServicesClosePromise = (async () => {
     await voiceAsrGateway.close();
-    await voiceTtsGateway.close();
     await remoteAuthorization.close();
     pairingGateway.close();
     await desktopDiscovery.close();
@@ -1457,6 +1460,11 @@ server.listen(port, process.env.HOST || "127.0.0.1", async () => {
     globalLogger.error("Customer runtime initialization failed", error);
     console.error("Customer runtime initialization failed", error);
   });
+  void fetch(`http://127.0.0.1:${server.address().port}/api/internal/todo-bootstrap`, {
+    method: "POST", headers: { ...desktopDiscovery.headers(), "content-type": "application/json" },
+    body: "{}", signal: AbortSignal.timeout(60_000),
+  }).then(response => { if (!response.ok) throw new Error(`HTTP ${response.status}`); })
+    .catch(error => globalLogger.error("Todo initialization failed", error));
   // Restore collaboration scheduling and its durable history without a browser visit.
   void fetch(`http://127.0.0.1:${server.address().port}/api/collaboration`, {
     method: "POST", headers: { ...desktopDiscovery.headers(), "content-type": "application/json" },

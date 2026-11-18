@@ -59,6 +59,18 @@ describe("chat header action layout", () => {
     expect(render(false)).not.toContain('aria-label="设置"');
   });
 
+  it("exposes task split when the host enables it, including the desktop browser", () => {
+    const props = { appearanceOpen: false, settingsOpen: false,
+      onHideToBackground: noop, onToggleAppearance: noop, onOpenSettings: noop,
+      onOpenSessionDashboard: noop, onOpenTaskSplit: noop };
+    const desktop = renderToStaticMarkup(createElement(ChatHeaderActions, props));
+    expect(desktop).toContain('aria-label="打开任务分屏"');
+    expect(desktop).toContain('aria-label="打开进行中的 Agent 会话"');
+    state.webShell = true;
+    expect(renderToStaticMarkup(createElement(ChatHeaderActions, props))).toContain('aria-label="打开任务分屏"');
+    expect(renderToStaticMarkup(createElement(ChatHeaderActions, { ...props, onOpenTaskSplit: undefined }))).not.toContain('aria-label="打开任务分屏"');
+  });
+
   it("keeps desktop quick actions in the same menu with their busy state", () => {
     state.navigationLayout = "agent-rail";
     const html = renderToStaticMarkup(createElement(ChatHeaderActions, {

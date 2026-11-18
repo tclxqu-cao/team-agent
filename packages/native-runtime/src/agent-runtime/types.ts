@@ -116,6 +116,10 @@ export interface UnifiedSessionDetail extends UnifiedSessionSummary {
   snapshotRevision?: number;
   /** Broker run identity paired with snapshotRevision for reconnect safety. */
   snapshotRunId?: string | null;
+  /** Status of the retained broker run, independent of externally started turns. */
+  snapshotRunStatus?: "active" | "terminal" | null;
+  /** Latest native turn observed in snapshotRunId; may precede an external turn. */
+  snapshotTurnId?: string | null;
 }
 
 export type { SessionQueryIndex };
@@ -164,6 +168,8 @@ export interface WorkspacePage<T> {
   nextCursor: string | null;
   watermark: string | null;
   stale?: boolean;
+  /** The native head is current; supplementary history is still loading. */
+  refreshing?: boolean;
 }
 
 export interface WorkspaceQuery {
@@ -180,6 +186,8 @@ export interface WorkspaceSessionQuery {
 }
 
 export interface CreateRuntimeSessionOptions {
+  todoContext?: import("./runtime-tool-injection").RuntimeTodoContext;
+  todoMcp?: import("./runtime-tool-injection").NativeTodoMcpConfiguration;
   title: string;
   cwd: string;
   projectId?: string;
@@ -215,6 +223,7 @@ export interface RuntimeModelInfo {
  * already admitted turn.
  */
 export interface RuntimeRunOptions {
+  todoMcp?: import("./runtime-tool-injection").NativeTodoMcpConfiguration;
   permissionMode?: ToolPermissionMode;
   brokerRunId?: string;
   model?: RuntimeModelSelection;
@@ -280,7 +289,8 @@ export interface AgentRuntimeAdapter {
     agentName?: string,
     options?: RuntimeRunOptions,
   ): AsyncIterable<AgentEvent>;
-  steer?(nativeSessionId: string, input: string, messageId?: string): Promise<boolean>;
+  readonly supportsImageSteering?: boolean;
+  steer?(nativeSessionId: string, input: string, messageId?: string, images?: string[]): Promise<boolean>;
   abort(nativeSessionId: string): Promise<void>;
   release?(nativeSessionId: string): Promise<void>;
   answerQuestion(questionId: string, answer: RuntimeQuestionAnswer): Promise<boolean>;
