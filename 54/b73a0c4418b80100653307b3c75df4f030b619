@@ -1,0 +1,36 @@
+packages/cli/package.json
+  h_b0bf4228a0b7ec 3,30-35
+packages/cloudflared-darwin-arm64/manifest.json
+  h_b0bf4228a0b7ec 2
+packages/cloudflared-darwin-arm64/package.json
+  h_b0bf4228a0b7ec 3
+packages/cloudflared-win32-x64/manifest.json
+  h_b0bf4228a0b7ec 2
+packages/cloudflared-win32-x64/package.json
+  h_b0bf4228a0b7ec 3
+packages/desktop/package.json
+  h_b0bf4228a0b7ec 3
+packages/runtime-darwin-arm64/manifest.json
+  h_b0bf4228a0b7ec 2,10
+packages/runtime-darwin-arm64/package.json
+  h_b0bf4228a0b7ec 3
+packages/runtime-win32-x64/manifest.json
+  h_b0bf4228a0b7ec 2,10-11
+packages/runtime-win32-x64/package.json
+  h_b0bf4228a0b7ec 3
+packages/tui-darwin-arm64/package.json
+  h_b0bf4228a0b7ec 3
+packages/tui-win32-x64/package.json
+  h_b0bf4228a0b7ec 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "54b73a0c4418b80100653307b3c75df4f030b619",
+  "prompts": {},
+  "humans": {
+    "h_b0bf4228a0b7ec": {
+      "author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
