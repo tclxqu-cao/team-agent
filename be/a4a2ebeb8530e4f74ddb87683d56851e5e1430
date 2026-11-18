@@ -1,0 +1,555 @@
+packages/core/src/application/notification/NotificationService.ts
+  s_2c98013aaf134a::t_3912a6c1de73db 1-64
+packages/core/src/domain/calendar/schedule-expand.test.ts
+  s_2f0bd1e1df8d1b::t_64b788938f772d 1-77
+packages/core/src/infrastructure/SQLiteTodoUnitOfWork.ts
+  s_2c98013aaf134a::t_5b7f357468bf00 1-28
+packages/desktop/main/file-context-menu.test.ts
+  s_d543964b83dce1::t_6ad7d798c60df1 1-38
+packages/desktop/main/file-context-menu.ts
+  s_d543964b83dce1::t_95e1e868555ba8 1-27
+packages/desktop/main/notification-subscription.test.ts
+  s_d543964b83dce1::t_75491bc8ecbb7b 1-165
+packages/desktop/renderer/components/MessageArtifactLink.tsx
+  s_d543964b83dce1::t_6f1a03a5d2179c 1-29
+packages/desktop/renderer/components/QueuedMessageImages.test.tsx
+  s_42309f8318d1bf::t_41bb1ccfcffa2a 1-19
+packages/desktop/renderer/components/QueuedMessageImages.tsx
+  s_42309f8318d1bf::t_78e632215dc311 1-14
+packages/desktop/renderer/components/SessionTaskPanel.test.ts
+  s_3773436026e306::t_910bb81f6fca9c 1-41
+packages/desktop/renderer/components/desktop-task-split/DesktopTaskWorkspace.tsx
+  s_5f3369b034724a::t_0161fd46f963c0 1-456
+packages/desktop/renderer/components/desktop-task-split/draft-workspace.test.ts
+  s_dcf1fa4b873a9f::t_7291067bcce6f5 1-24
+packages/desktop/renderer/components/desktop-task-split/session-state.test.ts
+  s_7f33f9ae8256c0::t_694f396cf7201e 1-174
+packages/desktop/renderer/lib/artifact-file-context-menu.test.ts
+  s_d543964b83dce1::t_399abc962a2d96 1-28
+packages/desktop/renderer/lib/artifact-file-context-menu.ts
+  s_d543964b83dce1::t_b1798979b0881b 1-16
+packages/desktop/renderer/lib/message-image-preview.ts
+  s_42309f8318d1bf::t_73d4d0a03990f8 1-27
+packages/desktop/renderer/lib/session-plan.test.ts
+  s_7e05f5a397217a::t_f8e879209918a5 1-177
+packages/desktop/renderer/lib/session-plan.ts
+  s_7e05f5a397217a::t_9d2ff9b3961ed1 1-139
+packages/desktop/renderer/lib/session-task-panel-state.ts
+  s_7e05f5a397217a::t_620c1e808a71b0 1-65
+packages/desktop/renderer/lib/tool-call-presentation.test.ts
+  s_d13b0580537e71::t_7def23c114e0e4 1-45
+packages/desktop/renderer/lib/use-session-activity.ts
+  s_42309f8318d1bf::t_308c22b9449906 1-16
+packages/desktop/renderer/stores/AgentStoreContext.tsx
+  s_2c98013aaf134a::t_1b9342eed1a6d7 1-14
+packages/native-runtime/src/agent-runtime/codex-todo-mcp.test.ts
+  s_f55c1859949b3d::t_a096a4a5feb474 1-311
+packages/native-runtime/src/agent-runtime/codex-todo-mcp.ts
+  s_f55c1859949b3d::t_8a34d068bd42e2 1-56
+packages/native-runtime/src/agent-runtime/runtime-notification-outbox.ts
+  s_2c98013aaf134a::t_c6074f7761c769 1-52
+packages/native-runtime/src/agent-runtime/runtime-tool-injection.ts
+  s_5f3369b034724a::t_fd0b0751910cd8 1-50
+packages/native-runtime/src/agent-runtime/workbuddy-subagent-tracker.test.ts
+  s_d13b0580537e71::t_0e7d1e250faf82 1-68
+packages/native-runtime/src/agent-runtime/workbuddy-subagent-tracker.ts
+  s_d13b0580537e71::t_2c4d7fec3a6185 1-95
+packages/native-runtime/src/todo-mcp/stdio.ts
+  s_5f3369b034724a::t_71739383bef434 1-30
+packages/native-runtime/src/todo-mcp/todo-mcp-server.test.ts
+  s_5f3369b034724a::t_a90214382f56eb 1-94
+packages/native-runtime/src/todo-mcp/todo-service-client.ts
+  s_2c98013aaf134a::t_076733de1a9ecd 1-35
+packages/server/app/api/notifications/[id]/route.ts
+  s_2c98013aaf134a::t_51a19ba8d1a627 1-4
+packages/server/app/api/session-images/[id]/route.test.ts
+  s_a625ac6d12f215::t_fa8bc5fda3bf57 1-28
+packages/cli/src/todo-mcp-command.ts
+  s_2c98013aaf134a::t_aa844e12a1e15d 1-19
+packages/core/src/application/todo/TodoApplicationService.test.ts
+  s_2c98013aaf134a::t_201a0712c250b3 1-135
+packages/core/src/application/todo/TodoApplicationService.ts
+  s_2c98013aaf134a::t_1517596257ab77 1-133
+packages/core/src/application/todo/TodoScheduler.ts
+  s_2c98013aaf134a::t_857a728dbd7e1f 1-113
+packages/core/src/application/todo/contracts.ts
+  s_2c98013aaf134a::t_29e2af3dc70030 1-11
+packages/core/src/application/todo/index.ts
+  s_3773436026e306::t_88ed6b9070324e 1-3
+packages/core/src/domain/calendar/reconcile.ts
+  s_07f14851a51ee1::t_ee847478c260d4 1-37
+packages/core/src/domain/file-workspace/workspace-changes.ts
+  s_07f14851a51ee1::t_8aa4235b7e845b 1-14
+packages/core/src/domain/notification/entities.ts
+  s_e9b7553feb9e38::t_89bef0d425d82e 1-11
+packages/core/src/domain/todo/ReminderScheduleCalculator.test.ts
+  s_3773436026e306::t_9744c2009207f2 1-10
+packages/core/src/domain/todo/ReminderScheduleCalculator.ts
+  s_3773436026e306::t_cb770fa8ebed8e 1-59
+packages/core/src/domain/todo/entities.ts
+  s_2c98013aaf134a::t_e57a69d9f4d2f1 1-44
+packages/core/src/domain/todo/index.ts
+  s_2c98013aaf134a::t_7c27e5f3c1e859 1-3
+packages/core/src/domain/todo/ports.ts
+  s_2c98013aaf134a::t_9656a51aafeb2e 1-15
+packages/desktop/assets/notification-sounds/README.md
+  s_6f0f5b1a2a10af::t_055c9d69c13f13 1-18
+packages/desktop/main/new-session-window.test.ts
+  s_de6243ddd5a027::t_e909e5fe6ff9b5 1-64
+packages/desktop/main/new-session-window.ts
+  s_8b73ef69c7707c::t_87a508c29a7ccd 1-58
+packages/desktop/main/notification-sound.test.ts
+  s_d543964b83dce1::t_081d03771d7ead 1-92
+packages/desktop/main/notification-sound.ts
+  s_d543964b83dce1::t_7c5c477f864f6d 1-37
+packages/desktop/main/notification-subscription.ts
+  s_a99e2f85476ddb::t_d61d07aee03766 1-119
+packages/desktop/main/task-completion-notifier.test.ts
+  s_d543964b83dce1::t_8098b62fc90705 1-130
+packages/desktop/main/task-pane-pages.test.ts
+  s_aed42e15cb4a9c::t_b8a349eb054219 1-37
+packages/desktop/main/task-pane-pages.ts
+  s_aed42e15cb4a9c::t_a2b43bf7179147 1-55
+packages/desktop/renderer/NewSessionWindow.tsx
+  s_5f3369b034724a::t_5f6aba288aa4cf 1-58
+packages/desktop/renderer/components/BrowserLivePanel.embedded.test.tsx
+  s_61f3b23c0be80f::t_baec3128806da1 1-17
+packages/desktop/renderer/components/MessageImageAttachment.tsx
+  s_a625ac6d12f215::t_06c682bccadf1b 1-58
+packages/desktop/renderer/components/SessionTaskPanel.tsx
+  s_3773436026e306::t_ac565770032f59 1-233
+packages/desktop/renderer/components/ToastNotifications.test.tsx
+  s_d543964b83dce1::t_354170af40c5a0 1-119
+packages/desktop/renderer/components/ToastNotifications.tsx
+  s_d543964b83dce1::t_6a3af280fc13fd 1-106
+packages/desktop/renderer/components/desktop-task-split/DesktopTaskWorkspace.test.tsx
+  s_07f14851a51ee1::t_d2c7c981a093e1 1-30
+packages/desktop/renderer/components/desktop-task-split/TaskPaneBrowserPage.test.tsx
+  s_61f3b23c0be80f::t_a3e3927817d8b1 1-41
+packages/desktop/renderer/components/desktop-task-split/TaskPaneBrowserPage.tsx
+  s_61f3b23c0be80f::t_7c9e410d620c3f 1-60
+packages/desktop/renderer/components/desktop-task-split/TaskPaneChoices.tsx
+  s_6f0f5b1a2a10af::t_1e0ba7edc110bb 1-19
+packages/desktop/renderer/components/desktop-task-split/TaskPaneConversation.tsx
+  s_6f0f5b1a2a10af::t_62069f4e39a7fb 1-113
+packages/desktop/renderer/components/desktop-task-split/TaskPaneSurface.tsx
+  s_61f3b23c0be80f::t_274028d37b10de 1-63
+packages/desktop/renderer/components/desktop-task-split/TaskPaneWebPage.tsx
+  s_f1cc9760e9c574::t_a8ad1ebd9d227f 1-119
+packages/desktop/renderer/components/desktop-task-split/TaskSessionPicker.test.tsx
+  s_2c98013aaf134a::t_9bd366a472a363 1-54
+packages/desktop/renderer/components/desktop-task-split/TaskSessionPicker.tsx
+  s_2c98013aaf134a::t_9c6f47a0c8353a 1-104
+packages/desktop/renderer/components/desktop-task-split/TaskSplitLayout.tsx
+  s_3773436026e306::t_2c75e74970ecb9 1-102
+packages/desktop/renderer/components/desktop-task-split/desktop-task-split.css
+  s_6f0f5b1a2a10af::t_14c1cc647b6a0f 1-145
+packages/desktop/renderer/components/desktop-task-split/notification-state.test.ts
+  s_78a883d3db6e9b::t_22b84f158abf54 1-122
+packages/desktop/renderer/components/desktop-task-split/session-state.ts
+  s_78a883d3db6e9b::t_81efbc91f5c82f 1-200
+packages/desktop/renderer/components/desktop-task-split/task-pane-surface.css
+  s_f1cc9760e9c574::t_c50e53a27382d2 1-64
+packages/desktop/renderer/components/desktop-task-split/task-pane-web-page.css
+  s_f1cc9760e9c574::t_340715cc46b697 1-11
+packages/desktop/renderer/lib/composer-popover-position.test.ts
+  s_932c794a8dfde5::t_ba479175cf18a8 1-31
+packages/desktop/renderer/lib/composer-popover-position.ts
+  s_932c794a8dfde5::t_87134ddbb5b298 1-26
+packages/desktop/renderer/lib/desktop-task-layout.test.ts
+  s_e9b7553feb9e38::t_d115fe6bb2669b 1-85
+packages/desktop/renderer/lib/desktop-task-layout.ts
+  s_3773436026e306::t_cb817488be2b42 1-143
+packages/desktop/renderer/lib/message-image-preview.test.ts
+  s_a625ac6d12f215::t_91419b08434a19 1-14
+packages/desktop/renderer/lib/new-session-window.test.ts
+  s_5f3369b034724a::t_86224a322c2f17 1-51
+packages/desktop/renderer/lib/new-session-window.ts
+  s_18b8954ff6b556::t_2f1d4d568a989e 1-37
+packages/desktop/renderer/lib/notification-toast-inbox.test.ts
+  s_d543964b83dce1::t_108e963b815aed 1-157
+packages/desktop/renderer/lib/notification-toast-inbox.ts
+  s_d543964b83dce1::t_c7eed21128eb2b 1-138
+packages/desktop/renderer/lib/session-activity.test.ts
+  s_a625ac6d12f215::t_7513a276b47685 1-85
+packages/desktop/renderer/lib/session-activity.ts
+  s_a625ac6d12f215::t_06715ccd5dc184 1-108
+packages/desktop/renderer/lib/session-task-panel-state.test.ts
+  s_7e05f5a397217a::t_94b095eece68ac 1-37
+packages/desktop/renderer/lib/task-pane-notification.test.ts
+  s_5f3369b034724a::t_52575b6899d4c3 1-23
+packages/desktop/renderer/lib/task-pane-notification.ts
+  s_f1cc9760e9c574::t_ece0c7784d4bdb 1-10
+packages/desktop/renderer/lib/task-pane-web-links.test.ts
+  s_6f0f5b1a2a10af::t_1930ccbf48d29f 1-49
+packages/desktop/renderer/lib/task-pane-web-links.ts
+  s_8b73ef69c7707c::t_1615d5e14b7934 1-24
+packages/desktop/renderer/lib/use-composer-popover-position.ts
+  s_932c794a8dfde5::t_299c1660fb1084 1-37
+packages/desktop/renderer/lib/use-notification-toasts.ts
+  s_d543964b83dce1::t_d30b5e601f7e4e 1-37
+packages/desktop/renderer/lib/use-parallel-sessions.test.tsx
+  s_6f0f5b1a2a10af::t_84b7f874aafba2 1-72
+packages/desktop/renderer/stores/AgentStoreContext.test.tsx
+  s_07f14851a51ee1::t_13da1cf456181b 1-23
+packages/desktop/renderer/styles/ask-user-card.css
+  s_d543964b83dce1::t_107582681a518a 1-225
+packages/desktop/renderer/styles/new-session-window.css
+  s_5f3369b034724a::t_21acad1ce12e72 1-67
+packages/desktop/renderer/styles/notification-toasts.css
+  s_d543964b83dce1::t_863abe31b562cc 1-193
+packages/desktop/renderer/styles/session-task-panel.css
+  s_3773436026e306::t_15efaae309030b 1-83
+packages/desktop/renderer/web/webTaskSplit.test.ts
+  s_f1cc9760e9c574::t_90a5b3d4bca543 1-26
+packages/desktop/renderer/web/webTaskSplit.ts
+  s_f1cc9760e9c574::t_248f90e60ce42a 1-40
+packages/desktop/scripts/generate-notification-sounds.py
+  s_6f0f5b1a2a10af::t_0dc5714cbb5efe 1-48
+packages/desktop/shared/notification-presentation.ts
+  s_d543964b83dce1::t_7f683b10e4fa5c 1-22
+packages/native-runtime/src/agent-runtime/codex-subagent-activity.test.ts
+  s_1f550d087f07da::t_e0f801133feeb1 1-145
+packages/native-runtime/src/agent-runtime/copilot-todo-tools.test.ts
+  s_6f0f5b1a2a10af::t_dba151eeccd094 1-106
+packages/native-runtime/src/agent-runtime/copilot-todo-tools.ts
+  s_6f0f5b1a2a10af::t_43469bab5bfcfd 1-107
+packages/native-runtime/src/agent-runtime/deepseek-harness-todo-bridge.test.ts
+  s_6f0f5b1a2a10af::t_4b9b400e1db4d8 1-100
+packages/native-runtime/src/agent-runtime/opencode-todo-mcp.test.ts
+  s_6f0f5b1a2a10af::t_014074c0630819 1-190
+packages/native-runtime/src/agent-runtime/qoder-desktop-activity.test.ts
+  s_6d3597a7565ef0::t_a678ab83a8a32b 1-94
+packages/native-runtime/src/agent-runtime/qoder-desktop-activity.ts
+  s_6d3597a7565ef0::t_8fa8f047ec84df 1-150
+packages/native-runtime/src/agent-runtime/runtime-notification-outbox.test.ts
+  s_2c98013aaf134a::t_7cf1b8293f3b94 1-23
+packages/native-runtime/src/agent-runtime/runtime-tool-injection.test.ts
+  s_6f0f5b1a2a10af::t_72521a957daf2a 1-55
+packages/native-runtime/src/agent-runtime/zcode-todo-mcp.test.ts
+  s_1f550d087f07da::t_a6e9e5c942534d 1-216
+packages/native-runtime/src/todo-mcp/command-bridge.test.ts
+  s_6f0f5b1a2a10af::t_eba7b4e0649ad7 1-126
+packages/native-runtime/src/todo-mcp/command-bridge.ts
+  s_5f3369b034724a::t_eef503c82c8640 1-134
+packages/native-runtime/src/todo-mcp/provisioned-todo-tools.ts
+  s_8b73ef69c7707c::t_c0f922107f83d2 1-17
+packages/native-runtime/src/todo-mcp/tool-definitions.ts
+  s_d13b0580537e71::t_0066f6c0a72032 1-26
+packages/server/app/api/internal/todo-bootstrap/route.ts
+  s_2c98013aaf134a::t_2b0b59555ab2d7 1-4
+packages/server/app/api/internal/todo-mcp/route.ts
+  s_2c98013aaf134a::t_8fc079accfec51 1-46
+packages/server/app/api/notifications/[id]/ack/route.ts
+  s_2c98013aaf134a::t_4e5538b563b818 1-5
+packages/server/app/api/notifications/route.ts
+  s_2c98013aaf134a::t_9cd4c715f6a148 1-10
+packages/server/app/api/notifications/stream/route.ts
+  s_2c98013aaf134a::t_f4c0e7c9de3623 1-18
+packages/server/app/api/session-images/[id]/route.ts
+  s_a625ac6d12f215::t_242b602b44aa8b 1-19
+packages/server/app/api/todos/[id]/commands/route.ts
+  s_3773436026e306::t_cc6ba0ca891440 1-3
+packages/server/app/api/todos/[id]/executions/route.ts
+  s_3773436026e306::t_e6f893511095ef 1-4
+packages/server/app/api/todos/[id]/route.ts
+  s_3773436026e306::t_66ec19612542f3 1-4
+packages/server/app/api/todos/route.ts
+  s_3773436026e306::t_9cfba7af42b5ae 1-6
+packages/server/app/api/workspace-changes/route.ts
+  s_07f14851a51ee1::t_fae10128fe4a4d 1-17
+packages/server/lib/calendar/todo-calendar.test.ts
+  s_2c98013aaf134a::t_16050028dea342 1-24
+packages/server/lib/calendar/todo-reminder-source.ts
+  s_2c98013aaf134a::t_d49958631e7040 1-33
+packages/server/lib/calendar/zcode-source.test.ts
+  s_e30cccf52d2569::t_b877fd77ab50f4 1-27
+packages/server/lib/notifications/customer-notifications.ts
+  s_e9b7553feb9e38::t_82878ffcc08177 1-17
+packages/server/lib/service-identity.mjs
+  s_3773436026e306::t_f60f9611d5fc68 1-17
+packages/server/lib/service-identity.test.ts
+  s_2c98013aaf134a::t_8bf75791f0e1c3 1-12
+packages/server/lib/session-activity.test.ts
+  s_a625ac6d12f215::t_b4cd50bbae31ad 1-40
+packages/server/lib/session-activity.ts
+  s_a625ac6d12f215::t_eb28acf9a479ce 1-58
+packages/server/lib/session-images.test.ts
+  s_a625ac6d12f215::t_289c2651428573 1-88
+packages/server/lib/session-images.ts
+  s_a625ac6d12f215::t_13c1ca7541fe67 1-120
+packages/server/lib/todo/bootstrap.ts
+  s_2c98013aaf134a::t_f697d82d0d3b67 1-15
+packages/server/lib/todo/customer-todo-tools.ts
+  s_2c98013aaf134a::t_3154cc174b0077 1-26
+packages/server/lib/todo/runtime-todo-context.test.ts
+  s_6f0f5b1a2a10af::t_7c2f4d4e688644 1-103
+packages/server/lib/todo/runtime-todo-context.ts
+  s_6f0f5b1a2a10af::t_994867864b7b25 1-81
+packages/server/lib/todo/scheduled-todo-runner.ts
+  s_6f0f5b1a2a10af::t_6cce96d04643a2 1-53
+packages/server/lib/todo/todo-http.ts
+  s_2c98013aaf134a::t_c449e413bb0f40 1-34
+packages/server/lib/todo/todo-mcp-credentials.ts
+  s_2c98013aaf134a::t_6af9a603122d81 1-39
+packages/server/lib/todo/todo-service.ts
+  s_3773436026e306::t_f321dd7b55f7a5 1-13
+packages/server/lib/workspace-changes.test.ts
+  s_3773436026e306::t_31e110aa84663b 1-70
+packages/server/lib/workspace-changes.ts
+  s_3773436026e306::t_2c28ffc1d0a813 1-60
+packages/server/lib/workspace-session-cache.test.ts
+  s_000182c4b39efd::t_ab2eb05dba7c54 1-74
+packages/server/lib/workspace-session-cache.ts
+  s_000182c4b39efd::t_bc4399acc1bf5e 1-62
+packages/webapp/src/infrastructure/http/agent-http-gateway-observation-policy.test.ts
+  s_f1fb4b96ca6c08::t_16226d72b20635 1-124
+packages/webapp/src/infrastructure/http/agent-http-native-turn-replay.test.ts
+  s_8b73ef69c7707c::t_c456849684282e 1-200
+packages/webapp/src/infrastructure/http/bounded-event-source.test.ts
+  s_f1cc9760e9c574::t_42c63b2edecdca 1-306
+packages/webapp/src/infrastructure/http/bounded-event-source.ts
+  s_f1cc9760e9c574::t_919d5c2e38ee65 1-233
+packages/webapp/src/presentation/TodoPage.tsx
+  s_2c98013aaf134a::t_3272de168ffa74 1-2
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bea4a2ebeb8530e4f74ddb87683d56851e5e1430",
+  "prompts": {},
+  "sessions": {
+    "s_000182c4b39efd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1e9e5-6e06-7ae2-b9ea-674baf16853b",
+        "model": "unknown"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_07f14851a51ee1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1e82c-272e-75d0-af17-2aaa318d0d7d",
+        "model": "unknown"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_18b8954ff6b556": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1ed67-837b-7343-a648-fa40049166a5",
+        "model": "unknown"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_1f550d087f07da": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1ec9d-881b-77c0-828c-6d56b5da5877",
+        "model": "unknown"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_2c98013aaf134a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1e861-e777-7293-8234-5d5c8ae6eb9e",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_2f0bd1e1df8d1b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1c549-c68b-7f23-9bcd-3dde8c92ca0e",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_3773436026e306": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1e879-06fb-7313-b60c-fd265f0ab980",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_42309f8318d1bf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1e92d-b50d-7a12-8e7a-ba786fe75dd6",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_5f3369b034724a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1ed6a-df15-7951-8e8c-c78137a07b63",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.2-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_61f3b23c0be80f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1ed5a-f312-7633-ad42-179a28be58a6",
+        "model": "unknown"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_6d3597a7565ef0": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1e83b-ceff-75e1-87d6-dd621d18fb0b",
+        "model": "unknown"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_6f0f5b1a2a10af": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1ed2e-4764-7600-bf4c-7ae3b924474f",
+        "model": "unknown"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_78a883d3db6e9b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1ed6d-fc97-7a61-a7d4-daea8a1f619a",
+        "model": "unknown"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_7e05f5a397217a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1ec76-f682-7810-b2f1-5e26198eafd0",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_7f33f9ae8256c0": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1ec60-9305-7870-a454-1cea95f82a25",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_8b73ef69c7707c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1eca0-8333-76a0-b011-1d7efb021459",
+        "model": "unknown"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_932c794a8dfde5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1ed2f-17b8-76c2-b0fd-86d75aa04b1b",
+        "model": "unknown"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_a625ac6d12f215": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1e8e0-9633-73e0-9a38-418f264f165c",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_a99e2f85476ddb": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1ec7f-9eb3-7cc0-b4cf-06105ead8f51",
+        "model": "unknown"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_aed42e15cb4a9c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1ed31-0a1d-7490-bb1e-9b91830b0d0b",
+        "model": "unknown"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_d13b0580537e71": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1ec9c-b488-70b2-87f9-92182160581b",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_d543964b83dce1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1ec7e-bf1f-7a42-bf9c-82c4eba31bc2",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_dcf1fa4b873a9f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1e32c-f6fd-7102-aac5-cca1fe23d55b",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.1-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_de6243ddd5a027": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1ed68-a056-7013-a63e-3ab2ed997d55",
+        "model": "unknown"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_e30cccf52d2569": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1e818-0bf9-72f3-8b11-532e935d747a",
+        "model": "unknown"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_e9b7553feb9e38": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1e8b2-0c53-7c61-a69d-b3a0d6fb4b3a",
+        "model": "unknown"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_f1cc9760e9c574": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1ed5b-2dea-79b0-80a0-e70780e60639",
+        "model": "unknown"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_f1fb4b96ca6c08": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1ed91-5b1a-79f3-b54e-db6e1ef09629",
+        "model": "unknown"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_f55c1859949b3d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1edcb-90e8-7cb3-8ce7-4e76b27f6862",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.2-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
