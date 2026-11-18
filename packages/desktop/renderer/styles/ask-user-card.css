@@ -1,0 +1,225 @@
+.ask-user-card {
+  box-sizing: border-box;
+  margin-bottom: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 14px;
+  background: var(--bg-deep);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 13px;
+}
+
+.ask-user-card__header {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.ask-user-card__multi-select {
+  margin-left: auto;
+  font-size: 11px;
+}
+
+.ask-user-card__question,
+.ask-user-answer__question,
+.ask-user-answer__text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.6;
+}
+
+.ask-user-card__question {
+  margin-bottom: 6px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.ask-user-card__options {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.ask-user-card__option {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  width: 100%;
+  padding: 5px 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ask-user-card__option:hover,
+.ask-user-card__option[aria-pressed="true"] {
+  background: var(--control-hover, var(--bg-surface));
+}
+
+.ask-user-card__option-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 18px;
+  height: 18px;
+  box-sizing: border-box;
+  margin-top: 1px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  background: var(--bg-surface);
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1;
+}
+
+.ask-user-card__option[aria-pressed="true"] .ask-user-card__option-number {
+  border-color: var(--accent);
+  background: var(--accent-dim);
+  color: var(--text-primary);
+}
+
+.ask-user-card__option-body,
+.ask-user-card__field {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.ask-user-card__option-description,
+.ask-user-card__field-description {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.ask-user-card__fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.ask-user-card__field input {
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--bg-surface);
+  color: inherit;
+  font: inherit;
+}
+
+.ask-user-card__footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 7px;
+}
+
+.ask-user-card__custom-answer {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  gap: 7px;
+  min-width: 0;
+  color: var(--text-muted);
+}
+
+.ask-user-card__custom-answer input {
+  min-width: 0;
+  width: 100%;
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+}
+
+.ask-user-card__custom-answer input::placeholder {
+  color: var(--text-muted);
+  opacity: 0.65;
+}
+
+.ask-user-card__send {
+  flex-shrink: 0;
+  margin-left: auto;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 16px;
+  background: var(--text-primary);
+  color: var(--bg-deep);
+  font: inherit;
+  cursor: pointer;
+}
+
+.ask-user-card__send:disabled {
+  opacity: 0.38;
+  cursor: default;
+}
+
+.ask-user-card :is(button, input):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.ask-user-card__error {
+  margin-top: 6px;
+  color: var(--danger);
+  line-height: 1.6;
+}
+
+.ask-user-card__cancelled {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.ask-user-card__cancelled > :last-child {
+  margin-top: 6px;
+}
+
+.ask-user-answer {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: var(--chat-message-gap, 16px);
+}
+
+.ask-user-answer__bubble {
+  box-sizing: border-box;
+  max-width: min(78%, 680px);
+  padding: 10px 16px;
+  border-radius: 20px;
+  background: var(--control-active, var(--bg-surface));
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.ask-user-answer__question {
+  color: var(--text-secondary);
+}
+
+.ask-user-answer__text {
+  margin-top: 3px;
+  font-weight: 500;
+}
+
+@media (max-width: 600px) {
+  .ask-user-card {
+    padding: 10px;
+    border-radius: 12px;
+  }
+
+  .ask-user-answer__bubble {
+    max-width: 88%;
+  }
+}
