@@ -101,6 +101,7 @@ export function createSharedAgentApi(api: SharedServiceApi, device: AgentApi): A
     "showWindow",
     "isWindowVisible",
     "openNewSessionWindow",
+    "openVideoWindow",
     "setNotificationVisible",
     "onNotificationOpen",
     "openExternal",

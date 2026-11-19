@@ -12,6 +12,32 @@ function deferred<T>() {
 }
 
 describe("SinglePageHistoryPrefetch", () => {
+  it("cancels obsolete downloads while retaining the current page prefetch", async () => {
+    const cache = new SinglePageHistoryPrefetch<string>();
+    const signals: AbortSignal[] = [];
+    const loader = vi.fn(async (signal: AbortSignal) => {
+      signals.push(signal);
+      return "page";
+    });
+    await cache.prefetch("previous", "page-1", loader);
+    await cache.prefetch("current", "page-2", loader);
+    expect(signals[0].aborted).toBe(true);
+    expect(signals[1].aborted).toBe(false);
+    await expect(cache.consume("current", "page-2", loader)).resolves.toBe("page");
+    expect(loader).toHaveBeenCalledTimes(2);
+  });
+
+  it("aborts a pending prefetch when its conversation is left", () => {
+    const cache = new SinglePageHistoryPrefetch<string>();
+    let requestSignal: AbortSignal | undefined;
+    void cache.prefetch("previous", "page-1", signal => {
+      requestSignal = signal;
+      return new Promise<string>(() => {});
+    });
+    cache.invalidate();
+    expect(requestSignal?.aborted).toBe(true);
+  });
+
   it("shares an in-flight prefetch with foreground consumption", async () => {
     const pending = deferred<string>();
     const loader = vi.fn(() => pending.promise);

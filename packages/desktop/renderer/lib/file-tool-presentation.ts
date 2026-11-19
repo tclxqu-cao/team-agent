@@ -14,6 +14,19 @@ export function patchChanges(args: Record<string, unknown>, result?: string): Re
   return changes;
 }
 
+/** File identities from unified and apply_patch text, including older runtime tool payloads. */
+export function textPatchChanges(patch: string): Record<string, unknown>[] {
+  const sections = /^(?:--- ([^\n]+)\r?\n\+\+\+ ([^\n]+)|\*\*\* (Add|Update|Delete) File: ([^\n]+))$/gm;
+  const headers = [...patch.matchAll(sections)];
+  return headers.map((header, index) => {
+    const kind = header[3] ? header[3].toLowerCase() : header[1].trim() === "/dev/null" ? "add"
+      : header[2].trim() === "/dev/null" ? "delete" : "update";
+    const path = (header[4] ?? (kind === "delete" ? header[1] : header[2])).trim();
+    const diff = patch.slice(header.index, headers[index + 1]?.index).trimEnd().replace(/\n\*\*\* End Patch$/, "");
+    return { path, kind, diff };
+  });
+}
+
 export function patchSummary(args: Record<string, unknown>, result?: string): FileChangeSummary | null {
   const summary = args.fileChangeSummary as FileChangeSummary | undefined;
   if (summary && ["add", "update", "delete"].includes(summary.operation)

@@ -1,12 +1,20 @@
 import { describe, expect, it } from "vitest";
 import type { CatalogSession } from "../../../core/src/domain/supervision/types";
-import { ALL_SESSIONS_CACHE_KEY, readAllSessionsCache, writeAllSessionsCache } from "./all-sessions-cache";
+import { ALL_SESSIONS_CACHE_KEY, readAllSessionsCache, writeAllSessionsCache, removeSessionsFromAllSessionsCache } from "./all-sessions-cache";
 
 const session = (id: string): CatalogSession => ({
   id, agentType: "codex", title: id, cwd: "/project", updated: "2026-11-09", status: "idle", canResume: true,
 });
 
 describe("all sessions first-page cache", () => {
+  it("does not restore successfully deleted sessions from a cached first page", () => {
+    let saved = "";
+    const storage = { getItem: () => saved, setItem: (_key: string, value: string) => { saved = value; } };
+    writeAllSessionsCache({ data: [session("deleted"), session("kept")], total: 40, nextCursor: null }, storage);
+    removeSessionsFromAllSessionsCache(["deleted", "deleted"], storage);
+    expect(readAllSessionsCache(storage)).toEqual({ data: [session("kept")], total: 39 });
+  });
+
   it("restores the most recent first page and total without reusing a server cursor", () => {
     let saved = "";
     writeAllSessionsCache({ data: [session("recent")], total: 2620, nextCursor: "expired-server-cursor" }, {

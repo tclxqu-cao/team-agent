@@ -28,4 +28,14 @@ describe("composerPopoverPosition", () => {
     expect(result.top).toBe(136);
     expect(result.maxHeight).toBe(236);
   });
+
+  it("keeps a long skill list fully on screen above the composer in a small window", () => {
+    const result = composerPopoverPosition(
+      { top: 149, right: 448, bottom: 318 },
+      { top: 0, left: 0, width: 460, height: 328 },
+      1800,
+      { width: 436, maxHeight: 320 },
+    );
+    expect(result).toEqual({ left: 16, top: 16, width: 428, maxHeight: 125 });
+  });
 });

@@ -155,7 +155,7 @@ export function reconcileDurableQueuedMessages<T extends DurableQueuedMessageLik
     const current = currentByQueueId.get(activeItem.id);
     const activeMessageId = activeItem.sourceMessageId || current?.id || activeItem.id;
     const nativeInputIndex = current ? -1 : findActiveNativeInput(history, activeItem, activeMessageId);
-    const latestUserIndex = history.findLastIndex((message) => message.role === "user");
+    const latestUserIndex = history.findLastIndex((message) => message.role === "user" && !message.isSteered);
     const historyIndex = nativeInputIndex >= 0 ? nativeInputIndex : history.findLastIndex((message, index) => (
       message.id === activeMessageId
       || message.queueItemId === activeItem.id

@@ -7,7 +7,15 @@ export async function readSessionCatalogPage(
   cursor?: string,
 ): Promise<SessionCatalogPage> {
   signal.throwIfAborted();
-  const page = await read(cursor);
+  let page: SessionCatalogPage;
+  try {
+    page = await read(cursor);
+  } catch (error) {
+    signal.throwIfAborted();
+    if (!cursor || !(error instanceof Error) || !/会话列表已更新|会话分页标记无效/.test(error.message)) throw error;
+    // Retain visible rows while replacing an expired snapshot's cursor.
+    page = await read();
+  }
   signal.throwIfAborted();
   if (page.nextCursor && page.nextCursor === cursor) throw new Error("历史会话分页已失效，请刷新重试");
   return { ...page, data: mergeCatalogSessions([], page.data) };

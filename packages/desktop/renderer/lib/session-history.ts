@@ -10,6 +10,7 @@ import type { ChatMessage, ContextUsageSnapshot, SessionHistoryWindow } from "..
 import type { SessionGoalState, UnifiedSessionSummary } from "../global";
 import { uniqueSessionMessages } from "./session-message-identity";
 import { mergeRunResultPresentation } from "./run-result";
+import type { NativeSessionViewState } from "./native-session-view-state";
 import {
   applyCodexLiveExecutionEvent,
   groupCodexExecutionTrace,
@@ -18,6 +19,8 @@ import {
 } from "./codex-execution-trace";
 
 export const SESSION_HISTORY_PAGE_SIZE = 50;
+/** Paging retains the complete latest user turn, including its tools and answer. */
+export const LATEST_SESSION_HISTORY_PAGE_SIZE = 1;
 
 export interface PersistedHistoryEvent {
   type?: string;
@@ -45,12 +48,9 @@ export interface PersistedHistoryEvent {
   todos?: unknown;
 }
 
-export interface SessionHistoryDetail {
+export interface SessionHistoryDetail extends NativeSessionViewState {
   id?: string;
   nativePermissions?: UnifiedSessionSummary["nativePermissions"];
-  agentType?: AgentType;
-  status?: "active" | "idle" | "running" | "completed" | "failed";
-  occupancy?: "available" | "owned-by-customer-agent" | "owned-externally";
   messages?: Array<{
     historyId?: string;
     role?: string;

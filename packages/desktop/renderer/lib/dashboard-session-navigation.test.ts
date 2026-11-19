@@ -24,10 +24,10 @@ it("uses the existing workspace catalog IDs when opening an original or hidden m
   const target = { id: "codex:original", title: "原始会话", cwd: "/project", agentType: "codex" as const };
   const original = await resolveDashboardSession(api, target, new AbortController().signal);
   expect(original.session.projectId).toBe("native-workspace");
-  expect(api.getSession).toHaveBeenCalledWith("codex:original", { limit: 1, view: "core" });
+  expect(api.getSession).toHaveBeenCalledWith("codex:original", { limit: 1, view: "core" }, { signal: expect.any(AbortSignal) });
   const internal = await resolveDashboardSession(api, { ...target, id: "codex:internal" }, new AbortController().signal);
   expect(internal.session.projectId).toBe("native-workspace");
-  expect(api.getSession).toHaveBeenCalledWith("codex:internal", { limit: 1, view: "core" });
+  expect(api.getSession).toHaveBeenCalledWith("codex:internal", { limit: 1, view: "core" }, { signal: expect.any(AbortSignal) });
   expect(api.listAgentWorkspaceSessions).not.toHaveBeenCalled();
 });
 
@@ -72,7 +72,7 @@ it("opens a cached workspace with one exact detail request and preserves cached 
   const before = JSON.stringify(cached);
   const result = await resolveDashboardSession(api, target, new AbortController().signal, cached);
   expect(getSession).toHaveBeenCalledTimes(1);
-  expect(getSession).toHaveBeenCalledWith(target.id, { limit: 1, view: "core" });
+  expect(getSession).toHaveBeenCalledWith(target.id, { limit: 1, view: "core" }, { signal: expect.any(AbortSignal) });
   expect(listAgentWorkspaces).not.toHaveBeenCalled();
   expect(listAgentWorkspaceSessions).not.toHaveBeenCalled();
   expect(result.snapshot.sessions.map(session => session.id)).toEqual(["sibling", target.id]);
@@ -141,7 +141,7 @@ it("reuses the ordinary first history page for other Agents without another load
   const other = { ...target, id: "harness-session", agentType: "deepseek-harness" as const };
   getSession.mockResolvedValue({ ...other, projectId: "project" } as unknown as Awaited<ReturnType<typeof getSession>>);
   const result = await resolveDashboardSession(api, other, new AbortController().signal);
-  expect(getSession).toHaveBeenCalledWith(other.id, { limit: 50 });
+  expect(getSession).toHaveBeenCalledWith(other.id, { limit: 1 }, { signal: expect.any(AbortSignal) });
   const paint = vi.fn();
   await loadProgressiveSessionHistoryPage(api, other.id, other.agentType, { limit: 50 }, paint, () => true,
     async () => result.initialHistory.detail);

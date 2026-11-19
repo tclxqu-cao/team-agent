@@ -3,6 +3,7 @@ import {
   COMPOSER_IMAGE_QUALITY,
   constrainedImageSize,
   normalizeComposerImage,
+  normalizeOutgoingComposerImages,
   type BrowserImageNormalizer,
 } from "./browser-image-normalization";
 
@@ -78,6 +79,15 @@ describe("normalizeComposerImage", () => {
     );
   });
 
+  it("compresses screenshots over 384 KiB even when they fit within the dimension limit", async () => {
+    const original = imageBlob(400 * 1024, "image/png");
+    const compressed = imageBlob(100 * 1024, "image/webp");
+    const fake = fakeNormalizer({ width: 944, height: 2048, output: compressed });
+
+    await expect(normalizeComposerImage(original, fake.normalizer)).resolves.toBe(compressed);
+    expect(fake.encode).toHaveBeenCalledWith(expect.anything(), 944, 2048, "image/webp", COMPOSER_IMAGE_QUALITY);
+  });
+
   it("falls back to the original when encoding grows the image", async () => {
     const original = imageBlob(3 * 1024 * 1024, "image/png");
     const larger = imageBlob(4 * 1024 * 1024, "image/webp");
@@ -93,6 +103,29 @@ describe("normalizeComposerImage", () => {
 
     await expect(normalizeComposerImage(original, fake.normalizer)).resolves.toBe(original);
     expect(fake.encode).not.toHaveBeenCalled();
+  });
+});
+
+describe("normalizeOutgoingComposerImages", () => {
+  it("reprocesses a large restored screenshot and preserves a small image and a GIF", async () => {
+    const screenshot = "data:image/png;base64," + "AAAA".repeat(200_000);
+    const thumbnail = "data:image/png;base64,AAAA";
+    const gif = "data:image/gif;base64," + "AAAA".repeat(200_000);
+    const fake = fakeNormalizer({ output: imageBlob(3, "image/webp") });
+    const compressedDataUrl = "data:image/webp;base64,AAAA";
+    class TestFileReader {
+      readonly result = compressedDataUrl;
+      onload?: () => void;
+      readAsDataURL() { this.onload?.(); }
+    }
+    vi.stubGlobal("FileReader", TestFileReader);
+    try {
+      await expect(normalizeOutgoingComposerImages([screenshot, thumbnail, gif], fake.normalizer))
+        .resolves.toEqual([compressedDataUrl, thumbnail, gif]);
+      expect(fake.decode).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
 

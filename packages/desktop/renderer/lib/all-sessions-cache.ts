@@ -28,6 +28,14 @@ export function writeAllSessionsCache(page: SessionCatalogPage, storage?: Pick<S
   }
 }
 
+export function removeSessionsFromAllSessionsCache(ids: readonly string[], storage?: Pick<Storage, "getItem" | "setItem">): void {
+  const cached = readAllSessionsCache(storage);
+  if (!cached) return;
+  const removed = new Set(ids);
+  const data = cached.data.filter(session => !removed.has(session.id));
+  writeAllSessionsCache({ data, total: Math.max(data.length, cached.total - removed.size), nextCursor: null }, storage);
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }

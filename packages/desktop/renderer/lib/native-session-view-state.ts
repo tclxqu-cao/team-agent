@@ -3,6 +3,8 @@ export interface NativeSessionViewState {
   agentType?: AgentType;
   status?: "active" | "idle" | "running" | "completed" | "failed";
   occupancy?: "available" | "owned-by-customer-agent" | "owned-externally";
+  snapshotRunId?: string | null;
+  snapshotRunStatus?: "active" | "terminal" | null;
 }
 
 /** History navigation defers transcript updates, never run lifecycle updates. */
@@ -28,7 +30,21 @@ export function isObservedNativeRun(session: NativeSessionViewState | null | und
     || (session?.agentType === "copilot" && session?.occupancy === "available"));
 }
 
-export interface NativeRunObservation { sessionId: string; running: boolean }
+export interface NativeRunObservation {
+  sessionId: string;
+  running: boolean;
+  controllableRunId?: string;
+}
+
+export function getNativeRunObservation(sessionId: string, session: NativeSessionViewState): NativeRunObservation {
+  const running = isActiveNativeSession(session);
+  const controllableRunId = running
+    && session.occupancy === "owned-by-customer-agent"
+    && session.snapshotRunStatus === "active"
+    ? session.snapshotRunId ?? undefined
+    : undefined;
+  return { sessionId, running, controllableRunId };
+}
 
 /** Detail polling is fresher than a cached sidebar summary; local runs retain priority. */
 export function isNativeRunVisible(
@@ -50,10 +66,11 @@ export function shouldRestoreCustomerAgentRun(session: NativeSessionViewState | 
 }
 
 export function shouldQueueMessageForActiveRun(
-  session: NativeSessionViewState | null | undefined,
+  sessionId: string | null,
   isLocallyRunning: boolean,
+  observation: NativeRunObservation | null,
 ): boolean {
-  return isLocallyRunning || shouldRestoreLocalNativeRun(session);
+  return isLocallyRunning || Boolean(observation?.sessionId === sessionId && observation.controllableRunId);
 }
 
 export function shouldFollowNativeHistory(

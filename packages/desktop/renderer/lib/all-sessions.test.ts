@@ -7,6 +7,14 @@ const session = (id: string, agentType: CatalogSession["agentType"], status: Cat
 });
 
 describe("all Agent sessions", () => {
+  it("replaces an expired snapshot cursor so scrolling can continue", async () => {
+    const read = vi.fn().mockRejectedValueOnce(new Error("会话列表已更新，请刷新重新加载"))
+      .mockResolvedValueOnce({ data: [session("fresh", "zcode", "idle")], nextCursor: "fresh.20", total: 60 });
+    const result = await readSessionCatalogPage(read, new AbortController().signal, "expired.40");
+    expect(read.mock.calls).toEqual([["expired.40"], []]);
+    expect(result.nextCursor).toBe("fresh.20");
+  });
+
   it("retains a new session over stale discovery until its authoritative row arrives", () => {
     const receipt = session("new", "codex", "running");
     const stale = [session("old", "codex", "idle")];

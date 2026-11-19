@@ -270,6 +270,22 @@ describe("reconcileDurableQueuedMessages", () => {
     expect(result[0]).not.toHaveProperty("sendState");
   });
 
+  it("keeps the ZCode running input and each inline steer in their original positions", () => {
+    const current = restoreSessionHistoryPage({ messages: [
+      { role: "user", content: "deploy", historyId: "zcode-active" },
+      { role: "assistant", content: "working", historyId: "zcode-progress" },
+      { role: "user", content: "also check QA", historyId: "zcode-guide", name: "__native_steered:zcode-guide" },
+      { role: "user", content: "deploy", historyId: "zcode-guide-repeat", name: "__native_steered:zcode-guide-repeat" },
+    ] });
+
+    const result = reconcileDurableQueuedMessages(current, activeMessageState);
+    expect(result.map(({ id }) => id)).toEqual(current.map(({ id }) => id));
+    expect(result.slice(2).map(({ content, isSteered }) => [content, isSteered])).toEqual([
+      ["also check QA", true],
+      ["deploy", true],
+    ]);
+  });
+
   it("repairs an already appended source copy without dropping steering or attachments", () => {
     const current = steeringTurn();
     const source = {

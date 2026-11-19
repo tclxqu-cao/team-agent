@@ -2,7 +2,7 @@ import type { MonitoredSession } from "../../../core/src/domain/supervision/type
 import type { AgentApi, AgentType, UnifiedSessionSummary } from "../global";
 import { isAgentType } from "../../../core/src/domain/agent/agent-type";
 import type { AgentRailSessions } from "./agent-rail-sessions";
-import { SESSION_HISTORY_PAGE_SIZE, type SessionHistoryDetail, type SessionHistorySeed } from "./session-history";
+import { LATEST_SESSION_HISTORY_PAGE_SIZE, type SessionHistoryDetail, type SessionHistorySeed } from "./session-history";
 
 /** Explicit navigation must not hydrate a different saved conversation first. */
 export function initialSessionNavigation(search: string, fallback: AgentType) {
@@ -36,8 +36,8 @@ export async function resolveDashboardSession(api: AgentApi, target: MonitoredSe
   // A Codex query without view=core reads and converts the full transcript,
   // even when limit=1. Reuse the bounded first page when the chat opens.
   const detail = await api.getSession(target.id, target.agentType === "codex"
-    ? { limit: 1, view: "core" }
-    : { limit: SESSION_HISTORY_PAGE_SIZE }) as UnifiedSessionSummary & SessionHistoryDetail;
+    ? { limit: LATEST_SESSION_HISTORY_PAGE_SIZE, view: "core" }
+    : { limit: LATEST_SESSION_HISTORY_PAGE_SIZE }, { signal }) as UnifiedSessionSummary & SessionHistoryDetail;
   signal.throwIfAborted();
   const switched = detail as typeof detail & { threadKey?: string; activeSessionId?: string };
   if (switched?.threadKey && switched.activeSessionId === detail.id) {

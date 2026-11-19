@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  getNativeRunObservation,
   isObservedNativeRun,
   isNativeRunVisible,
   isNativeRuntimeSelection,
@@ -114,7 +115,12 @@ describe("native session view state", () => {
     expect(shouldRestoreLocalNativeRun(session)).toBe(true);
     expect(isObservedNativeRun(session)).toBe(false);
     expect(shouldFollowNativeHistory(session, "session-1", "session-1")).toBe(true);
-    expect(shouldQueueMessageForActiveRun(session, false)).toBe(true);
+    const observation = getNativeRunObservation("session-1", {
+      ...session, snapshotRunId: "run-1", snapshotRunStatus: "active",
+    });
+    expect(observation.controllableRunId).toBe("run-1");
+    expect(shouldQueueMessageForActiveRun("session-1", false, observation)).toBe(true);
+    expect(shouldQueueMessageForActiveRun("session-2", false, observation)).toBe(false);
   });
 
   it("restores a customer-agent run after the browser reloads", () => {
@@ -126,16 +132,18 @@ describe("native session view state", () => {
 
     expect(shouldRestoreCustomerAgentRun(session)).toBe(true);
     expect(shouldRestoreLocalNativeRun(session)).toBe(false);
-    expect(shouldQueueMessageForActiveRun(session, false)).toBe(false);
-    expect(shouldQueueMessageForActiveRun(session, true)).toBe(true);
+    expect(shouldQueueMessageForActiveRun("session-1", false, null)).toBe(false);
+    expect(shouldQueueMessageForActiveRun("session-1", true, null)).toBe(true);
   });
 
   it("observes a shared VS Code turn without restoring a nonexistent broker run or queueing behind it", () => {
     const session: NativeSessionViewState = { agentType: "copilot", status: "running", occupancy: "available" };
     expect(isObservedNativeRun(session)).toBe(true);
     expect(shouldRestoreLocalNativeRun(session)).toBe(false);
-    expect(shouldQueueMessageForActiveRun(session, false)).toBe(false);
-    expect(shouldQueueMessageForActiveRun({ ...session, occupancy: "owned-by-customer-agent" }, false)).toBe(true);
+    const snapshot = { ...session, snapshotRunId: "run-1", snapshotRunStatus: "active" } as const;
+    expect(shouldQueueMessageForActiveRun("session-1", false, getNativeRunObservation("session-1", snapshot))).toBe(false);
+    const managed = getNativeRunObservation("session-1", { ...snapshot, occupancy: "owned-by-customer-agent" });
+    expect(shouldQueueMessageForActiveRun("session-1", false, managed)).toBe(true);
   });
 
   it.each(["codex", "claude-code", "opencode", "deepseek-harness"] as const)(
@@ -159,17 +167,36 @@ describe("native session view state", () => {
     expect(shouldFollowNativeHistory(undefined, "session-1", null)).toBe(false);
   });
 
-  it("does not queue into an externally owned or idle native session", () => {
-    expect(shouldQueueMessageForActiveRun(externalRunning("codex"), false)).toBe(false);
-    expect(shouldQueueMessageForActiveRun({
-      agentType: "codex",
-      status: "idle",
-      occupancy: "available",
-    }, false)).toBe(false);
+  it.each(["codex", "claude-code", "zcode"] as const)(
+    "clears controls when the current %s detail supersedes a running list entry",
+    (agentType) => {
+      const summary = { agentType, status: "running", occupancy: "owned-by-customer-agent" } as const;
+      const detail = { ...summary, status: "idle", snapshotRunId: "old", snapshotRunStatus: "terminal" } as const;
+      const observation = getNativeRunObservation("session-1", detail);
+      expect(isNativeRunVisible(summary, "session-1", false, observation)).toBe(false);
+      expect(shouldQueueMessageForActiveRun("session-1", false, observation)).toBe(false);
+    },
+  );
+
+  it("keeps an external run visible even when a previous broker run is retained", () => {
+    const session = externalRunning("codex");
+    const observation = getNativeRunObservation("session-1", {
+      ...session, snapshotRunId: "old", snapshotRunStatus: "terminal",
+    });
+    expect(isNativeRunVisible(session, "session-1", false, observation)).toBe(true);
+    expect(shouldQueueMessageForActiveRun("session-1", false, observation)).toBe(false);
+  });
+
+  it("requires a run identity for controls restored from a broker snapshot", () => {
+    const observation = getNativeRunObservation("session-1", {
+      agentType: "zcode", status: "running", occupancy: "owned-by-customer-agent", snapshotRunStatus: "active",
+    });
+    expect(observation.running).toBe(true);
+    expect(shouldQueueMessageForActiveRun("session-1", false, observation)).toBe(false);
   });
 
   it("keeps locally tracked runs queueable regardless of summary lag", () => {
-    expect(shouldQueueMessageForActiveRun(undefined, true)).toBe(true);
+    expect(shouldQueueMessageForActiveRun("session-1", true, null)).toBe(true);
   });
 
   it("does not present an externally owned idle session as actively running", () => {

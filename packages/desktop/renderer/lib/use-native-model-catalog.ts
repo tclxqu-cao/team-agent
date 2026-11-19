@@ -13,16 +13,16 @@ export interface NativeModelCatalogState {
 type LoadModels = (agentType: AgentType) => Promise<{ models: RuntimeModelInfo[]; supported?: boolean }>;
 
 export function nativeModelCatalogScope(agentType: AgentType, sessionId: string | null): string {
-  return JSON.stringify([agentType, agentType === "qoder" ? sessionId : null]);
+  return JSON.stringify([agentType, agentType === "qoder" || agentType === "zcode" ? sessionId : null]);
 }
 
 function loadingCatalog(scope: string): NativeModelCatalogState {
   return { scope, models: [], status: "loading", error: null };
 }
 
-/** An empty Qoder response can precede session initialization, not model removal. */
+/** These runtimes can return an empty catalog before session initialization. */
 export function isNativeModelCatalogReady(agentType: AgentType, state: NativeModelCatalogState): boolean {
-  return state.status === "ready" || (agentType !== "qoder" && (state.status === "empty" || state.status === "unsupported"));
+  return state.status === "ready" || (agentType !== "qoder" && agentType !== "zcode" && (state.status === "empty" || state.status === "unsupported"));
 }
 
 /** Each request has its own lifetime, including when an Agent is selected again. */

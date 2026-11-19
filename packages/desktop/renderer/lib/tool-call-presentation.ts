@@ -96,6 +96,7 @@ export function toolCallActionKey(name: string): string | null {
 
 export function toolActivityLabel(rawName: string): string | null {
   const name = canonicalToolName(rawName);
+  if (name === "view_image") return "查看图片";
   if (COMMAND_TOOLS.has(name)) return "终端";
   if (READ_TOOLS.has(name)) return "查阅";
   if (WRITE_TOOLS.has(name)) return "写入";
@@ -156,6 +157,7 @@ export function toolActivityPreview(name: string, args: Record<string, unknown>)
   const preview = toolPreview(name, args);
   if (!preview) return name;
   const canonical = canonicalToolName(name);
+  if (canonical === "view_image") return `查看图片 ${preview}`;
   if (READ_TOOLS.has(canonical)) return `已读取 ${preview}`;
   if (WRITE_TOOLS.has(canonical)) return `已写入 ${preview}`;
   if (EDIT_TOOLS.has(canonical)) return `已修改 ${preview}`;

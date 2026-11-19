@@ -1,5 +1,5 @@
 export const COMPOSER_IMAGE_MAX_EDGE = 2048;
-export const COMPOSER_IMAGE_SIZE_THRESHOLD = 2 * 1024 * 1024;
+export const COMPOSER_IMAGE_SIZE_THRESHOLD = 384 * 1024;
 export const COMPOSER_IMAGE_QUALITY = 0.85;
 
 interface DecodedBrowserImage {
@@ -61,6 +61,39 @@ export async function normalizeComposerImage(
   } finally {
     image?.dispose();
   }
+}
+
+export function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+export async function normalizeOutgoingComposerImages(
+  images: string[],
+  normalizer: BrowserImageNormalizer = browserImageNormalizer,
+): Promise<string[]> {
+  const prepared: string[] = [];
+  for (const image of images) {
+    const header = /^data:(image\/(?:png|jpe?g|webp));base64,/i.exec(image);
+    const base64Length = header ? image.length - header[0].length : 0;
+    if (!header || base64Length * 3 / 4 <= COMPOSER_IMAGE_SIZE_THRESHOLD) {
+      prepared.push(image);
+      continue;
+    }
+    try {
+      const bytes = Uint8Array.from(atob(image.slice(header[0].length)), (byte) => byte.charCodeAt(0));
+      const original = new Blob([bytes], { type: header[1].toLowerCase() });
+      const compressed = await normalizeComposerImage(original, normalizer);
+      prepared.push(compressed === original ? image : await blobToDataUrl(compressed));
+    } catch {
+      prepared.push(image);
+    }
+  }
+  return prepared;
 }
 
 const browserImageNormalizer: BrowserImageNormalizer = {

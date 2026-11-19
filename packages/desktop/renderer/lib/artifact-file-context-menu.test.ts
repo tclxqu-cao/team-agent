@@ -25,4 +25,13 @@ describe("artifact file context-menu dispatch", () => {
     const menu = vi.fn(async (): Promise<{ shown: true }> => { throw new Error("文件不存在或无法访问"); });
     await expect(requestArtifactFileContextMenu(event, "/tmp/report.docx", menu)).rejects.toThrow("文件不存在或无法访问");
   });
+
+  it("passes the displayed text and line separately from the artifact path", async () => {
+    const event = { preventDefault: vi.fn() };
+    const menu = vi.fn(async () => ({ shown: true as const }));
+    const path = "C:\\工作区\\Refund SDK\\branch.ts";
+    const options = { label: "feature_req_refund_work_order_submit_hook_cq_261118", line: 24 };
+    await requestArtifactFileContextMenu(event, path, menu, options);
+    expect(menu).toHaveBeenCalledWith(path, options);
+  });
 });

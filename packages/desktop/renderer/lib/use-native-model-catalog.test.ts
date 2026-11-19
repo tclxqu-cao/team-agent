@@ -20,17 +20,17 @@ async function flush() { await new Promise(resolve => setImmediate(resolve)); }
 const models: RuntimeModelInfo[] = [{ id: "native-model", displayName: "Native model" }];
 
 describe("native model catalog requests", () => {
-  it("reloads a Qoder catalog after the first session is created instead of retaining an empty result", async () => {
+  it.each(["qoder", "zcode"] as const)("reloads a %s catalog after the first session is created instead of retaining an empty result", async agentType => {
     const observed = observer();
     const load = vi.fn().mockResolvedValueOnce({ models: [] }).mockResolvedValueOnce({ models });
-    const draftScope = nativeModelCatalogScope("qoder", null);
-    const cancel = requestNativeModelCatalog(draftScope, "qoder", load, observed.publish);
+    const draftScope = nativeModelCatalogScope(agentType, null);
+    const cancel = requestNativeModelCatalog(draftScope, agentType, load, observed.publish);
     await flush();
     expect(observed.latest().status).toBe("empty");
-    const createdScope = nativeModelCatalogScope("qoder", "qoder:created");
+    const createdScope = nativeModelCatalogScope(agentType, `${agentType}:created`);
     expect(createdScope).not.toBe(draftScope);
     cancel();
-    requestNativeModelCatalog(createdScope, "qoder", load, observed.publish);
+    requestNativeModelCatalog(createdScope, agentType, load, observed.publish);
     await flush();
     expect(load).toHaveBeenCalledTimes(2);
     expect(observed.latest()).toMatchObject({ scope: createdScope, status: "ready", models });
@@ -83,15 +83,15 @@ describe("native model catalog requests", () => {
     expect(observed.states.map(state => state.status)).toEqual(["loading"]);
   });
 
-  it("does not clear a saved Qoder model on loading, empty, unsupported or failed catalogs", () => {
-    const pref = { model: { id: "native-model" } };
+  it.each(["qoder", "zcode"] as const)("does not clear a saved %s model or reasoning effort on loading, empty, unsupported or failed catalogs", agentType => {
+    const pref = { model: { id: "native-model" }, reasoningEffort: "high" as const };
     for (const status of ["loading", "empty", "unsupported", "error"] as const) {
-      const state: NativeModelCatalogState = { scope: "qoder", models: [], status, error: null };
-      expect(isNativeModelCatalogReady("qoder", state)).toBe(false);
-      expect(resolveNativeRunPref(pref, state.models, isNativeModelCatalogReady("qoder", state))).toBe(pref);
+      const state: NativeModelCatalogState = { scope: agentType, models: [], status, error: null };
+      expect(isNativeModelCatalogReady(agentType, state)).toBe(false);
+      expect(resolveNativeRunPref(pref, state.models, isNativeModelCatalogReady(agentType, state))).toBe(pref);
     }
-    const state: NativeModelCatalogState = { scope: "qoder", models, status: "ready", error: null };
-    expect(isNativeModelCatalogReady("qoder", state)).toBe(true);
+    const state: NativeModelCatalogState = { scope: agentType, models, status: "ready", error: null };
+    expect(isNativeModelCatalogReady(agentType, state)).toBe(true);
     expect(resolveNativeRunPref(pref, models, true)).toBe(pref);
     expect(resolveNativeRunPref(pref, [{ id: "replacement" }], true)).toEqual({});
   });
