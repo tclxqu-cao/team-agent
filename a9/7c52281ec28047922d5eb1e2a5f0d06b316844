@@ -1,0 +1,132 @@
+packages/desktop/renderer/lib/shared-service.ts
+  s_ea1ab5f62173df::t_7164d0237d4712 104
+packages/desktop/renderer/lib/file-tool-presentation.ts
+  s_c8e1e6e6a2a6fe::t_d4a6195867a744 17-29
+packages/desktop/renderer/lib/artifact-file-context-menu.ts
+  s_d13b0580537e71::t_1918b734f3a3e4 1-2,9,17
+packages/desktop/renderer/lib/all-sessions-cache.test.ts
+  s_f55c1859949b3d::t_7d82a6868ae610 3,10-17
+packages/desktop/renderer/lib/browser-image-normalization.test.ts
+  s_d464498d333e2f::t_d4ca41253c9fa7 82-83
+  s_d464498d333e2f::t_0a5ad0cf774ea0 6,84-90,109-129
+  s_d464498d333e2f::t_b4069a9b1b4ba7 130-131
+packages/desktop/renderer/lib/session-change-history.ts
+  s_c8e1e6e6a2a6fe::t_bcec887dff5ee7 2,5,21,24-26,32-44,46
+  s_c8e1e6e6a2a6fe::t_78464876454590 1,3-4,6-20,22-23,27-31,45,47-56
+packages/desktop/renderer/lib/session-history-prefetch.test.ts
+  s_f55c1859949b3d::t_c5001b86da7541 15-40
+packages/desktop/renderer/lib/all-sessions-cache.ts
+  s_f55c1859949b3d::t_8f20789adde87e 31-38
+packages/desktop/renderer/lib/queued-message-order.test.ts
+  s_ea1ab5f62173df::t_2a9bee6de95350 273-288
+packages/desktop/renderer/lib/session-history.ts
+  s_d13b0580537e71::t_5d2c7fd20dd903 13,51
+  s_f55c1859949b3d::t_b98095f3401318 22-23
+packages/desktop/renderer/lib/tool-call-presentation.ts
+  s_c8e1e6e6a2a6fe::t_a76d23cc73cbf1 99,160
+packages/desktop/renderer/lib/all-sessions.ts
+  s_f55c1859949b3d::t_8f20789adde87e 10-18
+packages/desktop/renderer/lib/dashboard-session-navigation.ts
+  s_f55c1859949b3d::t_b98095f3401318 5,39-40
+packages/desktop/renderer/lib/composer-slash-token.ts
+  s_5f3369b034724a::t_42b282df6d85ec 1-11,13,15-23
+  s_5f3369b034724a::t_eb2081dcb529dd 12,14
+packages/desktop/renderer/lib/native-session-view-state.ts
+  s_d13b0580537e71::t_4c22ebafbf8411 6-7,33-47,69,71,73
+packages/desktop/renderer/lib/session-turn-results.test.ts
+  s_c8e1e6e6a2a6fe::t_c28a71738a7b1b 64-81
+  s_c8e1e6e6a2a6fe::t_a7cc0c2c267794 4-63
+  s_c8e1e6e6a2a6fe::t_7ea37bab436a0f 1-3
+  s_c8e1e6e6a2a6fe::t_3e1106f427b303 82
+packages/desktop/renderer/lib/composer-slash-token.test.ts
+  s_5f3369b034724a::t_ef0f941df8f5a1 1-19,21-26
+  s_5f3369b034724a::t_eb2081dcb529dd 20
+packages/desktop/renderer/lib/session-turn-results.ts
+  s_c8e1e6e6a2a6fe::t_da01af52a48fb5 10,172,190
+  s_c8e1e6e6a2a6fe::t_4c2d0fb1a29f66 21,132
+  s_c8e1e6e6a2a6fe::t_2c0c0644ce20c3 3,6,93-110
+  s_c8e1e6e6a2a6fe::t_9e6ce38b4fe263 1-2,4-5,7-9,11-20,22-38,42-53,60-92,111-116,118-120,128-129,134-137,139-145,153-171,173-175,177-185,188-189,191-205
+  s_c8e1e6e6a2a6fe::t_daf603662c99fc 39-41,54-59,117,121-127,130-131,133,138,146-152,176,186-187
+packages/desktop/renderer/lib/queued-message-order.ts
+  s_ea1ab5f62173df::t_c74caff52fffe8 158
+packages/desktop/renderer/lib/use-native-model-catalog.test.ts
+  s_f55c1859949b3d::t_6fc270a33b99cc 23,26-27,30,33,86-87,89-91,93-94
+packages/desktop/renderer/lib/session-history-prefetch.ts
+  s_f55c1859949b3d::t_c5001b86da7541 5,11,15,25,32,38-39,42,46
+packages/desktop/renderer/lib/composer-popover-position.test.ts
+  s_5f3369b034724a::t_ef0f941df8f5a1 31-40
+packages/desktop/renderer/lib/use-composer-popover-position.ts
+  s_5f3369b034724a::t_42b282df6d85ec 6-16,23-24,29-32,49
+packages/desktop/renderer/lib/artifact-file-context-menu.test.ts
+  s_d13b0580537e71::t_b04c908ca8e901 28-36
+packages/desktop/renderer/lib/native-session-view-state.test.ts
+  s_d13b0580537e71::t_45cf91520368b5 3,118-123,135-136,143-146,170-195,199
+packages/desktop/renderer/lib/all-sessions.test.ts
+  s_f55c1859949b3d::t_7d82a6868ae610 10-17
+packages/desktop/renderer/lib/browser-image-normalization.ts
+  s_d464498d333e2f::t_8bf2a19755c671 66-97
+  s_d464498d333e2f::t_d4ca41253c9fa7 2
+  s_d464498d333e2f::t_2b9752c187abb7 98
+packages/desktop/renderer/lib/dashboard-session-navigation.test.ts
+  s_f55c1859949b3d::t_88246db7b9cee3 27,30,75,144
+packages/desktop/renderer/lib/use-native-model-catalog.ts
+  s_f55c1859949b3d::t_6fc270a33b99cc 16,23,25
+packages/desktop/renderer/lib/composer-popover-position.ts
+  s_5f3369b034724a::t_42b282df6d85ec 3,6,15,19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a97c52281ec28047922d5eb1e2a5f0d06b316844",
+  "prompts": {},
+  "sessions": {
+    "s_5f3369b034724a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1ed6a-df15-7951-8e8c-c78137a07b63",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.2-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_c8e1e6e6a2a6fe": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1f263-d49d-7553-a1df-0979bfabec93",
+        "model": "chat-gpt-omhk9/gpt-6.2-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_d13b0580537e71": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1ec9c-b488-70b2-87f9-92182160581b",
+        "model": "chat-gpt-omhk9/gpt-6.2-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_d464498d333e2f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1f221-b86c-7591-b6e1-72d82b6a7d71",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.2-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_ea1ab5f62173df": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1ee04-e292-78e2-b062-0429005506e2",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.2-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_f55c1859949b3d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1edcb-90e8-7cb3-8ce7-4e76b27f6862",
+        "model": "chat-gpt-omhk9/gpt-6.2-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
