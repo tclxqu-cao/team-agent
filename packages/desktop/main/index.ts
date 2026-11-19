@@ -29,6 +29,7 @@ import { readDesktopLiveState, writeDesktopLiveState } from "./desktop-live-stat
 import { DesktopLiveCliProxy } from "./desktop-live-cli-proxy.js";
 import { SharedServiceConnection } from "./shared-service.js";
 import { DesktopRendererWindows, newSessionWindowQuery } from "./new-session-window.js";
+import { openVideoWindow } from "./video-window.js";
 import { DesktopCodexSharingSetup } from "./codex-sharing-setup.js";
 import { DesktopRuntimeBootstrap } from "./runtime-bootstrap.js";
 import { DesktopUpdateService } from "./update-service.js";
@@ -37,7 +38,7 @@ import { createDesktopNotificationSound } from "./notification-sound.js";
 import { DesktopNotificationSubscription } from "./notification-subscription.js";
 import { resolveTaskNotificationPreferences, type TaskCompletionNotification } from "@agent/core";
 import { directoryOpenMenuLabel, revealDirectoryWithShell, resolveDirectoryForOpen } from "./directory-context-menu.js";
-import { fileRevealMenuLabel, resolveFileForReveal } from "./file-context-menu.js";
+import { fileContextMenuActions } from "./file-context-menu.js";
 import { createDesktopPreviewResponse, DesktopFileWorkspaceService } from "./file-workspace-service.js";
 import { AIHubManager, type HubPaneRect } from "./ai-hub/manager.js";
 import { registerTaskPanePageIpc } from "./task-pane-pages.js";
@@ -955,6 +956,11 @@ ipcMain.handle("file-workspace:request", (event, method, params) => {
   trustedServiceSender(event);
   return fileWorkspaceService.request(method, params);
 });
+ipcMain.handle("window:open-video", (event, options: unknown) => {
+  trustedServiceSender(event);
+  const opener = process.platform === "darwin" ? BrowserWindow.fromWebContents(event.sender) : null;
+  return openVideoWindow(BrowserWindow, fileWorkspaceService, options, opener);
+});
 ipcMain.handle("directory:show-context-menu", async (event, path: unknown) => {
   trustedServiceSender(event);
   const directory = await resolveDirectoryForOpen(path);
@@ -972,20 +978,21 @@ ipcMain.handle("directory:show-context-menu", async (event, path: unknown) => {
   menu.popup(owner ? { window: owner } : undefined);
   return { shown: true };
 });
-ipcMain.handle("file:show-context-menu", async (event, path: unknown) => {
+ipcMain.handle("file:show-context-menu", async (event, path: unknown, options?: unknown) => {
   trustedServiceSender(event);
-  const file = await resolveFileForReveal(path);
+  const actions = await fileContextMenuActions(path, options);
   const owner = BrowserWindow.fromWebContents(event.sender) ?? mainWindow ?? undefined;
-  const menu = Menu.buildFromTemplate([{
-    label: fileRevealMenuLabel(),
+  const menu = Menu.buildFromTemplate(actions.map(action => ({
+    label: action.label,
     click: () => {
       try {
-        shell.showItemInFolder(file);
+        if (action.kind === "copy") clipboard.writeText(action.value);
+        else shell.showItemInFolder(action.value);
       } catch (error) {
-        globalLogger.error("failed to reveal artifact file", error instanceof Error ? error : new Error(String(error)), { file });
+        globalLogger.error("failed to handle artifact context menu", error instanceof Error ? error : new Error(String(error)), { action: action.kind });
       }
     },
-  }]);
+  })));
   menu.popup(owner ? { window: owner } : undefined);
   return { shown: true };
 });

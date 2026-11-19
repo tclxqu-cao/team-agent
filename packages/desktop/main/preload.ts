@@ -31,6 +31,7 @@ contextBridge.exposeInMainWorld("desktopDeviceApi", {
   showWindow: () => ipcRenderer.invoke("window:show"),
   isWindowVisible: () => ipcRenderer.invoke("window:isVisible"),
   openNewSessionWindow: (options: { agentType: string; workspacePath?: string }) => ipcRenderer.invoke("window:new-session", options),
+  openVideoWindow: (options: unknown): Promise<void> => ipcRenderer.invoke("window:open-video", options),
   setNotificationVisible: (target: { sessionId?: string; taskId?: string }) => ipcRenderer.invoke("notification:visible", target),
   notificationRead: (id: string, scope?: { serviceId: string; ownerId: string }) => ipcRenderer.invoke("notification:read", id, scope),
   onNotificationOpen: (callback: (target: { sessionId?: string; taskId?: string; questionId?: string }) => void) => {
@@ -188,7 +189,9 @@ contextBridge.exposeInMainWorld("desktopDeviceApi", {
   // File operations
   openFileDialog: () => ipcRenderer.invoke("file:dialog:open"),
   showDirectoryContextMenu: (path: string) => ipcRenderer.invoke("directory:show-context-menu", path),
-  showFileContextMenu: (path: string) => ipcRenderer.invoke("file:show-context-menu", path),
+  showFileContextMenu: (path: string, options?: { label?: string; line?: number }): Promise<{ shown: true }> => options === undefined
+    ? ipcRenderer.invoke("file:show-context-menu", path)
+    : ipcRenderer.invoke("file:show-context-menu", path, options),
   fileWorkspaceRequest: (method: string, params?: Record<string, unknown>) =>
     ipcRenderer.invoke("file-workspace:request", method, params),
   onFileWorkspaceEvent: (callback: (event: unknown) => void): (() => void) => {

@@ -133,4 +133,21 @@ describe("DesktopFileWorkspaceService", () => {
 
     expect(emit).not.toHaveBeenCalled();
   });
+
+  it("serves a video range after Chromium canonicalizes the preview hostname", async () => {
+    const root = await temporaryDirectory("agentroam-video-preview-");
+    const path = join(root, "recording.mov");
+    await writeFile(path, "0123456789");
+    const service = new DesktopFileWorkspaceService({ roots: [root], emit: vi.fn() });
+
+    const ticket = await service.request("fs:preview-open", { path }) as { ticketId: string; url: string };
+    expect(ticket.ticketId).toMatch(/^[0-9a-f]{48}$/);
+    const url = new URL(ticket.url);
+    url.hostname = url.hostname.toLowerCase();
+    const response = await createDesktopPreviewResponse(service, new Request(url, { headers: { range: "bytes=2-5" } }));
+    expect(response.status).toBe(206);
+    expect(response.headers.get("content-type")).toBe("video/quicktime");
+    expect(await response.text()).toBe("2345");
+    service.close();
+  });
 });

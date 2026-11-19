@@ -159,7 +159,8 @@ export class DesktopFileWorkspaceService {
     this.home = this.policy.assertDirectory(options.home ?? this.policy.roots[0]);
     this.emit = options.emit;
     this.now = options.now ?? (() => Date.now());
-    this.token = options.token ?? (() => randomBytes(24).toString("base64url"));
+    // Chromium lowercases the preview URL's hostname before the protocol handler sees it.
+    this.token = options.token ?? (() => randomBytes(24).toString("hex"));
     this.ticketTtlMs = options.ticketTtlMs ?? DEFAULT_TICKET_TTL_MS;
   }
 
