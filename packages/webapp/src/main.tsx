@@ -103,7 +103,8 @@ const desktopWebStreams = supportsWebTaskSplit({
   coarsePointer: window.matchMedia("(pointer: coarse)").matches,
   nativeApp: nativeWorkspace,
 });
-const runStreamPool = desktopWebStreams ? browserRunStreamPool() : null;
+// Phones share the same HTTP/1 connection limit as desktop browser frames.
+const runStreamPool = !nativeWorkspace ? browserRunStreamPool() : null;
 const runStreamSources = new Set<EventSource>();
 window.addEventListener("pagehide", event => {
   if (!event.persisted) for (const source of runStreamSources) source.close();

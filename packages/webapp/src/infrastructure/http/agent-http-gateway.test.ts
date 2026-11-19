@@ -35,6 +35,20 @@ function emit(source: ObservableEventSource, event: Record<string, unknown>): vo
 }
 
 describe("AgentHttpGateway", () => {
+  it("releases a session request when navigation is cancelled", async () => {
+    const selected = new AbortController();
+    let signal: AbortSignal | undefined;
+    const transport = vi.fn(async (_url, options) => {
+      signal = options.signal;
+      return new Promise<Response>(() => {});
+    });
+    const gateway = new AgentHttpGateway(new HttpClient(transport as typeof fetch), {} as never);
+    const pending = gateway.getSession("runtime:zcode:previous", { limit: 1 }, { signal: selected.signal }).catch(error => error);
+    selected.abort();
+    expect(await pending).toMatchObject({ name: "AbortError" });
+    expect(signal?.aborted).toBe(true);
+  });
+
   it.each(["customer-agent", "codex", "claude-code", "opencode", "deepseek-harness", "qoder", "zcode", "workbuddy", "copilot"])(
     "publishes a creation receipt immediately for %s", async agentType => {
       const session = { id: `${agentType}:created`, agentType, title: "New task", updated: "2026-11-17", status: "idle", cwd: "/repo", canResume: true };
@@ -155,7 +169,70 @@ describe("AgentHttpGateway", () => {
     await run;
   });
 
-  it("does not close a newer turn when the old stop acknowledgement arrives late", async () => {
+  it("stops a snapshot-observed native run without a stream cursor", async () => {
+    const id = "runtime:codex:snapshot-observed";
+    const http = { post: vi.fn().mockResolvedValue({}) };
+    const gateway = new AgentHttpGateway(http as never, {} as never);
+
+    await gateway.abort(id, "button", "run-from-snapshot");
+
+    expect(http.post).toHaveBeenCalledTimes(1);
+    expect(http.post).toHaveBeenCalledWith("/api/agent/abort", {
+      sessionId: id, expectedRunId: "run-from-snapshot", trigger: "button",
+    });
+    expect(ObservableEventSource.instances).toHaveLength(0);
+  });
+
+  it("prefers the observed run identity without settling a different remembered run", async () => {
+    vi.useFakeTimers();
+    globalThis.EventSource = ObservableEventSource as unknown as typeof EventSource;
+    const id = "runtime:zcode:stale-cursor";
+    const http = { post: vi.fn(async (path: string) => path === "/api/agent/run" ? { runId: "remembered-run" } : {}) };
+    const gateway = new AgentHttpGateway(http as never, {} as never);
+    let settled = false;
+    const run = gateway.run("remembered", id).then(() => { settled = true; });
+    await vi.waitFor(() => expect(ObservableEventSource.instances).toHaveLength(1));
+    const source = ObservableEventSource.instances[0];
+
+    await gateway.abort(id, "keyboard", "observed-run");
+
+    expect(http.post).toHaveBeenLastCalledWith("/api/agent/abort", {
+      sessionId: id, expectedRunId: "observed-run", trigger: "keyboard",
+    });
+    expect(source.close).not.toHaveBeenCalled();
+    expect(settled).toBe(false);
+    emit(source, { type: "done", finalText: "completed", _nativeRunId: "remembered-run", _nativeSequence: 1 });
+    await run;
+  });
+
+  it("keeps a pending admission when stopping a snapshot run without a cursor", async () => {
+    vi.useFakeTimers();
+    globalThis.EventSource = ObservableEventSource as unknown as typeof EventSource;
+    const id = "runtime:codex:pending-admission";
+    let admit!: (result: { runId: string }) => void;
+    const http = { post: vi.fn((path: string) => path === "/api/agent/run"
+      ? new Promise(resolve => { admit = resolve; }) : Promise.resolve({})) };
+    const gateway = new AgentHttpGateway(http as never, {} as never);
+    let settled = false;
+    const run = gateway.run("new turn", id).then(() => { settled = true; });
+    await vi.waitFor(() => expect(http.post).toHaveBeenCalledTimes(1));
+
+    await gateway.abort(id, "button", "previous-snapshot-run");
+
+    expect(http.post).toHaveBeenLastCalledWith("/api/agent/abort", {
+      sessionId: id, expectedRunId: "previous-snapshot-run", trigger: "button",
+    });
+    expect(settled).toBe(false);
+    admit({ runId: "newly-admitted-run" });
+    await vi.waitFor(() => expect(ObservableEventSource.instances).toHaveLength(1));
+    const source = ObservableEventSource.instances[0];
+    expect(source.close).not.toHaveBeenCalled();
+    expect(settled).toBe(false);
+    emit(source, { type: "done", finalText: "completed", _nativeRunId: "newly-admitted-run", _nativeSequence: 1 });
+    await run;
+  });
+
+  it.each([false, true])("does not close a newer turn when the old stop acknowledgement arrives late (snapshot ID: %s)", async fromSnapshot => {
     vi.useFakeTimers();
     globalThis.EventSource = ObservableEventSource as unknown as typeof EventSource;
     const id = "runtime:zcode:c2Vzc19h";
@@ -167,7 +244,8 @@ describe("AgentHttpGateway", () => {
     const gateway = new AgentHttpGateway(http as never, {} as never);
     const first = gateway.run("first", id);
     await vi.waitFor(() => expect(ObservableEventSource.instances).toHaveLength(1));
-    const stopping = gateway.abort(id);
+    const stopping = gateway.abort(id, undefined, fromSnapshot ? "run-1" : undefined);
+    expect(http.post).toHaveBeenLastCalledWith("/api/agent/abort", { sessionId: id, expectedRunId: "run-1" });
     emit(ObservableEventSource.instances[0], { type: "done", finalText: "first", _nativeRunId: "run-1", _nativeSequence: 1 });
     await first;
     const second = gateway.run("second", id);
@@ -184,7 +262,7 @@ describe("AgentHttpGateway", () => {
     const http = { post: vi.fn().mockResolvedValue([{id: "group"}]) };
     const gateway = new AgentHttpGateway(http as never, {} as never);
     expect(await gateway.collaboration({action: "groups"})).toEqual([{id: "group"}]);
-    expect(http.post).toHaveBeenCalledWith("/api/collaboration", {action: "groups"});
+    expect(http.post).toHaveBeenCalledWith("/api/collaboration", {action: "groups"}, undefined);
   });
 
   it("frames streamed Codex commentary and flushes it before the next tool event", async () => {
@@ -1087,6 +1165,9 @@ describe("AgentHttpGateway", () => {
     const source = ObservableEventSource.instances[0];
 
     expect(http.post).toHaveBeenCalledOnce();
+    expect(http.post).toHaveBeenCalledWith("/api/agent/run", expect.objectContaining({
+      images: ["data:image/png;base64,AAAA"],
+    }));
     expect(events).toContainEqual({
       type: "run_admitted",
       _nativeRunId: "run-after",
@@ -1532,6 +1613,7 @@ describe("AgentHttpGateway", () => {
 
     expect(http.get).toHaveBeenCalledWith(
       "/api/sessions/runtime%3Acodex%3Ac291cmNl?before=history.v1.50&limit=50",
+      undefined,
     );
   });
 
@@ -1566,6 +1648,7 @@ describe("AgentHttpGateway", () => {
     expect(http.get).toHaveBeenNthCalledWith(
       1,
       "/api/sessions/runtime%3Acodex%3Ac291cmNl?before=history.v1.50&limit=50&view=trace&revision=rev%3A1&turnId=turn%2F1",
+      undefined,
     );
     expect(http.get).toHaveBeenNthCalledWith(
       2,
@@ -1583,10 +1666,12 @@ describe("AgentHttpGateway", () => {
     expect(http.get).toHaveBeenNthCalledWith(
       1,
       "/api/sessions/session%2Fone?anchor=history-anchor.v1.rev.2&limit=50",
+      undefined,
     );
     expect(http.get).toHaveBeenNthCalledWith(
       2,
       "/api/sessions/session%2Fone?after=history.v1.50&limit=50",
+      undefined,
     );
   });
 

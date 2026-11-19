@@ -28,6 +28,7 @@ export class RequestTimeoutError extends Error {
 export interface HttpOptions {
   headers?: Record<string, string>;
   timeoutMs?: number;
+  signal?: AbortSignal;
 }
 
 /**
@@ -54,12 +55,13 @@ export class HttpClient {
   }
 
   async get<T>(path: string, options?: HttpOptions): Promise<T> {
-    return this.request<T>(path, { method: "GET", headers: options?.headers }, options?.timeoutMs);
+    return this.request<T>(path, { method: "GET", headers: options?.headers, signal: options?.signal }, options?.timeoutMs);
   }
 
   async post<T = unknown>(path: string, body?: unknown, options?: HttpOptions): Promise<T> {
     return this.request<T>(path, {
       method: "POST",
+      signal: options?.signal,
       headers: { "content-type": "application/json", ...options?.headers },
       body: body === undefined ? undefined : JSON.stringify(body),
     }, options?.timeoutMs);
@@ -68,6 +70,7 @@ export class HttpClient {
   async patch<T = unknown>(path: string, body?: unknown, options?: HttpOptions): Promise<T> {
     return this.request<T>(path, {
       method: "PATCH",
+      signal: options?.signal,
       headers: { "content-type": "application/json", ...options?.headers },
       body: body === undefined ? undefined : JSON.stringify(body),
     }, options?.timeoutMs);
@@ -76,28 +79,40 @@ export class HttpClient {
   async put<T = unknown>(path: string, body?: unknown, options?: HttpOptions): Promise<T> {
     return this.request<T>(path, {
       method: "PUT",
+      signal: options?.signal,
       headers: { "content-type": "application/json", ...options?.headers },
       body: body === undefined ? undefined : JSON.stringify(body),
     }, options?.timeoutMs);
   }
 
   async delete<T = unknown>(path: string, options?: HttpOptions): Promise<T> {
-    return this.request<T>(path, { method: "DELETE", headers: options?.headers }, options?.timeoutMs);
+    return this.request<T>(path, { method: "DELETE", headers: options?.headers, signal: options?.signal }, options?.timeoutMs);
   }
 
   private async request<T>(path: string, init: RequestInit, timeoutMs = 30_000): Promise<T> {
+    const externalSignal = init.signal;
+    externalSignal?.throwIfAborted();
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
+    let onAbort: (() => void) | undefined;
     const deadline = new Promise<never>((_resolve, reject) => {
       timer = setTimeout(() => {
         reject(new RequestTimeoutError());
         controller.abort();
       }, timeoutMs);
+      if (externalSignal) {
+        onAbort = () => {
+          reject(externalSignal.reason);
+          controller.abort(externalSignal.reason);
+        };
+        externalSignal.addEventListener("abort", onAbort, { once: true });
+      }
     });
     try {
       return await Promise.race([this.readResponse<T>(path, { ...init, signal: controller.signal }), deadline]);
     } finally {
       clearTimeout(timer!);
+      if (onAbort) externalSignal?.removeEventListener("abort", onAbort);
     }
   }
 

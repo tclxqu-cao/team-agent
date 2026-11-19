@@ -2,6 +2,7 @@ import type { CreateParallelSessionsInput, ParallelSessionGroup, SessionForkPoin
 import type { CollaborationCommand } from "@agent/core/domain/collaboration/types";
 import type { CatalogSession } from "@agent/core/domain/supervision/types";
 import { isAgentType } from "../../../../core/src/domain/agent/agent-type";
+import { normalizeOutgoingComposerImages } from "../../../../desktop/renderer/lib/browser-image-normalization";
 import type {
   AgentApi,
   AgentDefinition,
@@ -54,6 +55,7 @@ const TRANSPORT_FAILURE = /^(?:load failed|failed to fetch|network request faile
 const CODEX_COMMENTARY_FRAME_MS = 50;
 const ORDINARY_RUN_RECOVERY_INTERVAL_MS = 1_000;
 const NATIVE_RUN_RECOVERY_INTERVAL_MS = 2_000;
+const NATIVE_TEXT_RUN_TIMEOUT_MS = 8_000;
 
 function isTransportFailure(error: unknown): boolean {
   return error instanceof RequestTimeoutError || error instanceof Error
@@ -147,8 +149,8 @@ export class AgentHttpGateway {
 
   // ── Agent control ──────────────────────────────────────────────────────
 
-  async collaboration(command: CollaborationCommand): Promise<unknown> {
-    return this.http.post("/api/collaboration", command);
+  async collaboration(command: CollaborationCommand, options?: { signal?: AbortSignal }): Promise<unknown> {
+    return this.http.post("/api/collaboration", command, options);
   }
 
   async calendarOverview(input: { from: string; to: string }): Promise<import("@agent/core").CalendarOverview> {
@@ -196,17 +198,19 @@ export class AgentHttpGateway {
       if (!isNativeSession) this.ordinaryRunStreamText.set(sessionId, "");
       // A user-configured model profile travels with the run; without one the
       // server keeps using its own env configuration.
+      const outgoingImages = images?.length ? await normalizeOutgoingComposerImages(images) : undefined;
       const payload = {
         input,
         sessionId,
-        ...(images?.length ? { images } : {}),
+        ...(outgoingImages ? { images: outgoingImages } : {}),
         ...(_agentIds?.length ? { agentIds: _agentIds } : {}),
         ...(!isNativeSession && nativeOptions?.profileId ? { profileId: nativeOptions.profileId } : {}),
         ...(nativeOptions?.model?.id ? { nativeModel: nativeOptions.model } : {}),
         ...(nativeOptions?.reasoningEffort ? { nativeReasoningEffort: nativeOptions.reasoningEffort } : {}),
       };
-      const started = isNativeSession
-        ? await this.http.post<{ runId?: string; snapshotRevision?: number }>("/api/agent/run", payload, { timeoutMs: 8_000 })
+      // The request deadline also covers uploading the image payload.
+      const started = isNativeSession && !images?.length
+        ? await this.http.post<{ runId?: string; snapshotRevision?: number }>("/api/agent/run", payload, { timeoutMs: NATIVE_TEXT_RUN_TIMEOUT_MS })
         : await this.http.post<{ runId?: string; snapshotRevision?: number }>("/api/agent/run", payload);
       if (!isNativeSession) this.startOrdinaryRunRecovery(sessionId);
       if (isNativeSession) {
@@ -346,23 +350,24 @@ export class AgentHttpGateway {
     return result.state;
   }
 
-  async abort(sessionId?: string, trigger?: "button" | "keyboard"): Promise<void> {
-    const expectedRunId = sessionId?.startsWith("runtime:")
-      ? this.nativeRunRecoveries.get(sessionId)?.runId ?? this.nativeStreamCursors.get(sessionId)?.runId
+  async abort(sessionId?: string, trigger?: "button" | "keyboard", expectedRunId?: string): Promise<void> {
+    // Polling can observe a broker run before this client has any stream cursor.
+    const targetRunId = sessionId?.startsWith("runtime:")
+      ? expectedRunId || (this.nativeRunRecoveries.get(sessionId)?.runId ?? this.nativeStreamCursors.get(sessionId)?.runId)
       : undefined;
     const targets = sessionId ? [sessionId] : [...new Set([
       ...this.pendingRuns.keys(), ...this.streams.keys(), ...this.nativeRunRecoveries.keys(),
     ])].filter(id => !id.startsWith("runtime:"));
     await this.http.post("/api/agent/abort", {
       ...(sessionId ? { sessionId } : {}),
-      ...(expectedRunId ? { expectedRunId } : {}),
+      ...(targetRunId ? { expectedRunId: targetRunId } : {}),
       ...(trigger ? { trigger } : {}),
     });
     // A failed stop must leave its stream alive. A successful stop only settles
     // the targeted turn; its delayed ACK must not close a newer native run.
     for (const id of targets) {
       const currentRunId = this.nativeRunRecoveries.get(id)?.runId ?? this.nativeStreamCursors.get(id)?.runId;
-      if (expectedRunId && currentRunId !== expectedRunId) continue;
+      if (targetRunId && currentRunId !== targetRunId) continue;
       this.settle(id);
       this.closeStream(id);
     }
@@ -437,7 +442,7 @@ export class AgentHttpGateway {
   async getSession(
     id: string,
     query?: { before?: string; after?: string; anchor?: string; limit?: number; view?: "core" | "trace"; revision?: string; turnId?: string },
-    options: { lifecycleOnly?: boolean } = {},
+    options: { lifecycleOnly?: boolean; signal?: AbortSignal } = {},
   ): Promise<unknown> {
     const nativeRecovery = this.nativeRunRecoveries.get(id);
     const requestedRunId = nativeRecovery?.runId;
@@ -453,6 +458,7 @@ export class AgentHttpGateway {
       const suffix = params.size > 0 ? `?${params.toString()}` : "";
       const session = await this.http.get<Record<string, unknown>>(
         `/api/sessions/${encodeURIComponent(id)}${suffix}`,
+        options.signal ? { signal: options.signal } : undefined,
       );
       // Stored history may contain reasoning tags — strip before display.
       if (Array.isArray(session.messages)) {
@@ -682,6 +688,7 @@ export class AgentHttpGateway {
     message: { sourceMessageId: string; content: string; images?: string[]; agentIds?: string[]; agentName?: string; runOptions?: SessionMessageRunOptions },
   ): Promise<SessionGoalState> {
     await this.openStream(id, this.nativeStreamCursors.get(id));
+    const images = message.images?.length ? await normalizeOutgoingComposerImages(message.images) : message.images;
     const result = await this.http.post<{
       state: SessionGoalState;
       started?: { runId?: string; snapshotRevision?: number };
@@ -690,7 +697,7 @@ export class AgentHttpGateway {
       objective: message.content,
       sourceMessageId: message.sourceMessageId,
       messagePayload: {
-        images: message.images,
+        images,
         agentIds: message.agentIds,
         agentName: message.agentName,
         ...(message.runOptions ? { runOptions: message.runOptions } : {}),
