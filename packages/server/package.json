@@ -7,7 +7,7 @@
   },
   "type": "module",
   "scripts": {
-    "dev": "NEXT_DIST_DIR=.next-dev node ws-server.mjs",
+    "dev": "bun run --cwd ../cli build && NEXT_DIST_DIR=.next-dev node ws-server.mjs",
     "build": "NEXT_DIST_DIR=.next next build",
     "start": "NEXT_DIST_DIR=.next NODE_ENV=production node ws-server.mjs",
     "gateway": "node ws-server.mjs"
