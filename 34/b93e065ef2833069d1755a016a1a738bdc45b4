@@ -1,0 +1,55 @@
+packages/webapp/src/infrastructure/http/http-client.ts
+  s_f55c1859949b3d::t_b98095f3401318 31,58,64,73,82,89,93-94,97,103-109,115
+packages/webapp/src/infrastructure/http/agent-http-gateway.ts
+  s_d13b0580537e71::t_b8cd7ebdde09c6 356
+  s_d464498d333e2f::t_4facb8876bdadb 212-213
+  s_f55c1859949b3d::t_b98095f3401318 445,461
+  s_d464498d333e2f::t_8bf2a19755c671 5,201,205,700
+  s_d464498d333e2f::t_ca008e85f923fc 58,211
+  s_d13b0580537e71::t_bbcd661fdaab8b 353-355,363,370
+  s_d464498d333e2f::t_0a2a8b46c0e078 691
+  s_f55c1859949b3d::t_00f1da80db86fb 152-153
+packages/webapp/src/main.tsx
+  s_f55c1859949b3d::t_b98095f3401318 106-107
+packages/webapp/src/infrastructure/http/http-client.test.ts
+  s_f55c1859949b3d::t_88246db7b9cee3 34-59
+packages/webapp/src/infrastructure/http/agent-http-gateway.test.ts
+  s_f55c1859949b3d::t_968ceba08a5f6f 1616,1651,1669,1674
+  s_f55c1859949b3d::t_ef451430e7e478 265
+  s_d464498d333e2f::t_6d086062570e76 1168-1170
+  s_f55c1859949b3d::t_88246db7b9cee3 38-51
+  s_d13b0580537e71::t_bbcd661fdaab8b 172-178,181-235,247-248
+  s_d13b0580537e71::t_b8cd7ebdde09c6 179-180
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "34b93e065ef2833069d1755a016a1a738bdc45b4",
+  "prompts": {},
+  "sessions": {
+    "s_d13b0580537e71": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1ec9c-b488-70b2-87f9-92182160581b",
+        "model": "chat-gpt-omhk9/gpt-6.2-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_d464498d333e2f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1f221-b86c-7591-b6e1-72d82b6a7d71",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.2-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_f55c1859949b3d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1edcb-90e8-7cb3-8ce7-4e76b27f6862",
+        "model": "chat-gpt-omhk9/gpt-6.2-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
