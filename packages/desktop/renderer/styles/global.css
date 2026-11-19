@@ -2586,6 +2586,7 @@ input:focus, select:focus, textarea:focus {
 }
 
 .chat-message-artifact-link {
+  -webkit-touch-callout: none;
   display: inline-flex;
   max-width: 100%;
   min-width: 0;
@@ -4876,6 +4877,25 @@ input:focus, select:focus, textarea:focus {
 .chat-message-media video,
 .chat-message-media img { display: block; width: auto; max-width: 100%; max-height: 360px; border-radius: 10px; object-fit: contain; }
 .chat-message-media video { width: 100%; background: #111; }
+.chat-message-media__video { display: block; position: relative; }
+.chat-message-media__popout {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid #ffffff40;
+  border-radius: 6px;
+  background: #111d;
+  color: white;
+  cursor: pointer;
+}
+.chat-message-media__popout:hover { background: #333; }
+.chat-message-media__popout:focus-visible { outline: 2px solid white; outline-offset: 2px; }
+.chat-message-media__popout:disabled { cursor: progress; opacity: .65; }
 .chat-message-media__image { display: block; max-width: 100%; padding: 0; border: 0; background: transparent; cursor: zoom-in; }
 .chat-message-media__image:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .sidebar-directory-refresh { position: relative; }

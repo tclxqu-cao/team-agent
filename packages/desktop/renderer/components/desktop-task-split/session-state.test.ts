@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { UnifiedSessionSummary } from "../../global";
 import { equalTaskLayout, resizeTaskSplit, taskSplitGeometry } from "../../lib/desktop-task-layout";
-import { addTaskWorkspaceColumn, addTaskWorkspaceSession, fourColumnTaskWorkspace, loadTaskSession, openTaskWorkspaceWebPage, readTaskWorkspace, serializeTaskWorkspace, taskPaneHistorySeed, updateTaskPaneContent, updateTaskPaneDraft, updateTaskPaneSession } from "./session-state";
+import { addTaskWorkspaceColumn, addTaskWorkspaceSession, closeTaskWorkspacePane, fourColumnTaskWorkspace, loadTaskSession, openTaskWorkspaceWebPage, readTaskWorkspace, serializeTaskWorkspace, taskPaneHistorySeed, updateTaskPaneContent, updateTaskPaneDraft, updateTaskPaneSession } from "./session-state";
 
 const session: UnifiedSessionSummary = {
   id: "runtime:codex:first", agentType: "codex", nativeSessionId: "first", title: "first task", cwd: "/project",
@@ -42,7 +42,7 @@ describe("desktop workspace persistence and session hydration", () => {
   it("only clears the selected pane and rejects unknown or conflicting saved content", () => {
     const initial = { panes: [{ id: "a", session }, { id: "b", session: null }], layout: equalTaskLayout(["a", "b"])!, activePaneId: "a" };
     const changed = updateTaskPaneContent(initial, "a", { surface: "dashboard" });
-    expect(changed.panes[0]).toEqual({ id: "a", session: null, surface: "dashboard" });
+    expect(changed.panes[0]).toEqual({ id: "a", session: null, surface: "dashboard", history: [{ session }] });
     expect(changed.panes[1]).toBe(initial.panes[1]);
     expect(updateTaskPaneContent(changed, "a", null).panes[0]).toEqual({ id: "a", session: null });
     for (const content of [{ surface: "unknown" }, { webUrl: "data:text/html,test" }, { surface: "groups", webUrl: "https://example.com" }]) {
@@ -155,7 +155,47 @@ describe("desktop workspace persistence and session hydration", () => {
     expect(restored?.panes[0].session?.id).toBe(session.id);
     expect(restored?.panes[1].session).toBeNull();
     expect(readTaskWorkspace({ version: 1, panes: [{ id: "a", session }, { id: "b", session }], layout })).toBeNull();
-    expect(readTaskWorkspace({ ...JSON.parse(serialized), version: 2 })).toBeNull();
+    expect(readTaskWorkspace({ ...JSON.parse(serialized), version: 3 })).toBeNull();
+  });
+
+  it("closes ordinary sessions in reverse order and removes the same pane only when its history is exhausted", () => {
+    const left = { id: "left", session };
+    const right = { id: "right", session: { ...session, id: "right-session" } };
+    const layout = resizeTaskSplit(equalTaskLayout(["left", "right"])!, "split:left|right", .7);
+    const initial = { panes: [left, right], layout, activePaneId: "left" };
+    const second = { ...session, id: "second" };
+    const third = { ...session, id: "third" };
+    const seed = { sessionId: second.id, detail: { messages: [{ role: "user" as const, content: "private transcript" }] } };
+    const switched = updateTaskPaneSession(initial, "left", second, seed);
+    const refreshed = updateTaskPaneSession(switched, "left", second);
+    const last = updateTaskPaneSession(refreshed, "left", third);
+    const firstClose = closeTaskWorkspacePane(last, "left")!;
+    expect(firstClose.panes[0].session?.id).toBe(second.id);
+    expect(firstClose.panes[0].initialHistory).toBe(seed);
+    const secondClose = closeTaskWorkspacePane(firstClose, "left")!;
+    expect(secondClose.panes[0].session).toBe(session);
+    for (const restored of [firstClose, secondClose]) {
+      expect(restored.panes[0].id).toBe("left");
+      expect(restored.panes[1]).toBe(right);
+      expect(restored.layout).toBe(layout);
+      expect(restored.activePaneId).toBe("left");
+    }
+    const removed = closeTaskWorkspacePane(secondClose, "left")!;
+    expect(removed.panes).toEqual([right]);
+    expect(removed.activePaneId).toBe("right");
+    expect(closeTaskWorkspacePane(removed, "right")).toBeNull();
+
+    const serialized = serializeTaskWorkspace(last);
+    expect(serialized).not.toContain("private transcript");
+    const reopened = readTaskWorkspace(JSON.parse(serialized))!;
+    expect(closeTaskWorkspacePane(reopened, "left")!.panes[0].session?.id).toBe(second.id);
+  });
+
+  it("replaces a draft once it becomes a session without adding an extra close step", () => {
+    const initial = { panes: [{ id: "a", session }], layout: equalTaskLayout(["a"])!, activePaneId: "a" };
+    const drafted = updateTaskPaneDraft(initial, "a", { agentType: "codex", projectId: null, cwd: "/draft" }, true);
+    const finished = updateTaskPaneSession(drafted, "a", { ...session, id: "created" });
+    expect(closeTaskWorkspacePane(finished, "a")!.panes[0].session).toBe(session);
   });
 
   it("hydrates exactly the requested Codex identity with bounded core history", async () => {

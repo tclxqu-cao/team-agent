@@ -19,6 +19,7 @@ interface Props {
   pinnedIds: string[];
   revision: number;
   pendingSession?: CatalogSessionReceipt | null;
+  deletedSessionIds?: readonly string[];
   onSelect(session: CatalogSession): void;
   onPin(sessionId: string): void;
   onDelete(session: CatalogSession, anchor: SidebarDeleteAnchor): void;
@@ -26,6 +27,8 @@ interface Props {
 
 export default function AllSessionsSidebar(props: Props) {
   const active = usePageActive();
+  const deletedSessionIds = useRef(props.deletedSessionIds);
+  deletedSessionIds.current = props.deletedSessionIds;
   const activity = useSessionActivity();
   const [initialCache] = useState(() => readAllSessionsCache());
   const [sessions, setSessions] = useState<CatalogSession[]>(initialCache?.data ?? []);
@@ -78,7 +81,7 @@ export default function AllSessionsSidebar(props: Props) {
         if (pending?.query === search) {
           page = await pending.promise;
         } else {
-          const promise = collaborationRequest<SessionCatalogPage>({ action: "sessionCatalog", query: search, limit: 20, backgroundRefresh: true });
+          const promise = collaborationRequest<SessionCatalogPage>({ action: "sessionCatalog", query: search, limit: 20, backgroundRefresh: true }, { signal: controller.signal });
           const entry = { query: search, promise };
           firstPageRequest.current = entry;
           try {
@@ -90,7 +93,7 @@ export default function AllSessionsSidebar(props: Props) {
         if (controller.signal.aborted) return;
       } else {
         page = await readSessionCatalogPage(
-          cursor => collaborationRequest<SessionCatalogPage>({ action: "sessionCatalog", query: search, limit: 20, cursor }),
+          cursor => collaborationRequest<SessionCatalogPage>({ action: "sessionCatalog", query: search, limit: 20, cursor }, { signal: controller.signal }),
           controller.signal, previous.cursor ?? undefined,
         );
       }
@@ -104,7 +107,10 @@ export default function AllSessionsSidebar(props: Props) {
       setSessions(nextWindow.rows); setTotal(page.total); setNextCursor(nextWindow.cursor);
       setShowingCache(false);
       if (reset) setDiscovering(page.refreshing === true);
-      if (reset && !search && !page.refreshing) writeAllSessionsCache(page);
+      if (reset && !search && !page.refreshing) {
+        const deleted = new Set(deletedSessionIds.current);
+        writeAllSessionsCache({ ...page, data: page.data.filter(session => !deleted.has(session.id)) });
+      }
       if (reset && previous.query !== search && scroll.current) scroll.current.scrollTop = 0;
     } catch (err) {
       if (!controller.signal.aborted) { setDiscovering(false); setError(err instanceof Error ? err.message : "会话加载失败"); }
@@ -139,11 +145,19 @@ export default function AllSessionsSidebar(props: Props) {
     return () => window.clearInterval(timer);
   }, [active, discovering, load]);
 
+  // A head refresh can finish while the phone is already at the scroll boundary.
+  useEffect(() => {
+    const node = scroll.current;
+    if (active && !loading && !error && nextCursor && node && node.scrollTop > 0
+      && node.scrollHeight - node.scrollTop - node.clientHeight < 120) void load(false);
+  }, [active, error, load, loading, nextCursor]);
+
   const activeIds = [...props.needsInput, ...(props.runningSessionId ? [props.runningSessionId] : [])];
   const merged = applySessionActivity(mergeCatalogReceipts(sessions, [...receipts.current.values()], search), activity, search);
   const ordered = orderAllSessions(merged, props.pinnedIds, activeIds);
   const normalized = query.trim().toLocaleLowerCase();
-  const visible = ordered;
+  const deleted = useMemo(() => new Set(props.deletedSessionIds), [props.deletedSessionIds]);
+  const visible = ordered.filter(session => !deleted.has(session.id));
   const pinned = useMemo(() => new Set(props.pinnedIds), [props.pinnedIds]);
 
   return <>

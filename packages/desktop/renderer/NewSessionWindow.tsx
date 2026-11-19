@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { X } from "lucide-react";
 import type { RuntimeHealth, UnifiedSessionSummary } from "./global";
 import ChatView from "./components/ChatView";
 import TaskPaneConversation from "./components/desktop-task-split/TaskPaneConversation";
@@ -39,7 +40,7 @@ export default function NewSessionWindow() {
     } catch { setError("无法打开会话，请重试"); }
   };
 
-  return <main className={`new-session-window${session ? " has-session" : ""}`} aria-label="会话小窗">
+  return <main className="new-session-window" aria-label="会话小窗">
     {error && <div className="new-session-window-error" role="alert">{error}</div>}
     <TaskPaneConversation draft={session ? undefined : draft} onDraftChange={setDraft}>
       <ChatView agentStore={store} desktopTaskPane
@@ -47,6 +48,10 @@ export default function NewSessionWindow() {
         selectedProjectId={session?.projectId ?? draft.projectId}
         selectedSessionId={session?.id ?? null}
         sessionSummary={session ?? undefined} sessionTitle={session?.title ?? "新建会话"}
+        paneControls={<button type="button" className="ui-icon-button new-session-window-close"
+          aria-label="关闭会话小窗" title="关闭会话小窗" onClick={() => window.close()}>
+          <X size={17} aria-hidden="true" />
+        </button>}
         workspacePath={session?.cwd ?? draft.cwd} runtimeHealth={health} focusComposerNonce={1}
         sessionCreationPending={!session && !draft.projectId}
         onSessionCreated={(id, receipt) => selectSession(id, receipt)}

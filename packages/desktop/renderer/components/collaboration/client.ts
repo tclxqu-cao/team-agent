@@ -2,10 +2,11 @@ import type { CollaborationCommand } from "@agent/core/domain/collaboration/type
 
 export async function collaborationRequest<T>(
   command: CollaborationCommand,
+  options?: { signal?: AbortSignal },
 ): Promise<T> {
   if (!window.agentApi?.collaboration)
     throw new Error("当前服务不支持协作群，请连接更新后的服务");
-  return (await window.agentApi.collaboration(command)) as T;
+  return (await window.agentApi.collaboration(command, options)) as T;
 }
 
 export const AGENT_NAMES = {

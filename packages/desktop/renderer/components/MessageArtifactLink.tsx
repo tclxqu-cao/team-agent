@@ -1,29 +1,36 @@
-import { useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { requestArtifactFileContextMenu } from "../lib/artifact-file-context-menu";
+import { MessageLinkActions, useMessageLinkActions } from "./MessageLinkActions";
 
-export default function MessageArtifactLink({ path, label, title, onOpen, children }: {
+export default function MessageArtifactLink({ path, label, line, onOpen, children }: {
   path: string;
   label: string;
-  title?: string;
+  line?: number;
   onOpen(path: string): void;
   children: ReactNode;
 }) {
-  const [error, setError] = useState("");
+  const actions = useMessageLinkActions<HTMLButtonElement>();
+  const location = line ? `${path}:${line}` : path;
+  const displayedText = () => actions.trigger.current?.textContent || label;
+
   return <>
     <button
+      ref={actions.trigger}
       type="button"
       className="chat-message-artifact-link"
-      title={title ?? path}
+      title={location}
       aria-label={`打开交付物 ${label}`}
-      onClick={() => onOpen(path)}
-      onContextMenu={(event) => {
-        setError("");
-        const pending = requestArtifactFileContextMenu(event, path, window.agentApi?.showFileContextMenu);
-        void pending?.catch((cause) => {
-          setError(cause instanceof Error ? cause.message : "无法定位文件，请确认文件仍然存在。");
-        });
-      }}
+      {...actions.handlers}
+      onClick={(event) => { if (!actions.consumeClick(event)) onOpen(path); }}
+      onContextMenu={(event) => actions.handlers.onContextMenu(event, () => {
+        const pending = requestArtifactFileContextMenu(event, path, window.agentApi?.showFileContextMenu, { label: displayedText(), line });
+        void pending?.catch(actions.show);
+        return Boolean(pending);
+      })}
     >{children}</button>
-    {error && <span role="alert" style={{ color: "var(--danger)", fontSize: 12, marginLeft: 8 }}>{error}</span>}
+    {actions.open && <MessageLinkActions title="文件链接" fieldLabel="文件路径"
+      primary={{ label: "复制路径", value: location }}
+      secondary={displayedText() === location ? undefined : { label: "复制链接文字", value: displayedText() }}
+      onClose={actions.close} />}
   </>;
 }

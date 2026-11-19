@@ -1,20 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle, CalendarClock, CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight,
-  CircleDot, Inbox, ListTodo, LocateFixed, Pause, RefreshCw, Repeat, Timer, X, Zap,
+  CircleDot, Inbox, ListTodo, LocateFixed, Pause, RefreshCw, Repeat, X, Zap,
 } from "lucide-react";
 import {
   CALENDAR_SOURCES, CALENDAR_SOURCE_LABELS, localDateKey,
-  type CalendarEntry, type CalendarOverview, type CalendarSourceId, type CalendarTodoGroup,
+  type CalendarEntry, type CalendarOverview, type CalendarSourceId,
 } from "../../../core/src/domain/calendar/entities";
+import { isNativeAgentType } from "../../../core/src/domain/agent/agent-type";
 import "../styles/calendar.css";
-import type { TodoDetail } from "@agent/core";
+import type { TodoCommand, TodoDetail } from "@agent/core";
+import { AGENT_LABELS } from "../lib/agent-catalog";
+import TodoScheduleEditor from "./TodoScheduleEditor";
 
 export type CalendarLoader = (from: string, to: string) => Promise<CalendarOverview>;
-type KindFilter = "all" | "cron" | "run" | "reminder" | "due";
-
 const WEEKDAYS = ["一", "二", "三", "四", "五", "六", "日"];
-const KIND_LABEL: Record<KindFilter, string> = { all: "全部", cron: "定时", run: "执行", reminder: "提醒", due: "待办日期" };
 const STATE_LABEL: Record<string, string> = {
   upcoming: "待执行", paused: "已暂停", completed: "已完成", failed: "失败",
   overdue: "已过期", pending: "待处理", "in-progress": "进行中", unscheduled: "未排期",
@@ -32,6 +32,18 @@ function timeLabel(ms: number): string {
 }
 function monthLabel(year: number, month: number): string {
   return `${year}年${month + 1}月`;
+}
+
+export function personalTodoCalendarTime({ task, schedule, reminders, executions }: TodoDetail): number | undefined {
+  if (task.dueAt !== undefined) return task.dueAt;
+  if (schedule?.enabled && schedule.nextFireAt !== null) return schedule.nextFireAt;
+  if (task.status === "completed" && schedule?.trigger.kind === "once") return schedule.trigger.at;
+  // A consumed trigger still has a calendar date in the execution history.
+  const executionAt = schedule && executions.find(execution =>
+    execution.scheduleId === schedule.id
+    && (task.status === "completed" || execution.generation === schedule.generation)
+  )?.scheduledAt;
+  return executionAt ?? reminders.find(reminder => reminder.enabled && reminder.nextFireAt !== null)?.nextFireAt ?? undefined;
 }
 
 /** Monday-start 6×7 grid covering the displayed month. */
@@ -53,15 +65,29 @@ function KindIcon({ kind, size = 12 }: { kind: CalendarEntry["kind"]; size?: num
 }
 
 function StateMark({ state }: { state: CalendarEntry["state"] }) {
-  if (state === "completed") return <Check size={12} className="cal-mark is-done" aria-label="已完成" />;
+  if (state === "completed") return <Check size={12} className="cal-mark is-done" role="img" aria-label="已完成" />;
   if (state === "failed") return <X size={12} className="cal-mark is-fail" aria-label="失败" />;
   if (state === "in-progress") return <span className="cal-pulse" aria-label="进行中" />;
   if (state === "paused") return <Pause size={11} className="cal-mark is-pause" aria-label="已暂停" />;
   return null;
 }
 
+function calendarEntryIdentity({ source, executionAgentType }: CalendarEntry) {
+  if (!executionAgentType || executionAgentType === "customer-agent") {
+    return { tone: source, label: CALENDAR_SOURCE_LABELS[source] };
+  }
+  if (!isNativeAgentType(executionAgentType)) {
+    return { tone: source, label: executionAgentType };
+  }
+  const tone = executionAgentType === "claude-code" ? "claude"
+    : executionAgentType === "deepseek-harness" ? "deepseek" : executionAgentType;
+  return { tone, label: AGENT_LABELS[executionAgentType] };
+}
+
 function Chip({ entry, onClick, highlighted }: { entry: CalendarEntry; onClick?: () => void; highlighted?: boolean }) {
   const cls = `cal-chip kind-${entry.kind} is-${entry.state}${highlighted ? " is-highlight" : ""}`;
+  const { tone, label } = calendarEntryIdentity(entry);
+  const title = `${label} · ${entry.title}`;
   const body = (
     <>
       <span className="cal-chip-dot" aria-hidden="true" />
@@ -73,15 +99,16 @@ function Chip({ entry, onClick, highlighted }: { entry: CalendarEntry; onClick?:
     </>
   );
   return onClick
-    ? <button type="button" className={cls} data-source={entry.source} onClick={onClick} title={`${CALENDAR_SOURCE_LABELS[entry.source]} · ${entry.title}`}>{body}</button>
-    : <div className={cls} data-source={entry.source} title={`${CALENDAR_SOURCE_LABELS[entry.source]} · ${entry.title}`}>{body}</div>;
+    ? <button type="button" className={cls} data-source={tone} onClick={onClick} title={title}>{body}</button>
+    : <div className={cls} data-source={tone} title={title}>{body}</div>;
 }
 
-function EntryRow({ entry, highlighted }: { entry: CalendarEntry; highlighted?: boolean }) {
+export function EntryRow({ entry, highlighted, onEditSchedule }: { entry: CalendarEntry; highlighted?: boolean; onEditSchedule?: () => void }) {
+  const { tone, label } = calendarEntryIdentity(entry);
   return (
-    <article className={`cal-entry is-${entry.state}${highlighted ? " is-highlight" : ""}`} data-source={entry.source} data-task-id={entry.taskId}>
+    <article className={`cal-entry is-${entry.state}${highlighted ? " is-highlight" : ""}`} data-source={tone} data-task-id={entry.taskId}>
       <div className="cal-entry-top">
-        <span className="cal-entry-src" data-source={entry.source}>{CALENDAR_SOURCE_LABELS[entry.source]}</span>
+        <span className="cal-entry-src">{label}</span>
         <span className={`cal-entry-state is-${entry.state}`}>{STATE_LABEL[entry.state] ?? entry.state}</span>
         <span className="cal-entry-time"><KindIcon kind={entry.kind} />{entry.kind === "todo" ? (entry.dueAt ? timeLabel(entry.dueAt) : "无截止") : timeLabel(entry.at)}</span>
       </div>
@@ -95,6 +122,7 @@ function EntryRow({ entry, highlighted }: { entry: CalendarEntry; highlighted?: 
       {entry.kind === "cron" && entry.state === "overdue" && <p className="cal-entry-detail">计划时间已过，未找到执行结果；不代表执行成功或失败。</p>}
       {entry.detail && <p className="cal-entry-detail">{entry.detail}</p>}
       {entry.cwd && <p className="cal-entry-cwd" title={entry.cwd}>{entry.cwd}</p>}
+      {onEditSchedule && <button type="button" className="cal-nav-btn cal-edit-schedule" onClick={onEditSchedule}>编辑执行计划</button>}
     </article>
   );
 }
@@ -104,6 +132,8 @@ export default function CalendarView({ loadOverview, onClose, initialTaskId, foc
   const [completing, setCompleting] = useState("");
   const [highlightTaskId, setHighlightTaskId] = useState("");
   const [expandedTaskId, setExpandedTaskId] = useState("");
+  const [editingSchedule, setEditingSchedule] = useState<(TodoDetail & { schedule: NonNullable<TodoDetail["schedule"]> }) | null>(null);
+  const scheduleRequest = useRef(0);
   const api = typeof window === "undefined" ? undefined : window.agentApi;
   const today = new Date();
   const todayKey = localDateKey(today.getTime());
@@ -113,26 +143,24 @@ export default function CalendarView({ loadOverview, onClose, initialTaskId, foc
   const [error, setError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const [selectedKey, setSelectedKey] = useState(todayKey);
-  const [kind, setKind] = useState<KindFilter>("all");
   const [activeSources, setActiveSources] = useState<Set<CalendarSourceId>>(() => new Set(CALENDAR_SOURCES));
   const [showUnscheduled, setShowUnscheduled] = useState(true);
   const rangeRef = useRef({ from: "", to: "" });
   const aliveRef = useRef(true);
   const focusVersionRef = useRef(0);
-  // 任务入口定位：有截止日期跳到日历当天，无日期在“未安排”区高亮。
+  // 有日历时间的待办定位到对应日期，其余在“未安排”区高亮。
   const focusTask = useCallback(async (id: string) => {
     const version = ++focusVersionRef.current;
-    setKind("all");
     setActiveSources(current => new Set([...current, "customer-agent"]));
     setHighlightTaskId(id);
     try {
       const detail = api?.todoGet ? await api.todoGet(id) : undefined;
       if (version !== focusVersionRef.current) return;
-      const dueAt = detail?.task.dueAt;
-      if (dueAt !== undefined) {
-        const due = new Date(dueAt);
-        setCursor({ year: due.getFullYear(), month: due.getMonth() });
-        setSelectedKey(localDateKey(due.getTime()));
+      const at = detail && personalTodoCalendarTime(detail);
+      if (at !== undefined) {
+        const date = new Date(at);
+        setCursor({ year: date.getFullYear(), month: date.getMonth() });
+        setSelectedKey(localDateKey(at));
       } else setShowUnscheduled(true);
     } catch { if (version === focusVersionRef.current) setShowUnscheduled(true); }
   }, [api]);
@@ -152,8 +180,10 @@ export default function CalendarView({ loadOverview, onClose, initialTaskId, foc
     try {
       const api = typeof window === "undefined" ? undefined : window.agentApi;
       const [next, personal] = await Promise.all([loadOverview(f, t), api?.todoList?.({ limit: 200 }).catch(() => undefined)]);
-      if (personal) setUndated(personal.items.filter(d => d.task.dueAt === undefined && d.task.status !== "completed" && d.task.status !== "cancelled"));
       if (!aliveRef.current) return;
+      if (personal) setUndated(personal.items.filter(detail =>
+        detail.task.status !== "cancelled" && personalTodoCalendarTime(detail) === undefined
+      ));
       setOverview(next);
       setError("");
     } catch (err) {
@@ -189,40 +219,17 @@ export default function CalendarView({ loadOverview, onClose, initialTaskId, foc
     setSelectedKey(localDateKey(now.getTime()));
   };
 
-  const matches = useCallback((entry: CalendarEntry) =>
-    entry.kind !== "todo" && activeSources.has(entry.source) && (kind === "all" || entry.kind === kind || (kind === "due" && entry.dueAt !== undefined) || (kind === "run" && entry.executedAt !== undefined)), [activeSources, kind]);
-
   const dayEntries = useMemo(() => {
     const map = new Map<string, CalendarEntry[]>();
     if (!overview) return map;
     for (const [key, entries] of Object.entries(overview.days)) {
-      const filtered = entries.filter(matches);
+      const filtered = entries.filter(entry => entry.kind !== "todo" && activeSources.has(entry.source));
       if (filtered.length) map.set(key, filtered);
     }
     return map;
-  }, [overview, matches]);
-
-  const stats = useMemo(() => {
-    let scheduled = 0, completed = 0, overdue = 0, paused = 0, failed = 0, inProgress = 0;
-    const count = (entry: CalendarEntry) => {
-      if (entry.kind === "todo" || !activeSources.has(entry.source)) return;
-      if (entry.kind === "cron" && entry.state === "upcoming") scheduled++;
-      if (entry.state === "completed") completed++;
-      if (entry.state === "overdue") overdue++;
-      if (entry.state === "paused") paused++;
-      if (entry.state === "failed") failed++;
-      if (entry.state === "in-progress") inProgress++;
-    };
-    if (overview) {
-      for (const entries of Object.values(overview.days)) entries.forEach(count);
-    }
-    return { scheduled, completed, overdue, paused, failed, inProgress };
   }, [overview, activeSources]);
 
   const selectedEntries = dayEntries.get(selectedKey) ?? [];
-  const unscheduledSchedules = useMemo(() =>
-    (overview?.unscheduledSchedules ?? []).filter(entry => activeSources.has(entry.source) && (kind === "all" || kind === "cron")),
-    [overview, activeSources, kind]);
   const sourceErrors = useMemo(() =>
     overview ? CALENDAR_SOURCES.filter(source => !overview.sources[source]?.ok).map(source => ({ source, error: overview.sources[source]?.error ?? "" })) : [],
     [overview]);
@@ -240,9 +247,39 @@ export default function CalendarView({ loadOverview, onClose, initialTaskId, foc
 
   const complete = async (detail: TodoDetail) => {
     setCompleting(detail.task.id);
-    try { await window.agentApi.todoCommand?.({ type: "complete", taskId: detail.task.id, expectedVersion: detail.task.version }, crypto.randomUUID()); await load("refresh"); }
+    try {
+      const updated = await api?.todoCommand?.({ type: "complete", taskId: detail.task.id, expectedVersion: detail.task.version }, crypto.randomUUID());
+      if (updated) setUndated(current => current.map(item => item.task.id === updated.task.id ? updated : item));
+      await load("refresh");
+    }
     catch (error) { setError(error instanceof Error ? error.message : "待办更新失败"); }
     finally { setCompleting(""); }
+  };
+  const editSchedule = async (id: string) => {
+    const request = ++scheduleRequest.current;
+    try {
+      const detail = await api?.todoGet?.(id);
+      if (request === scheduleRequest.current && detail?.schedule) setEditingSchedule({ ...detail, schedule: detail.schedule });
+    } catch (error) {
+      if (request === scheduleRequest.current) setError(error instanceof Error ? error.message : "读取执行计划失败");
+    }
+  };
+  const closeSchedule = () => {
+    scheduleRequest.current++;
+    setEditingSchedule(null);
+  };
+  const saveSchedule = async (command: Extract<TodoCommand, { type: "schedule" }>) => {
+    if (!api?.todoCommand) throw new Error("当前服务不支持编辑待办");
+    const updated = await api.todoCommand(command, crypto.randomUUID());
+    closeSchedule();
+    const at = updated.schedule?.nextFireAt;
+    if (at != null) {
+      const date = new Date(at);
+      setCursor({ year: date.getFullYear(), month: date.getMonth() });
+      setSelectedKey(localDateKey(at));
+      setHighlightTaskId(updated.task.id);
+    }
+    await load("refresh");
   };
   return (
     <div className="cal-root">
@@ -252,7 +289,7 @@ export default function CalendarView({ loadOverview, onClose, initialTaskId, foc
           <span className="cal-title-icon"><CalendarDays size={20} aria-hidden="true" /></span>
           <div>
             <h1>智能体日历</h1>
-            <p>定时任务、执行记录与待办提醒</p>
+            <p>定时任务与待办</p>
           </div>
         </div>
         <div className="cal-nav">
@@ -265,15 +302,6 @@ export default function CalendarView({ loadOverview, onClose, initialTaskId, foc
         </div>
       </header>
 
-      <div className="cal-stats">
-        <span className="cal-stat is-scheduled"><Timer size={14} />{stats.scheduled} 待执行</span>
-        <span className="cal-stat is-progress"><CircleDot size={14} />{stats.inProgress} 进行中</span>
-        <span className="cal-stat is-done"><Check size={14} />{stats.completed} 已完成</span>
-        <span className="cal-stat is-overdue"><AlertTriangle size={14} />{stats.overdue} 过期</span>
-        <span className="cal-stat is-paused"><Pause size={14} />{stats.paused} 暂停</span>
-        {stats.failed > 0 && <span className="cal-stat is-fail"><X size={14} />{stats.failed} 失败</span>}
-      </div>
-
       <div className="cal-filters">
         <div className="cal-sources" role="group" aria-label="按来源筛选">
           {CALENDAR_SOURCES.map(source => (
@@ -283,11 +311,6 @@ export default function CalendarView({ loadOverview, onClose, initialTaskId, foc
               <span className="cal-source-dot" aria-hidden="true" />{CALENDAR_SOURCE_LABELS[source]}
               {overview && <span className="cal-source-n">{overview.sources[source]?.entries || 0}</span>}
             </button>
-          ))}
-        </div>
-        <div className="cal-kind-seg" role="group" aria-label="按类型筛选">
-          {(Object.keys(KIND_LABEL) as KindFilter[]).map(value => (
-            <button key={value} type="button" className={kind === value ? "is-active" : ""} onClick={() => setKind(value)} aria-pressed={kind === value}>{KIND_LABEL[value]}</button>
           ))}
         </div>
       </div>
@@ -343,7 +366,10 @@ export default function CalendarView({ loadOverview, onClose, initialTaskId, foc
           <div className="cal-detail-list">
             {selectedEntries.length === 0 ? (
               <div className="cal-empty"><Inbox size={28} strokeWidth={1.4} /><p>这一天没有安排</p><small>点击其他日期查看安排与提醒</small></div>
-            ) : selectedEntries.map(entry => <EntryRow key={entry.id} entry={entry} highlighted={entry.taskId === highlightTaskId} />)}
+            ) : selectedEntries.map(entry => <EntryRow key={entry.id} entry={entry} highlighted={entry.taskId === highlightTaskId}
+              onEditSchedule={api?.todoGet && api.todoCommand && entry.taskId
+                && entry.scheduleRef?.startsWith("agentroam:todo_execution_schedules:")
+                ? () => void editSchedule(entry.taskId!) : undefined} />)}
           </div>
         </aside>
       </div>
@@ -351,50 +377,47 @@ export default function CalendarView({ loadOverview, onClose, initialTaskId, foc
       <section className={`cal-unscheduled ${showUnscheduled ? "is-open" : ""}`}>
         <button type="button" className="cal-unscheduled-head" onClick={() => setShowUnscheduled(value => !value)} aria-expanded={showUnscheduled}>
           <ListTodo size={16} />
-          <span>未安排</span>
-          <span className="cal-unscheduled-n">{undated.length} 无日期待办 · {unscheduledSchedules.length} 未排期任务</span>
+          <span>无日期待办</span>
+          <span className="cal-unscheduled-n">{undated.length} 项</span>
           <ChevronDown size={16} className="cal-unscheduled-chev" />
         </button>
         {showUnscheduled && (
           <div className="cal-unscheduled-body">
-            {undated.length > 0 && <div className="cal-unsched-schedules"><h3><ListTodo size={14} />无日期待办</h3><div className="cal-unsched-schedule-list">{undated.map(detail => {
+            {undated.length > 0 && <div className="cal-unsched-schedule-list">{undated.map(detail => {
               const expanded = expandedTaskId === detail.task.id;
-              const stateLabel = detail.task.status === "in_progress" ? "进行中" : detail.task.status === "failed" ? "执行失败" : "待完成";
+              const completed = detail.task.status === "completed";
+              const stateLabel = detail.task.status === "in_progress" ? "进行中" : detail.task.status === "failed" ? "执行失败" : "";
               return (
                 <div key={detail.task.id} className={`cal-unsched-schedule ${detail.task.id === highlightTaskId ? "is-highlight" : ""}`} data-source="customer-agent">
                   <div className="cal-unsched-row">
-                    <button type="button" className="cal-nav-btn" aria-label={`完成 ${detail.task.title}`} disabled={!!completing} onClick={() => void complete(detail)}><Check size={13} /></button>
-                    <button type="button" className="cal-unsched-title" aria-expanded={expanded} title={expanded ? "收起详情" : "查看详情"} onClick={() => setExpandedTaskId(expanded ? "" : detail.task.id)}>{detail.task.title}</button>
+                    {completed ? <StateMark state="completed" /> :
+                      <button type="button" className="cal-nav-btn" aria-label={`完成 ${detail.task.title}`} disabled={!!completing} onClick={() => void complete(detail)}><Check size={13} /></button>}
+                    <button type="button" className={`cal-unsched-title${completed ? " is-struck" : ""}`} aria-expanded={expanded} title={expanded ? "收起详情" : "查看详情"} onClick={() => setExpandedTaskId(expanded ? "" : detail.task.id)}>{detail.task.title}</button>
                   </div>
-                  <p>{stateLabel}</p>
+                  {stateLabel && <p>{stateLabel}</p>}
                   {expanded && (
                     <div className="cal-unsched-expand">
                       {detail.task.description && <p>{detail.task.description}</p>}
                       {detail.schedule?.enabled && <p>下次执行：{detail.schedule.nextFireAt ? new Date(detail.schedule.nextFireAt).toLocaleString("zh-CN", { hour12: false }) : "—"} · {detail.schedule.target.agentType}</p>}
                       {detail.reminders.some(reminder => reminder.enabled) && <p>已设置提醒</p>}
+                      {api?.todoCommand && detail.schedule && !completed && (
+                        <button type="button" className="cal-nav-btn cal-edit-schedule" onClick={() => setEditingSchedule({ ...detail, schedule: detail.schedule! })}>编辑执行计划</button>
+                      )}
                     </div>
                   )}
                 </div>
               );
-            })}</div></div>}
-            {unscheduledSchedules.length > 0 && (
-              <div className="cal-unsched-schedules">
-                <h3><CalendarClock size={14} />未排期的定时任务</h3>
-                <div className="cal-unsched-schedule-list">
-                  {unscheduledSchedules.map(entry => (
-                    <div key={entry.id} className="cal-unsched-schedule" data-source={entry.source}>
-                      <span className="cal-entry-src" data-source={entry.source}>{CALENDAR_SOURCE_LABELS[entry.source]}</span>
-                      <strong>{entry.title}</strong>
-                      {entry.detail && <p>{entry.detail}</p>}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-            {undated.length === 0 && unscheduledSchedules.length === 0 && <div className="cal-empty is-inline"><Inbox size={24} strokeWidth={1.4} /><p>没有无日期待办或未排期任务</p></div>}
+            })}</div>}
+            {undated.length === 0 && <div className="cal-empty is-inline"><Inbox size={24} strokeWidth={1.4} /><p>没有无日期待办</p></div>}
           </div>
         )}
       </section>
+      {editingSchedule && <div className="cal-schedule-overlay">
+        <div role="dialog" aria-modal="true" aria-labelledby="cal-schedule-title" className="cal-schedule-dialog">
+          <h2 id="cal-schedule-title">{editingSchedule.task.title}</h2>
+          <TodoScheduleEditor key={editingSchedule.task.id} detail={editingSchedule} onSave={saveSchedule} onClose={closeSchedule} />
+        </div>
+      </div>}
     </div>
   );
 }

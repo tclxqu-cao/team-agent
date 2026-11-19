@@ -26,9 +26,9 @@
   --chat-input-padding: 0 var(--session-window-gutter);
 }
 
-/* The native window title already identifies the draft. */
-.new-session-window:not(.has-session) .chat-top-bar {
-  display: none !important;
+.new-session-window-close {
+  flex-shrink: 0;
+  -webkit-app-region: no-drag;
 }
 
 .new-session-window .chat-input-area {

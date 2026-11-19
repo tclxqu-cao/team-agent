@@ -283,14 +283,14 @@ describe("shared Codex-style message history", () => {
     expect(chatView).toContain("if (shouldPollFallback) startPolling()");
   });
 
-  it("keeps Codex follow-ups queued until abort reaches a terminal event", () => {
+  it("targets the visible run and leaves native stop controls to the run lifecycle", () => {
     expect(selectedSessionLoadDependencies).toContain("selectedSessionId");
     expect(selectedSessionLoadDependencies).not.toContain("runningSessionId");
     expect(abortHandler).toContain("sessionLoadGenerationRef.current += 1;");
-    expect(abortHandler).toContain('if (composerAgentType !== "codex")');
-    expect(abortHandler.indexOf('if (composerAgentType !== "codex")'))
-      .toBeLessThan(abortHandler.indexOf("setRunningSession(null);"));
-    expect(abortHandler).toContain("window.agentApi.abort(viewSessionId || undefined, trigger).catch");
+    expect(abortHandler).toContain("api.abort(targetSessionId, trigger, observedRunId)");
+    expect(abortHandler).toMatch(/if \(isNativeRuntime\) \{[^}]*refreshLatestHistory\(targetSessionId\);\s*\} else if/);
+    expect(chatView).toContain("const canStopRun = shouldQueueMessage;");
+    expect(chatView).toContain("running: canStopRun");
   });
 
   it("does not restore or fail a sent message when Codex stop confirmation times out", () => {

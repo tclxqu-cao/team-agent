@@ -6,6 +6,7 @@ import { useShallow } from "zustand/react/shallow";
 import ChatView from "./components/ChatView";
 import DesktopTaskWorkspace from "./components/desktop-task-split/DesktopTaskWorkspace";
 import AllSessionsSidebar from "./components/AllSessionsSidebar";
+import { removeSessionsFromAllSessionsCache } from "./lib/all-sessions-cache";
 import SidebarRefreshButton from "./components/SidebarRefreshButton";
 import SidebarSessionPagination from "./components/SidebarSessionPagination";
 import CollaborationLauncher from "./components/collaboration/CollaborationLauncher";
@@ -281,7 +282,7 @@ export default function App() {
   }, [searchOpen, activeAgent]);
   const [searchListLimit, setSearchListLimit] = useState(10);
   const [sessionDeleteRequest, setSessionDeleteRequest] = useState<{
-    session: Session;
+    session: Pick<Session, "id" | "agentType" | "projectId" | "title">;
     anchor: SidebarDeleteAnchor;
   } | null>(null);
   const [sessionDeletePending, setSessionDeletePending] = useState(false);
@@ -292,6 +293,7 @@ export default function App() {
   } | null>(null);
   const [invalidWorkspaceDeletePending, setInvalidWorkspaceDeletePending] = useState(false);
   const [allSessionsRevision, setAllSessionsRevision] = useState(0);
+  const [deletedSessionIds, setDeletedSessionIds] = useState<string[]>([]);
   const [runtimeHealth, setRuntimeHealth] = useState<RuntimeHealth[]>([]);
   /** Child sessions keyed by parentSessionId */
   const [childSessionsByParent, setChildSessionsByParent] = useState<Record<string, Session[]>>(initialSessionState.children);
@@ -1661,7 +1663,7 @@ export default function App() {
     });
   };
 
-  const requestDeleteSession = (session: Session, anchor: SidebarDeleteAnchor) => {
+  const requestDeleteSession = (session: Pick<Session, "id" | "agentType" | "projectId" | "title">, anchor: SidebarDeleteAnchor) => {
     setSessionDeleteRequest({ session, anchor });
   };
 
@@ -1718,6 +1720,8 @@ export default function App() {
         [],
         session.id,
       );
+      setDeletedSessionIds(previous => [...new Set([...previous, ...removal.removedIds])]);
+      removeSessionsFromAllSessionsCache(removal.removedIds);
       sessionsByProjectRef.current = removal.sessionsByProject;
       childSessionsByParentRef.current = removal.childSessionsByParent;
       setSessionsByProject(removal.sessionsByProject);
@@ -2012,6 +2016,7 @@ export default function App() {
         </div>}
 
         {allSessionsLayout ? <AllSessionsSidebar
+          deletedSessionIds={deletedSessionIds}
           selectedSessionId={selectedSessionId}
           pendingSession={createdSessionReceipt}
           runningSessionId={runningSessionId}
@@ -2020,14 +2025,7 @@ export default function App() {
           revision={allSessionsRevision}
           onSelect={session => dashboardNavigation.current({ kind: "session", session })}
           onPin={togglePinnedSession}
-          onDelete={(session, anchor) => {
-            void window.agentApi.getSession(session.id, { limit: 1 }).then(value => {
-              const detail = value as UnifiedSessionSummary;
-              if (detail.id !== session.id || detail.agentType !== session.agentType) throw new Error("会话身份已变化，请刷新重试");
-              if (!detail.canDelete) throw new Error("当前会话暂不可删除");
-              requestDeleteSession(detail, anchor);
-            }).catch(error => { setNotice(error instanceof Error ? error.message : "无法读取会话"); setNoticeType("error"); });
-          }}
+          onDelete={requestDeleteSession}
         /> : <>
         <AgentWorkspaceSwitcher
           vertical={navigationLayout === "agent-rail"}
@@ -2616,6 +2614,7 @@ export default function App() {
             sessionTitle={selectedSessionTitle}
             sessionSummary={selectedSession}
             initialSessionHistory={initialSessionHistory}
+            sessionNavigationPending={Boolean(pendingSessionNavigation)}
             onSessionHistorySettled={handleSessionHistorySettled}
             workspacePath={selectedWorkspacePath}
             workspaceSource={projects.find(project => project.id === selectedProjectId)?.source}

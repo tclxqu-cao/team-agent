@@ -2,7 +2,7 @@ import { usePageActive, isPageActive } from "../lib/page-activity";
 import { AGENT_LABELS } from "../lib/agent-catalog";
 import { completedTurnForkPoint } from "../lib/completed-turn-fork";
 import { HistoryPullGesture, shouldLoadOlderHistoryFromScroll, shouldLoadOlderHistoryFromWheel } from "../lib/history-pull-gesture";
-import { lazy, Suspense, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, lazy, Suspense, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   type AgentEvent,
@@ -16,6 +16,8 @@ import { ArrowDownToLine, AlarmClock, Check, CircleAlert, Copy, CornerUpRight, F
 import AgentBrandIcon from "./AgentBrandIcon";
 import SessionLoading from "./SessionLoading";
 import SessionTaskPanel, { SessionTaskPanelToggle } from "./SessionTaskPanel";
+import SessionTurnResults from "./SessionTurnResults";
+import { collectTurnChanges, sessionTurnResults } from "../lib/session-turn-results";
 import { hasSessionPlanAdditions, latestSessionPlan, normalizeSessionPlan, sessionPlanSnapshot, successfulSessionPlanUpdate } from "../lib/session-plan";
 import { useTaskPanelPreferences } from "../lib/session-task-panel-state";
 import ComposerAgentPicker from "./ComposerAgentPicker";
@@ -69,6 +71,7 @@ import {
   loadCodexExecutionTracePage,
   loadProgressiveSessionHistoryPage,
   SESSION_HISTORY_PAGE_SIZE,
+  LATEST_SESSION_HISTORY_PAGE_SIZE,
   resolveOlderHistoryCursor,
   restoreCodexExecutionTrace,
   restoreSessionHistoryPage,
@@ -88,7 +91,7 @@ import {
   describeSessionLoadError,
   loadSessionWithRetry,
 } from "../lib/session-load-recovery";
-import { normalizeComposerImage } from "../lib/browser-image-normalization";
+import { blobToDataUrl, normalizeComposerImage } from "../lib/browser-image-normalization";
 import { canGuideExternalSession, supportsMidTurnSteering, usesNativeSessionPermissions } from "../lib/runtime-capabilities";
 import { copyTextToClipboard } from "../lib/clipboard";
 import {
@@ -107,7 +110,6 @@ import {
   IndexedDbSessionImageDraftRepository,
   SessionImageDraftCoordinator,
 } from "../lib/session-image-draft";
-import { resolveWebArtifactPath } from "../lib/artifact-links";
 import {
   findLatestPendingUserMessageId,
   findLatestUnqueuedUserMessageId,
@@ -119,6 +121,8 @@ import {
 } from "../lib/queued-message-order";
 import { canSteerQueuedMessage, steerQueuedMessage } from "../lib/queued-message-steering";
 import { composerKeyAction } from "../lib/composer-keyboard";
+import { completeComposerSlashToken, readComposerSlashToken, type ComposerSlashToken } from "../lib/composer-slash-token";
+import { useComposerPopoverPosition } from "../lib/use-composer-popover-position";
 import { applyCopilotLiveMessage } from "../lib/copilot-live-message";
 import { isWebShell } from "../web/webLayout";
 import { OPEN_BROWSER_LIVE_EVENT } from "../web/shellEvents";
@@ -134,6 +138,7 @@ import { createSessionForWorkspace, resolveSessionComposerRoute } from "../lib/s
 import { historyThreadRedirect } from "../lib/engine-thread-index";
 import { resolveSessionAgentType, resolveSessionEventTarget } from "../lib/session-event-routing";
 import {
+  getNativeRunObservation,
   isActiveNativeSession,
   isNativeRuntimeSelection,
   isNativeRunVisible,
@@ -148,7 +153,6 @@ import {
   shouldRestoreLocalNativeRun,
 } from "../lib/native-session-view-state";
 
-const CODEX_LATEST_HISTORY_PAGE_SIZE = 1;
 // Codex pages carry inline image attachments. Load only the requested turn,
 // including its complete answer, instead of downloading unrelated screenshots.
 const CODEX_NAVIGATION_HISTORY_PAGE_SIZE = 1;
@@ -252,13 +256,12 @@ function renderRichInline(text: string, onOpenArtifact?: (path: string) => void)
       const mediaKind = !token.line && messageMediaKind(token.path);
       if (mediaKind) return <MessageMedia key={index} path={token.path} label={token.label} kind={mediaKind} onOpenArtifact={onOpenArtifact} />;
       if (!onOpenArtifact) return <span key={index}>{token.raw}</span>;
-      const locationLabel = token.line ? `${token.path}:${token.line}` : token.path;
       const accessibleLabel = token.label.replace(/^`([^`\n]+)`$/, "$1");
       return (
         <MessageArtifactLink
           key={index}
           path={token.path}
-          title={locationLabel}
+          line={token.line}
           label={accessibleLabel}
           onOpen={onOpenArtifact}
         >
@@ -499,6 +502,7 @@ export interface ChatViewProps {
   selectedSessionId?: string | null;
   /** Keep drafting available while the new session's directory is resolving. */
   sessionCreationPending?: boolean;
+  sessionNavigationPending?: boolean;
   onSessionCreated?: (
     sessionId: string,
     pendingSession?: UnifiedSessionSummary,
@@ -612,6 +616,7 @@ export default function ChatView({
   selectedProjectId = null,
   selectedSessionId = null,
   sessionCreationPending = false,
+  sessionNavigationPending = false,
   onSessionCreated,
   onMessageSent,
   onSubSessionCreated,
@@ -1003,23 +1008,35 @@ export default function ChatView({
   const [nativeRunObservation, setNativeRunObservation] = useState<NativeRunObservation | null>(null);
   const observeNativeRun = useCallback((targetSessionId: string, detail: NativeSessionViewState | null | undefined) => {
     if (!detail?.agentType || detail.agentType === "customer-agent" || !detail.status) return;
-    const running = isActiveNativeSession(detail);
-    setNativeRunObservation(previous => previous?.sessionId === targetSessionId && previous.running === running
-      ? previous : { sessionId: targetSessionId, running });
+    const observation = getNativeRunObservation(targetSessionId, detail);
+    const terminal = runTerminalBySessionRef.current.get(targetSessionId);
+    if (observation.controllableRunId && terminal
+      && (terminal._nativeRunId ?? eventRunId(terminal)) === observation.controllableRunId) return;
+    setNativeRunObservation(previous => previous?.sessionId === targetSessionId
+      && previous.running === observation.running
+      && previous.controllableRunId === observation.controllableRunId
+      ? previous : observation);
   }, []);
 
-  // Local ownership controls actions; externally observed activity remains visible.
   const isLocallyRunning = !!(
     viewSessionId
     && (runningSessionId === viewSessionId || runningSubIdsRef.current.has(viewSessionId) || parallel.isRunning(viewSessionId))
   );
-  const shouldQueueMessage = shouldQueueMessageForActiveRun(sessionSummary, isLocallyRunning);
+  const observedRunId = nativeRunObservation?.sessionId === viewSessionId ? nativeRunObservation.controllableRunId : undefined;
+  const shouldQueueMessage = shouldQueueMessageForActiveRun(viewSessionId, isLocallyRunning, nativeRunObservation);
+  const canStopRun = shouldQueueMessage;
   const isRunning = parallel.group ? parallel.isRunning(viewSessionId)
     : isNativeRunVisible(sessionSummary, viewSessionId, isLocallyRunning, nativeRunObservation);
   const renderedMessages = useMemo<SessionExecutionMessage[]>(
     () => groupSessionExecutionMessages(ungroupedMessages, isRunning),
     [isRunning, ungroupedMessages],
   );
+  const turnResults = useMemo(() => new Map(sessionTurnResults(renderedMessages, isRunning)
+    .map(turn => [turn.footerId, turn])), [renderedMessages, isRunning]);
+  const turnWorkspace = sessionSummary?.cwd || workspacePath;
+  const visibleTurnChanges = useMemo(() => collectTurnChanges(visibleMessages.flatMap(message => (
+    message.executionTrace?.liveMessages ?? [message]
+  )), turnWorkspace), [visibleMessages, turnWorkspace]);
   const codexTurnDurations = useMemo(() => codexExecutionTurnDurations(renderedMessages), [renderedMessages]);
   const runtimeProgress = viewSessionId ? runtimeProgressBySession[viewSessionId] ?? [] : [];
   const nativeSubagents = viewSessionId ? nativeSubagentsBySession[viewSessionId] ?? {} : {};
@@ -1143,6 +1160,8 @@ export default function ChatView({
   const loadNewerHistoryRef = useRef<() => void>(() => undefined);
   const historyCursorRef = useRef<string | null>(null);
   const historyPrefetchRef = useRef<SinglePageHistoryPrefetch<SessionHistoryDetail | null> | null>(null);
+  const sessionNavigationPendingRef = useRef(sessionNavigationPending);
+  sessionNavigationPendingRef.current = sessionNavigationPending;
   if (!historyPrefetchRef.current) {
     historyPrefetchRef.current = new SinglePageHistoryPrefetch<SessionHistoryDetail | null>();
   }
@@ -1212,13 +1231,14 @@ export default function ChatView({
     inputRef.current?.focus();
   }, [focusComposerNonce]);
   const pickerAnchorRef = useRef<HTMLDivElement>(null);
+  const slashMenuRef = useRef<HTMLDivElement>(null);
   const [pickerRect, setPickerRect] = useState<DOMRect | null>(null);
   const [agents, setAgents] = useState<Array<{id: string; name: string; description: string; isActive?: boolean}>>([]);
   const [skills, setSkills] = useState<Array<{name: string; description: string}>>([]);
   /** List of agents selected via @mention — sent in order */
   const [pendingAgents, setPendingAgents] = useState<Array<{id: string; name: string}>>([]);
   const [atQuery, setAtQuery] = useState<string | null>(null);
-  const [slashQuery, setSlashQuery] = useState<string | null>(null);
+  const [slashToken, setSlashToken] = useState<ComposerSlashToken | null>(null);
   const historyAgentType = useCallback((targetSid: string): AgentType | undefined => resolveSessionAgentType(
     targetSid, selectedSessionIdRef.current, sessionSummary?.agentType,
   ), [sessionSummary?.agentType]);
@@ -1261,16 +1281,17 @@ export default function ChatView({
 
   const prefetchOlderHistory = useCallback((targetSid: string, cursor: string | null) => {
     const agentApi = window.agentApi;
-    if (!cursor || !agentApi) return;
+    if (!cursor || !agentApi || sessionNavigationPendingRef.current || !composerDraftRef.current.text.trim()) return;
     const start = () => {
-      if (selectedSessionIdRef.current !== targetSid) return;
+      if (selectedSessionIdRef.current !== targetSid || sessionNavigationPendingRef.current || !composerDraftRef.current.text.trim()) return;
       void historyPrefetchRef.current!
-        .prefetch(targetSid, cursor, () => agentApi.getSession(targetSid, {
+        .prefetch(targetSid, cursor, signal => agentApi.getSession(targetSid, {
           before: cursor,
           limit: historyAgentType(targetSid) === "codex" ? CODEX_NAVIGATION_HISTORY_PAGE_SIZE : SESSION_HISTORY_PAGE_SIZE,
           ...(historyAgentType(targetSid) === "codex" ? { view: "core" as const } : {}),
-        }) as Promise<SessionHistoryDetail | null>)
+        }, { signal }) as Promise<SessionHistoryDetail | null>)
         .catch((prefetchError) => {
+          if (prefetchError instanceof Error && prefetchError.name === "AbortError") return;
           console.warn("[chat] failed to prefetch older history", { sessionId: targetSid, error: prefetchError });
         });
     };
@@ -1278,6 +1299,14 @@ export default function ChatView({
     if (pendingTraces.length) void Promise.allSettled(pendingTraces).then(start);
     else start();
   }, [historyAgentType]);
+
+  const hasPrefetchInput = input.trim().length > 0;
+  useEffect(() => {
+    if (sessionNavigationPending || !hasPrefetchInput) historyPrefetchRef.current?.invalidate();
+    else if (selectedSessionId && historySessionIdRef.current === selectedSessionId) {
+      prefetchOlderHistory(selectedSessionId, historyCursorRef.current);
+    }
+  }, [hasPrefetchInput, prefetchOlderHistory, selectedSessionId, sessionNavigationPending]);
 
   const loadCodexExecutionTrace = useCallback(async (
     trace: NonNullable<import("../stores/agentStore").ChatMessage["executionTrace"]>,
@@ -1294,7 +1323,7 @@ export default function ChatView({
         agentApi,
         targetSid,
         trace,
-        CODEX_LATEST_HISTORY_PAGE_SIZE,
+        LATEST_SESSION_HISTORY_PAGE_SIZE,
       );
       const detail = loaded.detail;
       if (selectedSessionIdRef.current !== targetSid) {
@@ -1617,13 +1646,14 @@ export default function ChatView({
     { name: "loop", description: "定时任务：/loop 5m 任务 | list | pause/resume/delete <id> | stop" },
   ];
 
-  const filteredSkills = slashQuery === null ? [] : [
-    ...BUILTIN_COMMANDS.filter(c => slashQuery === "" || c.name.toLowerCase().includes(slashQuery.toLowerCase())),
-    ...skills.filter(s => slashQuery === "" || s.name.toLowerCase().includes(slashQuery.toLowerCase())),
-  ];
-  if (slashQuery !== null) {
-    // debug: console.log('[skill-picker] slashQuery=', slashQuery, 'filtered=', filteredSkills.length);
-  }
+  const slashQuery = slashToken?.query.toLowerCase();
+  const filteredSkills = slashQuery === undefined
+    ? []
+    : [...BUILTIN_COMMANDS, ...skills].filter(skill => skill.name.toLowerCase().includes(slashQuery));
+  const slashMenuPosition = useComposerPopoverPosition(filteredSkills.length > 0, pickerAnchorRef, slashMenuRef, {
+    matchAnchorWidth: true,
+    maxHeight: 320,
+  });
 
   const selectAgent = (agent: {id: string; name: string}) => {
     // Add agent to pending list (avoid duplicates)
@@ -1640,14 +1670,36 @@ export default function ChatView({
   };
 
   const selectSkill = (skill: {name: string}) => {
-    setInput(prev => prev.replace(/\/[\w\u4e00-\u9fff\-_]*$/, `/${skill.name} `));
-    setSlashQuery(null);
-    setTimeout(() => inputRef.current?.focus(), 0);
+    if (!slashToken) return;
+    const completion = completeComposerSlashToken(input, slashToken, skill.name);
+    setInput(completion.value);
+    setSlashToken(null);
+    requestAnimationFrame(() => {
+      const element = inputRef.current;
+      if (!element || element.value !== completion.value) return;
+      element.focus({ preventScroll: true });
+      element.setSelectionRange(completion.caret, completion.caret);
+    });
   };
 
-  const handleComposerChange = (value: string) => {
+  const updateSlashToken = (value: string, caret: number, selectionEnd: number) => {
+    const token = caret === selectionEnd ? readComposerSlashToken(value, caret) : null;
+    setSlashToken(token);
+    if (token) setAtQuery(null);
+    return token;
+  };
+
+  const handleComposerChange = (value: string, caret = value.length, selectionEnd = caret) => {
     setInput(value);
-    const atMatch = value.match(/@([\w\u4e00-\u9fff]*)$/);
+    if (updateSlashToken(value, caret, selectionEnd)) {
+      if (slashToken === null && window.agentApi) {
+        void window.agentApi.listSkills().then((list) =>
+          setSkills((list as Array<{ name: string; description: string }>).filter(skill => skill.name)),
+        ).catch((error: unknown) => console.error("[listSkills] slash error:", error));
+      }
+      return;
+    }
+    const atMatch = caret === value.length ? value.match(/@([\w\u4e00-\u9fff]*)$/) : null;
     if (atMatch) {
       if (window.agentApi) {
         void window.agentApi.listAgentDefs().then((list) =>
@@ -1656,39 +1708,25 @@ export default function ChatView({
       }
       setPickerRect(pickerAnchorRef.current?.getBoundingClientRect() ?? null);
       setAtQuery(atMatch[1]);
-      setSlashQuery(null);
-      return;
-    }
-    const slashMatch = value.match(/\/([-\w\u4e00-\u9fff]*)$/);
-    if (slashMatch) {
-      if (window.agentApi) {
-        void window.agentApi.listSkills().then((list) =>
-          setSkills((list as Array<{name: string; description: string}>).filter((skill) => skill.name)),
-        ).catch((error: unknown) => console.error("[listSkills] slash error:", error));
-      }
-      setPickerRect(pickerAnchorRef.current?.getBoundingClientRect() ?? null);
-      setSlashQuery(slashMatch[1]);
-      setAtQuery(null);
       return;
     }
     setAtQuery(null);
-    setSlashQuery(null);
   };
 
   const selectStarterPrompt = (prompt: string) => {
     handleComposerChange(prompt);
     setAtQuery(null);
-    setSlashQuery(null);
+    setSlashToken(null);
     requestAnimationFrame(() => inputRef.current?.focus());
   };
 
   const handleComposerKeyDown = (event: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    const action = composerKeyAction(event, { pickerOpen: atQuery !== null || slashQuery !== null, running: isLocallyRunning });
+    const action = composerKeyAction(event, { pickerOpen: atQuery !== null || filteredSkills.length > 0, running: canStopRun });
     if (!action) return;
     if (action === "dismiss-picker") {
       event.preventDefault();
       setAtQuery(null);
-      setSlashQuery(null);
+      setSlashToken(null);
     } else if (action === "abort") {
       event.preventDefault();
       handleAbort("keyboard");
@@ -1750,15 +1788,6 @@ export default function ChatView({
     setPendingImages((prev) => prev.filter((_, i) => i !== index));
   };
 
-  /** Read an image Blob and add it as a base64 data URL */
-  const blobToDataUrl = (blob: Blob): Promise<string> =>
-    new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
-
   // Global paste handler: intercept image pastes into the chat input
   useEffect(() => {
     const handlePaste = async (e: ClipboardEvent) => {
@@ -1806,6 +1835,7 @@ export default function ChatView({
 
   useEffect(() => {
     const loadGeneration = ++sessionLoadGenerationRef.current;
+    const loadController = new AbortController();
     const targetSid = selectedSessionId;
     const isCurrentLoad = () => (
       sessionLoadGenerationRef.current === loadGeneration
@@ -1889,13 +1919,11 @@ export default function ChatView({
             && consumedNavigationHistoryRef.current !== initialSessionHistory
             ? initialSessionHistory : undefined;
           await loadProgressiveSessionHistoryPage(
-            agentApi,
+            { getSession: (id, query) => agentApi.getSession(id, query, { signal: loadController.signal }) },
             targetSid,
             historyAgentType(targetSid),
             {
-              limit: historyAgentType(targetSid) === "codex"
-                ? CODEX_LATEST_HISTORY_PAGE_SIZE
-                : SESSION_HISTORY_PAGE_SIZE,
+              limit: LATEST_SESSION_HISTORY_PAGE_SIZE,
             },
             (detail, phase) => {
               if (!isCurrentLoad() || !isCurrentSnapshot()) return;
@@ -1938,10 +1966,11 @@ export default function ChatView({
               prefetchOlderHistory(targetSid, restoredWindow.window.olderCursor);
               setRuntimeProgress(restoredRuntimeProgress, targetSid);
               setNativeSubagentActivities(restoredNativeSubagents, targetSid);
-              if (shouldRestoreLocalNativeRun(detail) || shouldRestoreCustomerAgentRun(detail)) {
+              // Broker snapshots track native runs independently of this pane's own submissions.
+              if ((detail?.snapshotRunStatus === undefined && shouldRestoreLocalNativeRun(detail)) || shouldRestoreCustomerAgentRun(detail)) {
                 runningSessionRef.current = targetSid;
                 setRunningSession(targetSid);
-              } else if (runningSessionRef.current === targetSid) {
+              } else if (runningSessionRef.current === targetSid && !managedRunSessionsRef.current.has(targetSid)) {
                 runningSessionRef.current = null;
                 setRunningSession(null);
               }
@@ -1991,6 +2020,8 @@ export default function ChatView({
         sessionLoadGenerationRef.current += 1;
         initialHistoryLoadingSessionRef.current = null;
       }
+      loadController.abort();
+      historyPrefetchRef.current?.invalidate();
     };
   }, [activeAgentType, getMessagesForSession, getSessionHistoryWindow, historyAgentType, initialSessionHistory, isWorkspaceWelcome, observeNativeRun, prefetchOlderHistory, selectedSessionId, sessionReloadGeneration, setContextUsage, setHistoryMode, setMessages, setSessionId, syncToolResultScope, updateAgentActivity]);
 
@@ -2095,9 +2126,7 @@ export default function ChatView({
           targetSid,
           historyAgentType(targetSid),
           {
-            limit: historyAgentType(targetSid) === "codex"
-              ? CODEX_LATEST_HISTORY_PAGE_SIZE
-              : SESSION_HISTORY_PAGE_SIZE,
+            limit: LATEST_SESSION_HISTORY_PAGE_SIZE,
           },
           (detail, phase) => {
             if (!isCurrentSnapshot()) return;
@@ -2320,11 +2349,11 @@ export default function ChatView({
         () => historyPrefetchRef.current!.consume(
           targetSid,
           cursor,
-          () => agentApi.getSession(targetSid, {
+          signal => agentApi.getSession(targetSid, {
             before: cursor,
             limit: historyAgentType(targetSid) === "codex" ? CODEX_NAVIGATION_HISTORY_PAGE_SIZE : SESSION_HISTORY_PAGE_SIZE,
             ...(historyAgentType(targetSid) === "codex" ? { view: "core" as const } : {}),
-          }) as Promise<SessionHistoryDetail | null>,
+          }, { signal }) as Promise<SessionHistoryDetail | null>,
         ),
       );
     } catch (loadError) {
@@ -2413,9 +2442,7 @@ export default function ChatView({
         targetSid,
         historyAgentType(targetSid),
         {
-          limit: historyAgentType(targetSid) === "codex"
-            ? CODEX_LATEST_HISTORY_PAGE_SIZE
-            : SESSION_HISTORY_PAGE_SIZE,
+          limit: LATEST_SESSION_HISTORY_PAGE_SIZE,
         },
         (detail, phase) => {
           applied = true;
@@ -2662,12 +2689,17 @@ export default function ChatView({
     if (
       eventSid && isViewed && !event._preserveActiveRun
       && ["done", "error", "turn_aborted"].includes(event.type)
-      && !managedRunSessionsRef.current.has(eventSid)
     ) {
-      // Recovered/goal runs have no startRun finally block to refresh the
-      // sidebar summary. Its stale running status also controls the composer.
-      const context = runCompleteContextRef.current;
-      void context.onRunComplete?.(context.selectedProjectId ?? null, eventSid);
+      const finishedRunId = runTerminal ? event._nativeRunId ?? eventRunId(event) : undefined;
+      if (finishedRunId) {
+        setNativeRunObservation(previous => previous?.sessionId === eventSid && previous.controllableRunId === finishedRunId
+          ? { sessionId: eventSid, running: false }
+          : previous);
+      }
+      if (!managedRunSessionsRef.current.has(eventSid)) {
+        const context = runCompleteContextRef.current;
+        void context.onRunComplete?.(context.selectedProjectId ?? null, eventSid);
+      }
     }
     switch (event.type) {
       case "run_admitted":
@@ -2675,6 +2707,7 @@ export default function ChatView({
         if (isViewed) {
           setRestoredRunError(null);
           updateAgentActivity("thinking");
+          if (eventSid && !managedRunSessionsRef.current.has(eventSid)) void refreshLatestHistory(eventSid);
         }
         if (eventSid && historyAgentType(eventSid) === "codex") {
           applyRuntimeProgress({ progressId: "codex:status", phase: "thinking", label: "正在思考" }, eventSid);
@@ -3454,18 +3487,25 @@ export default function ChatView({
   };
 
   const handleAbort = (trigger: "button" | "keyboard" = "button") => {
+    const targetSessionId = viewSessionId;
+    const api = window.agentApi;
+    if (!targetSessionId || !api) return;
     abortRef.current = true;
     sessionLoadGenerationRef.current += 1;
-    if (window.agentApi) {
-      void window.agentApi.abort(viewSessionId || undefined, trigger).catch((abortError) => {
+    void api.abort(targetSessionId, trigger, observedRunId).then(() => {
+      if (isNativeRuntime) {
+        if (viewSessionIdRef.current === targetSessionId) void refreshLatestHistory(targetSessionId);
+      } else if (runningSessionRef.current === targetSessionId) {
+        runningSessionRef.current = null;
+        setRunningSession(null);
+        runningSubIdsRef.current.clear();
+      }
+    }).catch((abortError) => {
+      if (viewSessionIdRef.current === targetSessionId) {
         setError(abortError instanceof Error ? abortError.message : "停止执行失败");
-      });
-    }
-    if (composerAgentType !== "codex") {
-      runningSessionRef.current = null;
-      setRunningSession(null);
-      runningSubIdsRef.current.clear();
-    }
+        if (isNativeRuntime) void refreshLatestHistory(targetSessionId);
+      }
+    });
   };
 
   /**
@@ -4501,9 +4541,12 @@ export default function ChatView({
         {hasTaskPanel && taskPanel.preferences.visible && <SessionTaskPanel
           id={taskPanelId}
           key={`${viewSessionId ?? "new"}:${sessionSummary?.cwd || workspacePath || ""}`}
-          workspacePath={sessionSummary?.cwd || workspacePath}
+          sessionId={viewSessionId}
+          workspacePath={turnWorkspace}
+          visibleChanges={visibleTurnChanges}
           todos={visiblePlan}
           running={isRunning}
+          onLoadResult={fetchToolResult}
           onOpenArtifact={onOpenArtifact}
           onHide={() => taskPanel.update({ visible: false })}
           position={taskPanel.preferences.position}
@@ -4583,6 +4626,15 @@ export default function ChatView({
           const chatMsg = msg as import("../stores/agentStore").ChatMessage;
           // Skip queued messages — they are rendered in the queue bar above the input
           if (chatMsg.isQueued) return null;
+          const turnResult = turnResults.get(msg.id);
+          const turnFooter = turnResult && <SessionTurnResults
+            key={turnResult.sourceId ?? turnResult.footerId}
+            turn={turnResult}
+            workspacePath={turnWorkspace}
+            loadTrace={loadCodexExecutionTrace}
+            onLoadResult={fetchToolResult}
+            onOpenArtifact={onOpenArtifact}
+          />;
           if (chatMsg.askUser) {
             return chatMsg.askUser.answered || chatMsg.askUser.cancelled
               ? <div key={msg.id} data-message-id={msg.id}>{renderQuestionCard(chatMsg)}</div>
@@ -4590,8 +4642,8 @@ export default function ChatView({
           }
           if (msg.executionGroup) {
             return (
+              <Fragment key={msg.id}>
               <SessionExecutionTrace
-                key={`${viewSessionId}:${msg.id}`}
                 group={historyWindowMode === "latest" ? msg.executionGroup : { ...msg.executionGroup, isRunning: false }}
                 active={executionActivity.kind === "message" && executionActivity.messageId === msg.id}
                 renderContent={renderMessageContent}
@@ -4602,12 +4654,14 @@ export default function ChatView({
                 workspacePath={workspacePath}
                 onOpenArtifact={onOpenArtifact}
               />
+              {turnFooter}
+              </Fragment>
             );
           }
           if (chatMsg.executionTrace) {
             return (
+              <Fragment key={msg.id}>
               <CodexExecutionTrace
-                key={msg.id}
                 trace={chatMsg.executionTrace}
                 loadTrace={loadCodexExecutionTrace}
                 loadToolResult={fetchToolResult}
@@ -4626,6 +4680,8 @@ export default function ChatView({
                 active={executionActivity.kind === "message" && executionActivity.messageId === msg.id}
                 durationMs={codexTurnDurations.get(chatMsg.executionTrace.turnId)}
               />
+              {turnFooter}
+              </Fragment>
             );
           }
           const isUser = msg.role === "user";
@@ -4922,62 +4978,6 @@ export default function ChatView({
                     onLoadResult={loadToolResult}
                   />
                 )}
-                {/* File change summary — one compact bar after all tool calls */}
-                {(() => {
-                  const writes = (msg.toolCalls ?? []).filter(tc => tc.name === "write_file" && tc.result && !tc.isError);
-                  if (writes.length === 0) return null;
-                  // Aggregate by path, keeping last write
-                  const byPath = new Map<string, { path: string; lines: number; added: number; removed: number }>();
-                  for (const tc of writes) {
-                    const path = tc.arguments.file_path as string ?? "";
-                    const content = tc.arguments.content as string ?? "";
-                    const newLines = content ? content.split("\n").length : 0;
-                    // Find read_file result for this path (search backwards through all messages up to current)
-                    let beforeLines = 0;
-                    outer2: for (let mi = i; mi >= 0; mi--) {
-                      const tcs = renderedMessages[mi].toolCalls ?? [];
-                      for (let ti = tcs.length - 1; ti >= 0; ti--) {
-                        const p = tcs[ti];
-                        if (p.name === "read_file" && p.arguments.file_path === path && p.result && !p.isError) {
-                          beforeLines = p.result.split("\n").length;
-                          break outer2;
-                        }
-                      }
-                    }
-                    byPath.set(path, { path, lines: newLines, added: Math.max(0, newLines - beforeLines), removed: Math.max(0, beforeLines - newLines) });
-                  }
-                  const entries = [...byPath.values()];
-                  return (
-                    <div style={{ marginTop: 10, padding: "8px 12px", borderRadius: 8, background: "var(--bg-deep)", border: "1px solid var(--border-subtle)", display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
-                      <span style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.07em", flexShrink: 0 }}>变更汇总</span>
-                      {entries.map(e => {
-                        const previewPath = resolveWebArtifactPath(e.path, workspacePath);
-                        const content = <>
-                          <span style={{ color: "var(--text-secondary)", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={e.path}>
-                            {e.path.replace(/\\/g, "/").split("/").pop()}
-                          </span>
-                          {e.added > 0 && <span style={{ color: "var(--success)", fontWeight: 600 }}>+{e.added}</span>}
-                          {e.removed > 0 && <span style={{ color: "var(--danger)", fontWeight: 600 }}>−{e.removed}</span>}
-                          {e.added === 0 && e.removed === 0 && <span style={{ color: "var(--text-muted)" }}>{e.lines}行</span>}
-                        </>;
-                        return onOpenArtifact && previewPath ? (
-                          <button
-                            key={e.path}
-                            type="button"
-                            className="chat-file-change-link"
-                            onClick={() => onOpenArtifact(previewPath)}
-                            title={`预览 ${previewPath}`}
-                            aria-label={`预览改动文件 ${e.path.replace(/\\/g, "/").split("/").pop()}`}
-                          >
-                            {content}
-                          </button>
-                        ) : (
-                          <span key={e.path} className="chat-file-change-link chat-file-change-link--static">{content}</span>
-                        );
-                      })}
-                    </div>
-                  );
-                })()}
                 {isUser && (chatMsg.sendState || chatMsg.isSteered) && (
                   <div
                     className={`msg-send-status${chatMsg.sendState ? ` is-${chatMsg.sendState}` : ""}`}
@@ -5014,6 +5014,7 @@ export default function ChatView({
                   </div>
                 )}
               </div>
+              {turnFooter}
               {/* Completed assistant footer remains visible after the live run disappears. */}
               {(runResult || actionPolicy.showCompletion) && (
                 <div className="msg-completion-footer">
@@ -5921,8 +5922,15 @@ export default function ChatView({
             ref={inputRef as React.RefObject<HTMLTextAreaElement>}
             rows={3}
             value={input}
-            onChange={(event) => handleComposerChange(event.target.value)}
-            onBlur={() => setTimeout(() => { setAtQuery(null); setSlashQuery(null); }, 120)}
+            onChange={(event) => {
+              const { value, selectionStart, selectionEnd } = event.currentTarget;
+              handleComposerChange(value, selectionStart, selectionEnd);
+            }}
+            onSelect={(event) => {
+              const { value, selectionStart, selectionEnd } = event.currentTarget;
+              updateSlashToken(value, selectionStart, selectionEnd);
+            }}
+            onBlur={() => setTimeout(() => { setAtQuery(null); setSlashToken(null); }, 120)}
             onKeyDown={handleComposerKeyDown}
             placeholder={isParallelComposer ? "输入消息，选择接收的 Agent" : canComposeNativeGoal && goalMode ? "输入要持续推进的目标" : codexReleaseState === "released" ? "已停止在 AgentRoam 中使用；Codex Desktop 最长约 30 分钟后可用" : isCompatibilityReadOnly ? (compatibilityStatus === "incompatible" ? "Codex 版本不兼容" : "正在验证会话兼容性") : isReadOnly ? "原客户端使用中，当前只读" : canGuideExternalSession(sessionSummary) ? "补充要求会交给桌面端原会话" : runtimeReady ? (goalMode ? "输入要持续推进的目标" : shouldQueueMessage ? "输入下一条排队消息" : isNewSessionComposer ? "描述你想做的事，第一条消息会创建会话" : "提出后续修改要求") : "请先在设置中配置 API Key"}
             disabled={!canSubmitComposer}
@@ -6050,7 +6058,7 @@ export default function ChatView({
                       <span className="web-native-model-agent-name">{NATIVE_AGENT_LABELS[composerAgentType]}</span>
                     </span>
                     {!supportsNativeModelSelection && <span title="子会话沿用原生模型设置">原生模型</span>}
-                    {supportsNativeModelSelection && composerAgentType === "qoder" && (
+                    {supportsNativeModelSelection && (composerAgentType === "qoder" || composerAgentType === "zcode" || composerAgentType === "opencode") && (
                       <NativeModelCatalogNotice status={nativeModelCatalog.status} error={nativeModelCatalog.error} onRetry={nativeModelCatalog.retry} />
                     )}
                     {supportsNativeModelSelection && nativeModelPickerReady && (
@@ -6078,7 +6086,7 @@ export default function ChatView({
                 )}
               </div>}
 
-              {isParallelComposer && !isLocallyRunning ? null : isLocallyRunning ? (
+              {isParallelComposer && !canStopRun ? null : canStopRun ? (
                 <button type="button" onClick={() => handleAbort("button")} className="web-native-stop-button" aria-label="停止生成" title="停止生成">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                     <rect x="6" y="6" width="12" height="12" rx="2" />
@@ -6239,36 +6247,33 @@ export default function ChatView({
         document.body
       )}
 
-      {pickerRect && slashQuery !== null && filteredSkills.length > 0 && createPortal(
-        <div style={{
+      {filteredSkills.length > 0 && createPortal(
+        <div ref={slashMenuRef} role="region" aria-label="技能" style={{
           position: "fixed",
-          bottom: window.innerHeight - pickerRect.top + 8,
-          left: pickerRect.left,
-          width: pickerRect.width,
+          ...slashMenuPosition,
           background: "var(--bg-surface)",
           border: "1px solid var(--border-default)",
           borderRadius: 10,
           boxShadow: "var(--shadow-md)",
           zIndex: 99999,
-          display: "flex",
-          flexDirection: "column",
-          maxHeight: 320,
+          overflowY: "auto",
+          overscrollBehavior: "contain",
         }}>
-          <div style={{ padding: "6px 10px 4px", fontSize: 10, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase" as const, letterSpacing: "0.06em", flexShrink: 0 }}>
+          <div style={{ position: "sticky", top: 0, background: "var(--bg-surface)", padding: "6px 10px 4px", fontSize: 10, fontWeight: 600, color: "var(--text-muted)", letterSpacing: "0.06em" }}>
             技能 ({filteredSkills.length})
           </div>
-          <div style={{ overflowY: "auto", flex: 1 }}>
-            {filteredSkills.map(skill => (
-              <button key={skill.name}
-                onMouseDown={(e) => { e.preventDefault(); selectSkill(skill); }}
-                style={{ display: "block", width: "100%", textAlign: "left" as const, padding: "8px 12px", border: "none", background: "transparent", cursor: "pointer" }}
-                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = "var(--accent-dim)"; }}
-                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>/{skill.name}</div>
-                {skill.description && <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{skill.description}</div>}
-              </button>
-            ))}
-          </div>
+          {filteredSkills.map(skill => (
+            <button key={skill.name}
+              type="button"
+              onMouseDown={event => event.preventDefault()}
+              onClick={() => selectSkill(skill)}
+              style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 12px", border: "none", background: "transparent", cursor: "pointer" }}
+              onMouseEnter={event => { event.currentTarget.style.background = "var(--accent-dim)"; }}
+              onMouseLeave={event => { event.currentTarget.style.background = "transparent"; }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>/{skill.name}</div>
+              {skill.description && <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{skill.description}</div>}
+            </button>
+          ))}
         </div>,
         document.body
       )}

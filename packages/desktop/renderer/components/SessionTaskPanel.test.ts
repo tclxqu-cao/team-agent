@@ -1,41 +1,48 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { fetchWorkspaceChanges } from "./SessionTaskPanel";
+import { describe, expect, it, vi } from "vitest";
+import { loadSessionChangeHistory } from "../lib/session-change-history";
 
-afterEach(() => vi.unstubAllGlobals());
-function service(status: number, body: string) {
-  const request = vi.fn().mockResolvedValue({ status, body });
-  vi.stubGlobal("window", { sharedServiceApi: { request } });
-  return request;
+function page(path: string, cursor: string | null, revision = "same") {
+  return {
+    id: "session",
+    messages: [
+      { role: "user", content: path },
+      { role: "assistant", toolCalls: [{ id: path, name: "write_file", arguments: { file_path: path } }] },
+      { role: "tool", toolCallId: path, content: "" },
+    ],
+    history: { revision, nextCursor: cursor, hasMore: Boolean(cursor) },
+  };
 }
 
-describe("workspace change transport", () => {
-  it("explains an old backend's HTML 404 without treating it as malformed Git data", async () => {
-    service(404, "<!DOCTYPE html><title>404</title>");
-    await expect(fetchWorkspaceChanges("/repo")).rejects.toThrow("当前后台尚未提供变更接口");
+describe("session change history", () => {
+  const getSessionToolResult = vi.fn();
+  it("includes both older and current changes in their original order", async () => {
+    const getSession = vi.fn().mockResolvedValueOnce(page("latest.txt", "next")).mockResolvedValueOnce(page("earlier.txt", null));
+    const signal = new AbortController().signal;
+    const changes = await loadSessionChangeHistory({ getSession, getSessionToolResult }, "session", "/repo", signal);
+    expect(changes.map(change => change.path)).toEqual(["/repo/earlier.txt", "/repo/latest.txt"]);
+    expect(getSession).toHaveBeenNthCalledWith(2, "session", { before: "next", limit: 100, view: "trace" }, { signal });
   });
 
-  it("uses the selected desktop service and preserves the exact directory", async () => {
-    const snapshot = { repository: true, root: "/repo", branch: "main", files: [] };
-    const request = service(200, JSON.stringify(snapshot));
-    expect(await fetchWorkspaceChanges("/中文 目录")).toEqual(snapshot);
-    expect(request).toHaveBeenCalledWith(`/api/workspace-changes?${new URLSearchParams({ path: "/中文 目录" })}`, "GET");
+  it("rejects data belonging to another session or a different history revision", async () => {
+    const signal = new AbortController().signal;
+    const getSession = vi.fn().mockResolvedValueOnce({ ...page("other.txt", null), id: "other" });
+    await expect(loadSessionChangeHistory({ getSession, getSessionToolResult }, "session", "/repo", signal)).rejects.toThrow("会话记录不可用");
+    getSession.mockResolvedValueOnce(page("latest.txt", "next")).mockResolvedValueOnce(page("earlier.txt", null, "new"));
+    await expect(loadSessionChangeHistory({ getSession, getSessionToolResult }, "session", "/repo", signal)).rejects.toThrow("会话内容已更新");
   });
 
-  it("distinguishes permission errors and rejects an invalid successful response", async () => {
-    service(403, "Forbidden");
-    await expect(fetchWorkspaceChanges("/repo")).rejects.toThrow("没有读取变更的权限");
-    service(200, JSON.stringify({ ok: true }));
-    await expect(fetchWorkspaceChanges("/repo")).rejects.toThrow("数据格式不正确");
-    service(200, "null");
-    await expect(fetchWorkspaceChanges("/repo")).rejects.toThrow("数据格式不正确");
-  });
-
-  it("uses same-origin HTTP in the web and phone clients", async () => {
-    vi.stubGlobal("window", {});
-    const snapshot = { repository: false, root: null, branch: null, files: [] };
-    const fetch = vi.fn().mockResolvedValue({ status: 200, text: async () => JSON.stringify(snapshot) });
-    vi.stubGlobal("fetch", fetch);
-    expect(await fetchWorkspaceChanges("/repo")).toEqual(snapshot);
-    expect(fetch).toHaveBeenCalledWith("/api/workspace-changes?path=%2Frepo", { cache: "no-store" });
+  it("hydrates a frozen turn once across its user segments", async () => {
+    const turnId = "engine-frozen:old:turn";
+    const getSession = vi.fn().mockResolvedValueOnce({
+      id: "session",
+      messages: [0, 1].map(segmentIndex => ({ role: "user", content: "任务", presentation: { executionTrace: { turnId, segmentIndex } } })),
+      history: { revision: "same", delivery: "core", hasMore: false },
+    }).mockResolvedValueOnce({
+      ...page("frozen.txt", null),
+      history: { revision: "same", delivery: "trace" },
+    });
+    const changes = await loadSessionChangeHistory({ getSession, getSessionToolResult }, "session", "/repo", new AbortController().signal);
+    expect(changes.map(change => change.path)).toEqual(["/repo/frozen.txt"]);
+    expect(getSession).toHaveBeenCalledTimes(2);
   });
 });

@@ -7,12 +7,12 @@ import type { ChatViewProps } from "../ChatView";
 import ChatHeaderActions from "../ChatHeaderActions";
 import { collaborationRequest } from "../collaboration/client";
 import { createAgentStore, type AgentStore } from "../../stores/agentStore";
-import { equalTaskLayout, removeTaskPane, resizeTaskSplit, swapTaskPanes, taskPaneIds } from "../../lib/desktop-task-layout";
+import { equalTaskLayout, resizeTaskSplit, swapTaskPanes, taskPaneIds } from "../../lib/desktop-task-layout";
 import { catalogSessionReceipt } from "../../lib/all-sessions";
 import { addTaskWorkspaceColumn, addTaskWorkspaceSession, catalogTaskSession, fourColumnTaskWorkspace, isEmptyTaskPane, loadTaskSession, openTaskWorkspaceWebPage, readTaskWorkspace, serializeTaskWorkspace, TASK_PANE_SURFACE_LABELS, taskPaneHistorySeed, updateTaskPaneContent, updateTaskPaneDraft, updateTaskPaneSession, type TaskPane, type TaskPaneDraft, type TaskPaneSurfaceKind, type TaskWorkspaceSnapshot } from "./session-state";
 import { TASK_PANE_WEB_LINK_EVENT, type TaskPaneWebLinkRequest } from "../../lib/task-pane-web-links";
 import { TASK_PANE_NOTIFICATION_EVENT, type TaskPaneNotificationRequest } from "../../lib/task-pane-notification";
-import { pushTaskPaneNotification, restoreTaskPaneNotification } from "./session-state";
+import { closeTaskWorkspacePane, pushTaskPaneNotification } from "./session-state";
 import { isWebShell } from "../../web/webLayout";
 import TaskSessionPicker from "./TaskSessionPicker";
 import TaskSplitLayout from "./TaskSplitLayout";
@@ -62,8 +62,11 @@ export default function DesktopTaskWorkspace({ enabled, children, onFocusSession
   useEffect(() => { onSplitChange?.(enabled && open); }, [enabled, open, onSplitChange]);
 
   const save = (value: TaskWorkspaceSnapshot | null) => {
-    if (!value || !storageKey.current) return;
-    try { localStorage.setItem(storageKey.current, serializeTaskWorkspace(value)); } catch { /* Layout remains usable if storage is full. */ }
+    if (!storageKey.current) return;
+    try {
+      if (value) localStorage.setItem(storageKey.current, serializeTaskWorkspace(value));
+      else localStorage.removeItem(storageKey.current);
+    } catch { /* Layout remains usable if storage is full. */ }
   };
   useEffect(() => {
     if (!enabled || !open || !state) return;
@@ -114,11 +117,16 @@ export default function DesktopTaskWorkspace({ enabled, children, onFocusSession
   }, [enabled, open]);
 
   const focusPane = useCallback((id: string) => {
-    const pane = snapshot.current?.panes.find(item => item.id === id);
-    if (!pane || snapshot.current?.activePaneId === id) return;
-    setState(current => current ? { ...current, activePaneId: id } : current);
+    const current = snapshot.current;
+    const pane = current?.panes.find(item => item.id === id);
+    if (!current || !pane || current.activePaneId === id) return;
+    const next = { ...current, activePaneId: id };
+    snapshot.current = next; setState(next);
     setMaximized(current => current ? id : null);
-    if (pane.session) callbacks.current.onFocusSession(pane.session);
+    if (pane.session) {
+      lastNavigation.current = pane.session.id;
+      callbacks.current.onFocusSession(pane.session);
+    }
   }, []);
 
   const setPaneSession = (paneId: string, session: UnifiedSessionSummary, initialHistory?: TaskPane["initialHistory"]) => {
@@ -126,8 +134,12 @@ export default function DesktopTaskWorkspace({ enabled, children, onFocusSession
     if (!current || !current.panes.some(pane => pane.id === paneId)) return;
     const existing = current.panes.find(pane => pane.session?.id === session.id && pane.id !== paneId);
     if (existing) { focusPane(existing.id); return; }
-    setState(value => value ? updateTaskPaneSession(value, paneId, session, initialHistory) : value);
-    if (current.activePaneId === paneId) callbacks.current.onFocusSession(session);
+    const next = updateTaskPaneSession(current, paneId, session, initialHistory);
+    snapshot.current = next; setState(next);
+    if (current.activePaneId === paneId) {
+      lastNavigation.current = session.id;
+      callbacks.current.onFocusSession(session);
+    }
   };
 
   const replacePane = async (paneId: string, target: { id: string; agentType?: UnifiedSessionSummary["agentType"] }, receipt?: UnifiedSessionSummary) => {
@@ -279,28 +291,26 @@ export default function DesktopTaskWorkspace({ enabled, children, onFocusSession
   const closePane = (id: string) => {
     const current = snapshot.current;
     if (!current) return;
-    if (current.panes.find(pane => pane.id === id)?.notificationHistory?.length) {
-      replacements.current.delete(id);
-      setBusy(value => ({ ...value, [id]: false }));
-      const next = restoreTaskPaneNotification(current, id);
-      snapshot.current = next; setState(next);
-      const restored = next.panes.find(pane => pane.id === id);
-      if (current.activePaneId === id && restored?.session) {
-        lastNavigation.current = restored.session.id;
-        callbacks.current.onFocusSession(restored.session);
-      }
-      return;
-    }
-    if (current.panes.length === 1) { exit(); return; }
+    const next = closeTaskWorkspacePane(current, id);
+    if (next === current) return;
     replacements.current.delete(id);
-    stores.current.delete(id);
-    setContentPicker(current => current === id ? null : current);
-    const panes = current.panes.filter(pane => pane.id !== id);
-    const layout = removeTaskPane(current.layout, id)!;
-    const next = { ...current, panes, layout, activePaneId: current.activePaneId === id ? panes[0].id : current.activePaneId };
-    snapshot.current = next; setState(next); setMaximized(null);
-    const active = panes.find(pane => pane.id === next.activePaneId)?.session;
-    if (active) callbacks.current.onFocusSession(active);
+    setBusy(value => ({ ...value, [id]: false }));
+    setPicker(value => value === id ? null : value);
+    setContentPicker(value => value === id ? null : value);
+    snapshot.current = next; setState(next);
+    if (!next || next.layout !== current.layout) {
+      stores.current.delete(id);
+      setMaximized(value => value === id ? null : value);
+    }
+    if (!next) { exit(); return; }
+    save(next);
+    if (current.activePaneId === id) {
+      const active = next.panes.find(pane => pane.id === next.activePaneId)?.session;
+      if (active) {
+        lastNavigation.current = active.id;
+        callbacks.current.onFocusSession(active);
+      }
+    }
   };
   const props = children.props;
   const webShell = isWebShell();
@@ -338,12 +348,16 @@ export default function DesktopTaskWorkspace({ enabled, children, onFocusSession
     }
   };
   const startDraft = (id: string) => {
-    if (hydrating.current) return;
-    const current = source.current;
-    setContent(id, null);
-    changeDraft(id, { agentType: current.sessionSummary?.agentType ?? current.activeAgentType ?? "customer-agent",
-      projectId: current.sessionSummary?.projectId ?? current.selectedProjectId ?? null,
-      cwd: current.sessionSummary?.cwd ?? current.workspacePath ?? "", workspaceSource: current.workspaceSource });
+    const current = snapshot.current;
+    if (hydrating.current || !current) return;
+    const props = source.current;
+    replacements.current.delete(id);
+    stores.current.delete(id);
+    setBusy(value => ({ ...value, [id]: false }));
+    const next = updateTaskPaneDraft(current, id, { agentType: props.sessionSummary?.agentType ?? props.activeAgentType ?? "customer-agent",
+      projectId: props.sessionSummary?.projectId ?? props.selectedProjectId ?? null,
+      cwd: props.sessionSummary?.cwd ?? props.workspacePath ?? "", workspaceSource: props.workspaceSource }, true);
+    snapshot.current = next; setState(next); setContentPicker(null);
   };
   const renderPane = (id: string) => {
     const pane = state?.panes.find(item => item.id === id);
@@ -357,8 +371,8 @@ export default function DesktopTaskWorkspace({ enabled, children, onFocusSession
       <button type="button" className="ui-icon-button" onClick={event => { contentPickerTrigger.current = event.currentTarget; setContentPicker(id); }} title="切换面板内容" aria-label="切换面板内容"><Grid2X2 size={15} /></button>
       <button type="button" className="ui-icon-button" onClick={() => setMaximized(value => value === id ? null : id)} title={maximized === id ? "恢复分屏" : "放大此格"} aria-label={maximized === id ? "恢复分屏" : "放大此格"}>{maximized === id ? <Minimize2 size={15} /> : <Maximize2 size={15} />}</button>
       <button type="button" className="ui-icon-button" onClick={() => closePane(id)}
-        title={pane.notificationHistory?.length ? "关闭通知会话，返回之前的会话" : "移除此格（任务继续运行）"}
-        aria-label={pane.notificationHistory?.length ? "关闭通知会话，返回之前的会话" : "移除此格"}><X size={16} /></button>
+        title={pane.history?.length ? "关闭当前内容，返回上一项" : "移除此格（任务继续运行）"}
+        aria-label={pane.history?.length ? "关闭当前内容，返回上一项" : "移除此格"}><X size={16} /></button>
     </div>;
     return <section className={`task-pane${state?.activePaneId === id ? " is-active" : ""}${maximized === id ? " is-maximized" : ""}`} key={id}
       data-task-pane={id} data-task-session={session?.id ?? ""} data-pane-content={pane.surface ?? (pane.webUrl ? "web" : session || draft ? "task" : "empty")} aria-label={label}

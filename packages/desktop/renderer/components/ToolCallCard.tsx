@@ -851,12 +851,14 @@ export function ToolCallActivity(props: ToolCallProps) {
   const isDone = nativeSubagent ? nativeSubagent.status !== "running" : hasToolCallResult(toolCall);
   const isError = nativeSubagent ? nativeSubagent.status === "failed" : toolCall.isError;
   const color = isError ? "var(--danger)" : "currentColor";
+  const imagePath = canonicalToolName(toolCall.name) === "view_image" && isDone && !isError && props.onOpenArtifact
+    ? resolveToolPreviewPaths(toolCall, props.workspacePath)[0] : undefined;
   return (
     <div className="tool-call-activity">
       <button type="button" className="tool-call-activity__summary"
-        aria-expanded={expanded} aria-busy={!isDone || undefined}
-        aria-label={`${preview}，${expanded ? "收起" : "展开"}工具详情`} title={preview}
-        onClick={() => setExpanded((value) => !value)}>
+        aria-expanded={imagePath ? undefined : expanded} aria-busy={!isDone || undefined}
+        aria-label={imagePath ? `查看图片 ${basename(imagePath)}` : `${preview}，${expanded ? "收起" : "展开"}工具详情`} title={imagePath ?? preview}
+        onClick={() => imagePath ? props.onOpenArtifact?.(imagePath) : setExpanded((value) => !value)}>
         <ToolActionIcon name={toolCall.name} color={color} size={13} />
         <span className="tool-call-activity__preview">{preview}</span>
         {(!isDone || isError) && <StatusIcon isDone={isDone} isError={isError} color={color} />}
@@ -930,10 +932,10 @@ export function ToolCallGroup({ items, variant = "default", onSelectSession, wor
 }
 
 export function resolveToolPreviewPaths(toolCall: ToolCallData, workspacePath?: string | null): string[] {
-  if (toolFamily(toolCall.name) !== "file") return [];
+  if (toolFamily(toolCall.name) !== "file" && canonicalToolName(toolCall.name) !== "view_image") return [];
   const rawPaths = toolCall.name === "apply_patch"
     ? patchChanges(toolCall.arguments, toolCall.result).map((change) => change.path)
-    : [toolCall.arguments.file_path ?? toolCall.arguments.path ?? toolCall.arguments.notebook_path];
+    : [toolCall.arguments.file_path ?? toolCall.arguments.filePath ?? toolCall.arguments.path ?? toolCall.arguments.notebook_path];
   return [...new Set(rawPaths
     .filter((value): value is string => typeof value === "string")
     .map((value) => resolveWebArtifactPath(value, workspacePath))

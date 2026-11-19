@@ -228,6 +228,14 @@ describe("tool activity rows", () => {
     }, "/work/project")).toEqual(["/work/project/src/a.ts", "/tmp/b.ts"]);
   });
 
+  it("shows a completed image view as a direct preview action", () => {
+    const toolCall = { id: "view", name: "view_image", arguments: { path: "验收.png" }, result: "" };
+    expect(resolveToolPreviewPaths(toolCall, "/repo")).toEqual(["/repo/验收.png"]);
+    const html = renderToStaticMarkup(createElement(ToolCallActivity, { toolCall, workspacePath: "/repo", onOpenArtifact: vi.fn() }));
+    expect(html).toContain('aria-label="查看图片 验收.png"');
+    expect(html).not.toContain('aria-expanded=');
+  });
+
   it("keeps file preview actions out when no artifact callback is available", () => {
     const html = renderToStaticMarkup(createElement(ToolCallCard, {
       toolCall: { id: "write", name: "write_file", arguments: { file_path: "/tmp/a.ts", content: "source" }, result: "" },

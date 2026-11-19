@@ -271,6 +271,7 @@ export interface AgentApi {
   showWindow(): Promise<void>;
   isWindowVisible(): Promise<boolean>;
   openNewSessionWindow?(options: { agentType: AgentType; workspacePath?: string }): Promise<void>;
+  openVideoWindow?(options: import("../main/video-window").OpenVideoWindowOptions): Promise<void>;
   // Open an http(s) link in the system browser (e.g. Flow Studio entry)
   openExternal(url: string): Promise<{ ok: boolean }>;
   notifyTaskCompletion?(
@@ -292,7 +293,7 @@ export interface AgentApi {
   onDictationError(callback: (message: string) => void): () => void;
   run(input: string, sessionId: string, agentIds?: string[], agentName?: string, images?: string[], nativeOptions?: NativeRunOptions): Promise<unknown[]>;
   listAgentModels(agentType: AgentType): Promise<{ agentType: AgentType; models: RuntimeModelInfo[]; supported?: boolean }>;
-  collaboration(command: CollaborationCommand): Promise<unknown>;
+  collaboration(command: CollaborationCommand, options?: { signal?: AbortSignal }): Promise<unknown>;
   calendarOverview?(input: { from: string; to: string }): Promise<import("@agent/core").CalendarOverview>;
   todoList?(query?: import("@agent/core").TodoListQuery): Promise<{ items: import("@agent/core").TodoDetail[]; cursor?: string }>;
   todoGet?(id: string): Promise<import("@agent/core").TodoDetail>;
@@ -302,7 +303,7 @@ export interface AgentApi {
   setNotificationVisible?(target: { sessionId?: string; taskId?: string }): Promise<void>;
   onNotificationOpen?(callback: (target: { sessionId?: string; taskId?: string; questionId?: string }) => void): () => void;
   steer(input: string, sessionId: string, agentName?: string): Promise<boolean>;
-  abort(sessionId?: string, trigger?: "button" | "keyboard"): Promise<void>;
+  abort(sessionId?: string, trigger?: "button" | "keyboard", expectedRunId?: string): Promise<void>;
   answerQuestion(questionId: string, answer: string, selectedIndices?: number[]): Promise<boolean>;
   subscribe(): Promise<void>;
   onEvent(callback: (event: unknown) => void): () => void;
@@ -328,7 +329,7 @@ export interface AgentApi {
   deleteToolPolicy(policyId: string): Promise<{ deleted: boolean; policyId: string }>;
   openFileDialog(): Promise<string | null>;
   showDirectoryContextMenu?(path: string): Promise<{ shown: true }>;
-  showFileContextMenu?(path: string): Promise<{ shown: true }>;
+  showFileContextMenu?(path: string, options?: { label?: string; line?: number }): Promise<{ shown: true }>;
   fileWorkspaceRequest<T = unknown>(method: FileWorkspaceMethod, params?: Record<string, unknown>): Promise<T>;
   onFileWorkspaceEvent(callback: (event: FileWorkspaceEventMessage) => void): () => void;
   readFile(path: string): Promise<string>;
@@ -367,6 +368,7 @@ export interface AgentApi {
   getSession(
     id: string,
     query?: { before?: string; after?: string; anchor?: string; limit?: number; view?: "core" | "trace"; revision?: string; turnId?: string },
+    options?: { signal?: AbortSignal },
   ): Promise<unknown>;
   getSessionToolResult(
     id: string,

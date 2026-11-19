@@ -11,6 +11,20 @@ import AllSessionsSidebar from "./AllSessionsSidebar";
 afterEach(() => vi.unstubAllGlobals());
 
 describe("all sessions cache presentation", () => {
+  it("hides deleted rows even while an old snapshot still contains them", () => {
+    vi.stubGlobal("window", { localStorage: { getItem: (key: string) => key === ALL_SESSIONS_CACHE_KEY ? JSON.stringify({
+      version: 1, total: 2,
+      data: ["deleted", "kept"].map(id => ({ id, agentType: "zcode", title: id, cwd: "/project", updated: "2026-11-09", status: "failed", canResume: true })),
+    }) : null } });
+    const html = renderToStaticMarkup(createElement(AllSessionsSidebar, {
+      selectedSessionId: null, runningSessionId: null, needsInput: [], pinnedIds: [], revision: 1,
+      deletedSessionIds: ["deleted"], onSelect: () => {}, onPin: () => {}, onDelete: () => {},
+    }));
+    expect(html).toContain("kept");
+    expect(html).not.toContain(">deleted<");
+    expect(html).not.toContain("删除会话：deleted");
+  });
+
   it("shows a newly created running session immediately over an older local cache", () => {
     vi.stubGlobal("window", { localStorage: { getItem: () => JSON.stringify({ version: 1, total: 1,
       data: [{ id: "old", agentType: "codex", title: "旧任务", cwd: "/project", updated: "2026-11-01", status: "idle", canResume: true }],
