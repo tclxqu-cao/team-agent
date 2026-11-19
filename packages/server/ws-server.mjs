@@ -1090,6 +1090,17 @@ const handle = app.getRequestHandler();
 
 await app.prepare();
 
+const packagedRuntimeVersion = process.env.AGENTROAM_CLI_PATH && process.env.AGENTROAM_VERSION?.trim();
+if (packagedRuntimeVersion) {
+  const { resolveNativeRuntimeDirectory, startDetachedNativeRuntimeHost } = await import("@agent/native-runtime");
+  await startDetachedNativeRuntimeHost({
+    directory: resolveNativeRuntimeDirectory(),
+    codexExecutable: process.env.AGENT_CODEX_BIN || "codex",
+    opencodeExecutable: process.env.AGENT_OPENCODE_BIN || "opencode",
+    packageVersion: packagedRuntimeVersion,
+  });
+}
+
 // ── static hosting for the web shell (@agent/webapp build) at /app ─────────
 // Built by `bun run --cwd packages/webapp build`; override the artifact dir
 // with AGENT_WEB_APP_DIST when staging for the CLI/tunnel runtime.

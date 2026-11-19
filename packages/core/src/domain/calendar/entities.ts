@@ -42,6 +42,7 @@ export interface CalendarEntry {
   id: string;
   kind: CalendarEntryKind;
   source: CalendarSourceId;
+  executionAgentType?: string;
   title: string;
   /** Placement timestamp (UTC ms). */
   at: number;

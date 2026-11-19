@@ -1,7 +1,15 @@
-import { describe, expect, it } from "vitest";
-import { encodeUnifiedSessionId, type AgentType, type AgentWorkspace, type CreateRuntimeSessionOptions, type RuntimeHealth, type UnifiedSessionSummary, type WorkspacePage } from "@agent/native-runtime";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { TodoError } from "@agent/core";
+import { encodeUnifiedSessionId, RuntimeSessionError, type AgentType, type AgentWorkspace, type CreateRuntimeSessionOptions, type RuntimeHealth, type RuntimeTodoContext, type UnifiedSessionSummary, type WorkspacePage } from "@agent/native-runtime";
 import type { NativeRuntimePort } from "./native-runtime-service";
 import { NativeRuntimeService, normalizeProjectPath } from "./native-runtime-service";
+
+const todoMocks = vi.hoisted(() => ({ create: vi.fn(), stored: vi.fn(), warn: vi.fn() }));
+vi.mock("./todo/runtime-todo-context", () => ({
+  createRuntimeTodoContext: todoMocks.create,
+  storedRuntimeTodoContext: todoMocks.stored,
+}));
+vi.mock("./global-logger", () => ({ serverLogger: () => ({ warn: todoMocks.warn }) }));
 
 function summary(
   id: string,
@@ -89,6 +97,153 @@ class FakeRuntime implements NativeRuntimePort {
   release = async (id: string): Promise<void> => { this.releasedIds.push(id); };
   answerQuestion = async (): Promise<boolean> => false;
 }
+
+describe("native Todo binding compatibility", () => {
+  const context: RuntimeTodoContext = {
+    serviceId: "fixture-service", ownerId: "fixture-owner",
+    descriptorPath: "/fixture/private/manage.json", relayPath: "/fixture/private/relay.json",
+  };
+  const contexts = new Map<string, RuntimeTodoContext>();
+  const missingBinding = () => new RuntimeSessionError("Unsupported broker method: bindTodoContext", "OPERATION_NOT_SUPPORTED");
+  const operations = ["create", "start", "enqueue"] as const;
+
+  beforeEach(() => {
+    contexts.clear();
+    todoMocks.create.mockReset().mockReturnValue(context);
+    todoMocks.stored.mockReset().mockImplementation((id: string, seed?: RuntimeTodoContext) => {
+      const stored = contexts.get(id) ?? seed ?? context;
+      contexts.set(id, stored);
+      return stored;
+    });
+    todoMocks.warn.mockReset();
+  });
+
+  function fixture(agentType: "codex" | "zcode" = "codex") {
+    const id = encodeUnifiedSessionId(agentType, "binding-fixture");
+    const runtime = Object.assign(new FakeRuntime(), {
+      bindTodoContext: vi.fn().mockResolvedValue(undefined),
+      startRun: vi.fn().mockResolvedValue({ runId: "fixture-run", snapshotRevision: 0 }),
+      enqueueMessage: vi.fn().mockResolvedValue({ state: { active: null, queued: [], history: [] } }),
+    });
+    runtime.createResult = { ...summary(id), agentType };
+    const service = new NativeRuntimeService(runtime);
+    const invoke = (operation: typeof operations[number], seed?: RuntimeTodoContext) => operation === "create"
+      ? service.create({ agentType, cwd: "/fixture", title: "Fixture chat", ...(seed ? { todoContext: seed } : {}) })
+      : operation === "start" ? service.startRun(id, "Fixture input")
+        : service.enqueueMessage(id, { sourceMessageId: "fixture-message", content: "Fixture input" });
+    return { id, runtime, service, invoke };
+  }
+
+  it.each(["codex", "zcode"] as const)("keeps interactive %s create, send and queue usable with the exact legacy missing method", async agentType => {
+    const { id, runtime, invoke } = fixture(agentType);
+    runtime.bindTodoContext.mockRejectedValue(missingBinding());
+
+    for (const operation of operations) await expect(invoke(operation)).resolves.toBeDefined();
+
+    expect(runtime.createCalls[0].todoContext).toBe(context);
+    expect(runtime.bindTodoContext.mock.calls).toEqual([[id, context], [id, context], [id, context]]);
+    expect(runtime.startRun).toHaveBeenCalledWith(id, "Fixture input", undefined, "web", undefined);
+    expect(runtime.enqueueMessage).toHaveBeenCalledWith(id, { sourceMessageId: "fixture-message", content: "Fixture input" }, "web");
+    expect(contexts.get(id)).toBe(context);
+    expect(todoMocks.warn).toHaveBeenCalledTimes(3);
+    expect(todoMocks.warn).toHaveBeenCalledWith(expect.stringContaining("without Todo integration"), {
+      sessionId: id, method: "bindTodoContext", code: "OPERATION_NOT_SUPPORTED",
+    });
+  });
+
+  it.each(operations)("preserves successful %s binding and credentials on a current broker", async operation => {
+    const { id, runtime, invoke } = fixture();
+    await invoke(operation, context);
+
+    expect(runtime.bindTodoContext).toHaveBeenCalledWith(id, context);
+    expect(contexts.get(id)).toBe(context);
+    expect(todoMocks.warn).not.toHaveBeenCalled();
+  });
+
+  it("binds Todo for the next message after the shared broker is replaced", async () => {
+    const { id, runtime, invoke } = fixture();
+    runtime.bindTodoContext.mockRejectedValueOnce(missingBinding());
+
+    await invoke("start");
+    await invoke("start");
+
+    expect(runtime.bindTodoContext.mock.calls).toEqual([[id, context], [id, context]]);
+    expect(runtime.startRun).toHaveBeenCalledTimes(2);
+    expect(todoMocks.warn).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    new RuntimeSessionError("Unsupported broker method: startRun", "OPERATION_NOT_SUPPORTED"),
+    new RuntimeSessionError("Unsupported broker method: bindTodoContext", "RUNTIME_UNAVAILABLE"),
+    new Error("Unsupported broker method: bindTodoContext"),
+    new TodoError("FORBIDDEN", "Todo credential identity mismatch"),
+  ])("propagates every nonmatching binding failure: %s", async error => {
+    for (const operation of operations) {
+      const { runtime, invoke } = fixture();
+      runtime.bindTodoContext.mockRejectedValue(error);
+      await expect(invoke(operation)).rejects.toBe(error);
+      expect(runtime.startRun).not.toHaveBeenCalled();
+      expect(runtime.enqueueMessage).not.toHaveBeenCalled();
+    }
+    expect(todoMocks.warn).not.toHaveBeenCalled();
+  });
+
+  it("never treats credential validation as a missing broker capability", async () => {
+    const { runtime, invoke } = fixture();
+    const error = new TodoError("FORBIDDEN", "Todo session belongs to another service");
+    todoMocks.stored.mockImplementation(() => { throw error; });
+    runtime.bindTodoContext.mockRejectedValue(missingBinding());
+
+    for (const operation of operations) await expect(invoke(operation)).rejects.toBe(error);
+    expect(runtime.bindTodoContext).not.toHaveBeenCalled();
+    expect(runtime.startRun).not.toHaveBeenCalled();
+    expect(runtime.enqueueMessage).not.toHaveBeenCalled();
+    expect(todoMocks.warn).not.toHaveBeenCalled();
+  });
+
+  it.each(operations)("fails closed for execution-scoped %s even when only the legacy method is missing", async operation => {
+    const { id, runtime, invoke } = fixture("zcode");
+    const execution = { ...context, executionId: "fixture-execution" };
+    contexts.set(id, execution);
+    const error = missingBinding();
+    runtime.bindTodoContext.mockRejectedValue(error);
+
+    await expect(invoke(operation, execution)).rejects.toBe(error);
+    expect(runtime.bindTodoContext).toHaveBeenCalledWith(id, execution);
+    expect(runtime.startRun).not.toHaveBeenCalled();
+    expect(runtime.enqueueMessage).not.toHaveBeenCalled();
+    expect(todoMocks.warn).not.toHaveBeenCalled();
+  });
+
+  it("retains a failed scheduled creation's execution scope across enqueue retries", async () => {
+    const { id, runtime, invoke } = fixture("zcode");
+    const execution = { ...context, executionId: "fixture-execution" };
+    const error = missingBinding();
+    runtime.bindTodoContext.mockRejectedValue(error);
+
+    await expect(invoke("create", execution)).rejects.toBe(error);
+    await expect(invoke("enqueue")).rejects.toBe(error);
+    await expect(invoke("enqueue")).rejects.toBe(error);
+    expect(runtime.bindTodoContext.mock.calls).toEqual([[id, execution], [id, execution], [id, execution]]);
+    expect(contexts.get(id)).toBe(execution);
+    expect(runtime.enqueueMessage).not.toHaveBeenCalled();
+    expect(todoMocks.warn).not.toHaveBeenCalled();
+  });
+
+  it("does not reuse an interactive fallback for a later execution binding", async () => {
+    const { id, runtime, invoke } = fixture();
+    const error = missingBinding();
+    runtime.bindTodoContext.mockRejectedValue(error);
+    await expect(invoke("start")).resolves.toBeDefined();
+    const execution = { ...context, executionId: "fixture-execution" };
+    contexts.set(id, execution);
+
+    await expect(invoke("enqueue")).rejects.toBe(error);
+    expect(runtime.bindTodoContext).toHaveBeenLastCalledWith(id, execution);
+    expect(runtime.enqueueMessage).not.toHaveBeenCalled();
+    expect(todoMocks.warn).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe("NativeRuntimeService", () => {
   it("creates a Codex session by cwd while retaining the selected local project's association", async () => {

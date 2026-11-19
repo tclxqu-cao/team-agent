@@ -73,7 +73,9 @@ describe("persistent personal Todos", () => {
     const d = schedule(create("scheduled")); now += 60000;
     expect(scheduler.tick(now).queued).toBe(1); expect(scheduler.tick(now).queued).toBe(0);
     const e = execution.pending()[0]; execution.bind(owner, e.id, "dedicated-session", "run-1");
-    execution.report(owner, e.id, "run-1", "result", "succeeded", "报告已核对，输出文件存在");
+    execution.report(owner, e.id, "run-1", `${e.id}:progress`, "progress", "started");
+    const result = execution.report(owner, e.id, "run-1", `${e.id}:result`, "succeeded", "报告已核对，输出文件存在");
+    expect(execution.report(owner, e.id, "run-1", `${e.id}:result`, "succeeded", "报告已核对，输出文件存在")).toEqual(result);
     expect(service.get(d.task.id, owner).task.status).toBe("in_progress");
     execution.settle(owner, e.id, "completed");
     expect(service.get(d.task.id, owner).task.status).toBe("completed");

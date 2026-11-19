@@ -60,6 +60,8 @@ export interface ContextHandoff {
   historyFile?: string;
   includedHistoryIds?: string[];
   images?: string[];
+  /** Transcript prefix inherited by an independent context-based fork. */
+  forkHistory?: Message[];
   /**
    * historyIds of source items that did not fit the budget. Kept in full for
    * audit and on-demand re-read; wire responses trim the list.

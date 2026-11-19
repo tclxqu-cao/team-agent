@@ -17,7 +17,27 @@ describe("calendar Todo boundaries", () => {
       app.execute({ type: "create", title: "自己的日期事项", dueAt: now + 60000 }, { ownerId: "a", requestId: "create" });
       app.execute({ type: "create", title: "另一个用户", dueAt: now + 60000 }, { ownerId: "b", requestId: "create" });
       expect(readTodoCalendar(range, root, "a").map(e => [e.kind, e.title])).toEqual([["reminder", "自己的日期事项"]]);
-      expect(readTodoCalendar(range, root, "a")[0]).toMatchObject({ dueAt: now + 60000, detail: "待办日期 · 到点提醒" });
+      const [reminder] = readTodoCalendar(range, root, "a");
+      expect(reminder).toMatchObject({ dueAt: now + 60000, detail: "待办日期 · 到点提醒", source: "customer-agent" });
+      expect(reminder?.executionAgentType).toBeUndefined();
+      const scheduledAt = now + 120000;
+      const { task } = app.execute({
+        type: "create", title: "提前完成的定时待办", kind: "scheduled",
+        executionSchedule: {
+          trigger: { kind: "once", at: scheduledAt },
+          target: { agentType: "codex", cwd: root, permissionMode: "default" },
+        },
+      }, { ownerId: "a", requestId: "scheduled" });
+      const readScheduled = () => readTodoCalendar(range, root, "a").filter(entry => entry.taskId === task.id);
+      expect(readScheduled()).toMatchObject([{ source: "customer-agent", executionAgentType: "codex", at: scheduledAt }]);
+      const reassigned = app.execute({
+        type: "schedule", taskId: task.id, expectedVersion: task.version, enabled: true,
+        target: { agentType: "zcode", cwd: root, permissionMode: "default" },
+      }, { ownerId: "a", requestId: "reassign" });
+      expect(readScheduled()).toMatchObject([{ source: "customer-agent", executionAgentType: "zcode", at: scheduledAt }]);
+      app.execute({ type: "complete", taskId: task.id, expectedVersion: reassigned.task.version }, { ownerId: "a", requestId: "complete" });
+      expect(readTodoCalendar(range, root, "a").filter(entry => entry.taskId === task.id))
+        .toMatchObject([{ at: scheduledAt, state: "completed", title: task.title, executionAgentType: "zcode" }]);
       expect(readTodoCalendar(range, root)).toEqual([]);
     } finally { db?.close(); rmSync(root, { recursive: true, force: true }); }
   });

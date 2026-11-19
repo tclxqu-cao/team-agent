@@ -40,6 +40,7 @@ import {
   type RuntimeModelInfo,
   type RuntimeModelSelection,
   type RuntimeQuestionAnswer,
+  type RuntimeTodoContext,
   type UnifiedSessionDetail,
   type UnifiedSessionSummary,
   type WorkspacePage,
@@ -293,8 +294,7 @@ export class NativeRuntimeService implements NativeRuntimePort {
     this.pendingCreations.set(created.id, created);
     this.workspaceSessions.clear();
     if (this.runtime.bindTodoContext && options.todoContext) {
-      const { storedRuntimeTodoContext } = await import("./todo/runtime-todo-context");
-      await this.runtime.bindTodoContext(created.id, storedRuntimeTodoContext(created.id, options.todoContext));
+      await this.prepareTodoContext(created.id, options.todoContext);
     }
     return created;
   }
@@ -512,10 +512,22 @@ export class NativeRuntimeService implements NativeRuntimePort {
     await this.prepareTodoContext(id);
     return this.runtime.enqueueMessage(id, input, controller);
   }
-  private async prepareTodoContext(id: string): Promise<void> {
+  private async prepareTodoContext(id: string, seed?: RuntimeTodoContext): Promise<void> {
     if (!this.runtime.bindTodoContext) return;
     const { storedRuntimeTodoContext } = await import("./todo/runtime-todo-context");
-    await this.runtime.bindTodoContext(id, storedRuntimeTodoContext(id));
+    const context = storedRuntimeTodoContext(id, seed);
+    try {
+      await this.runtime.bindTodoContext(id, context);
+    } catch (error) {
+      // Old shared brokers can still serve interactive chat. Execution-scoped
+      // credentials require binding for scheduling and result reconciliation.
+      if (context.executionId !== undefined || !(error instanceof RuntimeSessionError)
+        || error.code !== "OPERATION_NOT_SUPPORTED"
+        || error.message !== "Unsupported broker method: bindTodoContext") throw error;
+      serverLogger().warn("Legacy native broker lacks Todo context binding; continuing interactive chat without Todo integration", {
+        sessionId: id, method: "bindTodoContext", code: error.code,
+      });
+    }
   }
 
   async reorderMessages(id: string, orderedIds: readonly string[]): Promise<SessionGoalState> {
@@ -638,6 +650,7 @@ export function getNativeRuntimeService(): NativeRuntimeService {
             directory,
             codexExecutable: codex.executable ?? "codex",
             opencodeExecutable: opencode.executable ?? "opencode",
+            packageVersion: process.env.AGENTROAM_CLI_PATH ? process.env.AGENTROAM_VERSION?.trim() : undefined,
           });
           hostDiagnostics = { pid, codex, opencode };
           serverLogger().info("native runtime host elected", {

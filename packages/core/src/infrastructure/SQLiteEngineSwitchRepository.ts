@@ -223,8 +223,13 @@ export class SQLiteEngineSwitchRepository implements EngineSwitchRepository {
         handoff.createdBy,
         handoff.created,
         handoff.consumedAt,
-        JSON.stringify({ historyFile: handoff.historyFile, includedHistoryIds: handoff.includedHistoryIds, images: handoff.images }),
+        JSON.stringify({ historyFile: handoff.historyFile, includedHistoryIds: handoff.includedHistoryIds, images: handoff.images, forkHistory: handoff.forkHistory }),
       );
+    },
+    forkForSession: (sessionId: string): ContextHandoff | null => {
+      const row = this.db.prepare("SELECT * FROM context_handoffs WHERE thread_key = ? AND to_session = ?")
+        .get(`fork:${sessionId}`, sessionId) as Row | undefined;
+      return row ? handoffRowToEntity(row) : null;
     },
     pendingForSession: (toSessionId: string): ContextHandoff | null => {
       const row = this.db.prepare(`

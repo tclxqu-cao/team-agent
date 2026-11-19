@@ -35,7 +35,17 @@ export async function dispatchScheduledTodos(): Promise<void> {
       if (!snapshot.item) {
         // Broker admission deduplicates the durable occurrence id, even if the
         // enqueue response was lost before the service could record runId.
-        await runtime.enqueueMessage(e.sessionId!, { sourceMessageId: e.id, content: `执行本次定时待办（taskId=${task.id}，executionId=${e.id}）。\n标题：${task.title}\n${task.description}\n先用 todo_get 读取事项；开始后 todo_report_execution(outcome=progress)。仅在确认业务完成且有证据后报告 succeeded，否则报告 failed。必须报告本次执行结果，不能调用 todo_complete 完成整个周期事项。` });
+        await runtime.enqueueMessage(e.sessionId!, {
+          sourceMessageId: e.id,
+          content: [
+            `执行本次定时待办（taskId=${task.id}，executionId=${e.id}）。`,
+            `标题：${task.title}`,
+            task.description,
+            `先用 todo_get 读取事项。开始时调用 todo_report_execution，outcome=progress，requestId="${e.id}:progress"。`,
+            `确认业务完成且有证据后报告 succeeded，否则报告 failed。最终回报的 requestId="${e.id}:result"。`,
+            "只有原样重试同一份回报时才复用它的 requestId。必须报告本次执行结果，不能调用 todo_complete 完成整个周期事项。",
+          ].join("\n"),
+        });
       } else if (snapshot.runId) {
         executions.bind(e.ownerId, e.id, e.sessionId!, snapshot.runId);
         const terminal = snapshot.events.map(x => x.event).find(x => ["done", "error", "turn_aborted"].includes(x.type));

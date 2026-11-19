@@ -1,7 +1,8 @@
-import { TodoError, type TodoCommand, type TodoListQuery } from "@agent/core";
+import { TodoError, type TodoListQuery } from "@agent/core";
 import { authenticateTodoCredential, todoServiceId } from "../../../../lib/todo/todo-mcp-credentials";
 import { todoServices } from "../../../../lib/todo/todo-service";
 import { todoHttpError } from "../../../../lib/todo/todo-http";
+import { resolveAgentTodoCommand, type AgentTodoCommand } from "../../../../lib/todo/todo-agent-command";
 export const dynamic = "force-dynamic";
 export async function POST(request: Request) {
   try {
@@ -36,9 +37,9 @@ export async function POST(request: Request) {
     if (operation === "get") return Response.json(todos.get(args.taskId, c.ownerId));
     if (operation === "list") return Response.json(todos.list(args as TodoListQuery, c.ownerId));
     if (operation === "execute") {
-      const command = args.command as TodoCommand;
-      if (command?.type === "create" && command.executionSchedule && command.executionSchedule.enabled !== false) { const { validateExecutionTarget } = await import("../../../../lib/todo/scheduled-todo-runner"); await validateExecutionTarget(command.executionSchedule.target); }
-      if (command?.type === "schedule" && command.enabled) { const { validateExecutionTarget } = await import("../../../../lib/todo/scheduled-todo-runner"); await validateExecutionTarget(command.target ?? todos.get(command.taskId, c.ownerId).schedule?.target); }
+      const command = await resolveAgentTodoCommand(args.command as AgentTodoCommand, {
+        sessionId: c.sessionId, getTodo: id => todos.get(id, c.ownerId),
+      });
       return Response.json(todos.execute(command, { ownerId: c.ownerId, requestId: args.requestId, sourceSessionRef: c.sessionId }));
     }
     throw new TodoError("INVALID_ARGUMENT", "未知 MCP 操作");
