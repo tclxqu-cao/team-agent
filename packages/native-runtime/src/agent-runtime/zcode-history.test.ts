@@ -30,6 +30,24 @@ const message = (index: number, content = `message-${index}`): NativeJsonPacket 
 });
 
 describe("ZCode bounded persisted history", () => {
+  it("distinguishes inline steering from queued inputs restored as new turns", async () => {
+    const original = message(0, "original");
+    const guided = message(2, "follow up");
+    const queued = message(4, "follow up");
+    const { client } = fixture([
+      original,
+      { ...guided, info: { ...guided.info as NativeJsonPacket, metadata: { turnSteerDelivery: "guide" } } },
+      { ...queued, info: { ...queued.info as NativeJsonPacket, metadata: { turnSteerDelivery: "queue" } } },
+    ]);
+
+    const { messages } = await client.read("large");
+    expect(messages.map(({ historyId, name }) => [historyId, name])).toEqual([
+      ["msg-0", undefined],
+      ["msg-2", "__native_steered:msg-2"],
+      ["msg-4", undefined],
+    ]);
+  });
+
   it("loads history larger than one protocol frame and preserves paging and query anchors", async () => {
     const messages = Array.from({ length: 400 }, (_, index) => message(index, index % 2 ? "x".repeat(100_000) : `query-${index}`));
     expect(Buffer.byteLength(JSON.stringify({ messages }))).toBeGreaterThan(16 * 1024 * 1024);

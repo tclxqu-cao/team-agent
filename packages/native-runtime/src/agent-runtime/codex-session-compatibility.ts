@@ -5,6 +5,16 @@ import {
   type CodexDiskSessionCatalogEntry,
 } from "./codex-session-disk-catalog.js";
 
+function sessionReadFailureReason(entry: CodexDiskSessionCatalogEntry, error: unknown): string {
+  if (error instanceof RuntimeSessionError && error.code === "NATIVE_PROTOCOL_ERROR"
+    && /^(?:invalid paginated history lineage for \S+: missing source rollout|no rollout found for thread id \S+)$/.test(error.message)) {
+    return "Codex 会话缺少原始历史文件。恢复该文件后才能读取会话。";
+  }
+  return entry.producerVersion
+    ? `该会话由 Codex ${entry.producerVersion} 创建，当前 Codex ${entry.compatibility.readerVersion} 无法读取`
+    : `当前 Codex ${entry.compatibility.readerVersion} 无法读取该会话的历史格式`;
+}
+
 export class CodexSessionCompatibilityService {
   private primaryNativeSessionIds = new Set<string>();
   private readonly pendingProbes = new Map<string, CodexDiskSessionCatalogEntry>();
@@ -74,9 +84,7 @@ export class CodexSessionCompatibilityService {
         });
         throw new RuntimeSessionError(reason, "CODEX_SESSION_VERSION_INCOMPATIBLE");
       }
-      const reason = entry.producerVersion
-        ? `该会话由 Codex ${entry.producerVersion} 创建，当前 Codex ${entry.compatibility.readerVersion} 无法读取`
-        : `当前 Codex ${entry.compatibility.readerVersion} 无法读取该会话的历史格式`;
+      const reason = sessionReadFailureReason(entry, error);
       this.catalog.updateCompatibility(nativeSessionId, {
         status: "incompatible",
         readerVersion: entry.compatibility.readerVersion,
@@ -135,9 +143,7 @@ export class CodexSessionCompatibilityService {
         && (error.code === "RUNTIME_UNAVAILABLE" || error.code === "SESSION_NOT_FOUND")
       ) return;
       if (!this.isCurrentEntry(entry)) return;
-      const reason = entry.producerVersion
-        ? `该会话由 Codex ${entry.producerVersion} 创建，当前 Codex ${entry.compatibility.readerVersion} 无法读取`
-        : `当前 Codex ${entry.compatibility.readerVersion} 无法读取该会话的历史格式`;
+      const reason = sessionReadFailureReason(entry, error);
       this.catalog.updateCompatibility(entry.nativeSessionId, {
         status: "incompatible",
         readerVersion: entry.compatibility.readerVersion,

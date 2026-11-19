@@ -207,7 +207,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
   private readonly rolloutCommentaryReader: Pick<CodexRolloutCommentaryReader, "read">;
   private readonly rolloutUserMessageReader: Pick<CodexRolloutUserMessageReader, "read"> & Partial<Pick<CodexRolloutUserMessageReader, "readAsyncMessages" | "readCompletionDurations">>;
   private readonly agentMessagePhases = new Map<string, "commentary" | "final_answer">();
-  private readonly emittedSubagentItems = new Map<string, Set<string>>();
+  private readonly emittedInstantToolItems = new Map<string, Set<string>>();
   private readonly todoMcp = new Map<string, NativeTodoMcpConfiguration>();
   private readonly freshTodoThreads = new Set<string>();
   /** Flipped off permanently only when the app-server lacks the paginated turn protocol. */
@@ -1273,7 +1273,15 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
 
   async archiveSession(nativeSessionId: string): Promise<void> {
     this.ensureAvailable();
-    await this.client.request("thread/archive", { threadId: nativeSessionId });
+    try {
+      await this.client.request("thread/archive", { threadId: nativeSessionId });
+    } catch (error) {
+      // A stale thread can survive in the index after its rollout disappears.
+      // It has no file to archive, but the caller can still hide the list entry.
+      if (!(error instanceof RuntimeSessionError
+        && error.code === "NATIVE_PROTOCOL_ERROR"
+        && error.message === `no rollout found for thread id ${nativeSessionId}`)) throw error;
+    }
   }
 
   async *run(
@@ -1424,7 +1432,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       this.desktopContinuations.delete(nativeSessionId);
       this.clearAsyncInputs(nativeSessionId);
       this.activeTurnIds.delete(nativeSessionId);
-      this.emittedSubagentItems.delete(nativeSessionId);
+      this.emittedInstantToolItems.delete(nativeSessionId);
       this.runUsages.delete(nativeSessionId);
       this.clearLocalInterruptionTimer(nativeSessionId);
       this.locallyInterruptedTurnIds.delete(nativeSessionId);
@@ -1602,7 +1610,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     this.pendingTodoRuns.clear();
     for (const continuation of this.desktopContinuations.values()) continuation.close();
     this.desktopContinuations.clear();
-    this.emittedSubagentItems.clear();
+    this.emittedInstantToolItems.clear();
     await Promise.all([...this.freshTodoThreads].map(threadId => this.client.request("thread/unsubscribe", { threadId }).catch(() => undefined)));
     this.freshTodoThreads.clear();
     this.todoMcp.clear();
@@ -1898,12 +1906,12 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     if (message.method === "item/started") {
       const toolCall = codexItemToToolCall(params.item as CodexItem | undefined);
       if (toolCall) {
-        if (isCodexSubagentItem(notificationItem)) {
-          const emitted = this.emittedSubagentItems.get(threadId) ?? new Set<string>();
+        if (isCodexInstantToolItem(notificationItem)) {
+          const emitted = this.emittedInstantToolItems.get(threadId) ?? new Set<string>();
           const key = `${eventTurnId ?? ""}:${toolCall.id}`;
           if (emitted.has(key)) return;
           emitted.add(key);
-          this.emittedSubagentItems.set(threadId, emitted);
+          this.emittedInstantToolItems.set(threadId, emitted);
         }
         queue.push({ type: "tool_call", toolCall, ...(eventTurnId ? { turnId: eventTurnId } : {}) });
       }
@@ -1913,11 +1921,11 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       if (notificationItem?.type === "agentMessage" && typeof notificationItem.id === "string") {
         this.agentMessagePhases.delete(`${threadId}:${notificationItem.id}`);
       }
-      if (isCodexSubagentItem(notificationItem) && notificationItem?.id) {
-        const emitted = this.emittedSubagentItems.get(threadId) ?? new Set<string>();
+      if (isCodexInstantToolItem(notificationItem) && notificationItem?.id) {
+        const emitted = this.emittedInstantToolItems.get(threadId) ?? new Set<string>();
         const key = `${eventTurnId ?? ""}:${notificationItem.id}`;
         if (emitted.has(`${key}:completed`)) return;
-        // Instantaneous sub-agent activities can arrive with only item/completed.
+        // Instantaneous tools can arrive with only item/completed.
         // A result without its call has no visible execution row in the client.
         const toolCall = codexItemToToolCall(notificationItem);
         if (!emitted.has(key) && toolCall) {
@@ -1925,7 +1933,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
           emitted.add(key);
         }
         emitted.add(`${key}:completed`);
-        this.emittedSubagentItems.set(threadId, emitted);
+        this.emittedInstantToolItems.set(threadId, emitted);
       }
       const result = codexItemToToolResult(notificationItem);
       if (result) queue.push({ type: "tool_result", result, ...(eventTurnId ? { turnId: eventTurnId } : {}) });
@@ -1937,7 +1945,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       const metadata = this.runUsageMetadata(threadId);
       const locallyInterrupted = this.consumeLocalInterruption(threadId, turn?.id);
       this.activeTurnIds.delete(threadId);
-      this.emittedSubagentItems.delete(threadId);
+      this.emittedInstantToolItems.delete(threadId);
       for (const key of this.agentMessagePhases.keys()) {
         if (key.startsWith(`${threadId}:`)) this.agentMessagePhases.delete(key);
       }
@@ -2828,7 +2836,7 @@ export async function codexTurnsToMessages(
           toolCalls: [convertedToolCall],
         });
         const result = codexItemToToolResult(item);
-        if (result && options.toolResultMode === "lazy" && options.revision && item.id) {
+        if (result && item.type !== "imageView" && options.toolResultMode === "lazy" && options.revision && item.id) {
           messages.push({
             role: "tool",
             content: "",
@@ -2852,6 +2860,7 @@ export async function codexTurnsToMessages(
             } : {}),
             toolCallId: result.toolCallId,
             name: toolCall?.name,
+            ...(result.isError ? { isError: true } : {}),
           });
         }
       }
@@ -2912,7 +2921,7 @@ function codexAgentMessagePhase(value: unknown): "commentary" | "final_answer" |
   return value === "commentary" || value === "final_answer" ? value : undefined;
 }
 
-function codexTraceHistoryId(
+export function codexTraceHistoryId(
   turnId: string,
   kind: "agent" | "reasoning" | "tool-call" | "tool-result",
   itemId: unknown,
@@ -3023,6 +3032,9 @@ export function codexProgressNotificationToEvent(message: RpcNotification): Agen
 
 function codexItemToToolCall(item?: CodexItem): ToolCall | null {
   if (!item?.id) return null;
+  if (item.type === "imageView" && typeof item.path === "string" && item.path.trim()) {
+    return { id: item.id, name: "view_image", arguments: { path: item.path } };
+  }
   if (item.type === "subAgentActivity") {
     return {
       id: item.id,
@@ -3084,6 +3096,9 @@ function codexItemToToolCall(item?: CodexItem): ToolCall | null {
 
 function codexItemToToolResult(item?: CodexItem): { toolCallId: string; content: string; isError?: boolean } | null {
   if (!item?.id) return null;
+  if (item.type === "imageView" && typeof item.path === "string" && item.path.trim()) {
+    return { toolCallId: item.id, content: "" };
+  }
   if (item.type === "subAgentActivity") {
     return {
       toolCallId: item.id,
@@ -3099,14 +3114,16 @@ function codexItemToToolResult(item?: CodexItem): { toolCallId: string; content:
     };
   }
   if (item.type === "commandExecution") {
+    if (item.status === "inProgress") return null;
     return {
       toolCallId: item.id,
       content: typeof item.aggregatedOutput === "string" ? item.aggregatedOutput : "",
-      isError: typeof item.exitCode === "number" && item.exitCode !== 0,
+      isError: item.status === "failed" || item.status === "declined" || (typeof item.exitCode === "number" && item.exitCode !== 0),
     };
   }
   if (item.type === "fileChange") {
-    return { toolCallId: item.id, content: JSON.stringify(item.changes ?? [], null, 2), isError: item.status === "failed" };
+    if (item.status === "inProgress") return null;
+    return { toolCallId: item.id, content: JSON.stringify(item.changes ?? [], null, 2), isError: item.status === "failed" || item.status === "declined" };
   }
   if (item.type === "mcpToolCall" || item.type === "dynamicToolCall") {
     return {
@@ -3118,8 +3135,8 @@ function codexItemToToolResult(item?: CodexItem): { toolCallId: string; content:
   return null;
 }
 
-function isCodexSubagentItem(item?: CodexItem): boolean {
-  return item?.type === "subAgentActivity" || item?.type === "collabAgentToolCall";
+function isCodexInstantToolItem(item?: CodexItem): boolean {
+  return item?.type === "imageView" || item?.type === "subAgentActivity" || item?.type === "collabAgentToolCall";
 }
 
 function codexTurnUsage(turn: unknown): TokenUsage | undefined {

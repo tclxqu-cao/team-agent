@@ -56,6 +56,7 @@ export function decodeZCodeHistory(value: unknown, sessionId = "", imageData?: R
       return image ? [image] : [];
     }) : [];
     const messageId = info.messageId ?? info.id;
+    const isSteered = info.role === "user" && nativeRecord(info.metadata).turnSteerDelivery === "guide";
     const reasoning = parts.filter(part => part.type === "reasoning" && typeof part.text === "string").map((part, index) => ({ itemId: String(part.partId ?? part.id ?? `${messageId}:reasoning:${index}`), sectionIndex: 0, text: String(part.text) }));
     const questionMessages: Message[] = [];
     let hasQuestionTool = false;
@@ -68,6 +69,7 @@ export function decodeZCodeHistory(value: unknown, sessionId = "", imageData?: R
       return false;
     });
     if (!hasQuestionTool || text || reasoning.length || tools.length || info.role !== "assistant") messages.push({ role: info.role, content: text, historyId: typeof messageId === "string" ? messageId : undefined,
+      ...(isSteered ? { name: `__native_steered:${messageId}` } : {}),
       ...(images.length ? { images } : {}),
       ...(reasoning.length ? { presentation: { reasoning } } : {}),
       ...(tools.length ? { toolCalls: tools.map(part => ({ id: String(part.callId ?? part.callID ?? part.toolCallId ?? part.partId ?? part.id), name: String(part.tool ?? part.toolName ?? "ZCode tool"), arguments: nativeRecord(nativeRecord(part.state).input ?? part.input) })) } : {}),
@@ -217,12 +219,13 @@ export class ZCodeClient implements NativeSessionProtocol {
     return loading;
   }
 
-  private async configureTodoMcp(id: string, configuration: NativeTodoMcpConfiguration, signal?: AbortSignal): Promise<void> {
+  private async configureTodoMcp(id: string, configuration: NativeTodoMcpConfiguration | null, signal?: AbortSignal): Promise<void> {
     await this.resumes.get(id);
     signal?.throwIfAborted();
     if (this.sessions.get(id)?.readOnly) throw new RuntimeSessionError("ZCode child sessions are read-only", "SESSION_OCCUPIED");
     const previous = this.todoMcp.get(id);
-    if (previous && JSON.stringify(todoMcpServers(previous)) === JSON.stringify(todoMcpServers(configuration))) return;
+    if (!configuration && !previous) return;
+    if (configuration && previous && JSON.stringify(todoMcpServers(previous)) === JSON.stringify(todoMcpServers(configuration))) return;
     if (this.runs.has(id)) throw new RuntimeSessionError("ZCode session is already running", "SESSION_ALREADY_RUNNING");
     if (this.loaded.has(id)) {
       const current = this.sessions.get(id)!;
@@ -236,7 +239,8 @@ export class ZCodeClient implements NativeSessionProtocol {
       this.loaded.delete(id);
     }
     signal?.throwIfAborted();
-    this.todoMcp.set(id, { command: configuration.command, args: [...configuration.args], env: { ...configuration.env } });
+    if (configuration) this.todoMcp.set(id, { command: configuration.command, args: [...configuration.args], env: { ...configuration.env } });
+    else this.todoMcp.delete(id);
   }
 
   /** Idle eviction can report either inactive or runtime-not-ready. Never retry a send. */
@@ -361,7 +365,7 @@ export class ZCodeClient implements NativeSessionProtocol {
 
   async *run(id: string, input: string, images?: string[], options?: RuntimeRunOptions): AsyncIterable<AgentEvent> {
     if (this.pendingTodoRuns.has(id)) throw new RuntimeSessionError("ZCode session is already running", "SESSION_ALREADY_RUNNING");
-    const preparation = options?.todoMcp ? new AbortController() : undefined;
+    const preparation = options?.todoMcp !== undefined ? new AbortController() : undefined;
     if (preparation) this.pendingTodoRuns.set(id, preparation);
     try {
       yield* this.runPrepared(id, input, images, options, preparation?.signal);
@@ -392,7 +396,7 @@ export class ZCodeClient implements NativeSessionProtocol {
       yield { type: "done", finalText: "" };
       return;
     }
-    if (options?.todoMcp) await this.configureTodoMcp(id, options.todoMcp, signal);
+    if (options?.todoMcp !== undefined) await this.configureTodoMcp(id, options.todoMcp, signal);
     signal?.throwIfAborted();
     const subscribed = await this.withActiveSession(id, async session => {
       signal?.throwIfAborted();

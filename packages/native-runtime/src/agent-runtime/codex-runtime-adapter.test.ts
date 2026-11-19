@@ -784,6 +784,16 @@ describe("Codex reasoning mapping", () => {
     expect(messages.at(-1)?.content).toBe("Done");
   });
 
+  it("restores a viewed image as a completed history action without a separate result body", async () => {
+    const messages = await codexTurnsToMessages([{ id: "turn", status: "completed", items: [
+      { type: "imageView", id: "view", path: "/repo/验收.png" },
+    ] }], { toolResultMode: "lazy", revision: "rev" });
+    expect(messages).toEqual([
+      expect.objectContaining({ role: "assistant", toolCalls: [{ id: "view", name: "view_image", arguments: { path: "/repo/验收.png" } }] }),
+      { role: "tool", historyId: "codex-trace:turn:tool-result:view", name: "view_image", toolCallId: "view", content: "" },
+    ]);
+  });
+
   it("preserves Codex agent message phases for presentation filtering", async () => {
     const messages = await codexTurnsToMessages([{
       id: "turn-1",
@@ -911,6 +921,11 @@ describe("Codex live execution events", () => {
                 item: { id: "answer-1", type: "agentMessage", text: "", phase: "final_answer" },
               },
             });
+            const imageViewed = { method: "item/completed", params: {
+              threadId: thread.id, turnId: "turn-live", item: { id: "image", type: "imageView", path: "/repo/验收.png" },
+            } };
+            notify(imageViewed);
+            notify(imageViewed);
             notify({
               method: "item/agentMessage/delta",
               params: {
@@ -967,6 +982,11 @@ describe("Codex live execution events", () => {
       turnId: "turn-live",
       result: expect.objectContaining({ toolCallId: "call-1", content: "skill instructions" }),
     }));
+    expect(events.filter(event => event.type === "tool_call" && event.toolCall.id === "image"
+      || event.type === "tool_result" && event.result.toolCallId === "image")).toEqual([
+      { type: "tool_call", turnId: "turn-live", toolCall: { id: "image", name: "view_image", arguments: { path: "/repo/验收.png" } } },
+      { type: "tool_result", turnId: "turn-live", result: { toolCallId: "image", content: "" } },
+    ]);
     expect(events).toContainEqual(expect.objectContaining({
       type: "text_chunk",
       text: "Done",
@@ -2427,6 +2447,23 @@ describe("Codex session archive", () => {
 
     expect(request).toHaveBeenCalledTimes(1);
     expect(request).toHaveBeenCalledWith("thread/archive", { threadId: "thread-1" });
+  });
+
+  it("lets the caller hide an indexed thread whose rollout has already disappeared", async () => {
+    const request = vi.fn()
+      .mockRejectedValueOnce(new RuntimeSessionError("no rollout found for thread id thread-1", "NATIVE_PROTOCOL_ERROR"))
+      .mockRejectedValueOnce(new RuntimeSessionError("no rollout found for thread id another-thread", "NATIVE_PROTOCOL_ERROR"));
+    const adapter = new CodexRuntimeAdapter({
+      client: {
+        onNotification: () => () => undefined,
+        onExit: () => () => undefined,
+        setServerRequestHandler: () => undefined,
+        request,
+      } as never,
+    });
+
+    await expect(adapter.archiveSession("thread-1")).resolves.toBeUndefined();
+    await expect(adapter.archiveSession("thread-1")).rejects.toThrow("another-thread");
   });
 });
 

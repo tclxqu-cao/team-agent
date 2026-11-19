@@ -142,6 +142,21 @@ describe("CodexSessionCompatibilityService", () => {
     });
   });
 
+  it("reports missing history separately from a reader version mismatch", async () => {
+    const repository = new SeedRepository();
+    const runtime = adapter(async () => {
+      throw new RuntimeSessionError(
+        `invalid paginated history lineage for ${nativeId}: missing source rollout`,
+        "NATIVE_PROTOCOL_ERROR",
+      );
+    });
+    const service = new CodexSessionCompatibilityService(runtime, catalog(repository));
+    service.supplement([]);
+
+    await expect(service.readSupplemental(nativeId)).rejects.toThrow("Codex 会话缺少原始历史文件");
+    expect(repository.entries[0].compatibility.reason).toContain("恢复该文件");
+  });
+
   it("never sends an unvalidated catalog-only ID to the adapter", async () => {
     const repository = new SeedRepository([entry({
       nativeSessionId: "catalog:diagnostic",

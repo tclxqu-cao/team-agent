@@ -27,6 +27,7 @@ import { UnifiedSessionService } from "./unified-session-service";
 import { harnessQuestionId } from "./deepseek-harness-interaction-codec";
 import { openCodeQuestionId, type OpenCodeQuestionRequest } from "./opencode-questions";
 import { codexAsyncQuestionId } from "./codex-questions";
+import { TodoServiceClient } from "../todo-mcp/todo-service-client";
 
 const sessionId = encodeUnifiedSessionId("codex", "thread-1");
 
@@ -156,7 +157,7 @@ class FakeNativeRuntime {
       events: [],
     };
   };
-  getRunSummary = (): Promise<UnifiedSessionSummary> => this.get();
+  getRunSummary = (_id: string): Promise<UnifiedSessionSummary> => this.get();
   getUnpaginated = async (_id: string, preferCache = false): Promise<UnifiedSessionDetail> => {
     this.getUnpaginatedCachePreferences.push(preferCache);
     return this.get();
@@ -295,10 +296,112 @@ describe("NativeRuntimeBrokerHost", () => {
         serviceId: "unavailable-service", ownerId: "owner", executionId: "occurrence",
         descriptorPath: join(path, "missing-credential.json"),
       });
-      await host.startRun(sessionId, "scheduled work");
+      await host.enqueueMessage(sessionId, { sourceMessageId: "occurrence", content: "scheduled work" });
       await waitFor(() => expect(host.snapshot(sessionId).events.some(({ event }) => event.type === "error")).toBe(true));
       expect(runtime.runInputs).toHaveLength(0);
     } finally { await host.stop(); }
+  });
+
+  it.each([
+    { name: "resolves the native provider for an existing model ID", providers: ["magpie"], expectedProvider: "magpie" },
+    { name: "rejects a model removed from the catalog", providers: [], error: "is no longer available" },
+    { name: "rejects a model ID shared by multiple providers", providers: ["magpie", "other"], error: "matches multiple providers" },
+  ])("scheduled ZCode work $name", async ({ providers, expectedProvider, error }) => {
+    const path = await directory();
+    const modelId = "zhipu/glm-5.3-flash";
+    const zcodeId = encodeUnifiedSessionId("zcode", "scheduled-session");
+    const runtime = new FakeNativeRuntime();
+    runtime.immediateTerminal = true;
+    const listModels = vi.fn(async (_agentType: AgentType) => [
+      { id: "glm-5.3-flash", providerID: "zhipu" },
+      ...providers.map(providerID => ({ id: modelId, providerID })),
+    ]);
+    Object.assign(runtime, { listModels });
+    const identity = vi.spyOn(TodoServiceClient.prototype, "call").mockResolvedValue({ serviceId: "test-service" });
+    const host = new NativeRuntimeBrokerHost(path, runtime as unknown as UnifiedSessionService);
+    try {
+      await host.start();
+      const client = new NativeRuntimeBrokerClient({ directory: path });
+      await client.bindTodoContext(zcodeId, {
+        serviceId: "test-service", ownerId: "owner", executionId: "occurrence",
+        descriptorPath: join(path, "credential.json"), model: modelId,
+      });
+      await host.enqueueMessage(zcodeId, { sourceMessageId: "occurrence", content: "scheduled work" });
+      if (error) {
+        await waitFor(() => expect(host.snapshot(zcodeId).events.map(({ event }) => event)).toContainEqual(
+          expect.objectContaining({ type: "error", message: expect.stringContaining(error) }),
+        ));
+        expect(runtime.runInputs).toHaveLength(0);
+      } else {
+        await waitFor(() => expect(host.snapshot(zcodeId).events.some(({ event }) => event.type === "done")).toBe(true));
+        expect(runtime.runOptions[0]?.model).toEqual({ id: modelId, providerID: expectedProvider });
+      }
+      expect(listModels.mock.calls).toEqual([["zcode"]]);
+    } finally {
+      identity.mockRestore();
+      await host.stop();
+    }
+  });
+
+  it("continues an existing scheduled ZCode session after a broker restart without rebinding the occurrence", async () => {
+    const path = await directory();
+    const id = encodeUnifiedSessionId("zcode", "scheduled-follow-up");
+    const executionId = "occurrence";
+    const descriptorPath = join(path, "execution.json");
+    let boundRunId: string | undefined;
+    const relay = vi.spyOn(TodoServiceClient.prototype, "call").mockImplementation(async (operation, args) => {
+      if (operation === "bind_execution") {
+        const { runId } = args as { runId: string };
+        if (boundRunId && boundRunId !== runId) throw new Error("执行已绑定其他运行");
+        boundRunId = runId;
+      }
+      // Keep the outbox rows to check exactly which runs were eligible for delivery.
+      if (operation === "runtime_event") throw new Error("relay offline");
+      return { serviceId: "test-service" };
+    });
+    const runtime = new FakeNativeRuntime();
+    runtime.immediateTerminal = true;
+    let host = new NativeRuntimeBrokerHost(path, runtime as unknown as UnifiedSessionService);
+    try {
+      await host.start();
+      const client = new NativeRuntimeBrokerClient({ directory: path });
+      await client.bindTodoContext(id, {
+        serviceId: "test-service", ownerId: "owner", executionId, descriptorPath,
+        relayPath: join(path, "relay.json"),
+      });
+      await host.enqueueMessage(id, { sourceMessageId: executionId, content: "scheduled work" });
+      const scheduled = () => host.messageSnapshot(id, executionId);
+      await waitFor(() => expect(scheduled().events.some(({ event }) => event.type === "done")).toBe(true));
+      const scheduledRun = scheduled().runId;
+      expect(runtime.runOptions[0]?.todoMcp?.env.AGENTROAM_TODO_DESCRIPTOR).toBe(descriptorPath);
+      await host.stop();
+
+      const resumedRuntime = new FakeNativeRuntime();
+      resumedRuntime.immediateTerminal = true;
+      host = new NativeRuntimeBrokerHost(path, resumedRuntime as unknown as UnifiedSessionService);
+      await host.start();
+      await host.startRun(id, "ordinary follow-up");
+      await waitFor(() => expect(host.snapshot(id).events.some(({ event }) => event.type === "done")).toBe(true));
+      await host.enqueueMessage(id, { sourceMessageId: "user-message", content: "queued follow-up" });
+      await waitFor(() => expect(host.messageSnapshot(id, "user-message").events.some(({ event }) => event.type === "done")).toBe(true));
+      await host.enqueueMessage(id, { sourceMessageId: executionId, content: "scheduler retry" });
+
+      expect(resumedRuntime.runInputs.map(({ input }) => input)).toEqual(["ordinary follow-up", "queued follow-up"]);
+      expect(resumedRuntime.runOptions.map(({ todoMcp, model }) => ({ todoMcp, model })))
+        .toEqual([{ todoMcp: null, model: undefined }, { todoMcp: null, model: undefined }]);
+      expect(relay.mock.calls.filter(([operation]) => operation === "bind_execution"))
+        .toEqual([["bind_execution", { runId: scheduledRun }]]);
+      const db = new SQLiteDatabase(path);
+      try {
+        expect(db.db.prepare(`
+          SELECT json_extract(payload, '$.runId') AS runId
+          FROM native_runtime_notification_outbox WHERE session_id=?
+        `).all(id)).toEqual([{ runId: scheduledRun }]);
+      } finally { db.close(); }
+    } finally {
+      await host.stop();
+      relay.mockRestore();
+    }
   });
 
   it("publishes admitted and finished runs without waiting for global native discovery", async () => {
@@ -2618,6 +2721,59 @@ describe("NativeRuntimeBrokerHost", () => {
       await host.stop();
     }
   });
+
+  it.each(["zcode", "qoder", "deepseek-harness", "workbuddy", "copilot"] as const)(
+    "forks a completed %s turn with a durable scoped transcript and first-run context",
+    async (agentType) => {
+      const id = encodeUnifiedSessionId(agentType, "source");
+      const childId = encodeUnifiedSessionId(agentType, "child");
+      const source = { ...summary(), agentType, id, nativeSessionId: "source" };
+      const target = { ...source, id: childId, nativeSessionId: "child" };
+      const runtime = new FakeNativeRuntime();
+      runtime.create = vi.fn(async () => target);
+      runtime.getUnpaginated = async (sessionId) => sessionId === id
+        ? { ...source, events: [], messages: [
+          { role: "user", content: "keep the first request" },
+          { role: "assistant", content: "keep the first answer" },
+          { role: "user", content: "exclude the next request" },
+          { role: "assistant", content: "exclude the next answer" },
+        ] }
+        : { ...target, events: [], messages: [] };
+      runtime.getRunSummary = sessionId => runtime.getUnpaginated(sessionId);
+      const path = await directory();
+      let host = new NativeRuntimeBrokerHost(path, runtime as unknown as UnifiedSessionService);
+      await host.start();
+      try {
+        const client = new NativeRuntimeBrokerClient({ directory: path });
+        const detail = await client.get(id, { limit: 20 });
+        const point = detail.messages.find(message => message.content === "keep the first answer")?.presentation?.forkPoint;
+        expect(point).toHaveProperty("messageId");
+        await expect(client.fork(id, { messageId: "stale" })).rejects.toMatchObject({ code: "INVALID_SESSION_ID" });
+        expect(runtime.create).not.toHaveBeenCalled();
+
+        await expect(client.fork(id, point!)).resolves.toMatchObject({ id: childId, agentType });
+        expect(runtime.runInputs).toHaveLength(0);
+        expect(runtime.forkCalls).toBe(0);
+        expect((await client.get(id)).messages).toHaveLength(4);
+
+        await host.stop();
+        host = new NativeRuntimeBrokerHost(path, runtime as unknown as UnifiedSessionService);
+        await host.start();
+        const resumed = new NativeRuntimeBrokerClient({ directory: path });
+        const fork = await resumed.get(childId, { limit: 20 });
+        expect(fork.messages.map(message => message.content)).toEqual(["keep the first request", "keep the first answer"]);
+        runtime.immediateTerminal = true;
+        await resumed.startRun(childId, "follow up");
+        await waitFor(() => expect(runtime.runInputs).toHaveLength(1));
+        const input = runtime.runInputs[0].input;
+        expect(input).toContain("keep the first answer");
+        expect(input).toContain("follow up");
+        expect(input).not.toContain("exclude the next");
+      } finally {
+        await host.stop();
+      }
+    },
+  );
 
   it("uses one socket host for a second client instead of starting another runtime", async () => {
     const runtime = new FakeNativeRuntime();

@@ -10,7 +10,8 @@ import { startDetachedNativeRuntimeHost } from "./detached-native-runtime-host";
 import { NativeRuntimeBrokerClient } from "./native-runtime-broker";
 import { encodeUnifiedSessionId } from "./session-id";
 
-const distribution = pathToFileURL(resolve(import.meta.dirname, "../../dist/index.js")).href;
+const distribution = pathToFileURL(process.env.AGENTROAM_TEST_RUNTIME_BUNDLE
+  ?? resolve(import.meta.dirname, "../../dist/index.js")).href;
 const sessionId = encodeUnifiedSessionId("zcode", "detached-host-test");
 const directories: string[] = [];
 const children: ChildProcess[] = [];
@@ -50,14 +51,14 @@ afterEach(async () => {
 });
 
 async function fixture(): Promise<{ directory: string; moduleUrl: string }> {
-  const directory = await mkdtemp(join(tmpdir(), "agentroam-detached-"));
+  const directory = await mkdtemp(join(tmpdir(), "ar broker "));
   directories.push(directory);
   const modulePath = join(directory, "runtime-fixture.mjs");
   await writeFile(modulePath, `
-import { existsSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-export { NativeRuntimeBrokerHost } from ${JSON.stringify(distribution)};
+export { NativeRuntimeBrokerHost, prepareDetachedNativeRuntimeHost } from ${JSON.stringify(distribution)};
 export function createNativeRuntimeBrokerHostRuntime() {
   const { directory } = JSON.parse(process.argv[1]);
   const summary = { id: ${JSON.stringify(sessionId)}, agentType: "zcode", nativeSessionId: "detached-host-test",
@@ -67,6 +68,7 @@ export function createNativeRuntimeBrokerHostRuntime() {
     getRunSummary: async () => summary,
     invalidate() {},
     dispose: async () => {},
+    abort: async (id) => writeFileSync(join(directory, "aborted"), id),
     run: async function* () {
       yield { type: "thinking" };
       yield { type: "text_chunk", text: "started" };
@@ -146,4 +148,44 @@ for await (const event of client.run(${JSON.stringify(sessionId)}, "one accepted
     expect(await readFile(join(config.directory, "native-runtime-host.log"), "utf8"))
       .toContain("ERR_MODULE_NOT_FOUND");
   });
+
+  it("interrupts an unversioned broker during upgrade, then reuses the new version", async () => {
+    const config = await fixture();
+    const legacyPid = await startDetachedNativeRuntimeHost(config);
+    hosts.add(legacyPid);
+    const client = new NativeRuntimeBrokerClient({ directory: config.directory });
+    const admission = await client.enqueueGoal(sessionId, "keep running until upgrade");
+    expect(admission.started).toBeDefined();
+    const runId = admission.started!.runId;
+    await vi.waitFor(async () => {
+      const snapshot = await client.snapshot(sessionId);
+      expect(snapshot.events.some(({ event }) => event.type === "text_chunk")).toBe(true);
+    });
+
+    const update = { ...config, packageVersion: "1.2.3-preview.2" };
+    const upgraded = await Promise.all([startDetachedNativeRuntimeHost(update), startDetachedNativeRuntimeHost(update)]);
+    upgraded.forEach(pid => hosts.add(pid));
+    expect(upgraded[0]).not.toBe(legacyPid);
+    expect(upgraded[1]).toBe(upgraded[0]);
+    expect(existsSync(join(config.directory, "finish"))).toBe(false);
+    expect(await readFile(join(config.directory, "aborted"), "utf8")).toBe(sessionId);
+    await expect(client.snapshot(sessionId)).resolves.toMatchObject({
+      runId, controller: null, events: expect.arrayContaining([
+        expect.objectContaining({ event: expect.objectContaining({ type: "error", result: expect.objectContaining({ status: "interrupted" }) }) }),
+      ]),
+    });
+    await expect(client.getGoals(sessionId)).resolves.toMatchObject({
+      active: null, history: [expect.objectContaining({ id: admission.state.active?.id, status: "failed" })],
+    });
+    await expect(startDetachedNativeRuntimeHost(update)).resolves.toBe(upgraded[0]);
+    await expect(startDetachedNativeRuntimeHost({ ...config, packageVersion: "1.2.3-preview.1" })).resolves.toBe(upgraded[0]);
+
+    await writeFile(join(config.directory, "finish"), "finish");
+    const next = await client.startRun(sessionId, "continue after update");
+    expect(next.runId).not.toBe(runId);
+    await vi.waitFor(async () => {
+      const snapshot = await client.snapshot(sessionId);
+      expect(snapshot.events.some(({ event }) => event.type === "done")).toBe(true);
+    });
+  }, 20_000);
 });

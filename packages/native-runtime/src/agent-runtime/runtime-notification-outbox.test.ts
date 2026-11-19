@@ -12,9 +12,11 @@ describe("Broker notification outbox", () => {
     const db = new SQLiteDatabase(root); cleanup.push(() => db.close());
     let outbox = new RuntimeNotificationOutbox(db.db); cleanup.push(() => outbox.close());
     outbox.set("session", { serviceId: "service", ownerId: "owner", descriptorPath: "/scoped", relayPath: "/relay" });
-    expect(() => db.db.transaction(() => { outbox.append("session", "run", 1, { type: "done", finalText: "complete" }, 100); throw new Error("rollback"); })()).toThrow("rollback");
+    const appendCompletion = () => outbox.append("session", "run", 1, { type: "done", finalText: "complete" }, 100, () => outbox.get("session"));
+    expect(() => db.db.transaction(() => { appendCompletion(); throw new Error("rollback"); })()).toThrow("rollback");
     expect(db.db.prepare("SELECT * FROM native_runtime_notification_outbox").all()).toHaveLength(0);
-    outbox.append("session", "run", 1, { type: "done", finalText: "complete" }, 100); outbox.append("session", "run", 1, { type: "done", finalText: "complete" }, 100);
+    appendCompletion();
+    appendCompletion();
     expect(db.db.prepare("SELECT * FROM native_runtime_notification_outbox").all()).toHaveLength(1);
     outbox.close(); outbox = new RuntimeNotificationOutbox(db.db);
     expect(outbox.get("session")?.serviceId).toBe("service");

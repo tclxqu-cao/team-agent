@@ -24,6 +24,38 @@ describe("native run transcript reconciliation", () => {
     expect(project(native, [reasoning("codex-item", "Check first"), { type: "text_chunk", text: "Answer" }], "codex")).toEqual(native);
   });
 
+  it("does not replay Codex output when completed history includes a compaction notice", () => {
+    const turnId = "turn";
+    const native: Message[] = [
+      user(),
+      { ...answer("Checking"), historyId: "codex-trace:turn:agent:progress" },
+      answer("上下文已压缩"),
+      {
+        ...answer("Finished"), historyId: "codex-trace:turn:agent:final",
+        presentation: { forkPoint: { turnId }, agentMessagePhase: "final_answer" },
+      },
+    ];
+    const replay: AgentEvent[] = [
+      { type: "text_chunk", turnId, itemId: "progress", text: "Checking", messagePhase: "commentary" },
+      { type: "text_chunk", turnId, itemId: "final", text: "Fin", messagePhase: "final_answer" },
+      { type: "text_chunk", turnId, itemId: "final", text: "ished", messagePhase: "final_answer" },
+      { type: "done", finalText: "Finished", forkPoint: { turnId } },
+    ];
+    expect(project(native, replay, "codex")).toEqual(native);
+  });
+
+  it("preserves Codex replay output when history lacks that item or the turn is incomplete", () => {
+    const progress: Message = { ...answer("Check"), historyId: "codex-trace:turn:agent:progress" };
+    const chunk: AgentEvent = { type: "text_chunk", turnId: "turn", itemId: "progress", text: "Checking" };
+    expect(project([user(), progress], [chunk], "codex").map(message => message.content))
+      .toEqual(["Question", "Check", "ing"]);
+
+    const previous: Message = { ...progress, historyId: "codex-trace:previous:agent:progress" };
+    const final: Message = { ...answer("Finished"), presentation: { forkPoint: { turnId: "turn" } } };
+    expect(project([user("Previous"), previous, user(), final], [chunk], "codex").at(-1)?.content)
+      .toBe("Checking");
+  });
+
   it.each(["qoder", "zcode", "workbuddy", "copilot"] as const)("keeps %s reasoning before the completed answer when live and history IDs differ", agent => {
     const native = [user(), thought("native-thought", "Check first"), answer()];
     const merged = project(native, [reasoning("live-thought", "Check first"), { type: "text_chunk", text: "Answer" }, { type: "done", finalText: "Answer" }], agent);

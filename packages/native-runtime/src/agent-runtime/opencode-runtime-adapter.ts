@@ -1103,6 +1103,7 @@ export function openCodeHistoryToMessages(
         role: "tool",
         toolCallId: part.callID,
         content: part.state.status === "completed" ? part.state.output : part.state.error,
+        ...(part.state.status === "error" ? { isError: true } : {}),
       });
     }
     for (const cards of questionCards.values()) messages.push(...cards);

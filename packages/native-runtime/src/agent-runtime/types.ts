@@ -223,7 +223,8 @@ export interface RuntimeModelInfo {
  * already admitted turn.
  */
 export interface RuntimeRunOptions {
-  todoMcp?: import("./runtime-tool-injection").NativeTodoMcpConfiguration;
+  /** ZCode uses null to remove a previous turn's scoped Todo MCP configuration. */
+  todoMcp?: import("./runtime-tool-injection").NativeTodoMcpConfiguration | null;
   permissionMode?: ToolPermissionMode;
   brokerRunId?: string;
   model?: RuntimeModelSelection;

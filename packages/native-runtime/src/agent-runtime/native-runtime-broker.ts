@@ -1,4 +1,6 @@
 import { parseSessionForkPoint } from "./session-fork-point.js";
+import { contextForkPoints, supportsContextFork } from "./context-session-fork.js";
+import { materializeContextHistory } from "./context-history-artifact.js";
 import { parseNativeGoalMutation, type NativeGoalMutation, type NativeSessionGoal } from "./native-session-goal.js";
 import type { SessionForkPoint } from "@agent/core";
 import { createHash, randomUUID } from "node:crypto";
@@ -32,6 +34,8 @@ import {
   SQLiteEngineSwitchRepository,
   EngineSwitchDelivery,
   cleanEngineHistory,
+  renderContextHandoff,
+  scopedHistory,
   SessionQueryIndexCache,
   StaleSessionAnchorError,
   updateQueuedSessionMessage,
@@ -59,7 +63,7 @@ import {
   type CodexSessionCatalogRepository,
 } from "./codex-session-disk-catalog.js";
 import { CodexSessionCompatibilityService } from "./codex-session-compatibility.js";
-import { CodexRuntimeAdapter } from "./codex-runtime-adapter.js";
+import { CodexRuntimeAdapter, codexTraceHistoryId } from "./codex-runtime-adapter.js";
 import { parseCodexAsyncQuestionId } from "./codex-questions.js";
 import { DeepSeekHarnessRuntimeAdapter } from "./deepseek-harness-runtime-adapter.js";
 import { isHarnessContextMessage, isHarnessSteeredMessage } from "./deepseek-harness-codec.js";
@@ -604,7 +608,7 @@ class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, Code
     `).run(agentType, workspaceId, normalizedPath);
   }
 
-  recoverInterruptedRuns(): void {
+  recoverInterruptedRuns(endInterruptedGoals = false): void {
     const runs = this.database.db.prepare(
       "SELECT * FROM native_runtime_run WHERE status = 'active'",
     ).all() as StoredRunRow[];
@@ -618,9 +622,12 @@ class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, Code
       if (
         row.goal_id
         && activeItem?.id === row.goal_id
-        && sessionQueueItemKind(activeItem) === "message"
+        && (endInterruptedGoals || sessionQueueItemKind(activeItem) === "message")
       ) {
-        this.finishGoal(row.session_id, row.goal_id, "failed", "Native runtime restarted during this message.");
+        const reason = sessionQueueItemKind(activeItem) === "message"
+          ? "Native runtime restarted during this message."
+          : BROKER_RESTART_MESSAGE;
+        this.finishGoal(row.session_id, row.goal_id, "failed", reason);
       }
     }
     this.pruneExpiredTerminals();
@@ -782,6 +789,17 @@ class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, Code
     return !!this.database.db.prepare(
       "SELECT 1 FROM native_runtime_message_receipt WHERE session_id=? AND source_message_id=? AND run_id IS NOT NULL"
     ).get(sessionId, sourceMessageId);
+  }
+
+  todoContextForRun(run: BrokerRunRecord, context: RuntimeTodoContext | undefined): RuntimeTodoContext | undefined {
+    if (!context?.executionId) return context;
+    if (!run.goalId) return undefined;
+    // The scheduler uses the occurrence id as the durable message source id.
+    const receipt = this.database.db.prepare(`
+      SELECT 1 FROM native_runtime_message_receipt
+      WHERE session_id=? AND source_message_id=? AND queue_item_id=? AND run_id=?
+    `).get(run.sessionId, context.executionId, run.goalId, run.runId);
+    return receipt ? context : undefined;
   }
 
   reorderGoals(sessionId: string, orderedIds: readonly string[]): SessionGoalState {
@@ -1031,7 +1049,8 @@ class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, Code
         recordedEvent = { ...event, durationMs: result.durationMs, usage: result.usage, result };
       }
       const sequence = run.nextSequence + 1;
-      this.todoOutbox.append(run.sessionId, runId, sequence, recordedEvent, eventAt);
+      this.todoOutbox.append(run.sessionId, runId, sequence, recordedEvent, eventAt,
+        () => this.todoContextForRun(run, this.todoOutbox.get(run.sessionId)));
       this.database.db.prepare(
         "INSERT INTO native_runtime_event(run_id, sequence, payload, created_at) VALUES (?, ?, ?, ?)",
       ).run(runId, sequence, JSON.stringify(recordedEvent), eventAt);
@@ -1277,11 +1296,13 @@ class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, Code
   }
 
   applyDetail(detail: UnifiedSessionDetail, options: { mergeProjection?: boolean; includePendingQuestions?: boolean; windowed?: boolean } = {}): UnifiedSessionDetail {
+    const canForkWithHistory = supportsContextFork(detail.agentType);
+    const fork = canForkWithHistory
+      ? this.engineSwitch.handoffs.forkForSession(detail.id) : null;
     const threadKey = this.engineSwitch.records.threadOfSession(detail.id);
-    if (threadKey) {
-      const handoffs = this.engineSwitch.handoffs.summariesForThread(threadKey);
-      detail = { ...detail, messages: cleanEngineHistory(detail.messages, handoffs) };
-    }
+    const handoffs = threadKey ? this.engineSwitch.handoffs.summariesForThread(threadKey) : [];
+    if (fork) handoffs.push(fork);
+    if (handoffs.length) detail = { ...detail, messages: cleanEngineHistory(detail.messages, handoffs) };
     const summary = this.applySummary(detail);
     const projection = this.projection(detail.id);
     // Windowed pages that exclude the session tail must not merge the retained
@@ -1347,7 +1368,9 @@ class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, Code
     return {
       ...detail,
       ...summary,
-      messages,
+      messages: canForkWithHistory
+        ? contextForkPoints([...(fork?.forkHistory ?? []), ...messages], summary.status === "running")
+        : messages,
       events: detail.agentType === "copilot"
         ? [...(mergeProjection ? projection.events.flatMap(({ event }) =>
           event.type === "ask_user" || event.type === "approval_resolved"
@@ -1496,6 +1519,7 @@ export class NativeRuntimeBrokerHost {
     readonly directory: string,
     runtime: UnifiedSessionService | NativeRuntimeBrokerRuntimeFactory,
     now: () => number = Date.now,
+    private readonly packageVersion?: string,
   ) {
     this.state = new NativeRuntimeBrokerState(directory, now);
     this.runtime = typeof runtime === "function"
@@ -1514,7 +1538,7 @@ export class NativeRuntimeBrokerHost {
     return resolveNativeRuntimeSocketPath(this.directory);
   }
 
-  async start(): Promise<void> {
+  async start(options: { endInterruptedGoals?: boolean } = {}): Promise<void> {
     if (this.server) return;
     mkdirSync(this.directory, { recursive: true, mode: 0o700 });
     try { chmodSync(this.directory, 0o700); } catch { /* Best effort. */ }
@@ -1544,7 +1568,7 @@ export class NativeRuntimeBrokerHost {
     this.ownsSocket = true;
     // Do this only after this host owns the socket. A losing startup race must
     // never interrupt a still-live turn owned by another process.
-    this.state.recoverInterruptedRuns();
+    this.state.recoverInterruptedRuns(options.endInterruptedGoals);
     for (const item of this.state.listResumableQueueItems()) {
       void this.startQueueItem(item, "web");
     }
@@ -1707,9 +1731,53 @@ export class NativeRuntimeBrokerHost {
 
   async fork(id: string, point?: SessionForkPoint): Promise<UnifiedSessionSummary> {
     this.state.assertSessionVisible(id);
+    if (supportsContextFork(decodeNativeSessionId(id).agentType)) return this.forkFromHistory(id, point);
     const forked = point ? await this.runtime.fork(id, point) : await this.runtime.fork(id);
     this.pendingCreations.set(forked.id, forked);
     return this.state.applySummary(forked);
+  }
+
+  private async forkFromHistory(id: string, point?: SessionForkPoint): Promise<UnifiedSessionSummary> {
+    const source = await this.get(id);
+    const agentType = decodeNativeSessionId(id).agentType;
+    let end = source.messages.length - 1;
+    for (; end >= 0; end--) {
+      const candidate = source.messages[end].presentation?.forkPoint?.messageId;
+      if (candidate && (!point || point.messageId === candidate)) break;
+    }
+    if (end < 0) throw new RuntimeSessionError("该轮次不存在或尚未完成，请刷新会话后重试", "INVALID_SESSION_ID");
+    if (!source.cwd) throw new RuntimeSessionError("源会话没有本地工作目录", "OPERATION_NOT_SUPPORTED");
+    const handoffId = randomUUID();
+    const inherited = scopedHistory(source.messages.slice(0, end + 1), handoffId).map(message => {
+      if (message.presentation?.question?.status !== "pending") return message;
+      return { ...message, presentation: { ...message.presentation, question: { ...message.presentation.question, status: "cancelled" as const } } };
+    });
+    const workStateText = `工作目录：${source.cwd}`;
+    let target: UnifiedSessionSummary | undefined;
+    try {
+      const historyFile = await materializeContextHistory(this.directory, { id: handoffId, messages: inherited, workStateText });
+      const rendered = renderContextHandoff(inherited, source.title, agentType, { purpose: "fork", historyFile, workStateText });
+      target = await this.createRuntimeSession({
+        agentType, cwd: source.cwd, projectId: source.projectId, title: `${source.title}（副本）`,
+      });
+      if (target.id === source.id || target.agentType !== agentType) {
+        throw new RuntimeSessionError("引擎未返回独立的副本会话", "NATIVE_PROTOCOL_ERROR");
+      }
+      this.state.engineSwitch.handoffs.insert({
+        id: handoffId, threadKey: `fork:${target.id}`, fromSessionId: id, fromAgentType: agentType,
+        toSessionId: target.id, toAgentType: agentType, strategy: "full", status: "pending",
+        createdBy: "user", created: new Date().toISOString(), consumedAt: null,
+        historyFile, forkHistory: inherited, ...rendered,
+      });
+      return target;
+    } catch (error) {
+      if (target && target.id !== source.id) {
+        this.pendingCreations.delete(target.id);
+        this.state.hideSession(target.id);
+      }
+      rmSync(join(this.directory, ".agent-data", "engine-handoffs", handoffId), { recursive: true, force: true });
+      throw error;
+    }
   }
 
   async delete(sessionId: string): Promise<void> {
@@ -2250,9 +2318,11 @@ export class NativeRuntimeBrokerHost {
           },
         } : {}),
       };
-      const todoContext = this.state.todoOutbox.get(run.sessionId);
+      const sessionTodoContext = this.state.todoOutbox.get(run.sessionId);
+      const todoContext = this.state.todoContextForRun(run, sessionTodoContext);
+      if (sessionTodoContext?.executionId && !todoContext && run.agentType === "zcode") options.todoMcp = null;
       if (todoContext) {
-        await this.state.todoOutbox.bindRun(run.sessionId, run.runId);
+        await this.state.todoOutbox.bindRun(todoContext, run.runId);
         let todoInjectionUnavailable = false;
         try {
           const injection = await prepareTodoInjection(todoContext, run.agentType);
@@ -2271,7 +2341,26 @@ export class NativeRuntimeBrokerHost {
           });
           if (warning) this.broadcast(warning);
         }
-        if (todoContext.model && !options.model) options.model = { id: todoContext.model };
+        const modelId = todoContext.model;
+        if (modelId && !options.model) {
+          options.model = { id: modelId };
+          if (run.agentType === "zcode") {
+            // Native model IDs can contain "/", so resolve the provider from the catalog.
+            const models = await this.runtime.listModels(run.agentType);
+            const providers = new Set(models
+              .filter(model => model.id === modelId)
+              .map(model => model.providerID)
+              .filter(Boolean));
+            const [providerID] = providers;
+            if (!providerID) {
+              throw new RuntimeSessionError(`Scheduled ZCode model "${modelId}" is no longer available`, "NATIVE_PROTOCOL_ERROR");
+            }
+            if (providers.size > 1) {
+              throw new RuntimeSessionError(`Scheduled ZCode model "${modelId}" matches multiple providers`, "NATIVE_PROTOCOL_ERROR");
+            }
+            options.model.providerID = providerID;
+          }
+        }
       }
       for await (const event of this.runtime.run(run.sessionId, delivery.input, delivery.images, agentIds, agentName, options)) {
         try { delivery.confirm(event); }
@@ -2537,7 +2626,7 @@ export class NativeRuntimeBrokerHost {
   private async handleRequest(request: BrokerRequest): Promise<unknown> {
     const sessionId = stringParam(request.params, "sessionId");
     switch (request.method) {
-      case "ping": return { ok: true, pid: process.pid };
+      case "ping": return { ok: true, pid: process.pid, packageVersion: this.packageVersion };
       case "health": return this.health();
       case "listWorkspaces": return this.listWorkspaces(
         nativeAgentTypeParam(request.params, "agentType"),
@@ -3429,6 +3518,16 @@ export function mergeProjectionMessages(
       .join("")
     : null;
   const nativeTurn = preserveNativeOrder && hasPersistedRunInput ? projected.slice(runUserIndex + 1, nextUserIndex) : [];
+  const completedCodexTurns = new Set<string>();
+  const codexHistoryIds = new Set<string>();
+  if (run.agentType === "codex" && run.status === "terminal") {
+    for (const message of messages) {
+      if (message.role !== "assistant" || !message.content.trim()) continue;
+      if (message.historyId) codexHistoryIds.add(message.historyId);
+      const turnId = message.presentation?.forkPoint?.turnId;
+      if (turnId) completedCodexTurns.add(turnId);
+    }
+  }
   const nativeReasoning = nativeTurn.flatMap((message) => (
     (message.presentation?.reasoning ?? []).map((section) => ({ message, section }))
   ));
@@ -3469,6 +3568,12 @@ export function mergeProjectionMessages(
       continue;
     }
     if (event.type !== "text_chunk" && event.type !== "tool_call") continue;
+    if (event.type === "text_chunk" && event.turnId && completedCodexTurns.has(event.turnId)) {
+      // Persisted Codex items include their own identity. History can also
+      // contain compaction notices and other text absent from the stream.
+      const historyId = codexTraceHistoryId(event.turnId, "agent", event.itemId);
+      if (historyId && codexHistoryIds.has(historyId)) continue;
+    }
     if (activeAssistantIndex === null) {
       activeAssistantIndex = eventMessages.length;
       eventMessages.push({ role: "assistant", content: "", name: `__native_run:${run.runId}` });

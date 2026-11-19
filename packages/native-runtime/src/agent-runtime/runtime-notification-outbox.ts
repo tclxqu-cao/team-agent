@@ -26,14 +26,16 @@ export class RuntimeNotificationOutbox {
     if (old && (old.serviceId !== context.serviceId || old.ownerId !== context.ownerId || old.executionId !== context.executionId)) throw new Error("Native session is already bound to another Todo scope");
     this.db.prepare("INSERT INTO native_runtime_todo_context(session_id,data) VALUES(?,?) ON CONFLICT(session_id) DO UPDATE SET data=excluded.data").run(sessionId, JSON.stringify(context));
   }
-  append(sessionId: string, runId: string, sequence: number, event: AgentEvent, createdAt: number): void {
-    const destination = this.get(sessionId);
-    if (!destination?.relayPath || !["ask_user", "approval_resolved", "done", "error", "turn_aborted"].includes(event.type)) return;
+  append(sessionId: string, runId: string, sequence: number, event: AgentEvent, createdAt: number, resolveDestination: () => RuntimeTodoContext | undefined): void {
+    if (!["ask_user", "approval_resolved", "done", "error", "turn_aborted"].includes(event.type)) return;
+    const destination = resolveDestination();
+    if (!destination?.relayPath) return;
     this.db.prepare("INSERT OR IGNORE INTO native_runtime_notification_outbox(id,session_id,payload,destination,created_at) VALUES(?,?,?,?,?)").run(`${runId}:${sequence}`, sessionId, JSON.stringify({ runId, event, createdAt }), JSON.stringify(destination), createdAt);
   }
-  async bindRun(sessionId: string, runId: string): Promise<void> {
-    const c = this.get(sessionId);
-    if (c?.executionId && c.relayPath) await new TodoServiceClient({ serviceId: c.serviceId, descriptorPath: c.relayPath, registry: c.discoveryDirectory }).call("bind_execution", { runId });
+  async bindRun(context: RuntimeTodoContext, runId: string): Promise<void> {
+    if (context.executionId && context.relayPath) {
+      await new TodoServiceClient({ serviceId: context.serviceId, descriptorPath: context.relayPath, registry: context.discoveryDirectory }).call("bind_execution", { runId });
+    }
   }
   async flush(): Promise<void> {
     if (this.flushing || this.closed) return; this.flushing = true;

@@ -119,6 +119,20 @@ describe("ZCode session-isolated Todo MCP", () => {
     expect(rpc.sentConfigurations).toEqual([expectedServers(), expectedServers()]);
   });
 
+  it("resumes the same session without the execution MCP on a normal follow-up", async () => {
+    const rpc = new TodoRpc();
+    const client = clientFor(rpc);
+    const session = await client.create({ title: "Scheduled Todo", cwd: "/workspace", todoMcp: configuration() });
+    await collect(client.run(session.id, "Scheduled run", undefined, { todoMcp: configuration() }));
+    await collect(client.run(session.id, "Follow-up", undefined, { todoMcp: null }));
+    await collect(client.run(session.id, "Another follow-up", undefined, { todoMcp: null }));
+    expect(rpc.calls.filter(call => call.method === "session/close" || call.method === "session/resume")).toEqual([
+      { method: "session/close", params: { sessionId: session.id } },
+      { method: "session/resume", params: { sessionId: session.id } },
+    ]);
+    expect(rpc.sentConfigurations).toEqual([expectedServers(), [], []]);
+  });
+
   it("releases only its idle resident before applying new startup MCP configuration", async () => {
     const rpc = new TodoRpc();
     const client = clientFor(rpc);
