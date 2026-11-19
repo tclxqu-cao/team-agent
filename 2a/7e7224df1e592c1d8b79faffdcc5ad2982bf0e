@@ -1,0 +1,44 @@
+packages/desktop/main/file-workspace-service.ts
+  s_ea1ab5f62173df::t_c74caff52fffe8 162-163
+packages/desktop/main/index.ts
+  s_ea1ab5f62173df::t_7164d0237d4712 32,959-962
+  s_d13b0580537e71::t_22a774795f1c90 41,981,983,985-986,989-990,992,995
+  s_ea1ab5f62173df::t_b9eb20b1ba4001 963
+packages/desktop/main/file-context-menu.test.ts
+  s_d13b0580537e71::t_e70af232ff196c 68,72-73
+  s_d13b0580537e71::t_02b7507d172dfd 5,38-67,69-71,74-99
+packages/desktop/main/preload.ts
+  s_ea1ab5f62173df::t_410851a2a18386 34
+  s_d13b0580537e71::t_22a774795f1c90 192-194
+packages/desktop/main/file-workspace-service.test.ts
+  s_ea1ab5f62173df::t_2a9bee6de95350 136-152
+packages/desktop/main/video-window.ts
+  s_ea1ab5f62173df::t_08c17426c1f84b 1-114
+packages/desktop/main/file-context-menu.ts
+  s_d13b0580537e71::t_22a774795f1c90 5-9,11,13-14,16-25,27-35
+  s_d13b0580537e71::t_e70af232ff196c 10,12,15,26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2a7e7224df1e592c1d8b79faffdcc5ad2982bf0e",
+  "prompts": {},
+  "sessions": {
+    "s_d13b0580537e71": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1ec9c-b488-70b2-87f9-92182160581b",
+        "model": "chat-gpt-omhk9/gpt-6.2-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_ea1ab5f62173df": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1ee04-e292-78e2-b062-0429005506e2",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.2-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
