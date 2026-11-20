@@ -15,6 +15,27 @@ function fixture() {
 }
 
 describe("WebShellBrowserBridge", () => {
+  it("reads the desktop lock state without claiming a control lease", async () => {
+    const { context, parent } = fixture();
+    const bridge = new WebShellBrowserBridge(context as never);
+    const fetchStatus = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ online: true, locked: true })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ online: true, locked: false })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ online: false, locked: true })));
+    vi.stubGlobal("fetch", fetchStatus);
+    try {
+      const { signal } = new AbortController();
+      await expect(bridge.readDesktopLockState(signal)).resolves.toBe(true);
+      await expect(bridge.readDesktopLockState(signal)).resolves.toBe(false);
+      await expect(bridge.readDesktopLockState(signal)).resolves.toBeNull();
+      expect(fetchStatus).toHaveBeenCalledWith("/api/remote-authorization/status", { credentials: "same-origin", cache: "no-store", signal });
+      expect(parent.postMessage).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+      bridge.dispose();
+    }
+  });
+
   it("rejects stale control requests and discards channel mappings on reconnect", async () => {
     const { context, parent, emit } = fixture();
     const bridge = new WebShellBrowserBridge(context as never);
@@ -86,5 +107,24 @@ describe("WebShellBrowserBridge", () => {
       sequence: 12,
       data,
     }));
+  });
+
+  it("distinguishes the preview channel from the control channel for the same desktop", async () => {
+    const { context, parent, emit } = fixture();
+    const bridge = new WebShellBrowserBridge(context as never);
+    const observer = vi.fn();
+    bridge.onEvent(observer);
+    const session = { id: "cli-desktop:primary" };
+    const control = bridge.request("browser:watch", { sessionId: session.id });
+    const projection = bridge.request("browser:desktop-watch", { sessionId: session.id });
+    const [controlRequest, projectionRequest] = parent.postMessage.mock.calls.map(([request]) => request);
+    emit({ type: WEBAPP_BROWSER_RESPONSE_TYPE, id: controlRequest.id, ok: true, result: { channelId: 8, session } });
+    emit({ type: WEBAPP_BROWSER_BINARY_FRAME_TYPE, channelId: 9, sequence: 11, data: new ArrayBuffer(1) });
+    emit({ type: WEBAPP_BROWSER_RESPONSE_TYPE, id: projectionRequest.id, ok: true, result: { channelId: 9, session } });
+    await Promise.all([control, projection]);
+    emit({ type: WEBAPP_BROWSER_BINARY_FRAME_TYPE, channelId: 8, sequence: 12, data: new ArrayBuffer(1) });
+    expect(observer.mock.calls[0][0]).toMatchObject({ sessionId: session.id, sequence: 11, sessionDesktop: true });
+    expect(observer.mock.calls[1][0]).not.toHaveProperty("sessionDesktop");
+    bridge.dispose();
   });
 });

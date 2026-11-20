@@ -12,7 +12,7 @@ import {
   type SessionToolResultRef,
 } from "@agent/core";
 import { createTaskCompletionNotification } from "../../../core/src/application/notification/task-completion";
-import { ArrowDownToLine, AlarmClock, Check, CircleAlert, Copy, CornerUpRight, FileText, GitFork, GripVertical, LoaderCircle, MessagesSquare, PanelLeftClose, PanelLeftOpen, Paperclip, Pencil, Play, RefreshCw, Square, Target, Trash2, Unplug } from "lucide-react";
+import { ArrowDownToLine, AlarmClock, Check, CircleAlert, Copy, CornerUpRight, FileText, GitFork, GripVertical, LoaderCircle, MessagesSquare, Monitor, PanelLeftClose, PanelLeftOpen, Paperclip, Pencil, Play, RefreshCw, Square, Target, Trash2, Unplug } from "lucide-react";
 import AgentBrandIcon from "./AgentBrandIcon";
 import SessionLoading from "./SessionLoading";
 import SessionTaskPanel, { SessionTaskPanelToggle } from "./SessionTaskPanel";
@@ -443,6 +443,8 @@ import AskUserCard from "./AskUserCard";
 import ContextUsageBar from "./ContextUsageBar";
 import HarnessModeControl from "./HarnessModeControl";
 import SessionRunActivity from "./SessionRunActivity";
+import SessionDesktopProjection, { useSessionDesktopProjection } from "./SessionDesktopProjection";
+import { updateSessionDesktopToolActivity } from "../lib/session-desktop-tool-activity";
 import { reconcileCodexExecutionSegments } from "../lib/codex-execution-trace";
 import { resolveChatSessionId } from "../lib/session-search";
 import CodexExecutionTrace from "./CodexExecutionTrace";
@@ -748,6 +750,7 @@ export default function ChatView({
   const { isConfigured: sharedConfigured, profiles, activeProfileId: sharedProfileId, switchActiveProfile: switchSharedProfile, loadFromSystem, contextWindow, reasoningEffort, taskNotifications, setField, saveToSystem } = useSettingsStore();
   const isWorkspaceWelcome = selectedProjectId !== null && selectedSessionId === null;
   const viewSessionId = resolveChatSessionId(selectedSessionId, sessionId, activeAgentType, isWorkspaceWelcome);
+  const [desktopToolRuns, setDesktopToolRuns] = useState<ReadonlyMap<string, string>>(() => new Map());
   const taskPanelId = useId();
   const hasTaskPanel = Boolean(viewSessionId || workspacePath);
   const taskPanel = useTaskPanelPreferences(JSON.stringify([viewSessionId ?? "new", sessionSummary?.cwd || workspacePath]),
@@ -1027,6 +1030,9 @@ export default function ChatView({
   const canStopRun = shouldQueueMessage;
   const isRunning = parallel.group ? parallel.isRunning(viewSessionId)
     : isNativeRunVisible(sessionSummary, viewSessionId, isLocallyRunning, nativeRunObservation);
+  const desktopToolRunId = isRunning && viewSessionId ? desktopToolRuns.get(viewSessionId) : undefined;
+  const sessionDesktop = useSessionDesktopProjection(desktopTaskPane ? null : viewSessionId,
+    observedRunId && observedRunId !== desktopToolRunId ? undefined : desktopToolRunId);
   const renderedMessages = useMemo<SessionExecutionMessage[]>(
     () => groupSessionExecutionMessages(ungroupedMessages, isRunning),
     [isRunning, ungroupedMessages],
@@ -2648,6 +2654,9 @@ export default function ChatView({
       }
     }
     const isViewed = !eventSid || eventSid === viewedSid;
+    if (!desktopTaskPane && eventSid && event._nativeRunId && (event.type === "tool_call" || isRunTerminalEvent(event))) {
+      setDesktopToolRuns(current => updateSessionDesktopToolActivity(current, eventSid, event));
+    }
     const isAnchoredView = isViewed && historyWindowModeRef.current === "anchored";
     const shouldReconcileFailedSend = eventSid?.startsWith("runtime:")
       && (event.type === "run_admitted" || event.type === "done")
@@ -4466,6 +4475,10 @@ export default function ChatView({
         }}>
           {sessionTitle || "会话"}
         </span>
+        {sessionDesktop.available && <button type="button" className={`ui-icon-button session-desktop-header-button${sessionDesktop.runId ? " is-active" : ""}`}
+          aria-label="查看会话桌面" aria-expanded={sessionDesktop.showPreview} title={sessionDesktop.status} onClick={sessionDesktop.open}>
+          <Monitor size={16} aria-hidden="true" />桌面
+        </button>}
         {hasTaskPanel && <SessionTaskPanelToggle visible={taskPanel.preferences.visible} panelId={taskPanelId}
           onToggle={() => taskPanel.update({ visible: !taskPanel.preferences.visible })} />}
         {onReplaceTask && <button
@@ -5192,6 +5205,8 @@ export default function ChatView({
         )}
 
         </div>
+
+        {sessionDesktop.available && <SessionDesktopProjection desktop={sessionDesktop} scrollRef={messagesScrollRef} />}
 
         <QueryNavigationRail
           entries={queryIndex?.entries ?? []}

@@ -1295,6 +1295,13 @@ body[data-web-shell="1"] {
   display: none;
 }
 
+.browser-live-backdrop.browser-live-backdrop--session { padding: 0; }
+.browser-live-panel.browser-live-panel--session.is-fullscreen { grid-template-rows: auto minmax(0, 1fr); }
+.browser-live-panel.browser-live-panel--session.is-fullscreen .browser-live-header { display: flex; }
+.browser-live-panel--session .browser-live-heading { min-width: 0; }
+.browser-live-panel--session .browser-live-heading > div { min-width: 0; }
+.browser-live-panel--session .browser-live-heading span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 @media (orientation: landscape) and (max-height: 600px) and (pointer: coarse) {
   .browser-live-backdrop { padding: 0; }
   .browser-live-panel,

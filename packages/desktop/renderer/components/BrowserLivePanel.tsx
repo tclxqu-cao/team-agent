@@ -4,6 +4,7 @@ import { BrowserLiveHeaderContext } from "./browser-live-header-context";
 // Direct source import: the @agent/core package root drags Node-only modules
 // into the browser bundle; this domain policy is dependency-free.
 import { RemoteVideoStallPolicy } from "../../../core/src/domain/live-view/remote-video-stall.js";
+import { PRIMARY_DESKTOP_LIVE_ID } from "../../../core/src/domain/live-view/desktop-control.js";
 import { BrowserCompoundVideo } from "./remote-compound-video.js";
 import { BrowserRemoteCursor } from "./remote-cursor.js";
 import { BrowserRemoteDirectInput } from './remote-direct-input.js';
@@ -44,6 +45,7 @@ interface BrowserLivePanelProps {
   /** A hidden shell tab retains its viewer/control and local viewport state. */
   active?: boolean;
   agentSessionId?: string | null;
+  sessionDesktop?: { expanded: boolean; status: string; onExpand: () => void };
   onClose: () => void;
   onFullscreenChange?: (fullscreen: boolean) => void;
 }
@@ -220,16 +222,44 @@ export function touchScrollDelta(
   return delta;
 }
 
-export default function BrowserLivePanel({ open, active = true, embedded = false, agentSessionId, onClose, onFullscreenChange }: BrowserLivePanelProps) {
+export default function BrowserLivePanel({ open, active = true, embedded = false, agentSessionId, sessionDesktop, onClose, onFullscreenChange }: BrowserLivePanelProps) {
   const headerControl = useContext(BrowserLiveHeaderContext);
   const api = typeof window === "undefined" ? undefined : window.browserLiveApi;
+  const projection = sessionDesktop !== undefined;
+  const projectionExpanded = sessionDesktop?.expanded === true;
+  const viewingProjection = projection && open && active;
+  const [projectionLocked, setProjectionLocked] = useState<boolean | null>(null);
+  useEffect(() => {
+    const readLockState = api?.readDesktopLockState?.bind(api);
+    if (!viewingProjection || !readLockState) {
+      setProjectionLocked(null);
+      return;
+    }
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const refreshLockState = async () => {
+      const locked = await readLockState(controller.signal).catch(() => null);
+      if (!controller.signal.aborted) {
+        setProjectionLocked(locked);
+        timer = setTimeout(refreshLockState, 2000);
+      }
+    };
+    void refreshLockState();
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, [api, viewingProjection]);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
   const backdropRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLElement>(null);
   useLayoutEffect(() => {
     if (!open || embedded || !backdropRef.current) return;
     return trackBrowserLiveViewport(backdropRef.current, window, document.body.dataset.remoteDesktop === "1");
-  }, [open, embedded]);
-  const [fullscreen, setFullscreen] = useState(false);
+  }, [open, embedded, projectionExpanded]);
+  const [nativeFullscreen, setFullscreen] = useState(false);
+  const fullscreen = projection ? projectionExpanded : nativeFullscreen;
   useEffect(() => {
     onFullscreenChange?.(fullscreen);
   }, [fullscreen, onFullscreenChange]);
@@ -247,6 +277,7 @@ export default function BrowserLivePanel({ open, active = true, embedded = false
   };
   useEffect(() => {
     if (!open) { setFullscreen(false); return; }
+    if (projection && !projectionExpanded) return;
     const panel = panelRef.current;
     const syncFullscreen = () => setFullscreen(document.fullscreenElement === panel);
     const escapeFullscreen = (event: KeyboardEvent) => {
@@ -254,7 +285,8 @@ export default function BrowserLivePanel({ open, active = true, embedded = false
         event.preventDefault();
         event.stopPropagation();
         if (document.fullscreenElement === panel) void document.exitFullscreen().catch(() => undefined);
-        setFullscreen(false);
+        if (projection) onCloseRef.current();
+        else setFullscreen(false);
       }
     };
     document.addEventListener("fullscreenchange", syncFullscreen);
@@ -264,7 +296,7 @@ export default function BrowserLivePanel({ open, active = true, embedded = false
       document.removeEventListener("keydown", escapeFullscreen, true);
       if (panel && document.fullscreenElement === panel) void document.exitFullscreen().catch(() => undefined);
     };
-  }, [open]);
+  }, [open, projection, projectionExpanded]);
   const [sessions, setSessions] = useState<BrowserLiveSession[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [pendingDisplayId, setPendingDisplayId] = useState<string | null>(null);
@@ -380,18 +412,18 @@ export default function BrowserLivePanel({ open, active = true, embedded = false
   const isDesktop = selected?.backend === "desktop";
   const isWindowsDesktop = isDesktop && selected?.platform === "win32";
   const desktopLocked = selected?.availability === "unavailable" && selected?.capabilityErrorCode === "desktop-locked";
-  const hasControl = selected?.isController && selected.state === "user-controlled";
+  const hasControl = !projection && selected?.isController && selected.state === "user-controlled";
   const audioCapabilities = selected?.audioCapabilities;
   const supportsFullDuplexAudio = Boolean(audioCapabilities?.fullDuplex
     && audioCapabilities.systemAudio
     && audioCapabilities.microphonePlayback
     && audioCapabilities.selfPlaybackExclusion);
   const canAdjustCapture = Boolean(selected?.online && selected.availability === "ready" && !selected.controlledByAnotherViewer);
-  const showTakeoverPrompt = shouldOfferVisualTakeover(selected);
+  const showTakeoverPrompt = !projection && shouldOfferVisualTakeover(selected);
   const takeoverPending = controlPending || selected?.state === "handoff-requested";
   // Rough network latency readout while a stream is open.
   useEffect(() => {
-    if (!open || !api || !selectedId) { setPingMs(null); return; }
+    if (!open || !api || !selectedId || projection) { setPingMs(null); return; }
     let alive = true;
     const tick = () => {
       const t0 = performance.now();
@@ -402,7 +434,7 @@ export default function BrowserLivePanel({ open, active = true, embedded = false
     tick();
     const timer = window.setInterval(tick, 3000);
     return () => { alive = false; window.clearInterval(timer); setPingMs(null); };
-  }, [api, open, selectedId]);
+  }, [api, open, selectedId, projection]);
 
   // Keep the phone screen awake while controlling (ToDesk-style).
   useEffect(() => {
@@ -444,7 +476,7 @@ export default function BrowserLivePanel({ open, active = true, embedded = false
     });
     observer.observe(element);
     return () => observer.disconnect();
-  }, [open, isDesktop]);
+  }, [open, isDesktop, projectionExpanded]);
 
   useEffect(() => {
     const element = viewportRef.current;
@@ -789,6 +821,7 @@ export default function BrowserLivePanel({ open, active = true, embedded = false
   }, [frameSrc]);
 
   const mergeSession = useCallback((session: BrowserLiveSession) => {
+    if (projection && (session.id !== PRIMARY_DESKTOP_LIVE_ID || session.backend !== "desktop")) return;
     setSessions((current) => {
       const index = current.findIndex((item) => item.id === session.id);
       if (index >= 0 && isStaleControlReply(current[index], session)) return current;
@@ -797,9 +830,9 @@ export default function BrowserLivePanel({ open, active = true, embedded = false
       next[index] = session;
       return next.sort((left, right) => right.updatedAt - left.updatedAt);
     });
-    setSelectedId((current) => selectBrowserLiveSessionId(current, [session], agentSessionId));
+    setSelectedId((current) => projection ? session.id : selectBrowserLiveSessionId(current, [session], agentSessionId));
     setControlPending(false);
-  }, [agentSessionId]);
+  }, [agentSessionId, projection]);
 
   const refresh = useCallback(async () => {
     if (!api || !open) return;
@@ -807,17 +840,18 @@ export default function BrowserLivePanel({ open, active = true, embedded = false
     setError(null);
     try {
       const result = await api.request<{ sessions: BrowserLiveSession[] }>("browser:list");
-      setSessions(result.sessions);
+      const available = projection ? result.sessions.filter((session) => session.id === PRIMARY_DESKTOP_LIVE_ID && session.backend === "desktop") : result.sessions;
+      setSessions(available);
       setSelectedId((current) => {
-        const validCurrent = current && result.sessions.some((session) => session.id === current)
+        const validCurrent = current && available.some((session) => session.id === current)
           ? current
           : null;
-        return selectBrowserLiveSessionId(validCurrent, result.sessions, agentSessionId);
+        return projection ? available[0]?.id ?? null : selectBrowserLiveSessionId(validCurrent, available, agentSessionId);
       });
       // Refresh means the PICTURE, not just the list: re-deliver the latest
       // JPEG frame (same-session watch keeps the controller role) and
       // renegotiate the real-time video stream.
-      if (selectedId) {
+      if (selectedId && !projection) {
         await api.request<{ session: BrowserLiveSession }>("browser:watch", { sessionId: selectedId })
           .then((watched) => mergeSession(watched.session))
           .catch(() => undefined);
@@ -828,7 +862,7 @@ export default function BrowserLivePanel({ open, active = true, embedded = false
     } finally {
       setLoading(false);
     }
-  }, [agentSessionId, api, mergeSession, open, selectedId]);
+  }, [agentSessionId, api, mergeSession, open, selectedId, projection]);
 
   useEffect(() => {
     if (!open || !api) return;
@@ -851,11 +885,13 @@ export default function BrowserLivePanel({ open, active = true, embedded = false
         return;
       }
       if (event.type === "browser:frame") {
+        if ((event.sessionDesktop === true) !== projection || (projection && !viewingProjection)) return;
         const nextFrame = event as unknown as BrowserFrame & { type: string };
         if (nextFrame.sessionId === selectedId) setFrame(nextFrame);
         return;
       }
       if (event.type === "browser:webrtc") {
+        if (projection) return;
         const data = (event as unknown as { data?: Record<string, unknown> }).data;
         if (event.sessionId === selectedId) handleWebrtcSignal(selectedId, data);
         return;
@@ -874,10 +910,10 @@ export default function BrowserLivePanel({ open, active = true, embedded = false
         }
       }
     });
-  }, [api, handleWebrtcSignal, mergeSession, open, refresh, selectedId]);
+  }, [api, handleWebrtcSignal, mergeSession, open, refresh, selectedId, projection, viewingProjection]);
 
   useEffect(() => {
-    if (!open || !api || !selectedId) return;
+    if (!open || !api || !selectedId || projection) return;
     setFrame(null);
     setError(null);
     videoStalledRef.current = false;
@@ -886,7 +922,30 @@ export default function BrowserLivePanel({ open, active = true, embedded = false
       .then((result) => mergeSession(result.session))
       .catch((requestError) => setError(requestError instanceof Error ? requestError.message : "无法观看浏览器"));
     return () => { void api.request("browser:unwatch").catch(() => undefined); };
-  }, [api, mergeSession, open, selectedId]);
+  }, [api, mergeSession, open, selectedId, projection]);
+
+  useEffect(() => {
+    if (!viewingProjection || !api || !selectedId) return;
+    let current = true;
+    void api.request<{ session: BrowserLiveSession }>("browser:desktop-watch", {
+      sessionId: selectedId,
+      expanded: projectionExpanded,
+    }).then(({ session }) => {
+      if (current) { mergeSession(session); setError(null); }
+    }).catch((requestError) => {
+      if (current) setError(requestError instanceof Error ? requestError.message : "无法观看桌面");
+    });
+    return () => { current = false; };
+  }, [viewingProjection, api, selectedId, projectionExpanded, viewNonce, mergeSession]);
+
+  useEffect(() => {
+    if (!viewingProjection || !api || !selectedId) return;
+    return () => { void api.request("browser:desktop-unwatch").catch(() => undefined); };
+  }, [viewingProjection, api, selectedId]);
+
+  useEffect(() => {
+    if (projection && !viewingProjection) setFrame(null);
+  }, [projection, viewingProjection]);
 
   // Real-time WebRTC video runs while this viewer controls the desktop source;
   // JPEG delivery resumes whenever video playback fails or control ends.
@@ -1079,7 +1138,7 @@ export default function BrowserLivePanel({ open, active = true, embedded = false
   }, [api, selectedId, webrtcState]);
 
   const requestControl = useCallback(async () => {
-    if (!api || !selected) return;
+    if (!api || !selected || projection) return;
     setControlPending(true);
     setError(null);
     try {
@@ -1089,7 +1148,7 @@ export default function BrowserLivePanel({ open, active = true, embedded = false
       setControlPending(false);
       setError(requestError instanceof Error ? requestError.message : "无法接管浏览器");
     }
-  }, [api, mergeSession, selected]);
+  }, [api, mergeSession, selected, projection]);
 
   const returnControl = useCallback(async () => {
     if (!api || !selected) return;
@@ -1298,14 +1357,14 @@ export default function BrowserLivePanel({ open, active = true, embedded = false
       ? "正在连接画面"
       : sessions.length
         ? "等待第一帧"
-        : isDesktop
+        : isDesktop || projection
           ? "暂无桌面直播"
           : "暂无浏览器直播";
   const emptyDetail = selected?.availability === "unavailable"
     ? selected.capabilityError || (isDesktop ? "需要在桌面 App 中开启并授予屏幕录制权限" : "当前浏览器不支持实时画面传输")
     : sessions.length
       ? "画面开始后会自动显示"
-      : isDesktop
+      : isDesktop || projection
         ? "在桌面 App 设置中开启「桌面直播与远程控制」后，画面会出现在这里"
         : "Agent 开始浏览网页后，会话会出现在这里";
   const remoteVideoStatsLabel = formatRemoteVideoStats(remoteVideoStats);
@@ -1318,37 +1377,48 @@ export default function BrowserLivePanel({ open, active = true, embedded = false
         ? "JPEG 兜底"
         : null;
 
+  const showFrame = frame && frameSrc && (!projection || selected?.availability === "ready");
+  const lockNotice = viewingProjection && projectionLocked === true ? "电脑已锁屏，解锁后自动恢复桌面画面" : null;
+  if (sessionDesktop && !projectionExpanded) {
+    return <button type="button" className="session-desktop-preview" onClick={sessionDesktop.onExpand} aria-label="全屏查看桌面">
+      {showFrame ? <img src={frameSrc} alt="实时桌面预览" draggable={false} /> : <span className="session-desktop-preview-empty">{lockNotice || error || selected?.capabilityError || (loading ? "正在连接桌面" : emptyTitle)}</span>}
+      {showFrame && lockNotice && <span className="session-desktop-lock-notice">{lockNotice}</span>}
+      <span className="session-desktop-preview-expand"><Maximize size={14} aria-hidden="true" />全屏</span>
+    </button>;
+  }
+
   const content = (
-    <div ref={backdropRef} className={`browser-live-backdrop${embedded ? " browser-live-backdrop--embedded" : ""}`} style={{ visibility: active ? undefined : "hidden", pointerEvents: active ? undefined : "none" }} aria-hidden={!active} data-tab-swipe-ignore role="presentation" onMouseDown={(event) => {
+    <div ref={backdropRef} className={`browser-live-backdrop${embedded ? " browser-live-backdrop--embedded" : ""}${projection ? " browser-live-backdrop--session" : ""}`} style={{ visibility: active ? undefined : "hidden", pointerEvents: active ? undefined : "none" }} aria-hidden={!active} data-tab-swipe-ignore role="presentation" onMouseDown={(event) => {
       if (!embedded && event.target === event.currentTarget) onClose();
     }}>
-      <section ref={panelRef} className={`browser-live-panel ${fullscreen ? "is-fullscreen" : ""}`} role={embedded ? "region" : "dialog"} aria-modal={embedded ? undefined : true} aria-label="浏览器直播">
+      <section ref={panelRef} className={`browser-live-panel ${fullscreen ? "is-fullscreen" : ""}${projection ? " browser-live-panel--session" : ""}`} role={embedded ? "region" : "dialog"} aria-modal={embedded ? undefined : true} aria-label={projection ? "会话桌面" : "浏览器直播"}>
         <header className="browser-live-header">
           <div className="browser-live-heading">
             <MonitorUp size={17} aria-hidden="true" />
             <div>
-              <strong>浏览器直播</strong>
-              <span>{selected ? backendLabel(selected.backend) : "实时观看与接管"}</span>
+              <strong>{projection ? "桌面" : "浏览器直播"}</strong>
+              <span>{sessionDesktop ? `${sessionDesktop.status} · 只读` : selected ? backendLabel(selected.backend) : "实时观看与接管"}</span>
             </div>
-            {headerControl}
+            {!projection && headerControl}
           </div>
           <div className="browser-live-header-actions">
-            <button type="button" className="ui-icon-button" onClick={() => void toggleFullscreen()} title={fullscreen ? "退出全屏" : "全屏"} aria-label={fullscreen ? "退出全屏" : "全屏"} aria-pressed={fullscreen}>
+            {!projection && <button type="button" className="ui-icon-button" onClick={() => void toggleFullscreen()} title={fullscreen ? "退出全屏" : "全屏"} aria-label={fullscreen ? "退出全屏" : "全屏"} aria-pressed={fullscreen}>
               {fullscreen ? <Minimize size={17} /> : <Maximize size={17} />}
-            </button>
+            </button>}
             <button type="button" className="ui-icon-button" onClick={() => void refresh()} title="刷新画面与会话" aria-label="刷新直播画面与会话">
               <RotateCcw size={15} className={loading ? "spin" : undefined} aria-hidden="true" />
             </button>
-            <button type="button" className="ui-icon-button" onClick={onClose} title="关闭" aria-label="关闭浏览器直播">
-              <X size={17} aria-hidden="true" />
+            <button type="button" className="ui-icon-button" onClick={onClose} title={projection ? "退出全屏" : "关闭"} aria-label={projection ? "退出全屏" : "关闭浏览器直播"}>
+              {projection ? <Minimize size={17} aria-hidden="true" /> : <X size={17} aria-hidden="true" />}
             </button>
           </div>
         </header>
 
         <div className={`browser-live-surface ${hasControl ? "is-controlling" : ""} has-zoom ${hasControl && !panMode && quickKeysOpen ? "has-quickkeys" : ""}`}>
+          {lockNotice && <span className="session-desktop-lock-notice" role="status">{lockNotice}</span>}
           {(
             <div className="browser-live-zoom" role="group" aria-label="桌面画面缩放">
-              {fullscreen && (
+              {fullscreen && !projection && (
                 <button type="button" aria-label="退出全屏" title="退出全屏" onClick={() => void toggleFullscreen()}>
                   <Minimize size={15} aria-hidden="true" />退出全屏
                 </button>
@@ -1370,7 +1440,7 @@ export default function BrowserLivePanel({ open, active = true, embedded = false
                   ))}
                 </div>
               )}
-              {isDesktop && liveDisplays && liveDisplays.length > 1 && (
+              {!projection && isDesktop && liveDisplays && liveDisplays.length > 1 && (
                 <LiveViewSelect
                   label="选择直播屏幕"
                   title={canAdjustCapture ? "选择直播屏幕" : "其他设备控制中或画面暂不可用"}
@@ -1382,7 +1452,7 @@ export default function BrowserLivePanel({ open, active = true, embedded = false
                   {liveDisplays.map((display, index) => <option key={display.id} value={display.id}>{`第 ${index + 1} 屏${display.primary ? "（主屏）" : ""}`}</option>)}
                 </LiveViewSelect>
               )}
-              {isDesktop && (
+              {!projection && isDesktop && (
                 <LiveViewSelect label="视频画质" title={canAdjustCapture ? "视频画质" : "其他设备控制中或画面暂不可用"} value={videoQuality} busy={pendingQuality !== null} disabled={!canAdjustCapture || !!pendingDisplayId} compact onChange={selectQuality}>
                   <option value="smooth">流畅</option><option value="hd">高清</option><option value="original">原画</option>
                 </LiveViewSelect>
@@ -1440,7 +1510,7 @@ export default function BrowserLivePanel({ open, active = true, embedded = false
               <button type="button" aria-label="放大桌面画面" title="放大" disabled={!frame || zoom >= 5} onClick={() => setZoom((value) => Math.min(5, value + 0.25))}><ZoomIn size={16} /></button>
               <button type="button" disabled={!frame} onClick={() => { setZoom(1); setPanMode(false); viewportRef.current?.scrollTo(0, 0); }}>适应窗口</button>
               <button type="button" aria-label="移动桌面画面" aria-pressed={panMode} title="拖动或滚动画面，不发送远程输入" disabled={!frame} onClick={() => setPanMode((value) => !value)}><Hand size={15} />移动画面</button>
-              <span className={`browser-live-keyboard ${imeOn ? "is-typing" : ""}`}>
+              {!projection && <><span className={`browser-live-keyboard ${imeOn ? "is-typing" : ""}`}>
                 <button type="button" aria-label="唤起键盘" aria-pressed={imeOn} title="唤起/收起键盘（无法识别输入框时可手动唤起）" className={fieldHint && !imeOn ? "is-hint" : undefined} disabled={!frame || !hasControl} onPointerDown={(event) => event.preventDefault()} onClick={() => { setFieldHint(false); toggleIme(); }}><Keyboard size={15} />键盘</button>
                 <input
                   ref={textInputRef}
@@ -1490,8 +1560,8 @@ export default function BrowserLivePanel({ open, active = true, embedded = false
                 window.setTimeout(() => {
                   sendKey("f", "KeyF", ["Control", "Meta"]);
                 }, 150);
-              }}><Keyboard size={15} />窗口</button>
-              {isWindowsDesktop && (
+              }}><Keyboard size={15} />窗口</button></>}
+              {!projection && isWindowsDesktop && (
                 <>
                   <button type="button" aria-label="锁屏" title="锁屏（锁屏后仍可从空态区唤醒或远程解锁）" disabled={!frame || !!systemBusy} onClick={() => void sendSystem("lock")}>
                     {systemBusy === "lock" ? <LoaderCircle size={15} className="spin" /> : <Lock size={15} />}锁屏
@@ -1523,7 +1593,7 @@ export default function BrowserLivePanel({ open, active = true, embedded = false
           )}
           {!(hasControl && !panMode && quickKeysOpen) && (
             <div className="browser-live-touch-hint">
-              {showTakeoverPrompt
+              {projection ? "拖动画面 · 双指缩放" : showTakeoverPrompt
                 ? "画面当前为只读 · 点击画面开始控制"
                 : "滑动滚动 · 轻点点击 · 双击打开 · 长按拖动 · 按住1秒右键 · 双指缩放"}
             </div>
@@ -1533,7 +1603,7 @@ export default function BrowserLivePanel({ open, active = true, embedded = false
             // mouse events arrive. Protect the surrounding viewport as well.
             if (imeOnRef.current) event.preventDefault();
           }}>
-            {frame && frameSrc ? (
+            {showFrame ? (
               <div
                 className="browser-live-image-hit-area"
                 style={fitScale && viewport ? {
@@ -1546,7 +1616,7 @@ export default function BrowserLivePanel({ open, active = true, embedded = false
                 onPointerDown={(event) => {
                   if (event.pointerType === "touch") {
                     event.preventDefault();
-                    touch.current.down(event.pointerId, { x: event.clientX, y: event.clientY });
+                    touch.current.down(event.pointerId, { x: event.clientX, y: event.clientY }, event.isPrimary);
                     touchGesturePoint.current = hasControl && !panMode ? pointerCoordinates(event) : null;
                     const probePoint = touchGesturePoint.current;
                     if (probePoint && isDesktop && selected?.platform === "darwin") {
@@ -1590,7 +1660,7 @@ export default function BrowserLivePanel({ open, active = true, embedded = false
                     // A real pinch moves the finger distance ≥5% from where the
                     // gesture began; parallel translation with sub-percent
                     // jitter must fall through to scrolling/panning instead.
-                    const isPinch = movement.pointers >= 2 && Math.abs(movement.distanceRatio - 1) > 0.05;
+                    const isPinch = movement.pointers === 2 && Math.abs(movement.distanceRatio - 1) > 0.05;
                     const nextZoom = Math.max(0.5, Math.min(5, zoomRef.current * movement.scale));
                     if (isPinch && nextZoom !== zoomRef.current) {
                       const rect = event.currentTarget.getBoundingClientRect();
@@ -1763,9 +1833,9 @@ export default function BrowserLivePanel({ open, active = true, embedded = false
             ) : (
               <div className="browser-live-empty">
                 {(loading || selected?.availability === "starting") ? <LoaderCircle size={22} className="spin" aria-hidden="true" /> : <MonitorUp size={24} aria-hidden="true" />}
-                <strong>{loading ? "正在连接浏览器" : emptyTitle}</strong>
+                <strong>{loading ? (projection ? "正在连接桌面" : "正在连接浏览器") : emptyTitle}</strong>
                 <span>{emptyDetail}</span>
-                {desktopLocked && (
+                {!projection && desktopLocked && (
                   <div role="group" aria-label="锁屏远程操作" style={{ display: "flex", gap: 8, marginTop: 12 }}>
                     <button type="button" className="browser-live-control-button" disabled={!!systemBusy} onClick={() => void sendSystem("wake")}>
                       {systemBusy === "wake" ? <LoaderCircle size={14} className="spin" aria-hidden="true" /> : <Power size={14} aria-hidden="true" />}唤醒屏幕
@@ -1803,7 +1873,7 @@ export default function BrowserLivePanel({ open, active = true, embedded = false
               </button>
             )}
           </div>
-          {fullscreen && (
+          {fullscreen && !projection && (
             <button type="button" className="browser-live-exit-fullscreen" onClick={() => void toggleFullscreen()}>
               <Minimize size={14} aria-hidden="true" />退出全屏
             </button>

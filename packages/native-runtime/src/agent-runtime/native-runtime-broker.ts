@@ -1047,6 +1047,7 @@ class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, Code
           ? createRunResult(event, { ...context, cancelled: true })
           : classified;
         recordedEvent = { ...event, durationMs: result.durationMs, usage: result.usage, result };
+        if (recordedEvent.type === "done" && result.status !== "completed") delete recordedEvent.forkPoint;
       }
       const sequence = run.nextSequence + 1;
       this.todoOutbox.append(run.sessionId, runId, sequence, recordedEvent, eventAt,
@@ -1740,10 +1741,12 @@ export class NativeRuntimeBrokerHost {
   private async forkFromHistory(id: string, point?: SessionForkPoint): Promise<UnifiedSessionSummary> {
     const source = await this.get(id);
     const agentType = decodeNativeSessionId(id).agentType;
+    const messageId = point?.messageId;
     let end = source.messages.length - 1;
     for (; end >= 0; end--) {
-      const candidate = source.messages[end].presentation?.forkPoint?.messageId;
-      if (candidate && (!point || point.messageId === candidate)) break;
+      const message = source.messages[end];
+      const candidate = message.presentation?.forkPoint?.messageId;
+      if (candidate && (!point || (messageId && (messageId === candidate || messageId === message.historyId)))) break;
     }
     if (end < 0) throw new RuntimeSessionError("该轮次不存在或尚未完成，请刷新会话后重试", "INVALID_SESSION_ID");
     if (!source.cwd) throw new RuntimeSessionError("源会话没有本地工作目录", "OPERATION_NOT_SUPPORTED");

@@ -2,6 +2,17 @@ import { describe, expect, it } from "vitest";
 import { BrowserLiveTouch } from "./browser-live-touch";
 
 describe("live touch gestures", () => {
+  it("does not pinch when a new primary touch follows an interrupted gesture", () => {
+    const gesture = new BrowserLiveTouch();
+    gesture.down(1, { x: 10, y: 50 }, true);
+    gesture.down(2, { x: 110, y: 50 }, true);
+    expect(gesture.move(2, { x: 160, y: 50 })).toEqual({
+      scale: 1, distanceRatio: 1, from: { x: 110, y: 50 }, to: { x: 160, y: 50 }, pointers: 1,
+    });
+    expect(gesture.move(1, { x: 0, y: 50 })).toBeNull();
+    expect(gesture.up(2, { x: 160, y: 50 })).toBe(false);
+  });
+
   it("commits a short tap only on release", () => {
     const gesture = new BrowserLiveTouch();
     gesture.down(1, { x: 40, y: 60 });
@@ -17,13 +28,25 @@ describe("live touch gestures", () => {
   });
   it("pinches around the midpoint and never clicks after either finger lifts", () => {
     const gesture = new BrowserLiveTouch();
-    gesture.down(1, { x: 0, y: 50 });
-    gesture.down(2, { x: 100, y: 50 });
+    gesture.down(1, { x: 0, y: 50 }, true);
+    gesture.down(2, { x: 100, y: 50 }, false);
     expect(gesture.move(2, { x: 200, y: 50 })).toEqual({ scale: 2, distanceRatio: 2, from: { x: 50, y: 50 }, to: { x: 100, y: 50 }, pointers: 2 });
-    expect(gesture.up(2, { x: 200, y: 50 })).toBe(false);
-    expect(gesture.up(1, { x: 0, y: 50 })).toBe(false);
+    expect(gesture.move(2, { x: 50, y: 50 })).toMatchObject({ scale: 0.25, distanceRatio: 0.5, pointers: 2 });
+    expect(gesture.up(2, { x: 50, y: 50 })).toBe(false);
+    expect(gesture.move(1, { x: 50, y: 50 })).toMatchObject({ scale: 1, distanceRatio: 1, pointers: 1 });
+    expect(gesture.up(1, { x: 50, y: 50 })).toBe(false);
     gesture.down(3, { x: 20, y: 20 });
     expect(gesture.up(3, { x: 20, y: 20 })).toBe(true);
+  });
+
+  it("ignores three-finger movement and rebases the remaining two fingers", () => {
+    const gesture = new BrowserLiveTouch();
+    gesture.down(1, { x: 0, y: 0 }, true);
+    gesture.down(2, { x: 100, y: 0 }, false);
+    gesture.down(3, { x: 160, y: 0 }, false);
+    expect(gesture.move(2, { x: 150, y: 0 })).toBeNull();
+    expect(gesture.up(1, { x: 0, y: 0 })).toBe(false);
+    expect(gesture.move(2, { x: 152, y: 0 })).toMatchObject({ distanceRatio: 0.8, pointers: 2 });
   });
   it("keeps reporting two pointers while both fingers drag without zooming", () => {
     const gesture = new BrowserLiveTouch();

@@ -15,8 +15,8 @@ afterEach(async () => {
 });
 
 async function fixture(
-  handler: (request: Record<string, unknown>) => Record<string, unknown> | string,
-  timeoutMs = 1_000,
+  handler: (request: Record<string, unknown>) => Record<string, unknown> | string | null,
+  timeoutMs: number | null = 1_000,
 ): Promise<{ client: ComputerRelayClient; path: string }> {
   const directory = await mkdtemp(join(tmpdir(), "computer-relay-client-"));
   directories.push(directory);
@@ -33,7 +33,8 @@ async function fixture(
       if (newline < 0) return;
       const request = JSON.parse(buffer.slice(0, newline)) as Record<string, unknown>;
       const response = handler(request);
-      socket.write(typeof response === "string" ? response : `${JSON.stringify(response)}\n`);
+      if (response === null) socket.end();
+      else socket.write(typeof response === "string" ? response : `${JSON.stringify(response)}\n`);
     });
   });
   servers.push(server);
@@ -68,6 +69,11 @@ describe("ComputerRelayClient", () => {
       code: "stale_observation",
       recovery: "Call observe.",
     });
+  });
+
+  it("settles reserved desktop actions if a relay closes without a reply", async () => {
+    const { client } = await fixture(() => null, null);
+    await expect(client.execute({ action: "observe" })).rejects.toMatchObject({ code: "desktop_offline" });
   });
 
   it("reports offline, timeout, abort, and oversized responses", async () => {

@@ -11,6 +11,7 @@ export type {
   LiveViewPeer,
 } from "./entities.js";
 export { LiveViewRegistry } from "./live-view-registry.js";
+export * from "./desktop-control.js";
 export type { PublishLiveSession } from "./live-view-registry.js";
 export { LiveViewFramePacer } from "./frame-pacing.js";
 export { RemoteVideoPacingPolicy } from "./remote-video-pacing.js";

@@ -8,12 +8,23 @@ type Pending = { resolve: (value: any) => void; reject: (error: Error) => void; 
 
 export interface GatewayState { connected: boolean; error: string | null }
 
+export interface GatewaySocket {
+  readonly readyState: number;
+  binaryType: BinaryType;
+  onopen: ((event: Event) => void) | null;
+  onmessage: ((event: MessageEvent) => void) | null;
+  onclose: ((event: CloseEvent) => void) | null;
+  onerror: ((event: Event) => void) | null;
+  send(data: string | Uint8Array): void;
+  close(): void;
+}
+
 function wsBaseUrl(): string { return consoleWebSocketUrl(); }
 
-export function useGateway(onBinary: (data: Uint8Array) => void, getWsNonce: () => Promise<string>, onAuthLost: () => void) {
+export function useGateway(onBinary: (data: Uint8Array) => void, getWsNonce: () => Promise<string>, onAuthLost: () => void, openSocket?: () => GatewaySocket) {
   const [state, setState] = useState<GatewayState>({ connected: false, error: null });
   const [epoch, setEpoch] = useState(0);
-  const wsRef = useRef<WebSocket | null>(null);
+  const wsRef = useRef<GatewaySocket | null>(null);
   const generation = useRef(0);
   const pending = useRef(new Map<number, Pending>());
   const queue = useRef<string[]>([]);
@@ -27,9 +38,11 @@ export function useGateway(onBinary: (data: Uint8Array) => void, getWsNonce: () 
   const binaryHandler = useRef(onBinary);
   const nonceProvider = useRef(getWsNonce);
   const authLostHandler = useRef(onAuthLost);
+  const socketProvider = useRef(openSocket);
   binaryHandler.current = onBinary;
   nonceProvider.current = getWsNonce;
   authLostHandler.current = onAuthLost;
+  socketProvider.current = openSocket;
 
   const onEvent = useCallback((type: string, handler: (message: any) => void) => {
     let set = listeners.current.get(type);
@@ -71,7 +84,7 @@ export function useGateway(onBinary: (data: Uint8Array) => void, getWsNonce: () 
   const rpc = useCallback(<T = any,>(type: string, params: Record<string, unknown> = {}, timeoutMs = 15000): Promise<T> => new Promise((resolve, reject) => {
     // Remote input and ownership belong to this socket's peer. Never replay
     // clicks, keys or signaling after reconnect under a different identity.
-    if (type.startsWith("browser:") && wsRef.current?.readyState !== WebSocket.OPEN) {
+    if ((type.startsWith("browser:") || type === "term:input") && wsRef.current?.readyState !== WebSocket.OPEN) {
       reject(Object.assign(new Error("远程连接已断开，请等待重新连接"), { code: "EOFFLINE" }));
       return;
     }
@@ -88,17 +101,19 @@ export function useGateway(onBinary: (data: Uint8Array) => void, getWsNonce: () 
     const previous = wsRef.current;
     if (previous) { previous.onopen = previous.onmessage = previous.onerror = previous.onclose = null; try { previous.close(); } catch {} }
 
-    let nonce: string;
-    try { nonce = await nonceProvider.current(); }
+    const open = socketProvider.current;
+    let nonce: string | undefined;
+    try { if (!open) nonce = await nonceProvider.current(); }
     catch { if (currentGeneration === generation.current) authLostHandler.current(); return; }
     if (currentGeneration !== generation.current || stopped.current) return;
 
-    let ws: WebSocket;
-    try { ws = new WebSocket(`${wsBaseUrl()}?nonce=${encodeURIComponent(nonce)}`); }
+    let ws: GatewaySocket;
+    try { ws = open ? open() : new WebSocket(`${wsBaseUrl()}?nonce=${encodeURIComponent(nonce!)}`); }
     catch (error) { setState({ connected: false, error: String(error) }); return; }
     ws.binaryType = "arraybuffer";
     wsRef.current = ws;
 
+    let lastAlive = Date.now();
     ws.onopen = () => {
       if (currentGeneration !== generation.current || wsRef.current !== ws) return;
       reconnectDelay.current = 1000;
@@ -110,18 +125,16 @@ export function useGateway(onBinary: (data: Uint8Array) => void, getWsNonce: () 
       // socket half-dead: readyState stays OPEN while data never arrives, so
       // typed characters vanish and onclose never fires. Ping on an interval
       // and force-close on missing liveness so the reconnect flow takes over.
-      let lastAlive = Date.now();
+      lastAlive = Date.now();
       heartbeat.current = setInterval(() => {
         if (wsRef.current !== ws || ws.readyState !== WebSocket.OPEN) { clearInterval(heartbeat.current!); heartbeat.current = null; return; }
         if (Date.now() - lastAlive > 25000) { try { ws.close(); } catch {} return; }
         try { ws.send(JSON.stringify({ type: "ping" })); } catch {}
       }, 10000);
-      const markAlive = () => { lastAlive = Date.now(); };
-      ws.addEventListener("message", markAlive);
-      ws.addEventListener("close", () => ws.removeEventListener("message", markAlive), { once: true });
     };
     ws.onmessage = (event) => {
       if (currentGeneration !== generation.current || wsRef.current !== ws) return;
+      lastAlive = Date.now();
       if (typeof event.data !== "string") {
         const frame = new Uint8Array(event.data);
         // Opcode 4 belongs to live-view JPEG frames; terminal replay uses 6.
@@ -173,7 +186,20 @@ export function useGateway(onBinary: (data: Uint8Array) => void, getWsNonce: () 
 
   useEffect(() => {
     connect();
-    return () => { stopped.current = true; generation.current++; if (heartbeat.current) { clearInterval(heartbeat.current); heartbeat.current = null; } const ws = wsRef.current; wsRef.current = null; if (ws) { ws.onopen = ws.onmessage = ws.onerror = ws.onclose = null; try { ws.close(); } catch {} } };
+    return () => {
+      stopped.current = true;
+      generation.current++;
+      if (heartbeat.current) { clearInterval(heartbeat.current); heartbeat.current = null; }
+      const ws = wsRef.current;
+      wsRef.current = null;
+      if (ws) { ws.onopen = ws.onmessage = ws.onerror = ws.onclose = null; try { ws.close(); } catch {} }
+      for (const request of pending.current.values()) {
+        clearTimeout(request.timer);
+        request.reject(new Error("连接已关闭"));
+      }
+      pending.current.clear();
+      queue.current.length = 0;
+    };
   }, [connect]);
 
   return { state, epoch, rpc, onEvent, onTerminalData, onTerminalReset, sendTerminalInput, reconnect: connect };

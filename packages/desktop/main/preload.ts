@@ -307,6 +307,16 @@ contextBridge.exposeInMainWorld("sharedServiceApi", {
   request: (path: string, method: string, body?: string) => ipcRenderer.invoke("service:request", path, method, body),
   stream: (id: string, path: string, lastEventId: string) => ipcRenderer.invoke("service:stream", id, path, lastEventId),
   stop: (id: string) => ipcRenderer.invoke("service:stream-stop", id),
+  terminalSocket: {
+    open: (id: string) => ipcRenderer.invoke("service:terminal-open", id),
+    send: (id: string, data: string | Uint8Array) => ipcRenderer.invoke("service:terminal-send", id, data),
+    close: (id: string) => ipcRenderer.invoke("service:terminal-stop", id),
+    onFrame: (callback: (frame: unknown) => void) => {
+      const listener = (_event: unknown, frame: unknown) => callback(frame);
+      ipcRenderer.on("service:terminal-frame", listener);
+      return () => ipcRenderer.removeListener("service:terminal-frame", listener);
+    },
+  },
   onFrame: (callback: (frame: unknown) => void) => {
     const listener = (_event: unknown, frame: unknown) => callback(frame);
     ipcRenderer.on("service:stream-frame", listener);

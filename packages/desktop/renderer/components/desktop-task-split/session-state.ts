@@ -24,6 +24,7 @@ export const TASK_PANE_SURFACE_LABELS = {
   groups: "群聊",
   dashboard: "Dashboard",
   calendar: "日历 / 待办",
+  terminal: "终端",
 } as const;
 export type TaskPaneSurfaceKind = keyof typeof TASK_PANE_SURFACE_LABELS;
 

@@ -3,6 +3,7 @@ import { HttpClient } from "../../../webapp/src/infrastructure/http/http-client"
 import { LocalSettingsRepository } from "../../../webapp/src/infrastructure/local/local-settings-repository";
 import type { AgentApi } from "../global";
 import type { MobilePairingInvitation } from "../../main/mobile-pairing";
+import type { TerminalSocketFrame } from "../../main/shared-service";
 import type { TunnelStatus } from "../../../server/lib/tunnel-control.mjs";
 
 export interface SharedServiceStatus {
@@ -23,6 +24,12 @@ export interface SharedServiceApi {
   stream(id: string, path: string, lastEventId: string): Promise<void>;
   stop(id: string): Promise<void>;
   onFrame(listener: (frame: { id: string; type: string; data?: string }) => void): () => void;
+  terminalSocket?: {
+    open(id: string): Promise<void>;
+    send(id: string, data: string | Uint8Array): Promise<void>;
+    close(id: string): Promise<void>;
+    onFrame(listener: (frame: TerminalSocketFrame & { id: string }) => void): () => void;
+  };
 }
 declare global {
   interface Window { sharedServiceApi: SharedServiceApi; desktopDeviceApi: AgentApi; }

@@ -14,9 +14,12 @@ const CollaborationPage = lazy(() => import("../collaboration/CollaborationPage"
 const SessionDashboard = lazy(() => import("../collaboration/SessionDashboard"));
 const DesktopLiveSettings = lazy(() => import("../DesktopLiveSettings"));
 const BrowserLivePanel = lazy(() => import("../BrowserLivePanel"));
+const TaskPaneTerminal = lazy(() => import("./TaskPaneTerminal"));
 
 interface Props {
   kind: TaskPaneSurfaceKind;
+  paneId: string;
+  focused: boolean;
   cwd?: string;
   onOpenSession(session: MonitoredSession): void;
   onNewSession(): void;
@@ -32,7 +35,7 @@ const loadCalendar: CalendarLoader = async (from, to) => {
 };
 
 /** The same desktop features, with navigation scoped to the containing pane. */
-export default function TaskPaneSurface({ kind, cwd, onOpenSession, onNewSession, onChangeContent, onSelectSurface, onViewAgent, active = true }: Props) {
+export default function TaskPaneSurface({ kind, paneId, focused, cwd, onOpenSession, onNewSession, onChangeContent, onSelectSurface, onViewAgent, active = true }: Props) {
   const [group, setGroup] = useState<{ id: string; title: string; discussionId?: string } | null>(null);
   useEffect(() => { setGroup(null); }, [kind]);
 
@@ -45,6 +48,7 @@ export default function TaskPaneSurface({ kind, cwd, onOpenSession, onNewSession
       <Suspense fallback={<SessionLoading label="正在打开面板" />}>
         {group ? <CollaborationPage key={`${group.id}:${group.discussionId ?? ""}`} groupId={group.id} initialDiscussionId={group.discussionId} />
           : kind === "calendar" ? <CalendarView loadOverview={loadCalendar} />
+          : kind === "terminal" ? <TaskPaneTerminal paneId={paneId} active={active} focused={focused} />
           : kind === "remote-desktop" && isWebShell() ? <BrowserLivePanel open active={active} embedded onClose={onChangeContent} />
           : kind === "remote-desktop" ? <div className="task-pane-remote-desktop">
             {typeof window !== "undefined" && typeof window.agentApi?.desktopLiveGetStatus === "function" ? <DesktopLiveSettings />

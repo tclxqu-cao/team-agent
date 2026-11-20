@@ -37,7 +37,7 @@ import next from "next";
 import { WebSocketServer } from "ws";
 import pty from "node-pty";
 import chokidar from "chokidar";
-import { LiveViewRegistry, HostPathPolicy, SQLiteAnonymousWebStore, SQLiteProjectStore, SQLiteWebConsoleStore, installGlobalLogging, encodeLiveFramePacket, readLiveFramePacket, LIVE_FRAME_PACKET_TYPE, MAX_RELAY_SITES, MAX_RELAY_TEXT_LENGTH, MAX_RELAY_IMAGES, MAX_RELAY_IMAGE_LENGTH, logGlobal } from "@agent/core";
+import { LiveViewRegistry, PRIMARY_DESKTOP_LIVE_ID, sharedDesktopControl, HostPathPolicy, SQLiteAnonymousWebStore, SQLiteProjectStore, SQLiteWebConsoleStore, installGlobalLogging, encodeLiveFramePacket, readLiveFramePacket, LIVE_FRAME_PACKET_TYPE, MAX_RELAY_SITES, MAX_RELAY_TEXT_LENGTH, MAX_RELAY_IMAGES, MAX_RELAY_IMAGE_LENGTH, logGlobal } from "@agent/core";
 import { decodeOsc7Path, selectDefaultShell } from "./shell-platform.mjs";
 import { consumeTerminalReadyMarker, createTerminalShellLaunch } from "./shell-integration.mjs";
 import {
@@ -98,6 +98,7 @@ const hostPathPolicy = HostPathPolicy.fromEnvironment(process.env.AGENT_WEB_ROOT
 const roots = hostPathPolicy.roots;
 const previewTickets = createPreviewTicketRegistry();
 const liveViewRegistry = new LiveViewRegistry();
+const desktopControl = sharedDesktopControl();
 
 // bun install drops the executable bit on node-pty's prebuilt spawn-helper,
 // which makes every pty.spawn fail with "posix_spawnp failed". Repair on boot
@@ -592,6 +593,13 @@ function makeConn(ws) {
     () => ws.readyState === ws.OPEN && ws.bufferedAmount === 0,
     { maxFrames: 3, maxBytes: 256 * 1024 },
   );
+  const desktopPreviewFlow = new ViewerFrameFlow(
+    ({ channelId, sequence, bytes }) => ws.send(encodeLiveFramePacket({
+      type: LIVE_FRAME_PACKET_TYPE.watcherFrame, channelId, sequence, payload: bytes,
+    }), () => desktopPreviewFlow.flush()),
+    () => ws.readyState === ws.OPEN && ws.bufferedAmount === 0,
+    { maxFrames: 2, maxBytes: 256 * 1024 },
+  );
   return {
     id: randomBytes(8).toString("hex"),
     ws,
@@ -611,6 +619,11 @@ function makeConn(ws) {
     terminalToChannel: new Map(),
     channelToTerminal: new Map(),
     browserPeer: null,
+    desktopPreviewPeer: null,
+    desktopPreviewChannel: null,
+    desktopPreviewFlow,
+    desktopPreviewInterval: 250,
+    desktopPreviewLastSent: 0,
     browserFrameFlow,
     browserFrameRelay,
     browserSessionToChannel: new Map(),
@@ -825,8 +838,14 @@ const requestHandlers = {
 
   "ping": async () => ({ pong: true, t: Date.now() }),
 
-  "browser:list": async (_msg, conn) => ({ sessions: liveViewRegistry.list(conn.browserPeer) }),
+  "browser:list": async (_msg, conn) => ({
+    sessions: liveViewRegistry.list(conn.browserPeer),
+    ...(conn.principal.userId === desktopOwnerId ? { desktopActivity: desktopControl.snapshot() } : {}),
+  }),
   "browser:publish": async (msg, conn) => {
+    if (typeof msg.sessionId === "string" && msg.sessionId.trim() === PRIMARY_DESKTOP_LIVE_ID) {
+      throw Object.assign(new Error("本机桌面由远程授权服务提供"), { code: "EWRITELOCK" });
+    }
     const session = liveViewRegistry.publish(conn.browserPeer, msg);
     return { session, channelId: assignBrowserChannel(conn, session.id) };
   },
@@ -838,6 +857,21 @@ const requestHandlers = {
       data,
     });
   },
+  "browser:desktop-watch": async (msg, conn) => {
+    if (msg.sessionId !== PRIMARY_DESKTOP_LIVE_ID || conn.principal.userId !== desktopOwnerId) {
+      throw Object.assign(new Error("桌面画面不可用"), { code: "ENOENT" });
+    }
+    conn.desktopPreviewInterval = msg.expanded === true ? 0 : 250;
+    conn.desktopPreviewLastSent = 0;
+    conn.desktopPreviewFlow.reset(msg.frameAck === true);
+    conn.desktopPreviewChannel ??= conn.nextChannelId++;
+    const session = liveViewRegistry.watch(conn.desktopPreviewPeer, PRIMARY_DESKTOP_LIVE_ID);
+    return { session, channelId: conn.desktopPreviewChannel };
+  },
+  "browser:desktop-unwatch": async (_msg, conn) => {
+    conn.desktopPreviewFlow.reset(false);
+    return liveViewRegistry.unwatch(conn.desktopPreviewPeer);
+  },
   "browser:watch": async (msg, conn) => {
     conn.browserFrameFlow.reset(msg.frameAck === true);
     const session = liveViewRegistry.watch(conn.browserPeer, msg.sessionId);
@@ -845,6 +879,10 @@ const requestHandlers = {
     return { session, channelId: assignBrowserChannel(conn, session.id) };
   },
   "browser:frame-ack": async (msg, conn) => {
+    if (conn.desktopPreviewChannel !== null && conn.desktopPreviewChannel === msg.channelId) {
+      conn.desktopPreviewFlow.ack(msg.channelId, msg.sequence);
+      return { accepted: true };
+    }
     const relay = conn.browserFrameRelay;
     if (relay.sentAt && relay.sentAt.channelId === msg.channelId && relay.sentAt.sequence === msg.sequence) {
       const ackMs = Date.now() - relay.sentAt.at;
@@ -1267,7 +1305,8 @@ if (process.argv.includes("--test-no-pairing")) console.warn("[TEST MODE] 配对
 // Child runtimes may publish live frames only using this process's local credential.
 process.env.AGENTROAM_SERVICE_ID = desktopDiscovery.serviceId;
 process.env.AGENTROAM_LOCAL_SERVICE_TOKEN = desktopDiscovery.headers()["x-agentroam-desktop-token"];
-const remoteAuthorization = new RemoteAuthorization({ registry: liveViewRegistry, userId: anonymousWebStore.getOrCreatePrincipal().userId, dataDir: serverBaseDir });
+const desktopOwnerId = anonymousWebStore.getOrCreatePrincipal().userId;
+const remoteAuthorization = new RemoteAuthorization({ registry: liveViewRegistry, userId: desktopOwnerId, dataDir: serverBaseDir, desktopControl });
 await remoteAuthorization.initialize();
 let serviceReady = false;
 const server = createServer((req, res) => {
@@ -1292,6 +1331,11 @@ const server = createServer((req, res) => {
     });
 });
 server.once("close", () => tunnelControl.close());
+server.once("close", desktopControl.subscribe((desktopActivity) => {
+  for (const conn of connections) {
+    if (conn.principal.userId === desktopOwnerId) conn.sendJson({ type: "browser:desktop-activity", desktopActivity });
+  }
+}));
 const wss = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024 });
 const voiceAsrGateway = createVoiceAsrGateway({ pairing: pairingGateway, serviceUrl: process.env.VOICE_SERVICE_URL || `http://127.0.0.1:${process.env.VOICE_SERVICE_PORT || "17863"}`, token: process.env.VOICE_SERVICE_TOKEN || null });
 
@@ -1329,6 +1373,20 @@ wss.on("connection", (ws, _req, principal) => {
     watchedSessionId: null,
   };
   liveViewRegistry.connect(conn.browserPeer);
+  conn.desktopPreviewPeer = {
+    id: `${conn.id}:desktop-preview`,
+    userId: principal.userId,
+    send: (event) => {
+      if (event.type !== "browser:frame" || !(event.data instanceof Uint8Array) || ws.readyState !== ws.OPEN) return;
+      const now = Date.now();
+      if (now - conn.desktopPreviewLastSent < conn.desktopPreviewInterval) return;
+      conn.desktopPreviewLastSent = now;
+      conn.desktopPreviewFlow.offer({ channelId: conn.desktopPreviewChannel, sequence: event.sequence, bytes: event.data });
+    },
+    producerSessionIds: new Set(),
+    watchedSessionId: null,
+  };
+  liveViewRegistry.connect(conn.desktopPreviewPeer);
   connections.add(conn);
   conn.sendJson({ type: "connection:hello", userId: principal.userId, deviceId: principal.deviceId });
 
@@ -1388,6 +1446,8 @@ wss.on("connection", (ws, _req, principal) => {
 
   ws.on("close", () => {
     conn.browserFrameFlow.reset(false);
+    conn.desktopPreviewFlow.reset(false);
+    liveViewRegistry.disconnect(conn.desktopPreviewPeer);
     const relay = conn.browserFrameRelay;
     if (relay.offered > 0) {
       logGlobal("info", "live-view", "live relay closed for viewer", undefined, {

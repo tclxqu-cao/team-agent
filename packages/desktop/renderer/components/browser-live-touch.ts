@@ -19,7 +19,8 @@ export class BrowserLiveTouch {
 
   reset() { this.points.clear(); this.origin = null; this.originDistance = 0; this.moved = false; }
 
-  down(id: number, point: TouchPoint) {
+  down(id: number, point: TouchPoint, isPrimary = false) {
+    if (isPrimary) this.reset();
     if (!this.points.size) { this.origin = point; this.moved = false; }
     this.points.set(id, point);
     if (this.points.size > 1) this.moved = true;
@@ -35,6 +36,7 @@ export class BrowserLiveTouch {
     if (this.points.size === 1) {
       return this.moved ? { scale: 1, distanceRatio: 1, from: previous, to: point, pointers: 1 } : null;
     }
+    if (this.points.size !== 2) return null;
     const after = [...this.points.values()];
     const midpoint = (p: TouchPoint[]) => ({ x: (p[0].x + p[1].x) / 2, y: (p[0].y + p[1].y) / 2 });
     const distance = (p: TouchPoint[]) => Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y);
@@ -58,6 +60,7 @@ export class BrowserLiveTouch {
       && Math.hypot(point.x - this.origin.x, point.y - this.origin.y) <= 8;
     this.points.delete(id);
     if (cancelled) this.moved = true;
+    if (this.points.size === 2) this.originDistance = this.#currentDistance();
     if (!this.points.size) this.reset();
     return tap;
   }

@@ -28,6 +28,7 @@ import {
 } from "../../../core/src/domain/web-console/WebBrowserBridge";
 import { isWebMediaUrl, readWebArtifactOpenRequest } from "../../../core/src/domain/web-console/WebArtifactBridge";
 import { readWebShellOpenBrowserLive } from "../../../core/src/domain/web-console/WebShellLiveBridge";
+import { WEB_SHELL_NEW_TERMINAL_HASH, readWebShellOpenTerminal } from "../../../core/src/domain/web-console/WebShellTerminalBridge";
 import { readLiveFramePacket, LIVE_FRAME_PACKET_TYPE } from "../../../core/src/infrastructure/live-view/frame-packet";
 import type { FileTreeRevealRequest } from "./fileTreeReveal";
 import { useGateway } from "./useGateway";
@@ -109,6 +110,7 @@ function AuthenticatedConsole({
   const collaborationFrames = useRef(new Map<string, HTMLIFrameElement>());
   const [remoteDesktopReadyEpoch, setRemoteDesktopReadyEpoch] = useState(0);
   const [remoteDesktopFullscreen, setRemoteDesktopFullscreen] = useState(false);
+  const [sessionDesktopFullscreen, setSessionDesktopFullscreen] = useState(false);
   const [remoteDesktopContentReady, setRemoteDesktopContentReady] = useState(false);
   const browserFrameAck = useRef<(channelId: number, sequence: number) => void>(() => {});
   const forwardBrowserBinary = useCallback((frame: Uint8Array) => {
@@ -142,6 +144,15 @@ function AuthenticatedConsole({
   const tabsRef = useRef(tabs);
   tabsRef.current = tabs;
   const [activeTerminalId, setActiveTerminalId] = useState<string | null>(WEBAPP_TAB.id);
+  const addTerminal = useCallback(() => {
+    if (tabs.length >= 8) return;
+    const addedId = `t-web-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    setTabs((current) => {
+      if (current.length >= 8) return current;
+      return [...current, { id: addedId, title: `Terminal ${current.length + 1}` }];
+    });
+    setActiveTerminalId(addedId);
+  }, [tabs.length]);
   useFrameActivity(activityTrackRef, activeTerminalId, !selectedPage);
   const [cwdByTerminal, setCwdByTerminal] = useState<Record<string, string>>({});
   const tabsHydrated = useRef(false);
@@ -288,10 +299,20 @@ function AuthenticatedConsole({
         setActiveTerminalId(id);
         return;
       }
+      if (readWebShellOpenTerminal(event, window.location.origin, webappFrameRef.current?.contentWindow ?? null)) {
+        setSelectedPage(null);
+        addTerminal();
+        return;
+      }
       const remoteSource = remoteDesktopFrameRef.current?.contentWindow ?? null;
       const fullscreen = readRemoteDesktopFullscreen(event, window.location.origin, remoteSource);
       if (fullscreen !== null) {
         setRemoteDesktopFullscreen(fullscreen);
+        return;
+      }
+      const sessionFullscreen = readRemoteDesktopFullscreen(event, window.location.origin, webappFrameRef.current?.contentWindow ?? null);
+      if (sessionFullscreen !== null) {
+        setSessionDesktopFullscreen(sessionFullscreen);
         return;
       }
       if (readWebappReadyMessage(event, window.location.origin, remoteSource)) {
@@ -325,6 +346,7 @@ function AuthenticatedConsole({
         webappFrameRef.current?.contentWindow ?? null,
       );
       if (readyMessage) {
+        setSessionDesktopFullscreen(false);
         mainFrameReady.current = true;
         setWebappReady(true);
         postAppearanceToWebapp();
@@ -362,7 +384,7 @@ function AuthenticatedConsole({
       if (browserRequest) {
         void rpc(browserRequest.method, {
           ...browserRequest.payload,
-          ...(browserRequest.method === "browser:watch" ? { frameAck: true } : {}),
+          ...(browserRequest.method === "browser:watch" || browserRequest.method === "browser:desktop-watch" ? { frameAck: true } : {}),
         }).then(
           (result) => {
             browserSource?.postMessage({
@@ -394,7 +416,7 @@ function AuthenticatedConsole({
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [onWorkspaceReady, rpc, postAppearanceToWebapp]);
+  }, [addTerminal, onWorkspaceReady, rpc, postAppearanceToWebapp]);
   useEffect(() => {
     const forward = (event: Record<string, unknown>) => {
       for (const ref of [webappFrameRef, remoteDesktopFrameRef]) ref.current?.contentWindow?.postMessage({
@@ -402,7 +424,7 @@ function AuthenticatedConsole({
         event,
       }, window.location.origin);
     };
-    const eventTypes = ["browser:session", "browser:frame", "browser:state", "browser:closed", "browser:webrtc"];
+    const eventTypes = ["browser:session", "browser:frame", "browser:state", "browser:closed", "browser:webrtc", "browser:desktop-activity"];
     const unsubscribers = eventTypes.map((type) => onEvent(type, forward));
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
   }, [onEvent]);
@@ -486,16 +508,6 @@ function AuthenticatedConsole({
     setPreviewPath(p);
     setDrawerOpen(false); // picking a file dismisses the drawer on phones
   }, []);
-  const addTerminal = useCallback(() => {
-    if (tabs.length >= 8) return;
-    const addedId = `t-web-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-    setTabs((current) => {
-      if (current.length >= 8) return current;
-      return [...current, { id: addedId, title: `Terminal ${current.length + 1}` }];
-    });
-    setActiveTerminalId(addedId);
-  }, [tabs.length]);
-
   const executeCommand = useCallback((command: string) => {
     const activeTab = tabs.find((tab) => tab.id === activeTerminalId);
     if (activeTab?.kind && activeTab.kind !== "webapp") return;
@@ -547,6 +559,14 @@ function AuthenticatedConsole({
       if (!restored) tabsHydrated.current = false;
     };
   }, [state.connected, deviceStateLoaded, rpc, workspaceStorageKey, workspaceRestoreAttempt]);
+
+  useEffect(() => {
+    if (!workspaceRestored || window.location.hash !== WEB_SHELL_NEW_TERMINAL_HASH) return;
+    const url = new URL(window.location.href);
+    url.hash = "";
+    window.history.replaceState(window.history.state, "", url);
+    addTerminal();
+  }, [workspaceRestored, addTerminal]);
 
   useLayoutEffect(() => {
     if (!workspaceRestored) return;
@@ -714,8 +734,12 @@ function AuthenticatedConsole({
     return () => window.removeEventListener("pageshow", resetRestoredScroll);
   }, [scrollActiveTabIntoView]);
 
+  const desktopFullscreen = !selectedPage && (
+    (remoteDesktopFullscreen && activeTerminalId === REMOTE_DESKTOP_TAB.id)
+    || (sessionDesktopFullscreen && activeTerminalId === WEBAPP_TAB.id)
+  );
   return (
-    <div className={`web-root ${remoteDesktopFullscreen && activeTerminalId === REMOTE_DESKTOP_TAB.id && !selectedPage ? "is-remote-fullscreen" : ""}`} style={rootStyle}>
+    <div className={`web-root ${desktopFullscreen ? "is-remote-fullscreen" : ""}`} style={rootStyle}>
       <style dangerouslySetInnerHTML={{ __html: CONSOLE_CSS }} />
 
       <div className="terminal-tabs">

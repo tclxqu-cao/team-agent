@@ -12,7 +12,8 @@ const form=document.getElementById('pair'),waiting=document.getElementById('wait
 // Clear the one-time grant before any asynchronous work or navigation.
 const fragment=location.hash,params=new URLSearchParams(fragment.slice(1)),rawGrant=params.get('pair'),qrGrant=/^[A-Za-z0-9_-]{43}$/.test(rawGrant||'')?rawGrant:null;
 const handoff=readComputerHandoff(fragment);
-if(fragment)history.replaceState(null,'',location.pathname+location.search);
+const terminalEntry=location.pathname==='/web'&&fragment==='#new-terminal';
+if(fragment&&!terminalEntry)history.replaceState(null,'',location.pathname+location.search);
 let computers=readComputers(),directoryError='';
 try{computers=saveComputers(mergeComputers(computers,handoff.computers));}catch(e){directoryError=e.message;}
 const known=document.getElementById('known-computers'),selector=document.getElementById('computer');
@@ -21,7 +22,14 @@ known.hidden=!computers.length;
 selector.addEventListener('change',()=>{if(selector.value)location.assign(computerNavigation(selector.value,computers));});
 let pollTimer,clockTimer;
 function stop(){clearTimeout(pollTimer);clearInterval(clockTimer);}
-function enter(){stop();try{saveComputers(rememberComputer(location.origin,handoff.name,computers));location.replace(location.pathname.startsWith('/app')?'/app/':'/web');}catch(e){showForm(e.message);}}
+function enter(){
+ stop();
+ try{
+  saveComputers(rememberComputer(location.origin,handoff.name,computers));
+  if(terminalEntry)location.reload();
+  else location.replace(location.pathname.startsWith('/app')?'/app/':'/web');
+ }catch(e){showForm(e.message);}
+}
 function showForm(error=''){stop();document.getElementById('scan-controls').hidden=false;waiting.hidden=true;form.hidden=false;button.disabled=false;message.textContent=error;}
 function locked(){stop();document.getElementById('scan-controls').hidden=true;form.hidden=true;waiting.hidden=false;document.querySelector('h1').textContent='远程访问已锁定';document.getElementById('wait-title').textContent='请在电脑上解锁';document.getElementById('wait-copy').textContent='所有设备授权和待用配对已取消。电脑解锁后，需要重新生成配对码。';document.getElementById('phrase').textContent='';document.getElementById('deadline').textContent='';}
 function showRequest(request){document.getElementById('scan-controls').hidden=true;

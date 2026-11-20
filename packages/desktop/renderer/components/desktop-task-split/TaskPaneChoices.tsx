@@ -1,7 +1,7 @@
-import { CalendarDays, LayoutDashboard, ListTodo, MessageSquarePlus, Monitor, UsersRound } from "lucide-react";
+import { CalendarDays, LayoutDashboard, ListTodo, MessageSquarePlus, Monitor, SquareTerminal, UsersRound } from "lucide-react";
 import { TASK_PANE_SURFACE_LABELS, type TaskPaneSurfaceKind } from "./session-state";
 
-const icons = { "remote-desktop": Monitor, groups: UsersRound, dashboard: LayoutDashboard, calendar: CalendarDays };
+const icons = { "remote-desktop": Monitor, groups: UsersRound, dashboard: LayoutDashboard, calendar: CalendarDays, terminal: SquareTerminal };
 
 export default function TaskPaneChoices({ onTask, onDraft, onSurface }: {
   onTask(): void;

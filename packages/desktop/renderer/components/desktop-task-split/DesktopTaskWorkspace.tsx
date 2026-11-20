@@ -379,7 +379,8 @@ export default function DesktopTaskWorkspace({ enabled, children, onFocusSession
       onPointerDownCapture={() => focusPane(id)} onFocusCapture={() => focusPane(id)}>
       {pane.surface || pane.webUrl ? <div className="task-pane-feature">
         <header className="chat-top-bar task-pane-feature-header"><strong>{label}</strong>{paneControls}</header>
-        {pane.surface ? <TaskPaneSurface kind={pane.surface} cwd={props.workspacePath ?? undefined} active={!maximized || maximized === id}
+        {pane.surface ? <TaskPaneSurface kind={pane.surface} paneId={id} focused={state?.activePaneId === id}
+          cwd={props.workspacePath ?? undefined} active={!maximized || maximized === id}
           onOpenSession={target => { void replacePane(id, target); }}
           onNewSession={() => startDraft(id)} onChangeContent={() => setContentPicker(id)}
           onViewAgent={() => setPicker(id)}

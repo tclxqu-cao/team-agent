@@ -9,6 +9,7 @@ import type { CollaborationCommand } from "@agent/core/domain/collaboration/type
 export type { NativeGoalMutation, NativeGoalRef, NativeSessionGoal } from "../../native-runtime/src/agent-runtime/native-session-goal";
 import type { NativeGoalMutation, NativeSessionGoal } from "../../native-runtime/src/agent-runtime/native-session-goal";
 import type { BrowserLiveSessionView } from "../../core/src/domain/browser-live/index";
+import type { WebBrowserMethod } from "../../core/src/domain/web-console/WebBrowserBridge";
 import type {
   FileWorkspaceEventMessage,
   FileWorkspaceMethod,
@@ -660,9 +661,10 @@ export interface DesktopLiveDisplayOption {
 
 export interface BrowserLiveApi {
   request<T = unknown>(
-    method: "browser:list" | "browser:watch" | "browser:unwatch" | "browser:takeover" | "browser:return" | "browser:input" | "browser:set-display" | "browser:ping" | "browser:webrtc" | "browser:system",
+    method: WebBrowserMethod,
     payload?: Record<string, unknown>,
   ): Promise<T>;
+  readDesktopLockState?(signal: AbortSignal): Promise<boolean | null>;
   onEvent(listener: (event: Record<string, unknown> & { type: string }) => void): () => void;
 }
 

@@ -65,7 +65,7 @@ describe("browser live session selection", () => {
     const exitStart = source.indexOf('aria-label="退出全屏"', toolbarStart);
 
     expect(exitStart).toBeGreaterThan(toolbarStart);
-    expect(source.slice(toolbarStart, exitStart)).toContain("{fullscreen && (");
+    expect(source.slice(toolbarStart, exitStart)).toContain("{fullscreen && !projection && (");
     expect(source.slice(exitStart, exitStart + 240)).toContain("toggleFullscreen");
   });
 
@@ -74,13 +74,13 @@ describe("browser live session selection", () => {
 
     expect(source).toContain("liveDisplays.length > 1");
     expect(source).not.toContain('selectedId === "cli-desktop:primary"');
-    expect(source).toContain("{isDesktop && (\n                <LiveViewSelect label=\"视频画质\"");
+    expect(source).toContain("{!projection && isDesktop && (\n                <LiveViewSelect label=\"视频画质\"");
   });
 
   it("keeps direct remote unlock Windows-only while allowing locked macOS sessions to wake", () => {
     const source = readFileSync(new URL("./BrowserLivePanel.tsx", import.meta.url), "utf8");
 
-    expect(source).toContain('{desktopLocked && (');
+    expect(source).toContain('{!projection && desktopLocked && (');
     expect(source).toContain('{isWindowsDesktop && (');
     expect(source).toContain('onClick={() => void sendSystem("wake")}');
     expect(source).toContain('<LockOpen size={14} aria-hidden="true" />远程解锁');

@@ -38,6 +38,7 @@ import {
   mergeReasoningSummaryDelta,
   createRunResult,
   normalizeTokenUsage,
+  sharedDesktopControl,
   type RunResult,
   type RunTerminalEvent,
 } from "@agent/core";
@@ -584,6 +585,7 @@ class AgentHost {
     // 先挂 catch（先于 finally 触发），让钩子能看到失败；completion 仍保持原有拒绝语义。
     void execution.catch(() => { runStats.failed = !this.activeRuns.get(sessionId)?.aborted; });
     const completion = execution.finally(() => {
+      sharedDesktopControl().endRun(runId);
       if (this.activeRuns.get(sessionId)?.runId === runId) {
         this.activeRuns.delete(sessionId);
       }
@@ -759,7 +761,7 @@ class AgentHost {
         await resources.applySkills();
         registerCustomerComputerSkill(runBuilder);
         this.registerCustomerTools(runBuilder, sessionId, emitChild, dispatcher);
-        await registerCustomerComputerTool(runBuilder);
+        await registerCustomerComputerTool(runBuilder, { run: { sessionId, runId, title: session.title } });
         // 目标模式工具只挂 owner run：子代理会话没有空闲钩子，挂了也无法续跑。
         for (const tool of this.threadGoalToolsProvider?.(sessionId) ?? []) {
           runBuilder.getToolRegistry().register(tool);

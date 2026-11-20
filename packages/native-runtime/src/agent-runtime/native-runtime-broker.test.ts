@@ -2731,10 +2731,11 @@ describe("NativeRuntimeBrokerHost", () => {
       const target = { ...source, id: childId, nativeSessionId: "child" };
       const runtime = new FakeNativeRuntime();
       runtime.create = vi.fn(async () => target);
+      const livePoint = { messageId: "native-first-answer" };
       runtime.getUnpaginated = async (sessionId) => sessionId === id
         ? { ...source, events: [], messages: [
           { role: "user", content: "keep the first request" },
-          { role: "assistant", content: "keep the first answer" },
+          { role: "assistant", content: "keep the first answer", historyId: livePoint.messageId },
           { role: "user", content: "exclude the next request" },
           { role: "assistant", content: "exclude the next answer" },
         ] }
@@ -2751,7 +2752,7 @@ describe("NativeRuntimeBrokerHost", () => {
         await expect(client.fork(id, { messageId: "stale" })).rejects.toMatchObject({ code: "INVALID_SESSION_ID" });
         expect(runtime.create).not.toHaveBeenCalled();
 
-        await expect(client.fork(id, point!)).resolves.toMatchObject({ id: childId, agentType });
+        await expect(client.fork(id, agentType === "zcode" ? livePoint : point!)).resolves.toMatchObject({ id: childId, agentType });
         expect(runtime.runInputs).toHaveLength(0);
         expect(runtime.forkCalls).toBe(0);
         expect((await client.get(id)).messages).toHaveLength(4);

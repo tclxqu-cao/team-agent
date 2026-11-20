@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { LiveViewRegistry } from '../../../core/src/domain/live-view/live-view-registry';
+import { DesktopControlCoordinator } from '../../../core/src/domain/live-view/desktop-control';
 // @ts-expect-error gateway ESM
 import { RemoteAuthorization, isLocalAuthorizationRequest, remoteAudioCapabilities } from './remote-authorization.mjs';
 vi.mock('@agent/core', async original => ({ ...await original<Record<string, unknown>>(), ...await import('../../../core/src/domain/live-view/index.js'), ...await import('../../../core/src/domain/live-view/remote-video-encode-admission.js') }));
@@ -79,6 +80,46 @@ async function fixture(options: Record<string, unknown> = {}) {
 }
 
 describe('CLI remote desktop', () => {
+  it('shares the desktop with a read-only viewer without interrupting a safe handoff to manual control', async () => {
+    const desktopControl = new DesktopControlCoordinator();
+    const f = await fixture({ desktopControl });
+    const agentRun = { sessionId: 'agent-first', runId: 'run-first' };
+    const nextRun = { sessionId: 'agent-next', runId: 'run-next' };
+    let finishAction: (() => void) | undefined;
+    try {
+      f.grant();
+      await f.service.action('enable');
+      const session = await f.watch();
+      const active = desktopControl.execute(agentRun, false, () => new Promise<void>((resolve) => { finishAction = resolve; }));
+      await Promise.resolve();
+      f.registry.takeOver(f.viewer, session.id);
+      expect(f.registry.list(f.viewer)[0].state).toBe('handoff-requested');
+      expect(() => f.registry.input(f.viewer, session.id, { kind: 'pointer', action: 'down', x: 0, y: 0 })).toThrow('read-only');
+
+      finishAction?.();
+      await active;
+      await f.service.inputQueue;
+      const observe = vi.fn(async () => 'frame');
+      const waiting = desktopControl.execute(nextRun, false, observe);
+      const preview = { ...f.viewer, id: 'session-preview', watchedSessionId: null, send: vi.fn() };
+      f.registry.connect(preview);
+      await f.watch(preview);
+      expect(preview.send).toHaveBeenCalledWith(expect.objectContaining({ type: 'browser:frame' }));
+      f.registry.unwatch(preview);
+      expect(f.registry.list(f.viewer)[0]).toMatchObject({ state: 'user-controlled', isController: true });
+      expect(observe).not.toHaveBeenCalled();
+      f.registry.returnControl(f.viewer, session.id);
+      await f.service.inputQueue;
+      await expect(waiting).resolves.toBe('frame');
+      expect(desktopControl.snapshot().owner).toEqual({ kind: 'agent', run: nextRun });
+    } finally {
+      finishAction?.();
+      desktopControl.endRun(agentRun.runId);
+      desktopControl.endRun(nextRun.runId);
+      await f.close();
+    }
+  });
+
   it('keeps fast JPEG capture for fallback and other viewers while a video transport remains connected', async () => {
     vi.useFakeTimers();
     const f = await fixture({ intervalMs: 50 });

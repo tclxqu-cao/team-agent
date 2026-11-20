@@ -17,7 +17,16 @@ import type { NativeProtocolSession, NativeSessionProtocol } from "./stdio-nativ
 import type { NativeTodoMcpConfiguration } from "./runtime-tool-injection.js";
 import { RuntimeSessionError, type CreateRuntimeSessionOptions, type NativeReasoningEffort, type RuntimeModelInfo, type RuntimeQuestionAnswer, type RuntimeRunOptions } from "./types.js";
 
-interface Run { queue: AsyncEventQueue<AgentEvent>; text: string; aborted: boolean; finished: boolean; lastSeq: number; toolIds: Set<string>; reasoningId: string }
+interface Run {
+  queue: AsyncEventQueue<AgentEvent>;
+  text: string;
+  finalMessageId?: string;
+  aborted: boolean;
+  finished: boolean;
+  lastSeq: number;
+  toolIds: Set<string>;
+  reasoningId: string;
+}
 interface Question { sessionId: string; options: NativeJsonPacket[]; resolve(result: NativeJsonPacket): void; cancelled: NativeJsonPacket; inputQuestion?: string; multiSelect?: boolean }
 const rows = (value: unknown): NativeJsonPacket[] => Array.isArray(value) ? value.map(nativeRecord) : [];
 const reasoningEfforts: readonly NativeReasoningEffort[] = ["low", "medium", "high", "xhigh", "max"];
@@ -35,6 +44,11 @@ const nativeDate = (value: unknown): string => {
   const date = new Date(typeof value === "string" || typeof value === "number" ? value : Date.now());
   return Number.isFinite(date.getTime()) ? date.toISOString() : new Date().toISOString();
 };
+
+function isUnavailableResident(error: unknown, id: string): boolean {
+  return error instanceof NativeRpcError && error.nativeCode === -32004
+    && (error.message === `Session is not active: ${id}` || error.message === "Session runtime is not ready");
+}
 
 /** ZCode native modes accepted by session/setMode; build asks before changes, edit auto-applies edits, yolo runs fully automatic. */
 export function zcodeModeForPermission(permissionMode: ToolPermissionMode): "build" | "edit" | "yolo" {
@@ -234,8 +248,14 @@ export class ZCodeClient implements NativeSessionProtocol {
       if (observed!.running || observed!.readOnly) throw new RuntimeSessionError("ZCode session is owned by another process", "SESSION_OCCUPIED");
       // Native resume reuses an existing resident and ignores new startup MCP
       // settings. Release only our idle resident before a configured cold resume.
-      const closed = await this.rpc.request("session/close", { sessionId: id });
-      if (closed.closed !== true) throw new RuntimeSessionError("ZCode did not release the session for Todo MCP configuration", "NATIVE_PROTOCOL_ERROR");
+      try {
+        const closed = await this.rpc.request("session/close", { sessionId: id });
+        if (closed.closed !== true) {
+          throw new RuntimeSessionError("ZCode did not release the session for Todo MCP configuration", "NATIVE_PROTOCOL_ERROR");
+        }
+      } catch (error) {
+        if (!isUnavailableResident(error, id)) throw error;
+      }
       this.loaded.delete(id);
     }
     signal?.throwIfAborted();
@@ -251,9 +271,7 @@ export class ZCodeClient implements NativeSessionProtocol {
     try { return await operation(session); }
     catch (error) {
       signal?.throwIfAborted();
-      if (!(error instanceof NativeRpcError) || error.nativeCode !== -32004
-        || (error.message !== `Session is not active: ${id}` && error.message !== "Session runtime is not ready")
-        || this.runs.has(id)) throw error;
+      if (!isUnavailableResident(error, id) || this.runs.has(id)) throw error;
       this.loaded.delete(id);
       return operation(await this.resume(id));
     }
@@ -461,19 +479,32 @@ export class ZCodeClient implements NativeSessionProtocol {
       const progress = zcodeModelProgress(payload);
       if (progress) run.queue.push(progress);
     } else if (params.type === "model.streaming") {
-      if (payload.kind === "text_delta" && typeof payload.delta === "string") { run.text += payload.delta; run.queue.push({ type: "text_chunk", text: payload.delta, turnId: typeof params.turnId === "string" ? params.turnId : undefined }); }
+      if (payload.kind === "text_delta" && typeof payload.delta === "string") {
+        run.text += payload.delta;
+        if (payload.delta.trim()) {
+          run.finalMessageId = typeof payload.assistantMessageId === "string" && payload.assistantMessageId.trim()
+            ? payload.assistantMessageId : undefined;
+        }
+        run.queue.push({ type: "text_chunk", text: payload.delta, turnId: typeof params.turnId === "string" ? params.turnId : undefined });
+      }
       else if (payload.kind === "reasoning_delta" && typeof payload.delta === "string") run.queue.push({ type: "reasoning_summary_delta", itemId: String(payload.partId ?? params.turnId ?? run.reasoningId), sectionIndex: 0, delta: payload.delta });
       else if (payload.kind === "tool_call" && typeof payload.toolCallId === "string" && !run.toolIds.has(payload.toolCallId)) {
+        run.finalMessageId = undefined;
         run.toolIds.add(payload.toolCallId);
         if (!isZCodeQuestionTool(payload.toolName)) run.queue.push({ type: "tool_call", toolCall: { id: payload.toolCallId, name: String(payload.toolName ?? "ZCode tool"), arguments: nativeRecord(payload.input) } });
       }
     } else if (params.type === "tool.updated" && typeof payload.toolCallId === "string") {
       if ((payload.kind === "scheduled" || payload.kind === "started") && !run.toolIds.has(payload.toolCallId)) {
+        run.finalMessageId = undefined;
         run.toolIds.add(payload.toolCallId);
         if (!isZCodeQuestionTool(payload.toolName)) run.queue.push({ type: "tool_call", toolCall: { id: payload.toolCallId, name: String(payload.toolName ?? "ZCode tool"), arguments: nativeRecord(payload.input) } });
       } else if (payload.kind === "result" || payload.kind === "error") run.queue.push({ type: "tool_result", result: { toolCallId: payload.toolCallId, content: typeof payload.output === "string" ? payload.output : typeof payload.result === "string" ? payload.result : String(nativeRecord(payload.error).message ?? ""), isError: payload.kind === "error" } });
     } else if (params.type === "turn.completed") {
-      this.finish(params.sessionId, run.aborted ? { type: "turn_aborted" } : { type: "done", finalText: run.text });
+      this.finish(params.sessionId, run.aborted ? { type: "turn_aborted" } : {
+        type: "done",
+        finalText: run.text,
+        ...(run.finalMessageId ? { forkPoint: { messageId: run.finalMessageId } } : {}),
+      });
     } else if (params.type === "turn.failed") {
       const error = nativeRecord(payload.error);
       this.finish(params.sessionId, run.aborted ? { type: "turn_aborted" } : { type: "error", code: typeof error.code === "string" ? error.code : undefined, message: typeof error.message === "string" ? error.message : "ZCode turn failed" });

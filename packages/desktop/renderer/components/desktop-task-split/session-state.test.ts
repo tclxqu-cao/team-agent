@@ -39,6 +39,18 @@ describe("desktop workspace persistence and session hydration", () => {
     expect(openTaskWorkspaceWebPage(initial, "file:///private/file")).toBeNull();
   });
 
+  it("restores a terminal at the same pane ID without changing its neighbors", () => {
+    const layout = equalTaskLayout(["task-pane", "shell-pane"])!;
+    const initial = { panes: [{ id: "task-pane", session }, { id: "shell-pane", session: null }], layout, activePaneId: "shell-pane" };
+
+    const selected = updateTaskPaneContent(initial, "shell-pane", { surface: "terminal" });
+    const restored = readTaskWorkspace(JSON.parse(serializeTaskWorkspace(selected)));
+
+    expect(selected.panes[0]).toBe(initial.panes[0]);
+    expect(restored?.panes[1]).toEqual({ id: "shell-pane", session: null, surface: "terminal" });
+    expect(restored?.layout).toEqual(layout);
+  });
+
   it("only clears the selected pane and rejects unknown or conflicting saved content", () => {
     const initial = { panes: [{ id: "a", session }, { id: "b", session: null }], layout: equalTaskLayout(["a", "b"])!, activePaneId: "a" };
     const changed = updateTaskPaneContent(initial, "a", { surface: "dashboard" });

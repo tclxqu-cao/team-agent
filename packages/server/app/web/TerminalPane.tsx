@@ -34,6 +34,7 @@ interface Props {
   title: string;
   initialCommand?: string;
   visible: boolean;
+  autoFocus?: boolean;
   state: GatewayState;
   rpc: <T = any,>(type: string, params?: Record<string, unknown>, timeoutMs?: number) => Promise<T>;
   onEvent: (type: string, fn: (msg: any) => void) => () => void;
@@ -54,7 +55,7 @@ interface Props {
   terminalTheme: WebTheme;
 }
 
-export default function TerminalPane({ terminalId, title, initialCommand, visible, state, rpc, onEvent, onTerminalData, onTerminalReset, sendTerminalInput, keyOrder, keybarHidden, onKeyOrderChange, onKeybarHiddenChange, onCwdChange, initialScrollLine, onScrollLineChange, onRegisterFill, terminalTheme }: Props) {
+export default function TerminalPane({ terminalId, title, initialCommand, visible, autoFocus = true, state, rpc, onEvent, onTerminalData, onTerminalReset, sendTerminalInput, keyOrder, keybarHidden, onKeyOrderChange, onKeybarHiddenChange, onCwdChange, initialScrollLine, onScrollLineChange, onRegisterFill, terminalTheme }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -63,6 +64,8 @@ export default function TerminalPane({ terminalId, title, initialCommand, visibl
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [writeLocked, setWriteLocked] = useState(false);
   const [clipboardStatus, setClipboardStatus] = useState("");
+  const connectedRef = useRef(state.connected);
+  connectedRef.current = state.connected;
   const nativeTouchRef = useRef<NativeTerminalTouch | null>(null);
   const ctrlArmed = useRef(false);
   const [ctrlOn, setCtrlOn] = useState(false);
@@ -84,6 +87,7 @@ export default function TerminalPane({ terminalId, title, initialCommand, visibl
   const touchScrollActiveRef = useRef(false);
   const [draggingKey, setDraggingKey] = useState<string | null>(null);
   const sendInput = useCallback((data: string) => {
+    if (!connectedRef.current) return;
     if (channelId.current != null && sendTerminalInput(channelId.current, data)) return;
     rpc("term:input", { id: sessionId.current, data }).catch(() => {});
   }, [rpc, sendTerminalInput]);
@@ -224,7 +228,7 @@ export default function TerminalPane({ terminalId, title, initialCommand, visibl
     resetOutput.current = output.reset;
 
     term.onData((data) => {
-      if (!state.connected) return;
+      if (!connectedRef.current) return;
       // Swipe on mobile can still leak arrow escapes into readline command history.
       if (shouldSuppressTouchScrollInput(data, touchScrollActiveRef.current)) return;
       // Typing a command intentionally returns to the live prompt.
@@ -558,7 +562,7 @@ export default function TerminalPane({ terminalId, title, initialCommand, visibl
   }, [terminalId, sessionReady]);
 
   useEffect(() => {
-    if (!visible || !sessionReady) return;
+    if (!visible || !autoFocus || !sessionReady) return;
     tabFocusCount.current += 1;
     const restoreScroll = tabFocusCount.current > 1;
     const timer = window.setTimeout(() => {
@@ -566,7 +570,7 @@ export default function TerminalPane({ terminalId, title, initialCommand, visibl
       focusLivePrompt({ restoreScroll, forceLive: !restoreScroll && !alternate });
     }, 350);
     return () => window.clearTimeout(timer);
-  }, [visible, sessionReady, focusLivePrompt]);
+  }, [visible, autoFocus, sessionReady, focusLivePrompt]);
 
   // subscribe cwd changes for the attached session (event pushes)
   useEffect(() => {

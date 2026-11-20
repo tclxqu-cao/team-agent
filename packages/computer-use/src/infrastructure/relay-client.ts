@@ -17,7 +17,7 @@ type ConnectSocket = (path: string) => Socket;
 export class ComputerRelayClient implements ComputerRuntimePort {
   constructor(private readonly options: {
     socketPath?: string;
-    timeoutMs?: number;
+    timeoutMs?: number | null;
     connect?: ConnectSocket;
     exists?: (path: string) => boolean;
   } = {}) {}
@@ -67,13 +67,15 @@ export class ComputerRelayClient implements ComputerRuntimePort {
       const finish = (error?: Error, result?: T) => {
         if (settled) return;
         settled = true;
-        clearTimeout(timer);
+        if (timer) clearTimeout(timer);
         signal?.removeEventListener("abort", onAbort);
         socket.destroy();
         if (error) reject(error);
         else resolve(result as T);
       };
-      const timer = setTimeout(() => finish(new ComputerOperationError("action_timeout", "Computer relay request timed out")), this.options.timeoutMs ?? COMPUTER_RELAY_TIMEOUT_MS);
+      const timer = this.options.timeoutMs === null ? null : setTimeout(() => {
+        finish(new ComputerOperationError("action_timeout", "Computer relay request timed out"));
+      }, this.options.timeoutMs ?? COMPUTER_RELAY_TIMEOUT_MS);
       const onAbort = () => finish(new ComputerOperationError("aborted", "Computer request was aborted"));
       signal?.addEventListener("abort", onAbort, { once: true });
       socket.setEncoding("utf8");
@@ -105,6 +107,7 @@ export class ComputerRelayClient implements ComputerRuntimePort {
         error.code === "ENOENT" || error.code === "ECONNREFUSED" ? "desktop_offline" : "protocol_error",
         error.message,
       )));
+      socket.on("close", () => finish(new ComputerOperationError("desktop_offline", "Computer relay disconnected")));
     });
   }
 }

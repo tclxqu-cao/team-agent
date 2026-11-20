@@ -4,6 +4,7 @@ import {
   AgentBuilder,
   PermissionAwareToolExecutor,
   ToolPermissionGate,
+  sharedDesktopControl,
   type AgentEvent,
   type IModelProvider,
   type Message,
@@ -30,6 +31,34 @@ function runtime(status: Awaited<ReturnType<ComputerRuntimePort["status"]>>): Co
 }
 
 describe("Customer Agent computer tool registration", () => {
+  it("queues the second computer tool and rejects coordinates from a previous owner", async () => {
+    const firstRun = { sessionId: "managed-a", runId: "managed-run-a" };
+    const secondRun = { sessionId: "managed-b", runId: "managed-run-b" };
+    const runRuntime = runtime({ available: true, platform: "darwin", protocolVersion: 1 });
+    try {
+      const first = new AgentBuilder();
+      const second = new AgentBuilder();
+      await registerCustomerComputerTool(first, { probe: runRuntime, runtime: runRuntime, run: firstRun });
+      await registerCustomerComputerTool(second, { probe: runRuntime, runtime: runRuntime, run: secondRun });
+      const firstTool = first.getToolRegistry().get("computer")!;
+      const secondTool = second.getToolRegistry().get("computer")!;
+      const firstContext = { sessionId: firstRun.sessionId, workingDirectory: "/tmp" };
+      const secondContext = { sessionId: secondRun.sessionId, workingDirectory: "/tmp" };
+      await firstTool.execute({ action: "observe" }, firstContext);
+      const waiting = secondTool.execute({ action: "observe" }, secondContext);
+      expect(sharedDesktopControl().snapshot().queue).toEqual([secondRun]);
+      expect(runRuntime.execute).toHaveBeenCalledOnce();
+      sharedDesktopControl().endRun(firstRun.runId);
+      await expect(waiting).resolves.toMatchObject({ content: expect.stringContaining("ax_1") });
+      const oldPoint = await secondTool.execute({ action: "click", x: 100, y: 100 }, secondContext);
+      expect(oldPoint).toMatchObject({ isError: true, content: expect.stringContaining("stale_observation") });
+      expect(runRuntime.execute).toHaveBeenCalledTimes(2);
+    } finally {
+      sharedDesktopControl().endRun(firstRun.runId);
+      sharedDesktopControl().endRun(secondRun.runId);
+    }
+  });
+
   it("registers the built-in Skill even when the desktop relay is offline", async () => {
     const builder = new AgentBuilder();
     registerCustomerComputerSkill(builder);

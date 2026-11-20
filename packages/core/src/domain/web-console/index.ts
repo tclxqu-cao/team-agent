@@ -6,4 +6,5 @@ export * from "./WebArtifactBridge.js";
 export * from "./WebBrowserBridge.js";
 export * from "./WebProjectBridge.js";
 export * from "./WebShellLiveBridge.js";
+export * from "./WebShellTerminalBridge.js";
 export * from "./navigation-layout.js";

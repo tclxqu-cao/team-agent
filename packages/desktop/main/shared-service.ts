@@ -1,6 +1,7 @@
 import { readFile, readdir, mkdir, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { WebSocket } from "ws";
 import { createMobilePairingInvitation } from "./mobile-pairing.js";
 import type { TunnelStatus } from "../../server/lib/tunnel-control.mjs";
 
@@ -9,7 +10,23 @@ export interface ServiceDescriptor {
 }
 export type ServiceChoice = Pick<ServiceDescriptor, "instanceId" | "url" | "dataDir">;
 export type StreamFrame = { id: string; type: "open" | "data" | "end" | "error"; data?: string };
+export type TerminalSocketFrame =
+  | { type: "open" }
+  | { type: "data"; data: string | Uint8Array }
+  | { type: "close"; code: number };
 export interface NotificationReadScope { serviceId: string; ownerId: string; }
+
+const terminalRequests = new Set([
+  "ping", "term:start", "term:input", "term:focus", "term:request-write", "term:resize", "term:set-cwd",
+]);
+
+export function isTerminalSocketInput(data: unknown): data is string | Uint8Array {
+  if (typeof data === "string" && data.length <= 2_000_000) {
+    try { return terminalRequests.has(JSON.parse(data)?.type); } catch { return false; }
+  }
+  return data instanceof Uint8Array && data.length >= 6 && data.length <= 2_000_000
+    && data[0] === 1 && data[1] === 1;
+}
 
 export function validDescriptor(value: unknown): value is ServiceDescriptor {
   if (!value || typeof value !== "object") return false;
@@ -30,6 +47,7 @@ export class SharedServiceConnection {
   private selected: ServiceDescriptor | null = null;
   private preferredDataDir: string | null = null;
   private readonly streams = new Map<string, AbortController>();
+  private readonly terminalSockets = new Map<string, { controller: AbortController; socket?: WebSocket }>();
   constructor(
     private readonly selectionPath: string,
     private readonly registry = process.env.AGENTROAM_DISCOVERY_DIR || join(homedir(), ".agentroam", "services"),
@@ -162,8 +180,58 @@ export class SharedServiceConnection {
     } finally { if (this.streams.get(id) === controller) this.streams.delete(id); }
   }
 
-  stop(id: string) { this.streams.get(id)?.abort(); this.streams.delete(id); }
-  closeStreams() { for (const controller of this.streams.values()) controller.abort(); this.streams.clear(); }
+  async openTerminal(id: string, send: (frame: TerminalSocketFrame) => void): Promise<void> {
+    this.stop(id);
+    const connection: { controller: AbortController; socket?: WebSocket } = { controller: new AbortController() };
+    this.terminalSockets.set(id, connection);
+    try {
+      const descriptor = await this.connection();
+      const headers = { "x-agentroam-desktop-token": descriptor.token };
+      const response = await this.request(serviceApiUrl(descriptor.url, "/api/web-console/bootstrap"), {
+        headers, signal: AbortSignal.any([connection.controller.signal, AbortSignal.timeout(10_000)]), redirect: "error",
+      });
+      if (!response.ok) throw new Error("本机终端连接验证失败");
+      const { wsNonce } = await response.json() as { wsNonce?: string };
+      if (!wsNonce) throw new Error("本机服务没有返回终端连接凭据");
+      if (connection.controller.signal.aborted) return;
+      const endpoint = new URL("/ws", descriptor.url);
+      const origin = endpoint.origin;
+      endpoint.protocol = "ws:";
+      endpoint.searchParams.set("nonce", wsNonce);
+      const socket = new WebSocket(endpoint, { origin, headers, handshakeTimeout: 10_000 });
+      connection.socket = socket;
+      socket.binaryType = "arraybuffer";
+      socket.on("open", () => send({ type: "open" }));
+      socket.on("message", (data, binary) => send({ type: "data", data: binary ? new Uint8Array(data as ArrayBuffer) : data.toString() }));
+      socket.on("error", () => {});
+      socket.on("close", (code) => {
+        if (this.terminalSockets.get(id) === connection) this.terminalSockets.delete(id);
+        send({ type: "close", code });
+      });
+    } catch (error) {
+      if (this.terminalSockets.get(id) === connection) this.terminalSockets.delete(id);
+      if (!connection.controller.signal.aborted) throw error;
+    }
+  }
+
+  sendTerminal(id: string, data: unknown): void {
+    const socket = this.terminalSockets.get(id)?.socket;
+    if (socket?.readyState === WebSocket.OPEN && isTerminalSocketInput(data)) socket.send(data);
+  }
+
+  stop(id: string): void {
+    this.streams.get(id)?.abort();
+    this.streams.delete(id);
+    const terminal = this.terminalSockets.get(id);
+    this.terminalSockets.delete(id);
+    terminal?.controller.abort();
+    terminal?.socket?.close();
+  }
+
+  closeStreams(): void {
+    for (const id of this.streams.keys()) this.stop(id);
+    for (const id of this.terminalSockets.keys()) this.stop(id);
+  }
   private async connection(): Promise<ServiceDescriptor> {
     if (!this.selected) await this.status();
     if (!this.selected) throw new Error("未连接统一服务，请先启动 agentroam 并选择服务");

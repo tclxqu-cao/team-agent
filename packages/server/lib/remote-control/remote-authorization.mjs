@@ -7,7 +7,7 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import os from 'node:os';
 import { RemoteHelper } from './helper-manager.mjs';
-import { RemoteAudioSession, RemoteInputCoalescer, logGlobal } from '@agent/core';
+import { PRIMARY_DESKTOP_LIVE_ID, RemoteAudioSession, RemoteInputCoalescer, logGlobal } from '@agent/core';
 import { parseProducerRemoteVideoSignal } from './remote-video-signal.mjs';
 
 const CAPTURE_RETRY_DELAY_MS = 3000;
@@ -53,14 +53,14 @@ export function supportsRemoteDesktop(platform = process.platform, arch = proces
 }
 
 export class RemoteAuthorization {
-  constructor({ registry, userId, dataDir, platform = process.platform, helper = platform === 'win32' ? new WindowsRemoteHelper() : new RemoteHelper(), supported = supportsRemoteDesktop(platform), audioCapabilities = remoteAudioCapabilities(platform), intervalMs = 67, idleDelayMs = 3000, system = platform === 'win32' ? new WindowsSystemBridge() : null, display = platform === 'darwin' ? new MacOSDisplayBridge() : null, log = null }) {
-    Object.assign(this, { registry, dataDir, helper, supported, audioCapabilities, intervalMs, idleDelayMs, platform, system, display });
+  constructor({ registry, userId, dataDir, platform = process.platform, helper = platform === 'win32' ? new WindowsRemoteHelper() : new RemoteHelper(), supported = supportsRemoteDesktop(platform), audioCapabilities = remoteAudioCapabilities(platform), intervalMs = 67, idleDelayMs = 3000, system = platform === 'win32' ? new WindowsSystemBridge() : null, display = platform === 'darwin' ? new MacOSDisplayBridge() : null, log = null, desktopControl = null }) {
+    Object.assign(this, { registry, dataDir, helper, supported, audioCapabilities, intervalMs, idleDelayMs, platform, system, display, desktopControl });
     this.enabled = false; this.screen = false; this.accessibility = false; this.online = false; this.error = null; this.busy = false; this.sequence = 0; this.generation = 0;
     this.locked = null; this.unavailablePublished = null; this.viewerCount = 0; this.captureActive = false; this.idleTimer = null; this.controlState = null;
     this.microphoneFramesQueued = 0;
     this.selectedDisplayId = null;
     this.captureFailures = 0; this.captureHealthySince = null;
-    this.sessionId = 'cli-desktop:primary';
+    this.sessionId = PRIMARY_DESKTOP_LIVE_ID;
     this.inputCoalescer = new RemoteInputCoalescer();
     this.peer = { id: `cli-remote:${randomUUID()}`, userId, producerSessionIds: new Set(), watchedSessionId: null, send: (event) => {
       const microphoneFrame = event.type === 'browser:webrtc' && event.data?.kind === 'audio-microphone';
@@ -254,7 +254,12 @@ export class RemoteAuthorization {
     ]);
     // Closing the helper also unblocks pending media requests. Do not await
     // tickPromise here: a terminal capture failure calls this from that tick.
-    await Promise.all([this.save(), this.helper.stop(), cleanup]);
+    try {
+      await Promise.all([this.save(), this.helper.stop(), cleanup]);
+    } finally {
+      await this.activeDesktopInput?.catch(() => {});
+      this.releaseViewerLease();
+    }
   }
   tick() {
     if (this.tickPromise) return this.tickPromise;
@@ -548,6 +553,14 @@ export class RemoteAuthorization {
       return;
     }
     if (event.type === 'browser:takeover-requested') {
+      if (this.desktopControl) {
+        this.releaseViewerControl = await this.desktopControl.requestViewerControl();
+        const handoff = this.registry.list(this.peer).some(session => session.id === this.sessionId && session.state === 'handoff-requested');
+        if (!this.enabled || !handoff) {
+          this.releaseViewerLease();
+          return;
+        }
+      }
       this.audioSession.dispatch({ type: 'set-controller', controller: true });
       if (this.platform === 'win32') void this.helper.request({ op: 'keep-display', on: true }).catch(() => {});
       this.registry.producerState(this.peer, this.sessionId, 'user-controlled');
@@ -561,11 +574,12 @@ export class RemoteAuthorization {
       // serialized queue must not inherit that delay — a queued takeover
       // confirm or input hit-test would otherwise stall behind it. Chaining
       // behind pending signaling keeps the teardown ordered after any start.
-      void this.releaseInput().catch(() => {});
+      await this.releaseInput().catch(() => {});
       void this.mediaChain.then(() => this.video.stop()).catch(() => {});
       void this.stopAudio();
       this.registry.producerState(this.peer, this.sessionId, 'agent-controlled');
       this.controlState = 'agent-controlled';
+      this.releaseViewerLease();
     }
     else if (event.type === 'browser:input') {
       try {
@@ -580,15 +594,24 @@ export class RemoteAuthorization {
           this.lastMobileInteractionAt = Date.now();
           void this.helper.request({ op: 'interaction' }).catch(() => {});
         }
-        const result = await this.dispatch(event.input);
+        this.activeDesktopInput = this.dispatch(event.input);
+        const result = await this.activeDesktopInput;
         if (Number.isSafeInteger(event.token)) this.registry.inputResult(this.peer, this.sessionId, event.token, result);
       } catch (error) { this.error = error.message; if (Number.isSafeInteger(event.token)) this.registry.inputResult(this.peer, this.sessionId, event.token, { error: error.message }); }
+      finally { this.activeDesktopInput = null; }
     }
+  }
+  releaseViewerLease() {
+    this.releaseViewerControl?.();
+    this.releaseViewerControl = null;
   }
   async releaseInput() {
     if (this.platform === 'win32') {
       await this.helper.request({ op: 'release' }).catch(() => {});
       this.pointerDown = false;
+    } else if (this.pointerDown && this.lastPointer) {
+      this.pointerDown = false;
+      await this.helper.request({ op: 'up', ...this.lastPointer, button: this.pointerButton });
     }
   }
   async stopAudio() {
@@ -656,6 +679,8 @@ export class RemoteAuthorization {
     // Closing the owned helper socket rejects any native requests that are
     // stuck in flight, so service shutdown cannot wait behind media teardown.
     await this.helper.stop();
-    await cleanup; await this.tickPromise?.catch(() => {}); this.unsubscribeAudio(); this.registry.disconnect(this.peer);
+    await cleanup; await this.tickPromise?.catch(() => {}); await this.activeDesktopInput?.catch(() => {});
+    this.releaseViewerLease();
+    this.unsubscribeAudio(); this.registry.disconnect(this.peer);
   }
 }

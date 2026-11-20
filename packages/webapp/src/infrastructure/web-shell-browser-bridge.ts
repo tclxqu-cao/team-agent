@@ -24,7 +24,7 @@ export class WebShellBrowserBridge implements BrowserLiveApi {
   private sequence = 0;
   private readonly pending = new Map<number, PendingRequest>();
   private readonly listeners = new Set<(event: Record<string, unknown> & { type: string }) => void>();
-  private readonly sessionsByChannel = new Map<number, string>();
+  private readonly sessionsByChannel = new Map<number, { sessionId: string; sessionDesktop: boolean }>();
   private readonly pendingFramesByChannel = new Map<number, WebBrowserBinaryFrame>();
   private readonly onMessage: (event: MessageEvent) => void;
 
@@ -36,12 +36,12 @@ export class WebShellBrowserBridge implements BrowserLiveApi {
       if (event.origin !== this.context.location.origin || event.source !== this.context.parent) return;
       const binaryFrame = parseWebBrowserBinaryFrame(event.data);
       if (binaryFrame) {
-        const sessionId = this.sessionsByChannel.get(binaryFrame.channelId);
-        if (!sessionId) {
+        const source = this.sessionsByChannel.get(binaryFrame.channelId);
+        if (!source) {
           this.pendingFramesByChannel.set(binaryFrame.channelId, binaryFrame);
           return;
         }
-        this.emitBinaryFrame(binaryFrame, sessionId);
+        this.emitBinaryFrame(binaryFrame, source);
         return;
       }
       const browserEvent = parseWebBrowserEvent(event.data);
@@ -65,15 +65,17 @@ export class WebShellBrowserBridge implements BrowserLiveApi {
       this.pending.delete(response.id);
       clearTimeout(request.timer);
       if (response.ok) {
-        if (request.method === "browser:watch" && response.result && typeof response.result === "object") {
+        const sessionDesktop = request.method === "browser:desktop-watch";
+        if ((request.method === "browser:watch" || sessionDesktop) && response.result && typeof response.result === "object") {
           const result = response.result as { channelId?: unknown; session?: { id?: unknown } };
           if (Number.isSafeInteger(result.channelId) && typeof result.session?.id === "string") {
             const channelId = Number(result.channelId);
-            this.sessionsByChannel.set(channelId, result.session.id);
+            const source = { sessionId: result.session.id, sessionDesktop };
+            this.sessionsByChannel.set(channelId, source);
             const pendingFrame = this.pendingFramesByChannel.get(channelId);
             if (pendingFrame) {
               this.pendingFramesByChannel.delete(channelId);
-              this.emitBinaryFrame(pendingFrame, result.session.id);
+              this.emitBinaryFrame(pendingFrame, source);
             }
           }
         }
@@ -84,10 +86,11 @@ export class WebShellBrowserBridge implements BrowserLiveApi {
     this.context.addEventListener("message", this.onMessage as EventListener);
   }
 
-  private emitBinaryFrame(frame: WebBrowserBinaryFrame, sessionId: string): void {
+  private emitBinaryFrame(frame: WebBrowserBinaryFrame, source: { sessionId: string; sessionDesktop: boolean }): void {
     for (const listener of this.listeners) listener({
       type: "browser:frame",
-      sessionId,
+      sessionId: source.sessionId,
+      ...(source.sessionDesktop ? { sessionDesktop: true } : {}),
       sequence: frame.sequence,
       data: frame.data,
       mime: "image/jpeg",
@@ -113,6 +116,13 @@ export class WebShellBrowserBridge implements BrowserLiveApi {
         payload,
       }, this.context.location.origin);
     });
+  }
+
+  async readDesktopLockState(signal: AbortSignal): Promise<boolean | null> {
+    const response = await fetch("/api/remote-authorization/status", { credentials: "same-origin", cache: "no-store", signal });
+    if (!response.ok) return null;
+    const status = await response.json() as { online?: boolean; locked?: boolean | null };
+    return status.online === true && typeof status.locked === "boolean" ? status.locked : null;
   }
 
   onEvent(listener: (event: Record<string, unknown> & { type: string }) => void): () => void {

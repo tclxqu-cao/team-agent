@@ -226,6 +226,16 @@ ipcMain.handle("service:stream", (event, id: string, path: string, lastEventId: 
   });
 });
 ipcMain.handle("service:stream-stop", (event, id: string) => rendererWindows.stopStream(event, id));
+ipcMain.handle("service:terminal-open", (event, id: string) => {
+  const internalId = rendererWindows.streamId(event, id);
+  return sharedService.openTerminal(internalId, frame => {
+    if (!event.sender.isDestroyed()) event.sender.send("service:terminal-frame", { ...frame, id });
+  });
+});
+ipcMain.handle("service:terminal-send", (event, id: string, data: unknown) => {
+  sharedService.sendTerminal(rendererWindows.streamId(event, id), data);
+});
+ipcMain.handle("service:terminal-stop", (event, id: string) => rendererWindows.stopStream(event, id));
 ipcMain.handle("tool-policies:list", async (event) => {
   trustedServiceSender(event);
   return parseServiceJson(await sharedService.json("/api/tool-policies", "GET"));

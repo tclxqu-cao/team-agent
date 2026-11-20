@@ -7,6 +7,8 @@ export const WEB_BROWSER_METHODS = [
   "browser:list",
   "browser:watch",
   "browser:unwatch",
+  "browser:desktop-watch",
+  "browser:desktop-unwatch",
   "browser:takeover",
   "browser:return",
   "browser:input",

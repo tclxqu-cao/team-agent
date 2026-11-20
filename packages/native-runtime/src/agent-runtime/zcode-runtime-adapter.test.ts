@@ -265,12 +265,16 @@ class ResidentZCodeFixture extends ZCodeFixture {
   resident = false;
   constructor(private readonly unavailableMessage = "Session is not active: sess_native") { super(); }
   override async request(method: string, params: NativeJsonPacket): Promise<NativeJsonPacket> {
-    if (["session/read", "session/messages", "session/subscribe"].includes(method) && !this.resident) {
+    if (["session/read", "session/messages", "session/subscribe", "session/close"].includes(method) && !this.resident) {
       this.calls.push({ method, params });
       throw new NativeRpcError(this.unavailableMessage, -32004);
     }
     const result = await super.request(method, params);
     if (method === "session/resume" || method === "session/create") this.resident = true;
+    if (method === "session/close") {
+      this.resident = false;
+      return { closed: true };
+    }
     return result;
   }
 }
@@ -307,6 +311,23 @@ describe.each(["Session is not active: sess_native", "Session runtime is not rea
     expect((await collect(client.run("sess_native", "continue"))).at(-1)).toEqual({ type: "done", finalText: "native answer" });
     expect(rpc.calls.filter(call => call.method === "session/resume")).toHaveLength(2);
     expect(rpc.calls.filter(call => call.method === "session/send")).toHaveLength(1);
+  });
+
+  it("resumes with changed Todo MCP settings after the old resident is evicted", async () => {
+    const rpc = new ResidentZCodeFixture(unavailableMessage);
+    const client = new ZCodeClient(rpc, { readMany: async () => new Map() });
+    await client.read("sess_native");
+    rpc.resident = false;
+    rpc.calls.length = 0;
+    const todoMcp = { command: "/usr/bin/node", args: ["todo-bridge.mjs"], env: { SESSION_ID: "sess_native" } };
+
+    const events = await collect(client.run("sess_native", "continue", undefined, { todoMcp }));
+
+    expect(events.at(-1)).toEqual({ type: "done", finalText: "native answer" });
+    expect(rpc.calls.map(call => call.method)).toEqual(["session/close", "session/resume", "session/subscribe", "session/send"]);
+    expect(rpc.calls[1].params).toMatchObject({
+      mcpServers: [{ name: "agentroam-todo", command: todoMcp.command, args: todoMcp.args, env: [{ name: "SESSION_ID", value: "sess_native" }] }],
+    });
   });
 
   it("retries the history read when eviction occurs between snapshot and messages", async () => {
@@ -470,6 +491,28 @@ describe("ZCode native NDJSON adapter", () => {
     expect(rpc.calls.find(call => call.method === "session/send")?.params).toMatchObject({ sessionId: "sess_native", modelSelection: { providerId: "zcode-native", modelId: "native-model" } });
     await collect(client.run("sess_native", "second turn"));
     expect(rpc.calls.filter(call => call.method === "session/resume")).toHaveLength(1);
+  });
+
+  it.each([true, false])("publishes a live fork point only when the last step has an answer (answer: %s)", async (hasFinalAnswer) => {
+    const rpc = new ZCodeFixture();
+    const client = new ZCodeClient(rpc, { readMany: async () => new Map() });
+    rpc.prompt = async () => {
+      rpc.emit("model.streaming", { kind: "text_delta", delta: "Checking files. ", assistantMessageId: "msg_progress" });
+      rpc.emit("tool.updated", { kind: "started", toolCallId: "tool", toolName: "Read" });
+      rpc.emit("tool.updated", { kind: "result", toolCallId: "tool", output: "file contents" });
+      if (hasFinalAnswer) {
+        rpc.emit("model.streaming", { kind: "text_delta", delta: "Final ", assistantMessageId: "msg_final" });
+        rpc.emit("model.streaming", { kind: "text_delta", delta: "answer.", assistantMessageId: "msg_final" });
+      }
+      rpc.emit("turn.completed", {});
+    };
+
+    const events = await collect(client.run("sess_native", "request"));
+
+    expect(events.at(-1)).toEqual(hasFinalAnswer
+      ? { type: "done", finalText: "Checking files. Final answer.", forkPoint: { messageId: "msg_final" } }
+      : { type: "done", finalText: "Checking files. " });
+    expect(rpc.calls.some(call => call.method === "session/messages")).toBe(false);
   });
 
   it("refreshes an empty catalog from an idle native session even when it is already loaded", async () => {

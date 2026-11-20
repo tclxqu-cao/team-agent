@@ -2,9 +2,10 @@ import { createServer, type Server, type IncomingMessage, type ServerResponse } 
 import { mkdtemp, rm, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { WebSocketServer } from "ws";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDesktopDiscovery } from "../../server/lib/desktop-discovery.mjs";
-import { SharedServiceConnection, serviceApiUrl, validDescriptor } from "./shared-service";
+import { SharedServiceConnection, serviceApiUrl, validDescriptor, type TerminalSocketFrame } from "./shared-service";
 
 const closers: Array<() => Promise<void>> = [];
 afterEach(async () => { for (const close of closers.splice(0).reverse()) await close(); });
@@ -32,6 +33,52 @@ describe("desktop shared service", () => {
     const status = await client.status();
     expect(status.connected).toBe(true); expect(JSON.stringify(status)).not.toContain('"token"');
     expect(JSON.parse((await client.json("/api/settings", "GET")).body)).toEqual({ name: "one" });
+  });
+  it("authenticates a loopback terminal and forwards only terminal messages", async () => {
+    const { client, start } = await fixture();
+    let desktopToken: string | undefined;
+    const { server } = await start("terminal", (req, res) => {
+      desktopToken = req.headers["x-agentroam-desktop-token"] as string;
+      res.writeHead(200, { "content-type": "application/json" }).end('{"wsNonce":"terminal-nonce"}');
+    });
+    const websocket = new WebSocketServer({ noServer: true });
+    closers.push(async () => {
+      client.closeStreams();
+      for (const socket of websocket.clients) socket.terminate();
+      await new Promise<void>(resolve => websocket.close(() => resolve()));
+    });
+    let authorized = false;
+    const received: Array<{ binary: boolean; bytes: number[] }> = [];
+    server.on("upgrade", (req, socket, head) => {
+      authorized = Boolean(desktopToken)
+        && req.headers["x-agentroam-desktop-token"] === desktopToken
+        && req.headers.origin === `http://${req.headers.host}`
+        && req.url === "/ws?nonce=terminal-nonce";
+      if (!authorized) { socket.destroy(); return; }
+      websocket.handleUpgrade(req, socket, head, peer => {
+        peer.on("message", (data: Buffer, binary) => received.push({ binary, bytes: [...data] }));
+        peer.send(new Uint8Array([1, 2, 0, 0, 0, 1, 65]));
+      });
+    });
+    const frames: TerminalSocketFrame[] = [];
+    await client.openTerminal("split", frame => frames.push(frame));
+    await vi.waitFor(() => expect(frames).toEqual([
+      { type: "open" },
+      { type: "data", data: new Uint8Array([1, 2, 0, 0, 0, 1, 65]) },
+    ]));
+    expect(authorized).toBe(true);
+    const input = new Uint8Array([1, 1, 0, 0, 0, 1, 66]);
+    const startRequest = '{"type":"term:start"}';
+    client.sendTerminal("split", '{"type":"settings:update"}');
+    client.sendTerminal("split", new Uint8Array([1, 4, 0, 0, 0, 1, 66]));
+    client.sendTerminal("split", startRequest);
+    client.sendTerminal("split", input);
+    await vi.waitFor(() => expect(received).toEqual([
+      { binary: false, bytes: [...Buffer.from(startRequest)] },
+      { binary: true, bytes: [...input] },
+    ]));
+    client.stop("split");
+    await vi.waitFor(() => expect(websocket.clients.size).toBe(0));
   });
   it("does not switch data sources after disconnect, but reconnects to the same data directory", async () => {
     const { client, start } = await fixture(); const first = await start("one"); await client.status();
