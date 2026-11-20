@@ -1,0 +1,23 @@
+packages/native-runtime/src/agent-runtime/zcode-client.ts
+  s_bb520d1ea01bc0::t_739bac5ec48a34 392
+  s_bb520d1ea01bc0::t_2e23abbcb324e9 34-36,163-164,167,387-391,393-399,435,444
+packages/native-runtime/src/agent-runtime/zcode-runtime-adapter.test.ts
+  s_bb520d1ea01bc0::t_ae1c0677b7fa05 530-550,598-607
+  s_bb520d1ea01bc0::t_d3bb9c87462a70 608
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c20fafa942734cb5be8df92321ded67bd5611e52",
+  "prompts": {},
+  "sessions": {
+    "s_bb520d1ea01bc0": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1f7ed-88ba-7a92-99a4-650d932284c8",
+        "model": "chat-gpt-omhk9/gpt-6.2-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
