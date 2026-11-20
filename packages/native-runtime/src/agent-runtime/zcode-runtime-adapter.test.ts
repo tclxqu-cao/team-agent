@@ -527,6 +527,27 @@ describe("ZCode native NDJSON adapter", () => {
     expect(rpc.calls.filter(call => call.method === "session/resume")).toHaveLength(1);
   });
 
+  it("refreshes the native default before sending a model-scoped turn after an empty catalog", async () => {
+    const rpc = new ZCodeFixture(); rpc.models = [];
+    const client = new ZCodeClient(rpc, { readMany: async () => new Map() });
+    await client.read("sess_native");
+    expect(await client.listModels()).toEqual([]);
+    rpc.models = [{
+      ref: { providerId: "magpie", modelId: "chat-gpt-omhk9/gpt-6.1-sol" },
+      label: "GPT-6.1 Sol",
+      reasoning: { levels: ["low", "medium", "high", "xhigh", "max", "ultra"], defaultLevel: "medium" },
+    }];
+
+    await collect(client.run("sess_native", "request", undefined, {
+      model: { providerID: "magpie", id: "chat-gpt-omhk9/gpt-6.1-sol" },
+    }));
+
+    expect(rpc.calls.filter(call => call.method === "session/resume")).toHaveLength(2);
+    expect(rpc.calls.find(call => call.method === "session/send")?.params).toMatchObject({ modelSelection: {
+      providerId: "magpie", modelId: "chat-gpt-omhk9/gpt-6.1-sol", options: { reasoningLevel: "medium" },
+    } });
+  });
+
   it("streams retry progress once per native sequence and still waits for the actual turn result", async () => {
     const rpc = new ZCodeFixture(); const client = new ZCodeClient(rpc, { readMany: async () => new Map() });
     rpc.prompt = async () => {
@@ -572,6 +593,17 @@ describe("ZCode native NDJSON adapter", () => {
     expect(rpc.calls.find(call => call.method === "session/send")?.params).toMatchObject({ modelSelection: {
       providerId: "zcode-native", modelId: "native-model", options: { reasoningLevel: "max" },
     } });
+  });
+
+  it("accepts native reasoning levels represented as strings", async () => {
+    const rpc = new ZCodeFixture();
+    rpc.models[0].reasoning = { levels: ["low", "medium", "high", "xhigh", "max"], defaultLevel: "medium" };
+    const client = new ZCodeClient(rpc, { readMany: async () => new Map() });
+
+    await client.read("sess_native");
+    expect(await client.listModels()).toMatchObject([{ reasoningEfforts: ["low", "medium", "high", "xhigh", "max"] }]);
+    await collect(client.run("sess_native", "request", undefined, { model: { providerID: "zcode-native", id: "native-model" } }));
+    expect(rpc.calls.find(call => call.method === "session/send")?.params).toMatchObject({ modelSelection: { options: { reasoningLevel: "medium" } } });
   });
 
   it("keeps an explicit effort instead of the native model default", async () => {
