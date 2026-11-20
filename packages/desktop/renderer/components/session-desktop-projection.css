@@ -1,0 +1,133 @@
+.session-desktop-card {
+  position: absolute;
+  z-index: 9;
+  top: 10px;
+  right: 12px;
+  width: 100%;
+  max-width: min(320px, 74%, calc(100% - 24px));
+  box-sizing: border-box;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: var(--bg-surface);
+  box-shadow: 0 6px 20px rgb(0 0 0 / 16%);
+  overflow: hidden;
+}
+
+.session-desktop-card.is-folded { width: max-content; }
+
+.session-desktop-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 8px 2px 12px;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 550;
+}
+
+.session-desktop-status > svg { color: var(--accent); flex: none; }
+.session-desktop-status > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.session-desktop-fold {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 4px;
+  min-height: 36px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.ui-icon-button.session-desktop-header-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: auto;
+  min-height: 36px;
+  gap: 4px;
+  padding: 0 7px;
+  font-size: 12px;
+  white-space: nowrap;
+  -webkit-app-region: no-drag;
+}
+
+.session-desktop-header-button.is-active { color: var(--accent); }
+
+.session-desktop-screen {
+  position: relative;
+  height: clamp(96px, 30vw, 150px);
+  margin: 0 5px 5px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #14161b;
+}
+
+.session-desktop-preview {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #f0f2f6;
+  cursor: pointer;
+}
+
+.session-desktop-preview img { display: block; width: 100%; height: 100%; object-fit: contain; }
+
+.session-desktop-lock-notice {
+  position: absolute;
+  z-index: 2;
+  bottom: 12px;
+  left: 12px;
+  right: 12px;
+  width: fit-content;
+  max-width: calc(100% - 24px);
+  margin: 0 auto;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: #14161be8;
+  border: 1px solid #ffffff29;
+  color: #f0f2f6;
+  font-size: 12px;
+  text-align: center;
+  pointer-events: none;
+  box-sizing: border-box;
+}
+
+.session-desktop-preview .session-desktop-lock-notice { top: 6px; bottom: auto; }
+
+.session-desktop-preview-empty {
+  display: grid;
+  height: 100%;
+  padding: 12px 16px 36px;
+  place-items: center;
+  color: #c6cbd5;
+  font-size: 12px;
+  text-align: center;
+  box-sizing: border-box;
+}
+
+.session-desktop-preview-expand {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 8px;
+  border-radius: 5px;
+  background: #14161be8;
+  border: 1px solid #ffffff29;
+  color: #f0f2f6;
+  font-size: 12px;
+}
+
+.session-desktop-preview:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.session-desktop-fold:focus-visible { outline: 2px solid var(--accent); }
