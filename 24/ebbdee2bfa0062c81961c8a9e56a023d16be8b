@@ -1,0 +1,155 @@
+packages/server/ws-server.mjs
+  s_a72372afd0d6e8::t_2903af9545c8c6 860-862,864-874
+  s_a72372afd0d6e8::t_46b7625853f53b 40,101,596-602,622-626,841-844,846-848,863,882-885,1308-1309,1376-1389,1449-1450
+  s_69f396ae159e8b::t_0e7e5f704c60d1 1334-1338
+packages/desktop/renderer/components/browser-live-touch.test.ts
+  s_d464498d333e2f::t_8c2befb5a487ba 31-32,34-37,41-49
+  s_d464498d333e2f::t_f1b41033bd0f9a 5-15,50
+packages/desktop/renderer/components/BrowserLivePanel.test.ts
+  s_a72372afd0d6e8::t_65a968a43379a2 68,77,83
+packages/native-runtime/src/agent-runtime/zcode-client.ts
+  s_a72372afd0d6e8::t_d09a08fe76e477 48-52,251-258,274
+  s_a72372afd0d6e8::t_988d24ab964f4c 20-29,482-489,492,498,503-507
+packages/computer-use/src/infrastructure/relay-client.test.ts
+  s_a72372afd0d6e8::t_65a968a43379a2 18-19,36-37,74-76
+  s_a72372afd0d6e8::t_68b1242f0f5b92 77-78
+packages/server/app/web/useGateway.ts
+  s_a72372afd0d6e8::t_4f373ea2d710c4 11-21,24,27,41,45,104-106,110-111,116,128,137
+  s_a72372afd0d6e8::t_3f49fcd8f024ee 87,189-202
+packages/desktop/renderer/components/desktop-task-split/TaskSessionPicker.test.tsx
+  s_a72372afd0d6e8::t_d814f2aba8a047 77
+  s_a72372afd0d6e8::t_69308851f25f45 75-76
+  s_a72372afd0d6e8::t_67bdd8322b087d 6,10-11,54-74,78
+  s_a72372afd0d6e8::t_aaecce7dab6f02 79
+packages/desktop/renderer/components/desktop-task-split/task-pane-surface.css
+  s_a72372afd0d6e8::t_773c7fcda2cb92 6-17
+packages/desktop/renderer/lib/shared-service.ts
+  s_a72372afd0d6e8::t_773c7fcda2cb92 6,27-32
+packages/desktop/renderer/components/browser-live-touch.ts
+  s_d464498d333e2f::t_8c2befb5a487ba 22-23,39,63
+packages/desktop/renderer/components/desktop-task-split/DesktopTaskWorkspace.tsx
+  s_a72372afd0d6e8::t_3f49fcd8f024ee 382-383
+packages/server/lib/pairing-page.mjs
+  s_69f396ae159e8b::t_890b69418d6567 15-16,25-32
+packages/desktop/renderer/components/desktop-task-split/desktop-task-split.css
+  s_a72372afd0d6e8::t_4146fa40c1d76f 125,127-131,138-150,164-168
+  s_a72372afd0d6e8::t_3d742b95758e7f 132
+packages/desktop/renderer/global.d.ts
+  s_a72372afd0d6e8::t_99b5b0ed659d9f 667
+  s_a72372afd0d6e8::t_2903af9545c8c6 12,664
+packages/server/lib/remote-control/remote-authorization.test.ts
+  s_a72372afd0d6e8::t_05252540463ef0 7,83-122
+packages/webapp/src/infrastructure/web-shell-browser-bridge.ts
+  s_a72372afd0d6e8::t_82fe8fdbb54819 27,39-40,44,74,78,89,92-93
+  s_a72372afd0d6e8::t_2903af9545c8c6 68-69,73
+  s_a72372afd0d6e8::t_99b5b0ed659d9f 121-127
+packages/webapp/src/presentation/web.css
+  s_a72372afd0d6e8::t_1472a6c48a0ee0 1298-1304
+packages/desktop/renderer/components/desktop-task-split/TaskSessionPicker.tsx
+  s_a72372afd0d6e8::t_032c78f5245423 1,131
+  s_a72372afd0d6e8::t_ef3911dacca1dd 29,63
+  s_a72372afd0d6e8::t_a94ac1644faa2d 3,23-28,30-62,64-68,71-73,130,132-137,147-153,157-176
+packages/core/src/domain/web-console/WebBrowserBridge.ts
+  s_a72372afd0d6e8::t_2903af9545c8c6 10-11
+packages/server/app/web/TerminalPane.tsx
+  s_a72372afd0d6e8::t_3f49fcd8f024ee 37,58,67-68,90,231,565,573
+packages/desktop/renderer/components/desktop-task-split/TaskPaneChoices.tsx
+  s_69f396ae159e8b::t_e9e6529c9cd8d0 1
+  s_a72372afd0d6e8::t_4f373ea2d710c4 4
+packages/desktop/renderer/components/ChatView.tsx
+  s_a72372afd0d6e8::t_99b5b0ed659d9f 447,753,1033-1035,2657-2659
+  s_a72372afd0d6e8::t_f2508d74ba7028 4479,5209
+  s_a72372afd0d6e8::t_1472a6c48a0ee0 15,446,4478,4480-4481
+  s_a72372afd0d6e8::t_4ea9591b0dc78e 5210
+packages/native-runtime/src/agent-runtime/native-runtime-broker.ts
+  s_a72372afd0d6e8::t_988d24ab964f4c 1050,1744,1747-1749
+packages/desktop/renderer/components/BrowserLivePanel.tsx
+  s_a72372afd0d6e8::t_3383002e0684d3 7,48,225,228-230,253-254,260-262,280,288-289,299,415,422,426,437,479,824,833,835,843-844,846,849,854,865,888,894,913,916,925-929,931-942,944-948,1141,1151
+  s_a72372afd0d6e8::t_6859b5b4c9de1a 233-234,241
+  s_d464498d333e2f::t_8c2befb5a487ba 1619,1663
+  s_a72372afd0d6e8::t_2903af9545c8c6 930,943
+  s_a72372afd0d6e8::t_503d12f0c90da1 1360,1367,1380,1382-1383,1386-1389,1391,1394,1399-1400,1402,1405,1407,1411-1412,1421,1443,1455,1513,1563-1564,1596,1606,1836,1838,1876
+  s_a72372afd0d6e8::t_99b5b0ed659d9f 231-232,235-240,242-252,1381,1384-1385,1418
+packages/desktop/main/preload.ts
+  s_a72372afd0d6e8::t_773c7fcda2cb92 310-319
+packages/server/app/web/page.tsx
+  s_69f396ae159e8b::t_5f7dc1fe18dec8 31,563-569
+  s_a72372afd0d6e8::t_2903af9545c8c6 387
+  s_69f396ae159e8b::t_e9e6529c9cd8d0 147-155,302-304,419
+  s_a72372afd0d6e8::t_82fe8fdbb54819 113,305-306,313-317,349,427,737-740,742
+  s_a72372afd0d6e8::t_cb63c155f563c0 570
+packages/desktop/main/index.ts
+  s_a72372afd0d6e8::t_773c7fcda2cb92 229-238
+packages/server/lib/computer-use.ts
+  s_a72372afd0d6e8::t_763c59f89e8784 44-46,51-67
+  s_a72372afd0d6e8::t_d852af3653c2bb 1,69
+  s_a72372afd0d6e8::t_5d1b029d17e9f5 6,8,32,42-43,47-50,68,70-78
+packages/desktop/main/shared-service.ts
+  s_a72372afd0d6e8::t_773c7fcda2cb92 4,13-16,19-30,50,183-234
+packages/computer-use/src/infrastructure/relay-client.ts
+  s_a72372afd0d6e8::t_5d1b029d17e9f5 20,70,76-78,110
+packages/server/app/api/agent-host.ts
+  s_a72372afd0d6e8::t_5d1b029d17e9f5 41,588
+  s_a72372afd0d6e8::t_d852af3653c2bb 764
+packages/server/lib/computer-use.test.ts
+  s_a72372afd0d6e8::t_763c59f89e8784 7,34-61
+packages/desktop/renderer/components/desktop-task-split/session-state.ts
+  s_a72372afd0d6e8::t_4f373ea2d710c4 27
+packages/webapp/src/infrastructure/web-shell-browser-bridge.test.ts
+  s_a72372afd0d6e8::t_05252540463ef0 111-118,120-129
+  s_a72372afd0d6e8::t_2903af9545c8c6 119
+  s_a72372afd0d6e8::t_6859b5b4c9de1a 18-38
+packages/core/src/domain/web-console/index.ts
+  s_69f396ae159e8b::t_02a90986c26b54 9
+packages/desktop/renderer/components/desktop-task-split/TaskPaneSurface.tsx
+  s_a72372afd0d6e8::t_4f373ea2d710c4 17,21
+  s_a72372afd0d6e8::t_3f49fcd8f024ee 22,38,51
+packages/server/lib/remote-control/remote-authorization.mjs
+  s_a72372afd0d6e8::t_d852af3653c2bb 10,56-57,63,257-262,556-563,577,582,597-598,601,604-607,612-614,682-684
+packages/core/src/domain/live-view/index.ts
+  s_a72372afd0d6e8::t_5d1b029d17e9f5 14
+packages/desktop/renderer/components/desktop-task-split/session-state.test.ts
+  s_a72372afd0d6e8::t_b51fb09f1b6591 42-53
+packages/native-runtime/src/agent-runtime/zcode-runtime-adapter.test.ts
+  s_a72372afd0d6e8::t_cd50456bdd4a00 331,496-517
+  s_a72372afd0d6e8::t_b51fb09f1b6591 268,274-277,316-323,325-327
+  s_a72372afd0d6e8::t_3df184572d93ea 324,328-330
+  s_a72372afd0d6e8::t_104dfa533b866b 332
+packages/native-runtime/src/agent-runtime/native-runtime-broker.test.ts
+  s_a72372afd0d6e8::t_cd50456bdd4a00 2734,2738,2755
+packages/desktop/main/shared-service.test.ts
+  s_a72372afd0d6e8::t_b51fb09f1b6591 5,8,37-81
+  s_a72372afd0d6e8::t_8526d2e91adc21 82
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "24ebbdee2bfa0062c81961c8a9e56a023d16be8b",
+  "prompts": {},
+  "sessions": {
+    "s_69f396ae159e8b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1f69e-51dc-71b0-950b-73a87e409fb8",
+        "model": "chat-gpt-omhk9/gpt-6.2-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_a72372afd0d6e8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1f69b-5a49-7321-bd5f-76bd876350fc",
+        "model": "chat-gpt-omhk9/gpt-6.2-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_d464498d333e2f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1f221-b86c-7591-b6e1-72d82b6a7d71",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.2-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
