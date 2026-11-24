@@ -57,7 +57,7 @@ function fixture(embeddedContext = true) {
     onFailure: () => () => {},
     async dispose() {},
   };
-  return { rpc, request, notify, callback: (method: string, params: NativeJsonPacket) => callback(method, params) };
+  return { rpc, request, notify, update, callback: (method: string, params: NativeJsonPacket) => callback(method, params) };
 }
 
 describe("ACP CLI sessions", () => {
@@ -88,6 +88,59 @@ describe("ACP CLI sessions", () => {
       await expect(client.available()).rejects.toThrow("Authentication required");
       request.mockImplementation(initialize);
       await expect(client.getCapabilities()).resolves.toEqual({ promptFileAttachments: true, nativePermissionPresets: true });
+    } finally { await client.dispose(); }
+  });
+
+  it("opens and closes one temporary Antigravity session for concurrent cold model requests", async () => {
+    const { rpc, request } = fixture();
+    const client = new AcpCliClient("agy", rpc);
+    const original = request.getMockImplementation()!;
+    request.mockImplementation(async (method, params) => {
+      if (method === "initialize") {
+        return { protocolVersion: 1, agentCapabilities: { loadSession: true, sessionCapabilities: { list: {}, close: {} } } };
+      }
+      if (method === "session/close") return {};
+      return original(method, params);
+    });
+    try {
+      const [first, second] = await Promise.all([client.listModels(), client.listModels()]);
+      expect(first.map(model => model.id)).toEqual(["model-a", "model-b"]);
+      expect(second).toEqual(first);
+      expect(await client.listModels()).toEqual(first);
+      expect(request.mock.calls.map(([method]) => method)).toEqual(["initialize", "session/new", "session/close"]);
+      expect(request).toHaveBeenCalledWith("session/close", { sessionId }, expect.any(Number));
+      expect(await client.list()).toMatchObject([{ id: sessionId, cwd: directory }]);
+    } finally { await client.dispose(); }
+  });
+
+  it("keeps Grok's selectable modes when the native notification contains only the current mode", async () => {
+    const { rpc, request, update } = fixture();
+    const client = new AcpCliClient("grok", rpc);
+    const original = request.getMockImplementation()!;
+    request.mockImplementation(async (method, params) => {
+      if (method === "session/load") update(sessionId, { sessionUpdate: "current_mode_update", currentModeId: "plan" });
+      if (method === "session/set_mode") return {};
+      return original(method, params);
+    });
+    try {
+      expect((await client.read(sessionId)).session.nativePermissions).toMatchObject({
+        currentValue: "plan", options: [{ value: "default" }, { value: "plan" }],
+      });
+      await client.setMode(sessionId, "default");
+      expect(request).toHaveBeenCalledWith("session/set_mode", { sessionId, modeId: "default" });
+      expect((await client.read(sessionId)).session.nativePermissions).toMatchObject({ currentValue: "default" });
+    } finally { await client.dispose(); }
+  });
+
+  it("sends an explicit Grok default selection when the CLI did not report a current mode", async () => {
+    const { rpc, request } = fixture();
+    const client = new AcpCliClient("grok", rpc);
+    const original = request.getMockImplementation()!;
+    request.mockImplementation((method, params) => method === "session/set_mode"
+      ? Promise.resolve({}) : original(method, params));
+    try {
+      await client.setMode(sessionId, "default");
+      expect(request).toHaveBeenCalledWith("session/set_mode", { sessionId, modeId: "default" });
     } finally { await client.dispose(); }
   });
 

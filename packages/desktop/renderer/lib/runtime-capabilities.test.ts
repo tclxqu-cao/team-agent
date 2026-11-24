@@ -26,9 +26,11 @@ describe("runtime capabilities", () => {
     expect(supportsMidTurnSteering(undefined)).toBe(false);
   });
 
-  it("uses the VS Code native permission policy for Copilot", () => {
+  it("routes to native permissions before runtime health is loaded", () => {
     expect(usesNativeSessionPermissions("copilot")).toBe(true);
     expect(usesNativeSessionPermissions("deepseek-harness")).toBe(true);
+    expect(usesNativeSessionPermissions("grok")).toBe(true);
+    expect(usesNativeSessionPermissions("agy")).toBe(true);
     expect(usesNativeSessionPermissions("codex")).toBe(false);
   });
 });

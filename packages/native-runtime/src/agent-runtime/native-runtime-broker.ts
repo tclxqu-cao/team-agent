@@ -2448,15 +2448,16 @@ export class NativeRuntimeBrokerHost {
   }
 
   setPermissionMode(sessionId: string, permissionMode: ToolPermissionMode): UnifiedSessionSummary {
-    if (decodeNativeSessionId(sessionId).agentType === "deepseek-harness") {
-      throw new RuntimeSessionError("DeepSeek Harness uses its native permission presets", "OPERATION_NOT_SUPPORTED");
+    const { agentType, nativeSessionId } = decodeNativeSessionId(sessionId);
+    if (agentType === "deepseek-harness" || agentType === "grok" || agentType === "agy") {
+      throw new RuntimeSessionError(`${agentType} uses its native permission presets`, "OPERATION_NOT_SUPPORTED");
     }
     const run = this.state.activeRun(sessionId);
     const mode = this.state.setPermissionMode(sessionId, permissionMode);
     const base: UnifiedSessionSummary = {
       id: sessionId,
-      agentType: decodeNativeSessionId(sessionId).agentType,
-      nativeSessionId: decodeNativeSessionId(sessionId).nativeSessionId,
+      agentType,
+      nativeSessionId,
       title: "Native session",
       cwd: "",
       created: new Date().toISOString(),

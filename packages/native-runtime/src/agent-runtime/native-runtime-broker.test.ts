@@ -3121,14 +3121,14 @@ describe("NativeRuntimeBrokerHost", () => {
     } finally { await replacement.stop(); }
   });
 
-  it("forwards native permission presets over the socket without replacing the native projection with broker policy", async () => {
-    const id = encodeUnifiedSessionId("deepseek-harness", "native-permission");
+  it.each(["deepseek-harness", "grok", "agy"] as const)("routes %s permission changes through its native preset", async (agentType) => {
+    const id = encodeUnifiedSessionId(agentType, "native-permission");
     const setNativePermissionPreset = vi.fn(async (_id: string, preset: string) => ({
-      ...summary(), id, agentType: "deepseek-harness" as const, nativeSessionId: "native-permission",
+      ...summary(), id, agentType, nativeSessionId: "native-permission",
       nativePermissions: { currentValue: preset, options: [{ value: "read-only", label: "read-only" }] },
     }));
     const runtime = Object.assign(new FakeNativeRuntime(), { setNativePermissionPreset });
-    runtime.get = async () => ({ ...summary(), id, agentType: "deepseek-harness", nativeSessionId: "native-permission", messages: [], events: [] });
+    runtime.get = async () => ({ ...summary(), id, agentType, nativeSessionId: "native-permission", messages: [], events: [] });
     const path = await directory();
     const host = new NativeRuntimeBrokerHost(path, runtime as unknown as UnifiedSessionService);
     await host.start();
