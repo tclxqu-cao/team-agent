@@ -1,0 +1,71 @@
+packages/desktop/main/shared-service.ts
+  s_09a6be8e939422::t_9994084d572a35 5,109,111,139-151,154-156
+  s_09a6be8e939422::t_c30b905e56b98f 157-158,163-164
+deploy/headscale/enrollment.mjs
+  s_09a6be8e939422::t_c9a376930b9e8f 1-45,47-87,89-115
+  s_e8f9305442990d::t_5a18ea0bac7ab7 46,88
+packages/desktop/main/lite-pairing.test.ts
+  s_09a6be8e939422::t_9994084d572a35 6,18-23
+  s_09a6be8e939422::t_3c94a884b1ee96 24
+deploy/headscale/install-enrollment-ecs.sh
+  s_09a6be8e939422::t_fd6dcde1703ebb 96,101-110
+  s_09a6be8e939422::t_ebd39c53326c38 1-95,97-100,111-118
+packages/desktop/main/lite-pairing.ts
+  s_09a6be8e939422::t_9994084d572a35 9,24
+packages/server/lib/mesh/mesh-service.mjs
+  s_09a6be8e939422::t_659cbe503c4dd3 8-9,28,32,38-39,41-43,47,67,69-70,74,77-78,91-92,100-105,108,113,135-156
+  s_e8f9305442990d::t_3990cd2de33f25 31,40,68,99,109,114-115,120,123,157-158
+packages/cli/src/mesh/mesh-config.ts
+  s_09a6be8e939422::t_659cbe503c4dd3 6-8,16-21,27-33,41,45-46,48-56,58-59,61-62,67,69,74-82
+  s_e8f9305442990d::t_adddbe4d124f37 1-2,34-40,42-44,47,57,60,70
+packages/desktop/main/mobile-pairing.ts
+  s_09a6be8e939422::t_9994084d572a35 12
+packages/desktop/renderer/components/MobilePairingButton.tsx
+  s_09a6be8e939422::t_9994084d572a35 23,52-53
+packages/desktop/renderer/lite/LiteApp.tsx
+  s_09a6be8e939422::t_9994084d572a35 43,47-48
+packages/cli/src/runtime-manager.ts
+  s_09a6be8e939422::t_659cbe503c4dd3 61,63,88
+deploy/headscale/enrollment.test.mjs
+  s_e8f9305442990d::t_5ad1057d40d7c1 1-99
+packages/cli/src/cli.ts
+  s_09a6be8e939422::t_363bc49175d926 56,184,225,269-273
+packages/cli/src/device-pairing.ts
+  s_09a6be8e939422::t_12de50209b9317 39,44,62-74
+packages/cli/src/mesh/mesh-command.test.ts
+  s_e8f9305442990d::t_9b33722daafd62 1,4,58-87
+packages/cli/src/mesh/mesh-command.ts
+  s_e8f9305442990d::t_f681f7db0e9080 32,63
+packages/cli/src/mesh/mesh-runtime.ts
+  s_e8f9305442990d::t_12b5608b475146 33
+packages/cli/src/service/service-command.test.ts
+  s_e8f9305442990d::t_99feb68283d1a4 30
+packages/cli/src/service/service-command.ts
+  s_09a6be8e939422::t_897a1a4df15be2 129-132
+packages/desktop/main/shared-service.test.ts
+  s_e8f9305442990d::t_817a8d4c470c19 144,146,158-160,172
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "489e129a4b5edfc02db70d49dea44b3376a76a0f",
+  "prompts": {},
+  "sessions": {
+    "s_09a6be8e939422": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a20c77-e053-7cf0-b1f9-1cba9062bbe4",
+        "model": "gpt-6.2-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_e8f9305442990d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a20d52-6668-7932-928e-ac6670a49c1a",
+        "model": "gpt-6.2-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
