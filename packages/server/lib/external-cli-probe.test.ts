@@ -1,4 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { resolveExternalCli } from "./external-cli-probe";
 
 const environmentBackup = { ...process.env };
@@ -41,5 +44,22 @@ describe("resolveExternalCli", () => {
     expect(resolution.executable).toBeUndefined();
     expect(resolution.detail).toContain("No usable");
     expect(resolution.detail).toContain("AGENT_DEFINITELY-NOT-A-REAL-CLI-XYZ_BIN");
+  });
+
+  it("passes the actual Windows npm executable to the native broker", async () => {
+    const prefix = await mkdtemp(join(tmpdir(), "agentroam opencode probe "));
+    try {
+      const shim = join(prefix, "opencode.cmd");
+      const binary = join(prefix, "node_modules", "opencode-ai", "bin", "opencode.exe");
+      await mkdir(dirname(binary), { recursive: true });
+      await writeFile(shim, "@echo off\r\n");
+      await copyFile(process.execPath, binary);
+      process.env.AGENT_OPENCODE_BIN = shim;
+      const result = resolveExternalCli({ name: "opencode", environmentVariable: "AGENT_OPENCODE_BIN" }, "win32");
+      expect(result.executable).toBe(binary);
+      expect(result.version).toBe(process.versions.node);
+    } finally {
+      await rm(prefix, { recursive: true, force: true });
+    }
   });
 });

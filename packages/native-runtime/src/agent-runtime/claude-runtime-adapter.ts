@@ -7,6 +7,7 @@ import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { promisify } from "node:util";
+import { resolveNativeCliCommand } from "./native-cli-command.js";
 import {
   deleteSession as deleteClaudeSession,
   forkSession as forkClaudeSession,
@@ -333,10 +334,7 @@ export class ClaudeRuntimeAdapter implements AgentRuntimeAdapter {
 
   async health(): Promise<RuntimeHealth> {
     try {
-      const { stdout } = await execFileAsync("claude", ["--version"], {
-        encoding: "utf8",
-        timeout: 5000,
-      });
+      const { stdout } = await runClaudeCli(["--version"]);
       return {
         agentType: this.agentType,
         available: true,
@@ -1404,13 +1402,21 @@ function claudeUserMessage(
   };
 }
 
+async function runClaudeCli(args: string[]) {
+  const launch = process.platform === "win32"
+    ? await resolveNativeCliCommand("claude-code")
+    : { command: "claude", args: [], env: {} };
+  return execFileAsync(launch.command, [...(launch.args ?? []), ...args], {
+    encoding: "utf8",
+    timeout: 5000,
+    maxBuffer: 4 * 1024 * 1024,
+    windowsHide: true,
+  });
+}
+
 async function listClaudeAgentRecords(): Promise<ClaudeAgentRecord[]> {
   try {
-    const { stdout } = await execFileAsync("claude", ["agents", "--json", "--all"], {
-      encoding: "utf8",
-      timeout: 5000,
-      maxBuffer: 4 * 1024 * 1024,
-    });
+    const { stdout } = await runClaudeCli(["agents", "--json", "--all"]);
     const value = JSON.parse(stdout) as unknown;
     return Array.isArray(value) ? value as ClaudeAgentRecord[] : [];
   } catch {

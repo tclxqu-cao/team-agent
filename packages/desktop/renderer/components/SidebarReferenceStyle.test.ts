@@ -179,11 +179,18 @@ describe("AgentRoam reference sidebar", () => {
     expect(app).toContain("project.canCreateSession === false");
     expect(app).toContain("<History size={13}");
     expect(app).toContain("project.canCreateSession !== false && (");
-    expect(app).toContain("mobileDrawer ? 100_000 : manySession ? 300 : 800");
     expect(app).toContain("manySession && !mobileDrawer");
     expect(app).toContain('data-sidebar-project-id={project.id}');
     expect(app).toContain("if (mobileDrawer) {");
     expect(app).toContain("loadSessions(projectId, { cursor: nextCursor })");
+  });
+
+  it("lets expanded session trees grow vertically while keeping row actions within the sidebar", () => {
+    const disclosure = app.slice(app.indexOf("{/* Sessions under this project"), app.indexOf('className="sidebar-project-sessions"'));
+    expect(disclosure).toContain('gridTemplateColumns: "minmax(0, 1fr)"');
+    expect(disclosure).toContain('gridTemplateRows: isExpanded ? "minmax(0, 1fr)" : "minmax(0, 0fr)"');
+    expect(disclosure).toContain('overflow: "clip"');
+    expect(disclosure).not.toContain("maxHeight");
   });
 
   it("expands all projects without expanding their child sessions", () => {

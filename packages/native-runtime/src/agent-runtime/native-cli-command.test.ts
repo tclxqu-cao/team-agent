@@ -13,6 +13,117 @@ describe("native CLI command discovery", () => {
     expect(command).toEqual({ command: "/home/test/.local/bin/qodercli", args: ["--acp"], env: {} });
   });
 
+  describe("native CLI discovery on Windows", () => {
+    const home = "C:\\Users\\Test User";
+    const localAppData = "D:\\Profiles\\Test User\\Local";
+    const appData = "D:\\Profiles\\Test User\\Roaming";
+    const nativeExecutable = `${localAppData}\\qodercli\\qodercli.exe`;
+    const npmDir = `${appData}\\npm`;
+    const npmEntrypoint = `${npmDir}\\node_modules\\@qoder-ai\\qodercli\\bundle\\qodercli.js`;
+    const node = "C:\\Program Files\\nodejs\\node.exe";
+    const windowsFixture = (files: string[], env: NodeJS.ProcessEnv = {}) => ({
+      platform: "win32" as const,
+      home,
+      env: { LOCALAPPDATA: localAppData, APPDATA: appData, ...env },
+      nodeExecutable: node,
+      fileExists: async (path: string) => files.includes(path),
+    });
+
+    it("discovers the standalone CLI when the service PATH omits the install directory", async () => {
+      await expect(resolveNativeCliCommand("qoder", windowsFixture([nativeExecutable, npmEntrypoint])))
+        .resolves.toEqual({ command: nativeExecutable, args: ["--acp"], env: {} });
+    });
+
+    it("discovers the npm entrypoint directly even when PATH contains only npm shims", async () => {
+      const files = [`${npmDir}\\qodercli`, `${npmDir}\\qodercli.cmd`, npmEntrypoint];
+      await expect(resolveNativeCliCommand("qoder", windowsFixture(files, { Path: npmDir })))
+        .resolves.toEqual({ command: node, args: [npmEntrypoint, "--acp"], env: {} });
+    });
+
+    it("honors a native CLI on PATH and skips earlier extensionless shims", async () => {
+      const pathExecutable = "C:\\Qoder Tools\\qodercli.exe";
+      const files = [`${npmDir}\\qodercli`, pathExecutable, nativeExecutable];
+      await expect(resolveNativeCliCommand("qoder", windowsFixture(files, { Path: `${npmDir};C:\\Qoder Tools` })))
+        .resolves.toEqual({ command: pathExecutable, args: ["--acp"], env: {} });
+    });
+
+    it("finds the installer-selected version even without an executable on PATH", async () => {
+      const installDir = `${home}\\.qoder\\bin\\qodercli`;
+      const executable = `${installDir}\\qodercli-1.1.96.exe`;
+      const readTextFile = vi.fn(async () => "1.1.96\r\n");
+      await expect(resolveNativeCliCommand("qoder", { ...windowsFixture([executable]), readTextFile }))
+        .resolves.toEqual({ command: executable, args: ["--acp"], env: {} });
+      expect(readTextFile).toHaveBeenCalledWith(`${installDir}\\version.txt`);
+    });
+
+    it.each([
+      ["grok", `${home}\\.grok\\bin\\grok.exe`, ["--no-auto-update", "agent", "stdio"]],
+      ["agy", `${localAppData}\\agy\\bin\\agy.exe`, ["acp"]],
+      ["claude-code", `${home}\\.local\\bin\\claude.exe`, []],
+    ] as const)("discovers the %s standalone executable outside PATH", async (agent, executable, args) => {
+      await expect(resolveNativeCliCommand(agent, windowsFixture([executable])))
+        .resolves.toEqual({ command: executable, args, env: {} });
+    });
+
+    it("honors the Grok installer's custom bin directory", async () => {
+      const executable = "D:\\Grok Tools\\grok.exe";
+      await expect(resolveNativeCliCommand("grok", windowsFixture([executable], { GROK_BIN_DIR: "D:\\Grok Tools" })))
+        .resolves.toMatchObject({ command: executable });
+    });
+
+    it("finds WorkBuddy's desktop executable without sending the PE file to Node", async () => {
+      const executable = `${localAppData}\\Programs\\WorkBuddy\\resources\\app.asar.unpacked\\cli\\bin\\codebuddy.exe`;
+      await expect(resolveNativeCliCommand("workbuddy", windowsFixture([executable])))
+        .resolves.toMatchObject({ command: executable, args: expect.arrayContaining(["stream-json"]) });
+    });
+
+    it("launches CodeBuddy native or npm installations through the existing WorkBuddy protocol", async () => {
+      const executable = `${localAppData}\\codebuddy\\bin\\codebuddy.exe`;
+      const shim = `${npmDir}\\codebuddy`;
+      const entry = `${npmDir}\\node_modules\\@tencent-ai\\codebuddy-code\\bin\\codebuddy`;
+      const env = { Path: `"${npmDir}"` };
+      await expect(resolveNativeCliCommand("workbuddy", windowsFixture([executable, shim, entry], env)))
+        .resolves.toMatchObject({ command: executable });
+      const npm = await resolveNativeCliCommand("workbuddy", windowsFixture([shim, entry], env));
+      expect(npm.command).toBe(node);
+      expect(npm.args?.slice(0, 2)).toEqual([entry, "--print"]);
+      expect(npm.env?.WORKBUDDY_CONFIG_DIR).toBe(`${home}\\.workbuddy`);
+    });
+
+    it("finds the Claude Code npm binary behind the command shim", async () => {
+      const executable = `${npmDir}\\node_modules\\@anthropic-ai\\claude-code\\bin\\claude.exe`;
+      await expect(resolveNativeCliCommand("claude-code", windowsFixture([executable, `${npmDir}\\claude.cmd`])))
+        .resolves.toEqual({ command: executable, args: [], env: {} });
+    });
+
+    it.each(["D:\\Node Tools", "D:\\Node Tools\\node_modules\\.bin"])("starts the npm DeepSeek Harness CLI directly with Node from %s", async (directory) => {
+      const shim = `${directory}\\dsh.cmd`;
+      const entry = "D:\\Node Tools\\node_modules\\@deepseek-ai\\dsh\\lib\\bin.js";
+      await expect(resolveNativeCliCommand("deepseek-harness", windowsFixture([shim, entry], { AGENT_DSH_EXECUTABLE: shim })))
+        .resolves.toEqual({ command: node, args: [entry], env: {} });
+    });
+
+    it("starts the packaged DeepSeek Harness CLI without evaluating its batch file", async () => {
+      const root = "D:\\Agents\\DeepSeek Harness";
+      const command = `${root}\\DeepSeek Harness.exe`;
+      const archive = `${root}\\resources\\app.asar`;
+      const directory = `${root}\\resources\\runtime\\cli\\bin`;
+      const files = [command, archive, `${directory}\\dsh.cmd`];
+      await expect(resolveNativeCliCommand("deepseek-harness", windowsFixture(files, { Path: directory })))
+        .resolves.toEqual({
+          command,
+          args: ["--expose-internals", `${archive}\\dsh\\node_modules\\@deepseek-ai\\dsh-desktop-host\\lib\\cli.js`],
+          env: { ELECTRON_RUN_AS_NODE: "1" },
+        });
+    });
+
+    it("rejects a standalone command shim without a supported package", async () => {
+      const shim = `${npmDir}\\dsh.cmd`;
+      await expect(resolveNativeCliCommand("deepseek-harness", windowsFixture([shim], { AGENT_DSH_EXECUTABLE: shim })))
+        .rejects.toMatchObject({ code: "RUNTIME_UNAVAILABLE" });
+    });
+  });
+
   it.each([
     ["grok", ["--no-auto-update", "agent", "stdio"]],
     ["agy", ["acp"]],

@@ -220,9 +220,34 @@ export function mergeProgressiveSessionHistoryPage(
     && Boolean(history?.revision);
   const hasVisibleHistory = current.some((message) => !message.isQueued);
   if (traceWillFollow && hasVisibleHistory) {
-    return retainAnsweredSessionQuestions(current, mergeCoreSessionHistory(current, refreshed));
+    const retained = removeMisplacedCodexAnswers(current, refreshed);
+    return retainAnsweredSessionQuestions(current, uniqueSessionMessages(mergeCoreSessionHistory(retained, refreshed)));
   }
   return mergeRefreshedSessionHistory(current, refreshed);
+}
+
+function removeMisplacedCodexAnswers(current: ChatMessage[], refreshed: ChatMessage[]): ChatMessage[] {
+  const answerOwners = new Map<string, ChatMessage>();
+  let owner: ChatMessage | undefined;
+  for (const message of refreshed) {
+    if (message.role === "user" && !message.isCompactionSummary) owner = message;
+    const nativeId = message.presentation?.nativeMessageId;
+    if (owner && nativeId && isCoreAssistantMessage(message)) answerOwners.set(nativeId, owner);
+  }
+  if (answerOwners.size === 0) return current;
+
+  owner = undefined;
+  return current.filter((message) => {
+    if (message.role === "user" && !message.isQueued && !message.isCompactionSummary) owner = message;
+    const expected = answerOwners.get(message.id);
+    if (!expected) return true;
+    if (!owner) return false;
+    const segment = owner.presentation?.executionTrace;
+    const expectedSegment = expected.presentation?.executionTrace;
+    return segment && expectedSegment
+      ? segment.turnId === expectedSegment.turnId && (segment.segmentIndex ?? 0) === (expectedSegment.segmentIndex ?? 0)
+      : sessionHistoryUserBoundaryKey(owner) === sessionHistoryUserBoundaryKey(expected);
+  });
 }
 
 /** Keep a retained history window's oldest boundary when refreshing its tail. */
@@ -288,12 +313,20 @@ function mergeCoreSessionHistory(
   if (refreshedTurnStart < 0) return current;
 
   const refreshedUser = refreshed[refreshedTurnStart];
-  const persistedUserIndex = currentHistory.findIndex((message) => (
-    message.role === "user" && message.id === refreshedUser.id
-  ));
+  const refreshedSegment = refreshedUser.presentation?.executionTrace;
+  const persistedUserIndex = currentHistory.findIndex((message) => {
+    if (message.role !== "user") return false;
+    const segment = message.presentation?.executionTrace;
+    return refreshedSegment && segment
+      ? segment.turnId === refreshedSegment.turnId
+        && (segment.segmentIndex ?? 0) === (refreshedSegment.segmentIndex ?? 0)
+      : message.id === refreshedUser.id;
+  });
   let currentTurnStart = persistedUserIndex >= 0 ? persistedUserIndex : currentHistory.findLastIndex((message) => (
     message.role === "user"
     && !message.isCompactionSummary
+    && !(refreshedSegment && message.presentation?.executionTrace)
+    && !(message.isGoal && refreshedSegment && !refreshedUser.presentation?.isGoal && !message.isSteered)
     && sessionHistoryUserBoundaryKey(message) === sessionHistoryUserBoundaryKey(refreshedUser)
   ));
 
@@ -339,6 +372,7 @@ function mergeCoreSessionHistory(
     : message);
   merged[currentTurnStart] = {
     ...merged[currentTurnStart],
+    ...(persistedUserIndex >= 0 && refreshedSegment ? { id: refreshedUser.id } : {}),
     presentation: mergeRunResultPresentation(merged[currentTurnStart].presentation, refreshedUser.presentation),
   };
   if (confirmsSend) {
@@ -381,7 +415,7 @@ function mergeCoreSessionHistory(
     merged[currentIndex] = {
       ...previous,
       ...next,
-      id: next.id.startsWith("history-message.v1.") ? next.id : previous.id,
+      id: next.presentation?.nativeMessageId ?? (next.id.startsWith("history-message.v1.") ? next.id : previous.id),
       timestamp: previous.timestamp,
       images: next.images ?? previous.images,
       presentation: mergeRunResultPresentation(previous.presentation, next.presentation),

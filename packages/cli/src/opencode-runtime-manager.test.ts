@@ -121,6 +121,19 @@ describe("resolveOpenCodeRuntime", () => {
       dependencies: { run: async () => ({ stdout: OPENCODE_RUNTIME_VERSION, stderr: "" }) },
     })).resolves.toEqual({ executable: candidate, version: OPENCODE_RUNTIME_VERSION, source: "managed" });
   });
+
+  it.each([
+    ["global", { APPDATA: "D:\\User Files" }, "D:\\User Files\\npm\\node_modules\\opencode-ai\\bin\\opencode.exe"],
+    ["global", { Path: '"D:\\Node Tools"' }, "D:\\Node Tools\\node_modules\\opencode-windows-x64-baseline\\bin\\opencode.exe"],
+    ["explicit", { AGENT_OPENCODE_BIN: "D:\\Project\\node_modules\\.bin\\opencode.cmd" }, "D:\\Project\\node_modules\\opencode-ai\\bin\\opencode.exe"],
+  ] as const)("reuses the Windows %s npm install by running its real executable", async (source, environment, path) => {
+    const run = vi.fn(async () => ({ stdout: OPENCODE_RUNTIME_VERSION, stderr: "" }));
+    await expect(resolveOpenCodeRuntime({
+      dataDir: "D:\\AgentRoam", target: "windows-amd64", platform: "win32", environment,
+      installIfMissing: false, dependencies: { run, accessible: async candidate => candidate === path },
+    })).resolves.toEqual({ executable: path, version: OPENCODE_RUNTIME_VERSION, source });
+    expect(run.mock.calls).toEqual([[path, ["--version"], 5000], [path, ["serve", "--help"], 5000]]);
+  });
 });
 
 describe("OpenCode runtime helpers", () => {
@@ -133,6 +146,8 @@ describe("OpenCode runtime helpers", () => {
   it("keeps managed binary candidates under the runtime root", () => {
     expect(managedOpenCodeBinaryCandidates("/data/runtime", "darwin")[0])
       .toBe("/data/runtime/node_modules/opencode-ai/bin/opencode.exe");
-    expect(managedOpenCodeBinaryCandidates("C:\\runtime", "win32").some((path) => path.endsWith("opencode.cmd"))).toBe(true);
+    const windows = managedOpenCodeBinaryCandidates("C:\\runtime", "win32");
+    expect(windows.every(path => path.endsWith("opencode.exe"))).toBe(true);
+    expect(windows.some(path => path.includes("opencode-windows-x64-baseline"))).toBe(true);
   });
 });

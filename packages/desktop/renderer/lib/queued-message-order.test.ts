@@ -103,6 +103,37 @@ describe("hideQueuedGoalMessages", () => {
   });
 });
 
+describe("durable goal transcript order", () => {
+  const pending = { id: "goal-source", role: "user", content: "finish", timestamp: 1, isGoal: true, isQueued: true };
+  const item = { id: "goal-id", sourceMessageId: pending.id, objective: pending.content, createdAt: 1, kind: "goal" as const };
+  const user = { id: "earlier-user", role: "user", content: "question", timestamp: 2 };
+  const reply = { id: "earlier-reply", role: "assistant", content: "answer", timestamp: 3 };
+
+  it("promotes an earlier-submitted goal after the reply to the running input", () => {
+    const waiting = reconcileDurableQueuedMessages([pending, user, reply], { active: null, queued: [item], history: [] });
+    expect(waiting.filter(message => !message.isQueued)).toEqual([user, reply]);
+    const active = reconcileDurableQueuedMessages(waiting, { active: item, queued: [], history: [] });
+    expect(active).toEqual([user, reply, { ...pending, isQueued: false, awaitingHistory: true }]);
+    expect(reconcileDurableQueuedMessages(active, { active: item, queued: [], history: [] })).toEqual(active);
+  });
+
+  it("keeps one goal when native history has loaded before promotion is received", () => {
+    const native = { ...pending, id: "native-goal", isQueued: false,
+      presentation: { executionTrace: { turnId: "native-turn", segmentIndex: 0 }, isGoal: true } };
+    expect(reconcileDurableQueuedMessages([user, reply, native, pending], {
+      active: item, queued: [], history: [],
+    })).toEqual([user, reply, native]);
+  });
+
+  it("moves a goal steered by another client to the current transcript tail once", () => {
+    const state = { active: null, queued: [], history: [{ ...item, lastReason: "steered" }] };
+    const result = reconcileDurableQueuedMessages([pending, user, reply], state);
+    expect(result.map(message => message.id)).toEqual([user.id, reply.id, pending.id]);
+    expect(result[2]).toMatchObject({ isQueued: false, isSteered: true, awaitingHistory: true });
+    expect(reconcileDurableQueuedMessages(result, state)).toEqual(result);
+  });
+});
+
 describe("markDurableMessageSteered", () => {
   it("moves an accepted durable steer to the current history tail", () => {
     const unrelated = { id: "history", role: "assistant", content: "working", timestamp: 1 };

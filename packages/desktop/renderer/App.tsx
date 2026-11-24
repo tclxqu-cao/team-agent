@@ -64,7 +64,6 @@ import "./styles/sidebar-navigation.css";
 import AgentSessionRail from "./components/AgentSessionRail";
 import AgentBrandIcon from "./components/AgentBrandIcon";
 import DesktopAppActions from "./components/DesktopAppActions";
-import DesktopFlowStudioView from "./components/DesktopFlowStudioView";
 import SidebarDeleteConfirmation from "./components/SidebarDeleteConfirmation";
 import SidebarSessionRow, { type SidebarDeleteAnchor } from "./components/SidebarSessionRow";
 import SessionCompletionTracker from "./components/SessionCompletionTracker";
@@ -100,7 +99,6 @@ import { getDesktopDirectoryContextMenuPath } from "./lib/sidebar-directory-cont
 import { isBrowserRuntime, isWebShell, useNarrowViewport } from "./web/webLayout";
 import { useWebTaskSplitEnabled } from "./web/webTaskSplit";
 import { createElectronFileWorkspaceGateway } from "./lib/electron-file-workspace-gateway";
-import { resolveDesktopFlowStudioEntryUrl } from "./lib/desktop-flow-studio-entry";
 import { postWebArtifactOpen, resolveWebArtifactPath } from "../../shared/src/browser/artifact-links";
 import { isWebMediaUrl } from "../../core/src/domain/web-console/WebArtifactBridge";
 import {
@@ -387,7 +385,6 @@ export default function App() {
     const open = (target: { taskId?: string; sessionId?: string }) => {
       if (!target.taskId && !target.sessionId) return;
       const version = ++navigationVersion;
-      setFlowStudioEntryUrl(null);
       setSessionDashboardOpen(false);
       setCollaborationDashboardOpen(false);
       setActiveCollaboration(null);
@@ -917,28 +914,6 @@ export default function App() {
 
   const [notice, setNotice] = useState<string | null>(null);
   const [noticeType, setNoticeType] = useState<"success" | "info" | "error">("success");
-  const [flowStudioEntryUrl, setFlowStudioEntryUrl] = useState<string | null>(null);
-  const [flowStudioOpening, setFlowStudioOpening] = useState(false);
-
-  const handleOpenFlowStudio = useCallback(async () => {
-    if (flowStudioOpening) return;
-    setFlowStudioOpening(true);
-    try {
-      const entryUrl = await resolveDesktopFlowStudioEntryUrl();
-      if (entryUrl) {
-        setHubOpen(false);
-        setCalendarOpen(false);
-        setSidebarDrawerOpen(false);
-        setFlowStudioEntryUrl(entryUrl);
-        return;
-      }
-      setNotice("Flow Studio 入口不可用，请检查服务配置");
-      setNoticeType("error");
-      setTimeout(() => setNotice(null), 4000);
-    } finally {
-      setFlowStudioOpening(false);
-    }
-  }, [flowStudioOpening]);
 
   const applySidebarSelection = (selection: SidebarSelection) => {
     setCalendarOpen(false);
@@ -1918,7 +1893,7 @@ export default function App() {
         }}/> : activeCollaboration && <CollaborationPage key={`${activeCollaboration}-${collaborationGroupsRevision}`} groupId={activeCollaboration} initialDiscussionId={initialDiscussions[activeCollaboration]}/>}</Suspense></div>
       </div>}
       <DesktopLiveControlBanner />
-      {!mobileDrawer && !flowStudioEntryUrl && <AgentSessionRail hidden={!sidebarHidden}
+      {!mobileDrawer && <AgentSessionRail hidden={!sidebarHidden}
         value={activeAgent} health={runtimeHealth} selectedSessionId={selectedSessionId}
         getActivity={sessionActivity} onChange={handleAgentChange}
         onSelect={openAgentSession}
@@ -1928,14 +1903,14 @@ export default function App() {
         }}
       />}
       {/* Web mobile: drawer mask + hamburger */}
-      {!flowStudioEntryUrl && mobileDrawer && sidebarDrawerOpen && (
+      {mobileDrawer && sidebarDrawerOpen && (
         <div
           className="mobile-drawer-scrim"
           onClick={() => setSidebarDrawerOpen(false)}
           style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 1150 }}
         />
       )}
-      {!flowStudioEntryUrl && mobileDrawer && !sidebarDrawerOpen && (
+      {mobileDrawer && !sidebarDrawerOpen && (
         <button
           className="mobile-drawer-toggle"
           onClick={() => setSidebarDrawerOpen(true)}
@@ -1976,7 +1951,7 @@ export default function App() {
         zIndex: 0,
       }} />
 
-      {layout !== "focus" && !flowStudioEntryUrl && (
+      {layout !== "focus" && (
       <>
       <aside
         className={`app-sidebar${navigationLayout === "agent-rail" ? " has-agent-navigation" : ""}${allSessionsLayout ? " has-all-sessions" : ""}`}
@@ -2026,11 +2001,7 @@ export default function App() {
             <div className="sidebar-brand-actions">
               <SidebarLayoutSwitcher />
               {!webShell && navigationLayout === "classic" && (
-                <DesktopAppActions
-                  onOpenFlowStudio={handleOpenFlowStudio}
-                  onOpenCalendar={openCalendar}
-                  openingFlowStudio={flowStudioOpening}
-                />
+                <DesktopAppActions onOpenCalendar={openCalendar} />
               )}
             </div>
           </div>
@@ -2286,10 +2257,12 @@ export default function App() {
 
                   {/* Sessions under this project — collapsible, scrollable when > 10 */}
                   <div style={{
-                    overflow: "hidden",
-                    maxHeight: isExpanded ? (mobileDrawer ? 100_000 : manySession ? 300 : 800) : 0,
+                    display: "grid",
+                    gridTemplateColumns: "minmax(0, 1fr)",
+                    gridTemplateRows: isExpanded ? "minmax(0, 1fr)" : "minmax(0, 0fr)",
+                    overflow: "clip",
                     opacity: isExpanded ? 1 : 0,
-                    transition: "max-height 0.45s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease",
+                    transition: "grid-template-rows 0.45s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease",
                   }}>
                     <div
                       className="sidebar-project-sessions"
@@ -2301,7 +2274,7 @@ export default function App() {
                           void loadSessions(project.id, { cursor: nextCursor });
                         }
                       }}
-                      style={{ display: "flex", flexDirection: "column", gap: 1, marginTop: 2, paddingLeft: 10, paddingBottom: 4, ...(manySession && !mobileDrawer ? { maxHeight: 280, overflowY: "auto" as const } : {}) }}
+                      style={{ display: "flex", flexDirection: "column", minHeight: 0, gap: 1, marginTop: 2, paddingLeft: 10, paddingBottom: 4, ...(manySession && !mobileDrawer ? { maxHeight: 280, overflowY: "auto" as const } : {}) }}
                     >
                       {projSessions.map((session) => renderProjectSession(session, project.id))}
                       {isProjectLoading && !hasLoadedProject && (
@@ -2543,13 +2516,13 @@ export default function App() {
       <AppActionNotice message={notice} type={noticeType} />
       <SessionCompletionTracker viewedSessionId={
         calendarOpen || hubOpen || sessionDashboardOpen || collaborationDashboardOpen || activeCollaboration
-          || flowStudioEntryUrl || pendingSessionNavigation ? null : selectedSessionId
+          || pendingSessionNavigation ? null : selectedSessionId
       } />
 
       <main className={`app-main${fileWorkspaceGateway ? " file-workspace-capable" : ""}${fileDrawerOpen && fileWorkspaceGateway ? " file-workspace-open" : ""}${fileDrawerOpen && fileWorkspaceGateway && filePreviewPath ? " file-workspace-preview-open" : ""}`} style={{
         flex: 1,
         minWidth: 0,
-        marginLeft: sidebarHidden && !flowStudioEntryUrl ? 56 : 0,
+        marginLeft: sidebarHidden ? 56 : 0,
         overflow: "hidden",
         background: "var(--bg-workspace)",
         position: "relative",
@@ -2587,7 +2560,7 @@ export default function App() {
             }}
           ><ChatView
             sidebarCollapsed={sidebarHidden}
-            onToggleSidebar={!mobileDrawer && !flowStudioEntryUrl ? () => {
+            onToggleSidebar={!mobileDrawer ? () => {
               if (layout === "focus") {
                 setLayout("standard");
                 if (sidebarCollapsed) toggleSidebar();
@@ -2635,7 +2608,7 @@ export default function App() {
             onOpenDesktopLive={!webShell && window.agentApi?.desktopLiveGetStatus ? () => setShowDesktopLive(true) : undefined}
             onHideToBackground={() => void hideToBackground()}
             onOpenHub={window.agentApi?.hubGetConfig ? () => { setCalendarOpen(false); setHubOpen(true); } : undefined}
-            headerAppActions={!webShell && navigationLayout !== "classic" ? <DesktopAppActions onOpenFlowStudio={handleOpenFlowStudio} onOpenCalendar={openCalendar} openingFlowStudio={flowStudioOpening} /> : undefined}
+            headerAppActions={!webShell && navigationLayout !== "classic" ? <DesktopAppActions onOpenCalendar={openCalendar} /> : undefined}
             onToggleAppearance={toggleAppearance}
             appearanceOpen={showAppearance}
             hideToBackgroundTitle={wakeEnabled ? `隐藏到后台（说“${wakeWord}”唤醒）` : "隐藏到后台"}
@@ -2753,13 +2726,6 @@ export default function App() {
             onSelectPath={setFilePreviewPath}
             onClose={() => setFileDrawerOpen(false)}
           /></Suspense>
-        )}
-
-        {flowStudioEntryUrl && (
-          <DesktopFlowStudioView
-            entryUrl={flowStudioEntryUrl}
-            onBack={() => setFlowStudioEntryUrl(null)}
-          />
         )}
 
         {/* modal moved to portal below */}

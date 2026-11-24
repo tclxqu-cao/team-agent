@@ -135,6 +135,15 @@ describe("agentStore session message cache", () => {
     ]);
   });
 
+  it("keeps streaming one reply when a pending goal sits at the end of the queue", () => {
+    const store = useAgentStore.getState();
+    store.setSessionId("visible");
+    store.appendText("first ", "visible");
+    store.addMessage({ id: "goal", role: "user", content: "next", isGoal: true, isQueued: true, timestamp: 1 }, "visible");
+    store.appendText("second", "visible");
+    expect(store.getMessagesForSession("visible").map(message => message.content)).toEqual(["first second", "next"]);
+  });
+
   it("keeps an explicit new session empty when the store identity is also empty", () => {
     const previous = [{ id: "old", role: "assistant" as const, content: "old history", timestamp: 1 }];
     const cache = { old: previous };

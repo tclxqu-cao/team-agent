@@ -132,7 +132,7 @@ describe("shared Electron and Web composer", () => {
     expect(chatView).toContain("await window.agentApi?.getSessionGoals(targetSessionId)");
     expect(chatView).toContain("if (state?.active)");
     expect(chatView).toContain("void startRun(nextQueued, targetSessionId)");
-    expect(chatView).toContain("message.isQueued && !message.queueItemId");
+    expect(chatView).toContain("message.isQueued && !message.isGoal && !message.queueItemId");
     expect(chatView).toContain("enqueueSessionMessage");
     expect(chatView).toContain("sessionSummary?.messageQueueVersion === 1");
     expect(chatView).toContain("reconcileDurableQueuedMessages(current, state)");

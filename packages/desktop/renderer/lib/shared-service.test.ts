@@ -56,9 +56,9 @@ describe("desktop SSE transport", () => {
     const device = { openExternal } as unknown as AgentApi;
 
     const agentApi = createSharedAgentApi(service, device);
-    await agentApi.openExternal!("https://flow.example/auth/entry?token=t&view=dh");
+    await agentApi.openExternal!("https://example.com/document");
 
-    expect(openExternal).toHaveBeenCalledWith("https://flow.example/auth/entry?token=t&view=dh");
+    expect(openExternal).toHaveBeenCalledWith("https://example.com/document");
   });
 
   it("keeps split-pane website operations on the local native view bridge", async () => {

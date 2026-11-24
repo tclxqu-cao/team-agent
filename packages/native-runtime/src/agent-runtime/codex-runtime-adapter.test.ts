@@ -815,7 +815,11 @@ describe("Codex reasoning mapping", () => {
         role: "assistant",
         content: "检查完成",
         historyId: "codex-trace:turn-1:agent:answer-1",
-        presentation: { agentMessagePhase: "final_answer", forkPoint: { turnId: "turn-1" } },
+        presentation: {
+          agentMessagePhase: "final_answer",
+          forkPoint: { turnId: "turn-1" },
+          nativeMessageId: "codex-trace:turn-1:agent:answer-1",
+        },
       },
     ]);
   });
@@ -3056,6 +3060,43 @@ describe("Codex native paged history", () => {
     const full = await adapter.getSessionPaged("cx-paged", { limit: 10 });
     expect(full.messages.filter((message) => message.role === "user").map((message) => message.content))
       .toEqual(["verify Windows plan"]);
+  });
+
+  it.each([false, true])("shares the native goal input across core and full history (repeated input: %s)", async (repeat) => {
+    const directory = await mkdtemp(join(tmpdir(), "codex-native-goal-input-"));
+    temporaryDirectories.push(directory);
+    const path = join(directory, "rollout.jsonl");
+    const earlierTurn = turn("earlier", 1);
+    const goalTurn = turn("goal-turn", 2);
+    const goal = "继续提交";
+    const inputs = ["goal-input", ...(repeat ? ["follow-up-input"] : [])].map(id => ({
+      type: "userMessage",
+      id,
+      content: [{ type: "text", text: goal, text_elements: [] }],
+    }));
+    goalTurn.items = [...inputs, ...goalTurn.items.filter(item => item.type !== "userMessage")];
+    await writeFile(path, [
+      { type: "thread_goal_updated", goal: { objective: goal, status: "active", createdAt: 10 } },
+      { type: "task_started", turn_id: goalTurn.id, turn_attribution: { turn_trigger: "goal" } },
+      ...inputs.map(item => ({ type: "item_completed", turn_id: goalTurn.id, item: { ...item, type: "UserMessage" } })),
+    ].map(payload => JSON.stringify({ type: "event_msg", payload })).join("\n") + "\n");
+    const adapter = new CodexRuntimeAdapter({
+      client: pagingClientFor([], { sourceTurns: [earlierTurn, goalTurn], threadPath: path }) as never,
+    });
+    const core = await adapter.getSessionPaged("cx-paged", { limit: 10, view: "core" });
+    const full = await adapter.getSessionPaged("cx-paged", { limit: 10 });
+    const visible = (messages: typeof core.messages) => messages.filter(message => (
+      message.role === "user" || message.role === "assistant" && !message.toolCalls?.length
+    ));
+    for (const page of [core, full]) {
+      expect(visible(page.messages).map(message => message.content))
+        .toEqual(["q-earlier", "s-earlier", ...inputs.map(() => goal), "s-goal-turn"]);
+      expect(page.history?.totalItems).toBe(4 + Number(repeat));
+      const goalInputs = page.messages.filter(message => message.role === "user" && message.content === goal);
+      expect(goalInputs.map(message => message.presentation?.isGoal)).toEqual([true, ...(repeat ? [undefined] : [])]);
+    }
+    expect(visible(full.messages).map(message => message.historyId))
+      .toEqual(visible(core.messages).map(message => message.historyId));
   });
 
   it("restores every durable user message when Codex steers input into one turn", async () => {

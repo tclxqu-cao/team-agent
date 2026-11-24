@@ -32,9 +32,10 @@ export interface DurableQueuedMessageLike extends UserMessageLike {
   queueItemId?: string;
   isSteering?: boolean;
   isSteered?: boolean;
+  isGoal?: boolean;
   sourceMessageId?: string;
   awaitingHistory?: boolean;
-  presentation?: Pick<MessagePresentation, "executionTrace" | "forkPoint">;
+  presentation?: Pick<MessagePresentation, "executionTrace" | "forkPoint" | "isGoal">;
 }
 
 export interface MixedQueueStateLike<T extends DurableQueueItemLike> {
@@ -90,6 +91,7 @@ function findActiveNativeInput(
   history: DurableQueuedMessageLike[],
   activeItem: DurableQueueItemLike,
   activeMessageId: string,
+  isGoal = false,
 ): number {
   const latestNativeUserIndex = history.findLastIndex((message) => (
     message.role === "user" && message.presentation?.executionTrace
@@ -108,6 +110,7 @@ function findActiveNativeInput(
     message.role === "user"
     && message.presentation?.executionTrace?.turnId === turnId
     && (message.presentation.executionTrace.segmentIndex ?? 0) === 0
+    && Boolean(message.presentation.isGoal) === isGoal
     && message.content === activeItem.objective
     && (message.agentName === undefined || message.agentName === activeItem.messagePayload?.agentName)
   ));
@@ -221,12 +224,33 @@ export function reconcileDurableQueuedMessages<T extends DurableQueuedMessageLik
     });
   const confirmedIds = new Set([state.active, ...state.queued, ...state.history]
     .flatMap(item => item ? [item.id, item.sourceMessageId].filter(Boolean) : []));
+  const queuedGoalSources = new Set(state.queued.filter(item => item.kind !== "message")
+    .map(item => item.sourceMessageId || item.id));
+  const activeGoal = state.active?.kind !== "message" ? state.active : null;
+  const pendingGoals = messages.filter(message => message.isGoal && message.isQueued);
+  const promotedGoal = pendingGoals.find(message => message.id === (activeGoal?.sourceMessageId || activeGoal?.id));
+  if (activeGoal && promotedGoal && findActiveNativeInput(history, activeGoal, promotedGoal.id, true) < 0) {
+    history.push({
+      ...promotedGoal,
+      content: activeGoal.objective,
+      isQueued: false,
+      awaitingHistory: true,
+    });
+  }
+  const steeredGoalSources = new Set(state.history.filter(item => item.kind !== "message" && item.lastReason === "steered")
+    .map(item => item.sourceMessageId || item.id));
+  for (const message of pendingGoals) {
+    if (steeredGoalSources.has(message.id)) {
+      history = markDurableMessageSteered([...history, message], message.id);
+    }
+  }
   // Steering consumes the broker queue before its HTTP acknowledgement reaches
   // the renderer. Keep that input until the steering request settles locally.
-  const unconfirmed = messages.filter(message => message.isQueued && (!message.queueItemId || message.isSteering)
+  const unconfirmed = messages.filter(message => message.isQueued && !message.isGoal && (!message.queueItemId || message.isSteering)
     && !confirmedIds.has(message.id) && !confirmedIds.has(message.queueItemId)
     && !history.some(candidate => candidate.id === message.id));
-  return [...history, ...queued, ...unconfirmed];
+  const waitingGoals = pendingGoals.filter(message => queuedGoalSources.has(message.id) || !confirmedIds.has(message.id));
+  return [...history, ...queued, ...unconfirmed, ...waitingGoals];
 }
 
 export function queuedSessionMessages<T extends DurableQueueItemLike>(

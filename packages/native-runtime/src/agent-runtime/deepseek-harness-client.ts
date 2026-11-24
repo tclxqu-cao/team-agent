@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import WebSocket from "ws";
 import { discoverHarnessEndpoint, type HarnessEndpoint, type HarnessEndpointResolver } from "./deepseek-harness-endpoint.js";
 import { AsyncEventQueue } from "./async-event-queue.js";
+import { resolveNativeCliCommand } from "./native-cli-command.js";
 import { RuntimeSessionError } from "./types.js";
 
 export type HarnessRecord = Record<string, unknown>;
@@ -126,8 +127,14 @@ export class DeepSeekHarnessClient implements HarnessConnection {
         const installed = "/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh";
         try { await access(installed); executable = installed; } catch { /* Use the npm-installed launcher. */ }
       }
-      const child = spawn(executable || "dsh", ["web", "--host", "127.0.0.1", "--port", "0", "--no-open"], {
-        env: environment, stdio: ["ignore", "pipe", "pipe"],
+      const launch = process.platform === "win32"
+        ? await resolveNativeCliCommand("deepseek-harness", {
+          env: { ...environment, AGENT_DSH_EXECUTABLE: executable },
+        })
+        : { command: executable || "dsh", args: [], env: {} };
+      if (this.disposed) throw new RuntimeSessionError("DeepSeek Harness 连接已关闭", "RUNTIME_UNAVAILABLE");
+      const child = spawn(launch.command, [...(launch.args ?? []), "web", "--host", "127.0.0.1", "--port", "0", "--no-open"], {
+        env: { ...environment, ...launch.env }, stdio: ["ignore", "pipe", "pipe"], windowsHide: true,
       });
       this.child = child;
       rawUrl = await new Promise<string>((resolve, reject) => {

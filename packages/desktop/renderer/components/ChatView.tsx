@@ -2609,7 +2609,7 @@ export default function ChatView({
 
           const nextQueued = useAgentStore.getState()
             .getMessagesForSession(targetSessionId)
-            .find((message) => message.isQueued && !message.queueItemId);
+            .find((message) => message.isQueued && !message.isGoal && !message.queueItemId);
           if (!nextQueued) {
             if (runningSessionRef.current === targetSessionId) runningSessionRef.current = null;
             if (useAgentStore.getState().runningSessionId === targetSessionId) setRunningSession(null);
@@ -2794,16 +2794,23 @@ export default function ChatView({
               messagePhase: "commentary",
             }, eventSid);
           } else {
-            if (eventSid && event.turnId && event.itemId && !event.messagePhase && historyAgentType(eventSid) === "codex") {
+            if (eventSid && event.turnId && event.itemId && historyAgentType(eventSid) === "codex") {
               const id = `codex-trace:${event.turnId}:agent:${event.itemId}`;
               const current = getMessagesForSession(eventSid);
-              const inTrace = current.some(message => message.executionTrace?.liveMessages?.some(item => item.id === id));
+              const existing = current.find(message => message.id === id);
+              const inTrace = !event.messagePhase && current.some(message => message.executionTrace?.liveMessages?.some(item => item.id === id));
               if (inTrace) {
                 applyCodexExecutionEvent(event.turnId, { type: "text_chunk", text: event.text, turnId: event.turnId, itemId: event.itemId, messagePhase: "commentary" }, eventSid);
-              } else if (current.some(message => message.id === id)) {
-                updateMessage(id, message => ({ ...message, content: message.content + event.text }), eventSid);
+              } else if (existing) {
+                // A replay can arrive after history has restored the complete item.
+                if (existing.presentation?.nativeMessageId !== id) {
+                  updateMessage(id, message => ({ ...message, content: message.content + event.text }), eventSid);
+                }
               } else {
-                addMessage({ id, role: "assistant", content: event.text, timestamp: Date.now() }, eventSid);
+                addMessage({
+                  id, role: "assistant", content: event.text, timestamp: Date.now(),
+                  ...(event.messagePhase ? { presentation: { agentMessagePhase: event.messagePhase } } : {}),
+                }, eventSid);
               }
             } else {
               appendText(event.text, eventSid);
@@ -3089,7 +3096,7 @@ export default function ChatView({
         clearRuntimeProgress(eventSid);
         // Only clear running state here if no queued messages — otherwise
         // startRun's finally block will chain the next run seamlessly.
-        if (eventSid && !getMessagesForSession(eventSid).some(m => m.isQueued)) {
+        if (eventSid && !getMessagesForSession(eventSid).some(m => m.isQueued && !m.isGoal)) {
           if (runningSessionRef.current === eventSid) runningSessionRef.current = null;
           if (useAgentStore.getState().runningSessionId === eventSid) setRunningSession(null);
         }
@@ -3662,7 +3669,7 @@ export default function ChatView({
   };
 
   const moveQueuedMessageByKeyboard = (msgId: string, direction: -1 | 1) => {
-    const queued = useAgentStore.getState().messages.filter((message) => message.isQueued);
+    const queued = useAgentStore.getState().messages.filter((message) => message.isQueued && !message.isGoal);
     const currentIndex = queued.findIndex((message) => message.id === msgId);
     const target = queued[currentIndex + direction];
     if (target) void reorderQueuedMessage(msgId, target.id);
@@ -3873,7 +3880,7 @@ export default function ChatView({
       // Check for next queued message (skip if user aborted)
       const nextQueued = !abortRef.current
         ? useAgentStore.getState().getMessagesForSession(targetSessionId).find(
-            (message) => message.isQueued && !message.queueItemId,
+            (message) => message.isQueued && !message.isGoal && !message.queueItemId,
           )
         : undefined;
       if (nextQueued) {
@@ -4260,6 +4267,7 @@ export default function ChatView({
               timestamp: Date.now(),
               agentName: agentNamesLabel,
               images: imagesToSend,
+              isQueued: true,
               isGoal: true,
               goalId: sourceMessageId,
             }, id);
@@ -4808,6 +4816,7 @@ export default function ChatView({
           const isUser = msg.role === "user";
           const isGoalMessage = isUser && (
             chatMsg.isGoal === true
+            || chatMsg.presentation?.isGoal === true
             || [goalState.active, ...goalState.queued, ...goalState.history]
               .some((goal) => Boolean(goal && normalizeGoalMessageText(goal.objective) === normalizeGoalMessageText(msg.content)))
           );
@@ -5722,7 +5731,7 @@ export default function ChatView({
 
         {/* Queued messages — shown above input when agent is running */}
         {(() => {
-          const queuedMsgs = visibleMessages.filter(m => m.isQueued);
+          const queuedMsgs = visibleMessages.filter(m => m.isQueued && !m.isGoal);
           if (queuedMsgs.length === 0) return null;
           return (
             <div className="queued-message-list">

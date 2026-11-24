@@ -284,10 +284,12 @@ function addMessageToList(messages: ChatMessage[], msg: ChatMessage): ChatMessag
 
 function appendTextToList(messages: ChatMessage[], text: string): ChatMessage[] {
   if (!text) return messages;
-  const lastMsg = messages[messages.length - 1];
+  let lastIndex = messages.length - 1;
+  while (messages[lastIndex]?.isGoal && messages[lastIndex]?.isQueued) lastIndex -= 1;
+  const lastMsg = messages[lastIndex];
   if (canAppendAssistantOutput(lastMsg)) {
     const updated = [...messages];
-    updated[updated.length - 1] = { ...lastMsg, content: lastMsg.content + text };
+    updated[lastIndex] = { ...lastMsg, content: lastMsg.content + text };
     return updated;
   }
   return [
