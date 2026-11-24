@@ -23,6 +23,8 @@ export function affectedPackages(path) {
     || /^packages\/(?:runtime-[^/]+\/runtime|cloudflared-[^/]+\/vendor)(?:\/|$)/.test(path)) return [];
   if (path.startsWith("packages/server/native/remote-helper-windows/") || path === "scripts/build-windows-remote-helper.mjs") return [names[1]];
   if (path.startsWith("packages/server/native/remote-helper/") || path === "packages/desktop/native/desktop-input.swift") return [names[0]];
+  // The mesh harness ships nowhere, and the Tailscale builder only affects its own binary packages.
+  if (["scripts/e2e-mesh.mjs", "scripts/build-tailscale-platform-package.mjs"].includes(path)) return [];
   // Publication orchestration and audits do not enter npm runtime contents.
   if (["scripts/incremental-cli-release.mjs", "scripts/agentroam-release-lib.mjs", "scripts/publish-agentroam-release.mjs", "scripts/agent-runtime-upgrade-lib.mjs", "scripts/collect-cli-artifacts.mjs", "scripts/verify-cli-install.mjs"].includes(path)
     || /^scripts\/audit-/.test(path)) return [];
