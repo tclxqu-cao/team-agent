@@ -126,7 +126,10 @@ export async function runServiceCommand(options: CliOptions, context: ServiceCom
       if (options.desktopSetup && ["darwin", "win32"].includes(platform)) {
         await withCliProgress("Configuring Codex Desktop sharing", () => (context.desktopSetup ?? setupCodexDesktop)(options, { platform, environment, service: config, log }));
       }
-      await (context.pairingPrinter ?? printPairingCode)(options.dataDir, log, { accessUrl: state.accessUrl, qr: options.qr, interactive: stdoutIsTTY });
+      await (context.pairingPrinter ?? printPairingCode)(options.dataDir, log, {
+        fallbackUrl: state.accessUrl, waitForMesh: Boolean(environment.AGENTROAM_MESH_ACTIVATION_CODE?.trim()),
+        qr: options.qr, interactive: stdoutIsTTY,
+      });
       return;
     }
     case "start": {

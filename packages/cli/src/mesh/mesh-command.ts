@@ -29,7 +29,7 @@ async function printStatus(options: MeshCommandOptions): Promise<void> {
     hostname: string | null; tailnetIPv4: string | null; dnsName: string | null;
     user: string | null; joinedAt: string | null; lastError: string | null;
   }>(options.dataDir, "/api/mesh/status");
-  console.log(`控制面：${status.configured ? status.controlPlaneUrl : "未配置（设置 AGENT_HEADSCALE_URL / AGENT_HEADSCALE_API_KEY 后重启服务）"}`);
+  console.log(`控制面：${status.configured ? status.controlPlaneUrl : "未配置（使用一次性激活码启动，或配置自管 Headscale 后重启服务）"}`);
   console.log(`状态：${status.phase}${status.lastError ? `（${status.lastError}）` : ""}`);
   if (status.hostname) console.log(`设备：${status.hostname}`);
   if (status.tailnetIPv4) console.log(`Tailnet IP：${status.tailnetIPv4}`);
@@ -60,5 +60,5 @@ async function printJoinQr(options: MeshCommandOptions): Promise<void> {
   console.log(`\n控制面地址：${issued.loginServer}`);
   console.log(`认证 key：${issued.authkey}`);
   console.log("在 Tailscale 客户端选择自定义控制面，使用以上认证 key 注册设备。");
-  console.log(`入网后生成 AgentRoam App 授权码：agentroam pair --url ${issued.accessUrl}`);
+  console.log(`入网后生成 AgentRoam App 授权码：agentroam pair`);
 }

@@ -9,6 +9,7 @@ export interface MobilePairingInvitation {
   svg: string;
   origin: string;
   pairingUrl: string;
+  viaMesh?: boolean;
   expiresAt: number;
 }
 

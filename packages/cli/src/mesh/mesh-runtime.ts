@@ -30,7 +30,7 @@ export function createMeshRuntime({ dataDir, localUrl, target, log }: MeshRuntim
     const state = await request<MeshState>("status");
     if (!state.configured) {
       if (automatic) return;
-      throw new Error("请先配置 Headscale 控制面和 API key，再重启 AgentRoam");
+      throw new Error("请先用激活码配置组网并重启 AgentRoam");
     }
     if (automatic && state.phase === "offboarded") return;
     if (action === "offboard" && state.phase === "offboarded") return;

@@ -36,12 +36,12 @@ export function pairingQrPayload(accessUrl: string, grant: string): string {
   return `${url.origin}/pair#pair=${grant}`;
 }
 
-export async function printPairingCode(dataDir: string, log: (line: string) => void = console.log, options: { interactive?: boolean; signal?: AbortSignal; accessUrl?: string; qr?: boolean } = {}): Promise<void> {
+export async function printPairingCode(dataDir: string, log: (line: string) => void = console.log, options: { interactive?: boolean; signal?: AbortSignal; accessUrl?: string; fallbackUrl?: string; waitForMesh?: boolean; qr?: boolean } = {}): Promise<void> {
   const result = await withCliProgress("Generating device pairing code", () => pairingAdmin<PairingCode>(dataDir, "code"));
   log(`Pairing code: ${result.code.slice(0, 4)} ${result.code.slice(4)}`);
   log("Valid for 5 minutes, single use. After entering it on your phone, confirm the verification phrase on this computer.");
   if ((options.qr ?? true) && (options.interactive ?? process.stdout.isTTY)) {
-    const accessUrl = options.accessUrl ?? await readFile(join(dataDir, "tunnel.url"), "utf8").then((value) => value.trim(), () => null);
+    const accessUrl = await resolvePairingAccessUrl(dataDir, options);
     if (accessUrl) {
       // Validate the public address before minting an invitation. Never persist the grant.
       pairingQrPayload(accessUrl, "a".repeat(43));
@@ -57,6 +57,19 @@ export async function printPairingCode(dataDir: string, log: (line: string) => v
   if (approvalInput) {
     await withCliProgress("Waiting for your phone to scan or enter the pairing code", () => watchPairingApproval(dataDir, result.expiresAt, { log, signal: options.signal, input: approvalInput }));
   } else log("View requests: agentroam approvals; approve: agentroam approve <request-id> --phrase <phone-verification-phrase>");
+}
+
+export async function resolvePairingAccessUrl(dataDir: string, options: { accessUrl?: string; fallbackUrl?: string; waitForMesh?: boolean; signal?: AbortSignal } = {}): Promise<string | null> {
+  if (options.accessUrl !== undefined) return options.accessUrl;
+  const readMesh = () => localServiceRequest<{ phase: string; accessUrl?: string }>(dataDir, "/api/mesh/status", { signal: options.signal }).catch(() => null);
+  const deadline = Date.now() + 20_000;
+  let mesh = await readMesh();
+  while (options.waitForMesh && mesh?.phase === "ready" && Date.now() < deadline) {
+    await delay(400, undefined, { signal: options.signal });
+    mesh = await readMesh();
+  }
+  if (mesh?.phase === "joined" && mesh.accessUrl) return mesh.accessUrl;
+  return options.fallbackUrl ?? await readFile(join(dataDir, "tunnel.url"), "utf8").then(value => value.trim(), () => null);
 }
 
 /** Open the controlling terminal (`/dev/tty`) — the same source install-agentroam.sh reads from. */
