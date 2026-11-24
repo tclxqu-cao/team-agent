@@ -1,15 +1,9 @@
+import type { OpenVideoWindowOptions } from "../../shared/src/contracts/agent-api.js";
+export type { OpenVideoWindowOptions } from "../../shared/src/contracts/agent-api.js";
 import { createHash } from "node:crypto";
 import type { FileWorkspacePreviewTicket } from "@agent/core";
 import type { BrowserWindow } from "electron";
 import type { DesktopFileWorkspaceService } from "./file-workspace-service.js";
-
-export interface OpenVideoWindowOptions {
-  source: string;
-  remote: boolean;
-  title: string;
-  currentTime: number;
-  playing: boolean;
-}
 
 const playerScript = String.raw`
   const video = document.querySelector("video");

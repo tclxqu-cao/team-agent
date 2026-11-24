@@ -4,7 +4,7 @@ import { registerTaskPanePageIpc, taskPanePageId, taskPanePageRect, taskPanePage
 describe("task pane native website boundaries", () => {
   it("accepts only pane identifiers, http URLs and finite visible bounds", () => {
     expect(taskPanePageId("a-b_123")).toBe("task-pane-a-b_123");
-    expect(taskPanePageId("../flow-studio")).toBeNull();
+    expect(taskPanePageId("../task-pane-left")).toBeNull();
     expect(taskPanePageId("")).toBeNull();
     expect(taskPanePageUrl("https://example.com")).toBe("https://example.com/");
     expect(taskPanePageUrl("javascript:alert(1)")).toBeNull();

@@ -5,7 +5,7 @@ import { RefreshCw, UsersRound } from "lucide-react";
 import { readCollaborationContentReady } from "../../../core/src/domain/web-console/CollaborationTabBridge";
 import { SESSION_DASHBOARD_READY } from "../../../core/src/domain/web-console/SessionDashboardBridge";
 import FlowStudioLoading from "./FlowStudioLoading";
-import { consoleFrameUrl } from "./console-environment";
+import { consoleFrameUrl } from "../../../shared/src/console/console-environment";
 
 /** Shell presentation: keep the shared loader visible until collaboration content is ready. */
 export default function CollaborationPane({ groupId, title, onFrame, onLoad, view, discussionId }: {

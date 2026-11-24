@@ -921,86 +921,6 @@ select:focus {
   color: var(--text-muted);
 }
 
-.desktop-app-action-spinner,
-.desktop-flow-studio-spinner {
-  animation: spin 0.9s linear infinite;
-}
-
-.desktop-flow-studio-view {
-  position: absolute;
-  inset: 0;
-  z-index: 200;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  background: var(--bg-workspace);
-}
-
-.desktop-flow-studio-topbar {
-  height: 52px;
-  flex: 0 0 52px;
-  display: flex;
-  align-items: center;
-  padding: 0 14px 0 78px;
-  border-bottom: 1px solid var(--border-subtle);
-  background: var(--bg-surface);
-  -webkit-app-region: drag;
-}
-
-.desktop-flow-studio-back {
-  width: 32px;
-  height: 32px;
-  border: 1px solid var(--border-default);
-  border-radius: 7px;
-  background: var(--bg-glass);
-  color: var(--text-primary);
-  box-shadow: var(--shadow-sm);
-  backdrop-filter: blur(10px);
-  -webkit-app-region: no-drag;
-}
-
-.desktop-flow-studio-content {
-  position: relative;
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-  background: var(--bg-workspace);
-}
-
-.desktop-flow-studio-status {
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  color: var(--text-secondary);
-  background: var(--bg-workspace);
-  letter-spacing: 0;
-}
-
-.desktop-flow-studio-status strong {
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.desktop-flow-studio-retry {
-  min-height: 32px;
-  padding: 0 10px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  border: 1px solid var(--border-default);
-  border-radius: 6px;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-  letter-spacing: 0;
-}
-
 .agent-workspace-switcher {
   min-height: 38px;
   margin: 2px 14px 8px;
@@ -1288,9 +1208,8 @@ select:focus {
   white-space: nowrap;
 }
 
-.sidebar-child-sessions {
-  overflow: hidden;
-  transition: max-height 0.3s var(--ease-out), opacity 0.2s var(--ease-out);
+.sidebar-session-children .sidebar-session-children {
+  margin-inline-start: 14px;
 }
 
 .sidebar-session-row--child {
@@ -1331,6 +1250,11 @@ select:focus {
   transform: rotate(90deg);
 }
 
+.sidebar-session-toggle {
+  flex: none;
+  color: var(--text-secondary);
+}
+
 @media (hover: none) {
   .sidebar-project-add-action,
   .sidebar-session-pin,
@@ -1363,6 +1287,10 @@ select:focus {
 
 .sidebar-status-dot.is-completed {
   --sidebar-status-color: var(--accent);
+}
+
+.sidebar-status-dot.is-unread-completion {
+  --sidebar-status-color: color-mix(in srgb, var(--warning) 85%, var(--text-primary));
 }
 
 .sidebar-status-dot.is-running {
@@ -2075,6 +2003,8 @@ select:focus {
   cursor: grabbing;
 }
 
+.queued-message-grip.session-goal-marker { color: var(--accent); cursor: default; touch-action: auto; }
+
 @media (hover: hover) {
   .queued-message-row:hover { background: var(--control-hover); }
   .queued-message-grip:hover { color: var(--text-primary); }
@@ -2773,6 +2703,11 @@ input:focus, select:focus, textarea:focus {
   margin-top: 8px;
 }
 
+.chat-message-image {
+  min-width: 0;
+  max-width: 100%;
+}
+
 .chat-message-image-button {
   display: block;
   min-width: 0;
@@ -2798,6 +2733,7 @@ input:focus, select:focus, textarea:focus {
   border: 1px solid var(--border-subtle);
   border-radius: 6px;
   cursor: zoom-in;
+  -webkit-touch-callout: default;
 }
 
 .chat-message-attachment-unavailable {
@@ -2870,6 +2806,7 @@ input:focus, select:focus, textarea:focus {
   object-fit: contain;
   user-select: none;
   -webkit-user-drag: none;
+  -webkit-touch-callout: default;
 }
 
 .chat-message-image-placeholder {
@@ -5010,6 +4947,19 @@ input:focus, select:focus, textarea:focus {
 }
 
 @media (hover: hover) and (pointer: fine) {
+  .app-sidebar .sidebar-project-row,
+  .app-sidebar .sidebar-project-row > button.sidebar-project-button {
+    min-height: 38px;
+  }
+
+  .app-sidebar .sidebar-project-row > button.sidebar-project-button {
+    padding-block: 7px !important;
+  }
+
+  .app-sidebar .sidebar-project-row > .ui-icon-button--small {
+    height: 36px;
+  }
+
   .app-sidebar .sidebar-session-row {
     min-height: 34px;
   }

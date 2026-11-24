@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { copyTextToClipboard, readTextFromClipboard } from "./clipboard";
+import { copyTextToClipboard, readTextFromClipboard } from "../../../shared/src/browser/clipboard";
 
 function stubSelectionCopy(result = true) {
   const textarea = {
@@ -27,7 +27,6 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
-
 describe("readTextFromClipboard", () => {
   it("reads the current clipboard exactly, preserving URL encoding and whitespace", async () => {
     const text = "  http://localhost:3001/中文?q=a%20b\n";

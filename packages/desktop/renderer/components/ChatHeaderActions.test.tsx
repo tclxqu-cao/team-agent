@@ -64,23 +64,21 @@ describe("chat header action layout", () => {
       onHideToBackground: noop, onToggleAppearance: noop, onOpenSettings: noop,
       onOpenSessionDashboard: noop, onOpenTaskSplit: noop };
     const desktop = renderToStaticMarkup(createElement(ChatHeaderActions, props));
-    expect(desktop).toContain('aria-label="打开任务分屏"');
+    expect(desktop).toMatch(/aria-label="打开任务分屏"[^>]*><svg[^>]*class="[^"]*lucide-columns2/);
     expect(desktop).toContain('aria-label="打开进行中的 Agent 会话"');
     state.webShell = true;
     expect(renderToStaticMarkup(createElement(ChatHeaderActions, props))).toContain('aria-label="打开任务分屏"');
     expect(renderToStaticMarkup(createElement(ChatHeaderActions, { ...props, onOpenTaskSplit: undefined }))).not.toContain('aria-label="打开任务分屏"');
   });
 
-  it("keeps desktop quick actions in the same menu with their busy state", () => {
+  it("includes the desktop calendar in the shared action menu", () => {
     state.navigationLayout = "agent-rail";
     const html = renderToStaticMarkup(createElement(ChatHeaderActions, {
       appearanceOpen: false, settingsOpen: false,
       onHideToBackground: noop, onToggleAppearance: noop, onOpenSettings: noop,
-      appActions: createElement(DesktopAppActions, { onOpenFlowStudio: noop, openingFlowStudio: true }),
+      appActions: createElement(DesktopAppActions, { onOpenCalendar: noop }),
     }));
     expect(html.match(/header-action-menu-trigger/g)).toHaveLength(1);
-    expect(html).toContain('aria-label="打开 Flow Studio"');
-    expect(html).toContain('aria-busy="true"');
-    expect(html).toContain('disabled=""');
+    expect(html).toContain('aria-label="打开日历"');
   });
 });

@@ -1,10 +1,10 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-const pageSource = readFileSync(new URL("./page.tsx", import.meta.url), "utf8") + readFileSync(new URL("./console-styles.ts", import.meta.url), "utf8");
-const authGateSource = readFileSync(new URL("./AuthGate.tsx", import.meta.url), "utf8") + readFileSync(new URL("./WorkspaceBoot.tsx", import.meta.url), "utf8");
+const pageSource = readFileSync(new URL("./page.tsx", import.meta.url), "utf8") + readFileSync(new URL("../../../shared/src/console/console-styles.ts", import.meta.url), "utf8");
+const authGateSource = readFileSync(new URL("./AuthGate.tsx", import.meta.url), "utf8") + readFileSync(new URL("../../../shared/src/console/WorkspaceBoot.tsx", import.meta.url), "utf8");
 const routeLayoutSource = readFileSync(new URL("./layout.tsx", import.meta.url), "utf8");
-const bootCss = readFileSync(new URL("./neural-boot.css", import.meta.url), "utf8");
+const bootCss = readFileSync(new URL("../../../shared/src/console/neural-boot.css", import.meta.url), "utf8");
 const rootLayoutSource = readFileSync(new URL("../layout.tsx", import.meta.url), "utf8");
 const webappMainSource = readFileSync(new URL("../../../webapp/src/main.tsx", import.meta.url), "utf8");
 const sharedCss = readFileSync(new URL("../../../desktop/renderer/styles/global.css", import.meta.url), "utf8");
@@ -33,7 +33,7 @@ describe("webapp shell loading state", () => {
   });
 
   it("uses one skin-aware boot surface from server render through workspace readiness", () => {
-    expect(routeLayoutSource).toContain('import "./neural-boot.css"');
+    expect(routeLayoutSource).toContain('import "../../../shared/src/console/neural-boot.css"');
     expect(routeLayoutSource).toContain("webConsoleStore.getPreferences(userId)?.theme");
     expect(routeLayoutSource).toContain('id="web-theme-root"');
     expect(pageSource).toContain('document.getElementById("web-theme-root")?.dataset.webTheme');

@@ -7,7 +7,7 @@ const { app, BrowserWindow, ipcMain, dialog, Menu, nativeImage, session, shell, 
 import { spawn, type ChildProcess } from "node:child_process";
 import { basename, delimiter, join, resolve } from "node:path";
 import { homedir } from "node:os";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { readFile, writeFile } from "node:fs/promises";
 import { existsSync, statSync } from "node:fs";
 import { installGlobalLogging } from "@agent/core";
@@ -39,8 +39,12 @@ import { createDesktopNotificationSound } from "./notification-sound.js";
 import { DesktopNotificationSubscription } from "./notification-subscription.js";
 import { resolveTaskNotificationPreferences, type TaskCompletionNotification } from "@agent/core";
 import { directoryOpenMenuLabel, revealDirectoryWithShell, resolveDirectoryForOpen } from "./directory-context-menu.js";
-import { fileContextMenuActions } from "./file-context-menu.js";
+import { fileContextMenuActions, resolveArtifactTarget } from "./file-context-menu.js";
+import { installImageContextMenu } from "./image-context-menu.js";
 import { createDesktopPreviewResponse, DesktopFileWorkspaceService } from "./file-workspace-service.js";
+import { ArtifactBrowserPreview } from "./artifact-browser-preview.js";
+import { artifactApplicationPicker, artifactOpenChoices, launchArtifactApplication } from "./artifact-open-with.js";
+import { supportsArtifactBrowserPreview } from "../shared/artifact-preview-types.js";
 import { AIHubManager, type HubPaneRect } from "./ai-hub/manager.js";
 import { registerTaskPanePageIpc } from "./task-pane-pages.js";
 import { normalizeRelayImages, startAiHubRelay, type AiHubRelay } from "./ai-hub/relay.js";
@@ -103,6 +107,9 @@ if (!gotLock) {
 }
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
+const rendererEntryFile = join(__dirname, "../../renderer-dist/index.html");
+const rendererDevUrl = `http://localhost:${process.env.VITE_PORT ?? "5173"}/`;
+const useRendererDevServer = process.env.NODE_ENV !== "production" && !app.isPackaged;
 let mainWindow: import("electron").BrowserWindow | null = null;
 const taskCompletionNotifier = new DesktopTaskCompletionNotifier(
   Notification,
@@ -135,13 +142,9 @@ const aiHubManager = new AIHubManager({
   chromeBridge: chromeHubBridge,
   requestBrowserLogin: (siteId) => { void openAiHubInChrome(siteId).catch(() => {}); },
 });
-const FLOW_STUDIO_PAGE_ID = "flow-studio";
 registerTaskPanePageIpc(ipcMain, aiHubManager, () => mainWindow);
 aiHubManager.subscribe((event) => {
   mainWindow?.webContents.send("hub:event", event);
-  if (event.siteId === FLOW_STUDIO_PAGE_ID) {
-    mainWindow?.webContents.send("flow-studio:event", event);
-  }
 });
 // AI Hub 中继：供 :3000 server（web 控制台）转发发送请求，由桌面端注入已登录页面
 let aiHubRelay: AiHubRelay | null = null;
@@ -196,6 +199,7 @@ const fileWorkspaceService = new DesktopFileWorkspaceService({
     }
   },
 });
+const artifactBrowserPreview = new ArtifactBrowserPreview(fileWorkspaceService);
 const trustedServiceSender = (event: import("electron").IpcMainInvokeEvent) => {
   rendererWindows.assertSender(event);
 };
@@ -324,6 +328,7 @@ function createWindow(): void {
   });
   const window = mainWindow;
   rendererWindows.register(window);
+  installImageContextMenu(window, Menu.buildFromTemplate);
   // 渲染进程崩溃与消失严格落盘(按天错误日志)。
   window.webContents.on("render-process-gone", (_event, details) => {
     globalLogger.error("renderer process gone", undefined, {
@@ -338,13 +343,11 @@ function createWindow(): void {
     if (mainWindow === window) mainWindow = null;
   });
 
-  const port = process.env.VITE_PORT ?? "5173";
-  const isDev = process.env.NODE_ENV !== "production" && !app.isPackaged;
-  if (isDev) {
-    mainWindow.loadURL(`http://localhost:${port}`);
+  if (useRendererDevServer) {
+    mainWindow.loadURL(rendererDevUrl);
     mainWindow.webContents.openDevTools();
   } else {
-    mainWindow.loadFile(join(__dirname, "../../renderer-dist/index.html"));
+    mainWindow.loadFile(rendererEntryFile);
   }
 }
 
@@ -372,15 +375,15 @@ ipcMain.handle("window:new-session", async (event, options: unknown) => {
     },
   });
   rendererWindows.register(window);
+  installImageContextMenu(window, Menu.buildFromTemplate);
   // This renderer owns IPC capabilities; links must never replace it with a remote page.
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   window.webContents.on("will-navigate", event => event.preventDefault());
   window.webContents.on("will-redirect", event => event.preventDefault());
   window.once("ready-to-show", () => { if (!window.isDestroyed()) { window.show(); window.focus(); } });
   try {
-    const isDev = process.env.NODE_ENV !== "production" && !app.isPackaged;
-    if (isDev) await window.loadURL(`http://localhost:${process.env.VITE_PORT ?? "5173"}/?${new URLSearchParams(query)}`);
-    else await window.loadFile(join(__dirname, "../../renderer-dist/index.html"), { query });
+    if (useRendererDevServer) await window.loadURL(`${rendererDevUrl}?${new URLSearchParams(query)}`);
+    else await window.loadFile(rendererEntryFile, { query });
   } catch (error) {
     if (!window.isDestroyed()) window.destroy();
     throw error;
@@ -443,39 +446,6 @@ ipcMain.handle("hub:hide-all", () => aiHubManager.setBounds([]));
 ipcMain.handle("hub:set-bounds", (_event, panes: HubPaneRect[]) => aiHubManager.setBounds(panes));
 ipcMain.handle("hub:reload", (_event, siteId: string, conversationId?: string) => aiHubManager.reloadSite(siteId, conversationId));
 ipcMain.handle("hub:broadcast", (_event, text: string, siteIds: string[], images: unknown = []) => aiHubManager.broadcast(text, siteIds, normalizeRelayImages(images)));
-
-// Flow Studio 与 AI Hub 共用 WebContentsView 池，但不进入 AI Hub 配置、布局和广播。
-ipcMain.handle("flow-studio:open", async (_event, rawUrl: unknown) => {
-  if (typeof rawUrl !== "string") return { ok: false };
-  try {
-    await aiHubManager.openEmbeddedPage(FLOW_STUDIO_PAGE_ID, rawUrl);
-    return { ok: true };
-  } catch {
-    return { ok: false };
-  }
-});
-ipcMain.handle("flow-studio:set-bounds", (_event, rawRect: unknown) => {
-  if (rawRect === null) {
-    aiHubManager.setEmbeddedPageBounds(FLOW_STUDIO_PAGE_ID, null);
-    return { ok: true };
-  }
-  if (!rawRect || typeof rawRect !== "object") return { ok: false };
-  const rect = rawRect as Record<string, unknown>;
-  if (![rect.x, rect.y, rect.width, rect.height].every((value) => typeof value === "number" && Number.isFinite(value))) {
-    return { ok: false };
-  }
-  aiHubManager.setEmbeddedPageBounds(FLOW_STUDIO_PAGE_ID, {
-    x: rect.x as number,
-    y: rect.y as number,
-    width: rect.width as number,
-    height: rect.height as number,
-  });
-  return { ok: true };
-});
-ipcMain.handle("flow-studio:reload", () => {
-  aiHubManager.reloadEmbeddedPage(FLOW_STUDIO_PAGE_ID);
-  return { ok: true };
-});
 
 // ── IPC: AI Hub 浏览器 Profile 导入 / 共享身份 / 托管重登录 ───────────────
 // 边界：渲染层只允许提交固定来源 id；主进程校验后自行解析路径与 Keychain。
@@ -1013,6 +983,45 @@ ipcMain.handle("file:show-context-menu", async (event, path: unknown, options?: 
   menu.popup(owner ? { window: owner } : undefined);
   return { shown: true };
 });
+ipcMain.handle("file:artifact-action", async (event, path: unknown, action: unknown) => {
+  trustedServiceSender(event);
+  if (action !== "reveal" && action !== "open-with") throw new Error("无效的交付物操作");
+  const target = await resolveArtifactTarget(path);
+  if (action === "reveal") {
+    shell.showItemInFolder(target.path);
+    return;
+  }
+  if (target.kind === "directory") {
+    const error = await shell.openPath(target.path);
+    if (error) throw new Error(error);
+    return;
+  }
+  const file = target.path;
+  const owner = BrowserWindow.fromWebContents(event.sender);
+  if (!owner) throw new Error("找不到交付物所在的窗口");
+  const preview = supportsArtifactBrowserPreview(file);
+  const choices = artifactOpenChoices(preview);
+  const { response } = await dialog.showMessageBox(owner, {
+    title: "打开方式",
+    message: basename(file),
+    buttons: [...choices.map(item => item.label), "取消"],
+    defaultId: 0,
+    cancelId: choices.length,
+  });
+  const choice = choices[response]?.choice;
+  if (!choice || owner.isDestroyed()) return;
+  if (choice === "default") {
+    if (preview) return artifactBrowserPreview.open(file, url => shell.openExternal(url));
+    const error = await shell.openPath(file);
+    if (error) throw new Error(error);
+    return;
+  }
+  const useBrowser = choice === "browser";
+  const { canceled, filePaths: [application] } = await dialog.showOpenDialog(owner, artifactApplicationPicker(useBrowser));
+  if (canceled || !application) return;
+  if (useBrowser) return artifactBrowserPreview.open(file, url => launchArtifactApplication(application, url));
+  await launchArtifactApplication(application, file);
+});
 ipcMain.handle("file:read", (_event, path: string) => readFile(path, "utf-8"));
 ipcMain.handle("file:write", async (_event, path: string, content: string) => { await writeFile(path, content, "utf-8"); return true; });
 ipcMain.handle("skills:import", async () => {
@@ -1206,9 +1215,10 @@ app.whenReady().then(async () => {
   await chromeHubBridge.start().then(() => { chromeExtensionPath(); }).catch(() => {
     console.warn("[ai-hub] existing Chrome bridge could not start on the local port");
   });
-  // Allow microphone access for voice input & wake-word listening
-  session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
-    callback(permission === "media");
+  const rendererEntry = useRendererDevServer ? new URL(rendererDevUrl) : pathToFileURL(rendererEntryFile);
+  session.defaultSession.setPermissionRequestHandler((contents, permission, callback, details) => {
+    callback(permission === "media" || (permission === "clipboard-sanitized-write"
+      && rendererWindows.isRendererDocument(contents, details, rendererEntry)));
   });
   // Desktop live WebRTC: answer getDisplayMedia from the hidden capture page
   // with the primary display, and keep real host IPs in ICE candidates so
@@ -1258,6 +1268,7 @@ app.on("before-quit", (event) => {
   desktopLiveProxy.close();
   meshStatusProxy.close();
   sharedService.closeStreams();
+  artifactBrowserPreview.close();
   fileWorkspaceService.close();
   globalShortcut.unregisterAll();
   wakeDesired = false;

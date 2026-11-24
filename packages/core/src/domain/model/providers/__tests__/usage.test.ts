@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ProviderUsage } from "../usage.js";
+import { ProviderUsage } from "../../../../infrastructure/models/usage.js";
 
 describe("ProviderUsage", () => {
   it.each([NaN, Infinity, -Infinity, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, "2", null])(

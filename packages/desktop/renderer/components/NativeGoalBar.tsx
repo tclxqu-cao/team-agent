@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Check, Pencil, Play, Target, Trash2, X } from "lucide-react";
-import type { NativeGoalMutation, NativeGoalRef, NativeSessionGoal } from "../global";
+import type { NativeGoalMutation, NativeGoalRef, NativeSessionGoal } from "../../../shared/src/contracts/agent-api";
 
 interface NativeGoalBarProps {
   goal: NativeSessionGoal | null;

@@ -8,6 +8,19 @@ const appSource = readFileSync(new URL("../App.tsx", import.meta.url), "utf8");
 const rowSource = readFileSync(new URL("./SidebarSessionRow.tsx", import.meta.url), "utf8");
 
 describe("SidebarSessionRow", () => {
+  it("uses the unread color only for an unviewed completion", () => {
+    const session = {
+      id: "new-result", title: "New result", visualState: "completed" as const, statusLabel: "执行完成",
+      occupiedExternally: false, canDelete: true, active: false,
+    };
+    const render = (row: typeof session & { completedAt?: string }) =>
+      renderToStaticMarkup(createElement(SidebarSessionRow, { session: row, onSelect: () => undefined }));
+    const completedAt = "2026-11-23T07:00:00.000Z";
+    expect(render({ ...session, completedAt })).toContain("is-unread-completion");
+    expect(render({ ...session, completedAt })).toContain("已完成，未查看");
+    expect(render(session)).not.toContain("is-unread-completion");
+    expect(render({ ...session, completedAt, active: true })).not.toContain("is-unread-completion");
+  });
   it("shows completed unverified history without a running animation", () => {
     const html = renderToStaticMarkup(createElement(SidebarSessionRow, {
       session: { id: "old", title: "Old history", visualState: "completed", statusLabel: "已完成", occupiedExternally: false, canDelete: true, active: false,
@@ -66,21 +79,22 @@ describe("SidebarSessionRow", () => {
         occupiedExternally: false,
         canDelete: false,
         active: false,
-        hasChildren: true,
         expanded: true,
       },
       onSelect: () => undefined,
+      onToggleChildren: () => undefined,
     }));
 
     expect(child).toContain("sidebar-session-row--child");
     expect(child).toContain("lucide-trash2");
     expect(parent).toContain('aria-expanded="true"');
     expect(parent).toContain("sidebar-session-disclosure is-expanded");
+    expect(parent).toMatch(/>Parent session<\/span><\/button><button[^>]*aria-expanded="true"/);
   });
 
   it("does not label advisory Codex occupancy as read-only in sidebar mappings", () => {
     expect(appSource.match(/occupiedExternally: (?:session|child)\.agentType !== "codex"/g))
-      .toHaveLength(3);
+      .toHaveLength(2);
   });
 
   it("renders an accessible pin action before delete and keeps pinned state visible", () => {

@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { UnifiedSessionSummary } from "../global";
+import type { UnifiedSessionSummary } from "../../../shared/src/contracts/agent-api";
 import { createAgentStore, useAgentStore, type AgentStore } from "../stores/agentStore";
 import { useParallelSessions } from "./use-parallel-sessions";
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { nativeGoalSubmission } from "./native-goal-submission";
-import type { NativeSessionGoal } from "../global";
+import type { NativeSessionGoal } from "../../../shared/src/contracts/agent-api";
 
 const goal: NativeSessionGoal = { id: "g", revision: 4, objective: "old", phase: "active", activation: "disarmed", roundsStarted: 2, maxGoalRounds: 10, createdAt: 1, updatedAt: 2 };
 describe("Harness goal composer", () => {

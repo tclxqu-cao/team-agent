@@ -1,4 +1,4 @@
-import type { DictationPort } from "../../domain/ports/dictation-port";
+import type { DictationPort } from "../../../../shared/src/domain/ports/dictation-port";
 import { PcmResampler } from "./pcm-resampler";
 
 type Result = { text: string; isFinal: boolean };

@@ -1,0 +1,58 @@
+.artifact-file-actions {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  gap: 2px;
+  margin-inline: 3px;
+  vertical-align: middle;
+  position: relative;
+}
+
+.artifact-file-actions button {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.artifact-file-actions button:hover {
+  background: var(--bg-hover, var(--bg-deep));
+  color: var(--text-primary);
+}
+
+.artifact-file-actions button:focus-visible {
+  outline: 2px solid var(--accent);
+}
+
+.artifact-file-actions button:disabled {
+  cursor: wait;
+  opacity: .6;
+}
+
+.artifact-file-actions [role="status"] {
+  position: absolute;
+  inset-block-start: 100%;
+  inset-inline-end: 0;
+  z-index: 1;
+  width: max-content;
+  max-width: min(180px, 45vw);
+  padding: 5px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 5px;
+  background: var(--bg-surface);
+  color: var(--danger);
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+@media (pointer: coarse) {
+  .artifact-file-actions button { width: 32px; height: 32px; }
+}

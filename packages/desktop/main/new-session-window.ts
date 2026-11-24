@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { isAgentType } from "@agent/core";
-import type { BrowserWindow, IpcMainInvokeEvent, WebContents } from "electron";
+import type { BrowserWindow, IpcMainInvokeEvent, PermissionRequest, WebContents } from "electron";
 
 export function newSessionWindowQuery(value: unknown): Record<string, string> {
   if (!value || typeof value !== "object") throw new Error("Invalid new session window options");
@@ -38,6 +38,15 @@ export class DesktopRendererWindows {
   assertSender(event: IpcMainInvokeEvent): void {
     if (!this.windows.has(event.sender) || event.sender.isDestroyed()
       || event.senderFrame !== event.sender.mainFrame) throw new Error("Untrusted desktop sender");
+  }
+
+  isRendererDocument(contents: WebContents, request: PermissionRequest, entry: URL): boolean {
+    if (!this.windows.has(contents) || contents.isDestroyed() || !request.isMainFrame
+      || !URL.canParse(request.requestingUrl)) return false;
+    const requesting = new URL(request.requestingUrl);
+    requesting.search = "";
+    requesting.hash = "";
+    return requesting.href === entry.href;
   }
 
   streamId(event: IpcMainInvokeEvent, id: string): string {

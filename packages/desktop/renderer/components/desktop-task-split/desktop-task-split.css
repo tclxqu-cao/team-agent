@@ -148,10 +148,12 @@
 .task-picker-folder-header span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
 .task-picker-folder-header small { min-width: 15px; color: var(--text-muted); font-size: 10px; text-align: right; }
 .task-picker-folder-items { padding-left: 6px; }
-.task-picker-item { width: 100%; display: flex; align-items: center; gap: 10px; padding: 10px 9px; border: 0; border-radius: 9px; background: transparent; color: var(--text-primary); text-align: left; cursor: pointer; font: inherit; }
+.task-picker-session-row { display: flex; align-items: center; }
+.task-picker-item { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; padding: 10px 9px; border: 0; border-radius: 9px; background: transparent; color: var(--text-primary); text-align: left; cursor: pointer; font: inherit; }
 .task-picker-item:hover:not(:disabled) { background: var(--bg-hover); }
+.task-picker-session-children { margin-inline-start: 14px; border-inline-start: 1px solid var(--border-subtle); }
 .task-picker-item:disabled { opacity: .55; cursor: default; }
-.task-picker-item > span { flex: 1; min-width: 0; }
+.task-picker-item-text { flex: 1; min-width: 0; }
 .task-picker-item strong { display: block; font-size: 13px; font-weight: 500; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .task-picker-item small { display: block; margin-top: 3px; font-size: 11px; color: var(--text-muted); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .task-picker-item em { font-size: 11px; font-style: normal; color: var(--text-muted); flex-shrink: 0; }

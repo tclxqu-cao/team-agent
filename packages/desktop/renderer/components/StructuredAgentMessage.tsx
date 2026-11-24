@@ -1,6 +1,6 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { Braces, Copy } from "lucide-react";
-import { copyTextToClipboard } from "../lib/clipboard";
+import { copyTextToClipboard } from "../../../shared/src/browser/clipboard";
 import {
   parseStructuredAgentMessage,
   suggestionLabel,

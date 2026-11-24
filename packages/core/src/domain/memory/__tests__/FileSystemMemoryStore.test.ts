@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { FileSystemMemoryStore } from '../FileSystemMemoryStore.js';
+import { FileSystemMemoryStore } from '../../../infrastructure/persistence/FileSystemMemoryStore.js';
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";

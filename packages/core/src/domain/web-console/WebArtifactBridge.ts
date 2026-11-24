@@ -4,6 +4,7 @@ export interface WebArtifactOpenRequest {
   type: typeof WEBAPP_ARTIFACT_OPEN_TYPE;
   requestId: number;
   path: string;
+  revealOnly?: true;
 }
 
 /** Remote media stays in the browser; it is never fetched by the host file service. */
@@ -36,6 +37,7 @@ export function parseWebArtifactOpenRequest(data: unknown): WebArtifactOpenReque
     || candidate.path.includes("\n")
     || candidate.path.includes("\r")
   ) return null;
+  if (candidate.revealOnly !== undefined && (candidate.revealOnly !== true || isWebMediaUrl(candidate.path))) return null;
   return candidate as unknown as WebArtifactOpenRequest;
 }
 

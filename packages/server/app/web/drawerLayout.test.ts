@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-const pageSource = readFileSync(new URL("./page.tsx", import.meta.url), "utf8") + readFileSync(new URL("./console-styles.ts", import.meta.url), "utf8");
+const pageSource = readFileSync(new URL("./page.tsx", import.meta.url), "utf8") + readFileSync(new URL("../../../shared/src/console/console-styles.ts", import.meta.url), "utf8");
 const computerSwitcherSource = readFileSync(new URL("./ComputerSwitcher.tsx", import.meta.url), "utf8");
 
 describe("web console file drawer layout", () => {
@@ -44,9 +44,10 @@ describe("web console file drawer layout", () => {
   it("opens, previews, and reveals artifact requests from the expected Web App frame", () => {
     expect(pageSource).toContain("readWebArtifactOpenRequest(");
     expect(pageSource).toContain('setDrawerTab("files")');
-    expect(pageSource).toContain("setDrawerOpen(true)");
-    expect(pageSource).toContain("setPreviewPath(artifactRequest.path)");
-    expect(pageSource).toContain("setFileTreeRevealRequest(artifactRequest)");
+    expect(pageSource).toContain("setDrawerOpen(!isWebMediaUrl(path))");
+    expect(pageSource).toContain("setPreviewPath(artifactRequest.revealOnly ? null : path)");
+    expect(pageSource).toContain("rootAtParent: artifactRequest.revealOnly");
+    expect(pageSource).toContain("selectedPath={previewPath ?? fileTreeRevealRequest?.path ?? null}");
     expect(pageSource).toContain("revealRequest={fileTreeRevealRequest}");
     expect(pageSource).toContain("webappFrameRef.current?.contentWindow ?? null");
     expect(pageSource).toContain("setDrawerOpen(false); // picking a file dismisses the drawer on phones");

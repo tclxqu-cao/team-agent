@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { readTextFromClipboard } from "../lib/clipboard";
+import { readTextFromClipboard } from "../../../shared/src/browser/clipboard";
 
 /** Read the viewing device's clipboard; native paste is the fallback on restricted browsers. */
 export default function RemoteClipboardPasteButton({ disabled, onPaste, onError }: {

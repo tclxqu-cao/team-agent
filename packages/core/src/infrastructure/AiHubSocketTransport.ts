@@ -4,7 +4,7 @@
 // domain/ai-hub/relay-protocol，与桌面端、ws-server 共用同一份。
 import { createConnection } from "node:net";
 import { existsSync } from "node:fs";
-import { resolveAiHubRelaySocketPath } from "../domain/ai-hub/relay-protocol.js";
+import { resolveAiHubRelaySocketPath } from "./AiHubRelayPath.js";
 import type {
   AiHubCaptureResult,
   AiHubRelayResult,

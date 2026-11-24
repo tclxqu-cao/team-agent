@@ -4,16 +4,16 @@
 // - ≥900px: [terminal | tree | preview(only when open)] with resizable tree
 
 import dynamic from "next/dynamic";
-import { CONSOLE_CSS } from "./console-styles";
-import { consoleFrameUrl, consoleOrigin } from "./console-environment";
+import { CONSOLE_CSS } from "../../../shared/src/console/console-styles";
+import { consoleFrameUrl, consoleOrigin } from "../../../shared/src/console/console-environment";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ExternalLink, Bot, CalendarDays, FolderOpen, PanelRight, X, LayoutGrid, MonitorUp, RefreshCw, UsersRound } from "lucide-react";
-import RunningSessionsIcon from "../../../desktop/renderer/components/RunningSessionsIcon";
+import RunningSessionsIcon from "../../../shared/src/console/RunningSessionsIcon";
 import PwaInstallButton from "./PwaInstallButton";
 import ComputerSwitcher from "./ComputerSwitcher";
 import ComputerPagePane from "./ComputerPagePane";
 import type { ComputerPage } from "./ComputerPageDialog";
-import ResponsiveToolbar from "./ResponsiveToolbar";
+import ResponsiveToolbar from "../../../shared/src/console/ResponsiveToolbar";
 import { moveToolbarAction } from "./toolbar-order";
 import { useComputerSettings } from "./useComputerSettings";
 import type { FileWorkspaceGateway } from "../../../core/src/application/file-workspace/FileWorkspaceGateway";
@@ -31,15 +31,15 @@ import { readWebShellOpenBrowserLive } from "../../../core/src/domain/web-consol
 import { WEB_SHELL_NEW_TERMINAL_HASH, readWebShellOpenTerminal } from "../../../core/src/domain/web-console/WebShellTerminalBridge";
 import { readLiveFramePacket, LIVE_FRAME_PACKET_TYPE } from "../../../core/src/infrastructure/live-view/frame-packet";
 import type { FileTreeRevealRequest } from "./fileTreeReveal";
-import { useGateway } from "./useGateway";
+import { useGateway } from "../../../shared/src/console/useGateway";
 import { useFrameActivity } from "./useFrameActivity";
 import AuthGate, { type WebAuthController } from "./AuthGate";
 import HistoryPanel from "./HistoryPanel";
 import ThemePicker from "./ThemePicker";
 import { readNavigationLayoutPreference, UI_PREFERENCES_KEY } from "./navigation-layout-preference";
 import { DEFAULT_NAVIGATION_LAYOUT, NAVIGATION_LAYOUT_MESSAGE, type NavigationLayout } from "../../../core/src/domain/web-console/navigation-layout";
-import { resetHorizontalScroll, resolveVisualViewport } from "./mobileViewport";
-import { DEFAULT_THEME_ID, resolveWebTheme, type WebThemeId } from "./themes";
+import { resetHorizontalScroll, resolveVisualViewport } from "../../../shared/src/console/mobileViewport";
+import { DEFAULT_THEME_ID, resolveWebTheme, type WebThemeId } from "../../../shared/src/console/themes";
 import { readWebappTabSwipeMessage } from "./webappTabSwipe";
 import { readWebappReadyMessage } from "./webappReady";
 import { readCollaborationChanged, readCollaborationOpen } from "../../../core/src/domain/web-console/CollaborationTabBridge";
@@ -50,9 +50,9 @@ import CollaborationPane from "./CollaborationPane";
 import DeferredTabContent from "./DeferredTabContent";
 import { COLLABORATION_DASHBOARD_TAB, withCollaborationDashboard, SESSION_DASHBOARD_TAB, withSessionDashboard, REMOTE_DESKTOP_TAB, withRemoteDesktopTab, CALENDAR_TAB, withCalendarTab, parseWorkspaceSnapshot, restoreWorkspaceTabs, type ConsoleTab } from "./console-tabs";
 import { readRemoteDesktopFullscreen, REMOTE_DESKTOP_CLOSE_TYPE, REMOTE_DESKTOP_VISIBILITY_TYPE, REMOTE_DESKTOP_CONTENT_READY_TYPE } from "../../../core/src/domain/web-console/RemoteDesktopTabBridge";
-import { resolveWebArtifactPath } from "../../../desktop/renderer/lib/artifact-links";
+import { resolveWebArtifactPath } from "../../../shared/src/browser/artifact-links";
 
-const TerminalPane = dynamic(() => import("./TerminalPane"), { ssr: false });
+const TerminalPane = dynamic(() => import("../../../shared/src/console/TerminalPane"), { ssr: false });
 const FileTree = dynamic(() => import("./FileTree"), { ssr: false });
 const FilePreview = dynamic(() => import("./FilePreview"), { ssr: false });
 const AiHubPane = dynamic(() => import("./AiHubPane"), { ssr: false });
@@ -367,8 +367,12 @@ function AuthenticatedConsole({
         const showArtifact = (path: string) => {
           setDrawerTab("files");
           setDrawerOpen(!isWebMediaUrl(path));
-          setPreviewPath(path);
-          if (!isWebMediaUrl(path)) setFileTreeRevealRequest({ ...artifactRequest, path });
+          setPreviewPath(artifactRequest.revealOnly ? null : path);
+          setFileTreeRevealRequest(isWebMediaUrl(path) ? null : {
+            path,
+            requestId: artifactRequest.requestId,
+            rootAtParent: artifactRequest.revealOnly,
+          });
         };
         if (artifactRequest.path.startsWith("~/")) {
           void rpc<{ home: string }>("hello").then(({ home }) => {
@@ -505,6 +509,7 @@ function AuthenticatedConsole({
   useEffect(()=>{if(!auth.csrfToken||!workspaceRestored||!deviceStateLoaded)return;const flush=()=>persistDeviceState({activeTerminalId,drawerOpen,drawerTab,fileTreeRoot,fileTreeFollowMode:fileTreeFollow,selectedFile:previewPath,terminalScroll});window.addEventListener("pagehide",flush);return()=>window.removeEventListener("pagehide",flush);},[activeTerminalId,drawerOpen,drawerTab,fileTreeRoot,fileTreeFollow,previewPath,terminalScroll,auth.csrfToken,persistDeviceState,workspaceRestored,deviceStateLoaded]);
 
   const openFile = useCallback((p: string) => {
+    setFileTreeRevealRequest(null);
     setPreviewPath(p);
     setDrawerOpen(false); // picking a file dismisses the drawer on phones
   }, []);
@@ -854,7 +859,7 @@ function AuthenticatedConsole({
             cwd={cwdHint}
             gateway={fileWorkspaceGateway}
             onOpenFile={openFile}
-            selectedPath={previewPath}
+            selectedPath={previewPath ?? fileTreeRevealRequest?.path ?? null}
             initialRoot={fileTreeRoot}
             initialFollow={fileTreeFollow}
             revealRequest={fileTreeRevealRequest}

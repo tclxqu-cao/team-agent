@@ -18,7 +18,7 @@ import {
   COLLABORATION_OPEN_TYPE,
   COLLABORATION_DASHBOARD_READY_TYPE,
 } from "../../../../core/src/domain/web-console/CollaborationTabBridge";
-import type { RuntimeHealth } from "../../global";
+import type { RuntimeHealth } from "../../../../shared/src/contracts/agent-api";
 import AgentBrandIcon from "../AgentBrandIcon";
 import { useUIStore } from "../../stores/uiStore";
 import CollaborationCreateDialog from "./CollaborationCreateDialog";

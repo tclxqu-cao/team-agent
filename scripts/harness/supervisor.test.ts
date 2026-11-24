@@ -50,7 +50,7 @@ async function fixture() {
 
 const reproduction = `
 import assert from 'node:assert/strict';
-const {AgentBuilder} = await import(process.env.HARNESS_CANDIDATE_ROOT + '/packages/core/src/domain/agent/AgentBuilder.ts');
+const {AgentBuilder} = await import(process.env.HARNESS_CANDIDATE_ROOT + '/packages/core/src/bootstrap/AgentBuilder.ts');
 const provider = {providerId:'mock',modelId:'mock',countTokens:async()=>10,supportsModel:()=>true,
  streamChat:async function*(){yield {type:'text_chunk',text:'ok'};yield {type:'text_done'};}};
 const agent = await new AgentBuilder().withWorkingDirectory(process.env.TMPDIR).withSemanticSkillMatching(false).withModelProvider(provider).build();

@@ -16,4 +16,14 @@ describe("durable message model configuration", () => {
       .toEqual({ model: { id: "valid" } });
     expect(normalizeSessionMessageRunOptions({ model: { id: "" } })).toBeUndefined();
   });
+  it("restores attached file bytes with the original queue entry", () => {
+    const attachments = [{ name: "sample.csv", mimeType: "text/csv", data: "YSxi" }];
+    const state = enqueueSessionMessage(EMPTY_SESSION_GOAL_STATE, {
+      id: "item", sourceMessageId: "source", sessionId: "session", objective: "Read CSV", now: 1,
+      activate: false, messagePayload: { runOptions: { attachments } },
+    });
+    const restored = readSessionGoalState(JSON.parse(JSON.stringify({ goalState: state })));
+    expect(restored.queued[0].messagePayload?.runOptions?.attachments).toEqual(attachments);
+    expect(() => normalizeSessionMessageRunOptions({ attachments: [{ ...attachments[0], name: "../sample.csv" }] })).toThrow("无效的文件附件");
+  });
 });

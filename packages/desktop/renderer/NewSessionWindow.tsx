@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
-import type { RuntimeHealth, UnifiedSessionSummary } from "./global";
+import type { RuntimeHealth, UnifiedSessionSummary } from "../../shared/src/contracts/agent-api";
 import ChatView from "./components/ChatView";
+import SessionCompletionTracker from "./components/SessionCompletionTracker";
 import TaskPaneConversation from "./components/desktop-task-split/TaskPaneConversation";
 import type { TaskPaneDraft } from "./components/desktop-task-split/session-state";
 import { readNewSessionWindow } from "./lib/new-session-window";
@@ -41,6 +42,7 @@ export default function NewSessionWindow() {
   };
 
   return <main className="new-session-window" aria-label="会话小窗">
+    <SessionCompletionTracker viewedSessionId={session?.id ?? null} />
     {error && <div className="new-session-window-error" role="alert">{error}</div>}
     <TaskPaneConversation draft={session ? undefined : draft} onDraftChange={setDraft}>
       <ChatView agentStore={store} desktopTaskPane

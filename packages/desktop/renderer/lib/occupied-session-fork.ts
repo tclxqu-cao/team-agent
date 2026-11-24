@@ -1,4 +1,4 @@
-import type { UnifiedSessionSummary } from "../global";
+import type { NativeRunOptions, UnifiedSessionSummary } from "../../../shared/src/contracts/agent-api";
 
 export interface OccupiedSessionError {
   sessionId: string;
@@ -11,6 +11,7 @@ export interface OccupiedSendPayload {
   agentIds?: string[];
   agentName?: string;
   restoreDraftOnFailure?: boolean;
+  runOptions?: NativeRunOptions;
 }
 
 export interface OccupiedSessionRecovery {

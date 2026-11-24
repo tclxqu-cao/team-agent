@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { decodeZCodeHistory } from "./zcode-client.js";
-import { zcodeInteractionId, zcodeQuestionHistory } from "./zcode-questions.js";
+import { zcodeInteractionId, zcodePendingQuestionsFromSnapshot, zcodeQuestionHistory } from "./zcode-questions.js";
 
 const question = {
   header: "强制改密", question: "云效登录后强制要求修改密码才能进入工作台。如何处理？", multiSelect: false,
@@ -55,6 +55,23 @@ describe("ZCode question history", () => {
     expect(messages[0]).toMatchObject({ content: "需要先确认。", toolCalls: [{ id: "call-read", name: "Read" }] });
     expect(messages[1]).toMatchObject({ role: "tool", content: "file" });
     expect(zcodeQuestionHistory(part("running"), "sess", "message")).toEqual([]);
+    expect(zcodeQuestionHistory(part("running"), "sess", "message", { includePendingQuestions: true })).toEqual([]);
+  });
+
+  it("restores a pending question from the native session projection", () => {
+    const pending = zcodePendingQuestionsFromSnapshot({ projection: {
+      pendingPermissions: [{ requestId: "perm-question", toolCallId: "call-question", toolName: "AskUserQuestion", input: { questions: [question] } }],
+    } });
+    const messages = zcodeQuestionHistory(part("running"), "sess", "message", {
+      includePendingQuestions: true,
+      pendingInteractionIds: pending.interactionIds,
+      pendingQuestionInputs: pending.inputs,
+    })!;
+    expect(messages[0]?.presentation?.question).toMatchObject({
+      question: question.question,
+      status: "pending",
+    });
+    expect(messages[0]?.presentation?.question?.questionId).toMatch(/^zcode-pending-question:/);
   });
 
   it("preserves multi-select and structured answers without including adjacent answers", () => {

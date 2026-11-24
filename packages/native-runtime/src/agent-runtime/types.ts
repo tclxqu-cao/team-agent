@@ -7,6 +7,7 @@ import type {
   AgentType,
   AgentEvent,
   Message,
+  PromptAttachment,
   SessionGoalState,
   SessionHistoryQuery,
   SessionHistoryWindow,
@@ -51,6 +52,7 @@ export interface SessionCompatibility {
 export interface RuntimeHealth {
   agentType: AgentType;
   available: boolean;
+  capabilities?: import("@agent/core").RuntimeCapabilities;
   label: string;
   version?: string;
   connectionEndpoint?: string | null;
@@ -74,6 +76,7 @@ export interface UnifiedSessionSummary {
   parentSessionId?: string;
   created: string;
   updated: string;
+  completedAt?: string;
   status: "idle" | "running" | "completed" | "failed";
   occupancy: SessionOccupancy;
   sourceLabel: string;
@@ -214,6 +217,7 @@ export interface RuntimeModelInfo {
   providerDisplayName?: string;
   displayName?: string;
   description?: string;
+  current?: boolean;
   reasoningEfforts?: NativeReasoningEffort[];
 }
 
@@ -229,15 +233,19 @@ export interface RuntimeRunOptions {
   brokerRunId?: string;
   model?: RuntimeModelSelection;
   reasoningEffort?: NativeReasoningEffort;
+  attachments?: PromptAttachment[];
   goal?: {
     id: string;
     objective: string;
   };
 }
 
+export type NativeRunOverrides = Pick<RuntimeRunOptions, "model" | "reasoningEffort" | "attachments">;
+
 export interface AgentRuntimeAdapter {
   readonly agentType: AgentType;
   health(): Promise<RuntimeHealth>;
+  getCapabilities?(): Promise<import("@agent/core").RuntimeCapabilities>;
   discoverSessions(): Promise<UnifiedSessionSummary[]>;
   listWorkspaces?(query?: WorkspaceQuery): Promise<WorkspacePage<AgentWorkspace>>;
   listWorkspaceSessions?(

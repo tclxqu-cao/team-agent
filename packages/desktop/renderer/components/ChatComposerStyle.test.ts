@@ -60,6 +60,14 @@ describe("shared Electron and Web composer", () => {
     expect(css).not.toContain(".web-native-effort-bars");
   });
 
+  it("keeps a native model target visible when the composer sits in a narrow split pane", () => {
+    expect(chatView).toContain("icon={<AgentBrandIcon agentType={composerAgentType} size={14} />}");
+    expect(css).toContain("container: composer-controls / inline-size");
+    const compact = css.slice(css.indexOf("@container composer-controls"));
+    expect(compact).toContain("--web-composer-control-size: 30px");
+    expect(compact).toContain(".web-native-model-control { min-width: 42px; }");
+  });
+
   it("preserves every composer capability in the shared toolbar", () => {
     expect(chatView).toContain("附件 / 图片");
     expect(chatView).toContain("语音输入");
@@ -124,7 +132,7 @@ describe("shared Electron and Web composer", () => {
     expect(chatView).toContain("await window.agentApi?.getSessionGoals(targetSessionId)");
     expect(chatView).toContain("if (state?.active)");
     expect(chatView).toContain("void startRun(nextQueued, targetSessionId)");
-    expect(chatView).toContain("message.isQueued && !message.queueItemId");
+    expect(chatView).toContain("message.isQueued && !message.isGoal && !message.queueItemId");
     expect(chatView).toContain("enqueueSessionMessage");
     expect(chatView).toContain("sessionSummary?.messageQueueVersion === 1");
     expect(chatView).toContain("reconcileDurableQueuedMessages(current, state)");

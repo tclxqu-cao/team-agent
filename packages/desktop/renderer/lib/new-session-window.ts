@@ -1,5 +1,5 @@
 import { isAgentType } from "../../../core/src/domain/agent/agent-type";
-import type { AgentType } from "../global";
+import type { AgentType } from "../../../shared/src/contracts/agent-api";
 
 export interface NewSessionWindowOptions {
   agentType: AgentType;

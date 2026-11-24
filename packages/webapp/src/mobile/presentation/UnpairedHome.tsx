@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type CSSProperties, type SyntheticEvent } from "react";
 import { ArrowUp, Bot, Camera, ChevronLeft, LayoutGrid, Menu, MonitorUp, Palette, PanelRight, Plus, RefreshCw, UsersRound } from "lucide-react";
-import ResponsiveToolbar from "../../../../server/app/web/ResponsiveToolbar";
-import WorkspaceBoot from "../../../../server/app/web/WorkspaceBoot";
-import { CONSOLE_CSS } from "../../../../server/app/web/console-styles";
-import { resolveWebTheme } from "../../../../server/app/web/themes";
+import ResponsiveToolbar from "../../../../shared/src/console/ResponsiveToolbar";
+import WorkspaceBoot from "../../../../shared/src/console/WorkspaceBoot";
+import { CONSOLE_CSS } from "../../../../shared/src/console/console-styles";
+import { resolveWebTheme } from "../../../../shared/src/console/themes";
 import EmptySessionWelcome from "../../../../desktop/renderer/components/EmptySessionWelcome";
 import AgentWorkspaceSwitcher from "../../../../desktop/renderer/components/AgentWorkspaceSwitcher";
 import "./unpaired-home.css";
@@ -53,7 +53,7 @@ export default function UnpairedHome({ onScan, initialFailure = "" }: { onScan()
     </div>
     <main className="unpaired-workspace" aria-label="尚未连接电脑的工作区">
       <header className="unpaired-workspace-header"><button type="button" className="ui-icon-button" aria-label="会话列表" aria-disabled="true"><Menu size={18} /></button><span>智能助手</span><button type="button" className="ui-icon-button" aria-label="返回" aria-disabled="true"><ChevronLeft size={17} /></button></header>
-      <div className="unpaired-agent-switcher"><AgentWorkspaceSwitcher value="codex" health={[]} onChange={hint} onUnavailable={hint} /></div>
+      <div className="unpaired-agent-switcher"><AgentWorkspaceSwitcher value="codex" health={[]} onChange={hint} /></div>
       <div className="unpaired-welcome"><EmptySessionWelcome agentType="codex" ready={true} connectionRequired onSelectPrompt={hint} /></div>
       <div className="unpaired-composer"><span>发送消息…</span><div><button type="button" className="ui-icon-button" aria-label="添加附件" aria-disabled="true"><Plus size={19} /></button><button type="button" className="ui-icon-button" aria-label="发送消息" aria-disabled="true"><ArrowUp size={19} /></button></div></div>
     </main>

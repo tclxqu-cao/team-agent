@@ -2,7 +2,7 @@ import { cloneElement, useCallback, useEffect, useRef, useState, type ReactEleme
 import { createPortal } from "react-dom";
 import { CalendarDays, Columns2, Columns4, Grid2X2, LoaderCircle, LogOut, Maximize2, Minimize2, PanelLeftOpen, Plus, RefreshCw, X } from "lucide-react";
 import type { CatalogSession, SessionDashboardSnapshot } from "../../../../core/src/domain/supervision/types";
-import type { UnifiedSessionSummary } from "../../global";
+import type { UnifiedSessionSummary } from "../../../../shared/src/contracts/agent-api";
 import type { ChatViewProps } from "../ChatView";
 import ChatHeaderActions from "../ChatHeaderActions";
 import { collaborationRequest } from "../collaboration/client";
@@ -15,6 +15,7 @@ import { TASK_PANE_NOTIFICATION_EVENT, type TaskPaneNotificationRequest } from "
 import { closeTaskWorkspacePane, pushTaskPaneNotification } from "./session-state";
 import { isWebShell } from "../../web/webLayout";
 import TaskSessionPicker from "./TaskSessionPicker";
+import { useSessionCompletionStore } from "../../stores/session-completion-store";
 import TaskSplitLayout from "./TaskSplitLayout";
 import TaskPaneConversation from "./TaskPaneConversation";
 import TaskPaneChoices from "./TaskPaneChoices";
@@ -151,8 +152,10 @@ export default function DesktopTaskWorkspace({ enabled, children, onFocusSession
     setError(null);
     try {
       const result = await loadTaskSession(target);
-      if (replacements.current.get(paneId) !== version || !opened.current || !result.session) return;
+      if (replacements.current.get(paneId) !== version || !opened.current || !result.session
+        || !snapshot.current?.panes.some(pane => pane.id === paneId)) return;
       setPaneSession(paneId, result.session, result.initialHistory);
+      return result.session;
     } catch (failure) {
       if (opened.current && replacements.current.get(paneId) === version) setError(failure instanceof Error ? failure.message : "无法更换任务");
     } finally {
@@ -282,11 +285,14 @@ export default function DesktopTaskWorkspace({ enabled, children, onFocusSession
     if (!current || !destination) return;
     const existing = current.panes.find(pane => pane.session?.id === target.id);
     if (existing) { focusPane(existing.id); return; }
+    let paneId = destination;
     if (destination === "add") {
       const added = addTaskWorkspaceSession(current, catalogTaskSession(target), crypto.randomUUID());
       snapshot.current = added.state; setState(added.state); setMaximized(null);
-      await replacePane(added.paneId, target);
-    } else await replacePane(destination, target);
+      paneId = added.paneId;
+    }
+    const session = await replacePane(paneId, target);
+    if (session) useSessionCompletionStore.getState().markViewed(session.id, Date.now());
   };
   const closePane = (id: string) => {
     const current = snapshot.current;

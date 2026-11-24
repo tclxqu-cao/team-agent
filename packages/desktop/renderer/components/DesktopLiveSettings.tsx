@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { DesktopLiveStatus } from "../global";
+import type { DesktopLiveStatus } from "../../../shared/src/contracts/agent-api";
 
 const headingStyle: React.CSSProperties = {
   fontSize: 13,

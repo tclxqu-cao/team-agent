@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Camera, Check, Globe, Monitor, Pencil, Plus, X, Trash2, ExternalLink, ChevronLeft, ChevronDown, ChevronRight, SlidersHorizontal, MessagesSquare, RefreshCw, MonitorUp, Palette, PanelRight, LayoutGrid, Bot, Smartphone, UsersRound, CalendarDays } from "lucide-react";
-import RunningSessionsIcon from "../../../desktop/renderer/components/RunningSessionsIcon";
+import RunningSessionsIcon from "../../../shared/src/console/RunningSessionsIcon";
 import CodexSharingStatus from "./CodexSharingStatus";
 import ComputerPageDialog, { type ComputerPage } from "./ComputerPageDialog";
 import type { ComputerSettingsController } from "./useComputerSettings";
@@ -12,7 +12,7 @@ import { probeComputerAvailability, type ComputerAvailability } from "./computer
 import { computerNavigation, readComputers, mergeComputers, pairingNavigation, parsePairingTarget } from "../../public/pwa/computer-directory.js";
 import { useComputerDirectory } from "./useComputerDirectory";
 import { createPairingScanner, decodePairingImage, supportsLiveCamera } from "../../public/pwa/pairing-scan.js";
-import { consoleOrigin, nativeConsole } from "./console-environment";
+import { consoleOrigin, nativeConsole } from "../../../shared/src/console/console-environment";
 
 type Computer = { origin: string; name: string };
 const TOOL_OPTIONS = [

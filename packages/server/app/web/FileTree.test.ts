@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const tree = readFileSync(
-  new URL("../../../desktop/renderer/components/file-workspace/FileTree.tsx", import.meta.url),
+  new URL("../../../shared/src/file-workspace/FileTree.tsx", import.meta.url),
   "utf8",
 );
 

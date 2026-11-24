@@ -26,7 +26,10 @@ export async function sessionDashboard(): Promise<SessionDashboardSnapshot> {
       : row.status === "waiting" ? [{ discussionId: row.id, questionId: `discussion:${row.id}:${row.revision}`, text: row.progress || "群主需要你的决定，请回复后继续。", options: undefined, decisionRevision: row.revision }] : []);
     const pending = scope?.incidents.filter(incident => incident.status === "waiting") ?? [];
     const linked = scope?.group.monitoring?.targets ?? group.monitoring?.targets ?? [];
-    const groupSessions = linked.length ? linked.map(target => ({ ...target, status: byId.get(target.id)?.status ?? "unknown" }))
+    const groupSessions = linked.length ? linked.map(target => {
+      const session = byId.get(target.id);
+      return { ...target, status: session?.status ?? "unknown", updated: session?.updated, completedAt: session?.completedAt };
+    })
       : [...new Set(discussions.flatMap(row => Object.values(row.sessions)))].map(id => byId.get(id)).filter((session): session is NonNullable<typeof session> => !!session);
     const active = discussions.find(row => row.questions.length || ["running", "waiting", "stopping"].includes(row.status));
     const recent = active ?? discussions[0];

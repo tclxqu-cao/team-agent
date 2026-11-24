@@ -1,1 +1,1 @@
-export * from "../../../desktop/renderer/components/file-workspace/fileTreeReveal";
+export * from "../../../shared/src/file-workspace/fileTreeReveal";

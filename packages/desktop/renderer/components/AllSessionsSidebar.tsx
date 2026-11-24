@@ -1,15 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Search } from "lucide-react";
 import type { CatalogSession, SessionCatalogPage } from "../../../core/src/domain/supervision/types";
-import { readSessionCatalogPage, mergeCatalogSessions, mergeCatalogReceipts, catalogSessionReceipt, refreshCatalogWindow, orderAllSessions, type CatalogSessionReceipt } from "../lib/all-sessions";
+import { readSessionCatalogPage, mergeCatalogSessions, mergeCatalogReceipts, catalogPageSessions, catalogSessionReceipt, refreshCatalogWindow, orderAllSessions, type CatalogSessionReceipt } from "../lib/all-sessions";
 import { readAllSessionsCache, writeAllSessionsCache } from "../lib/all-sessions-cache";
 import { usePageActive, isPageActive } from "../lib/page-activity";
-import { getSidebarSessionVisualState, SIDEBAR_SESSION_STATUS_LABELS } from "../lib/sidebar-session-status";
+import { sessionCompletedAt, getSidebarSessionVisualState, SIDEBAR_SESSION_STATUS_LABELS } from "../lib/sidebar-session-status";
 import { collaborationRequest } from "./collaboration/client";
 import SidebarSessionRow, { type SidebarDeleteAnchor } from "./SidebarSessionRow";
 import SidebarRefreshButton from "./SidebarRefreshButton";
 import { useSessionActivity } from "../lib/use-session-activity";
 import { applySessionActivity } from "../lib/session-activity";
+import { buildSessionTree, type SessionTreeNode } from "../lib/session-tree";
+import { useSessionDisclosure } from "../lib/use-session-disclosure";
 import "../styles/all-sessions.css";
 
 interface Props {
@@ -36,6 +38,7 @@ export default function AllSessionsSidebar(props: Props) {
   const [showingCache, setShowingCache] = useState(initialCache !== null);
   const [query, setQuery] = useState("");
   const [search, setSearch] = useState("");
+  const disclosure = useSessionDisclosure();
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [discovering, setDiscovering] = useState(false);
@@ -43,7 +46,7 @@ export default function AllSessionsSidebar(props: Props) {
   const request = useRef<AbortController | null>(null);
   const requestQuery = useRef("");
   const refreshedRevision = useRef(`${props.revision}:${props.runningSessionId}`);
-  const snapshot = useRef({ query: "", rows: initialCache?.data ?? [], cursor: null as string | null });
+  const snapshot = useRef({ query: "", rows: initialCache?.data ?? [], cursor: null as string | null, expanded: false });
   const firstPageRequest = useRef<{ query: string; promise: Promise<SessionCatalogPage> } | null>(null);
   const scroll = useRef<HTMLDivElement>(null);
   const receipts = useRef(new Map<string, CatalogSession>());
@@ -70,7 +73,7 @@ export default function AllSessionsSidebar(props: Props) {
     setLoading(true); setError(null);
     if (reset && previous.query !== search) {
       const cached = search ? null : readAllSessionsCache();
-      snapshot.current = { query: search, rows: cached?.data ?? [], cursor: null };
+      snapshot.current = { query: search, rows: cached?.data ?? [], cursor: null, expanded: false };
       setSessions(cached?.data ?? []); setTotal(cached?.total ?? 0); setNextCursor(null);
       setShowingCache(cached !== null);
     }
@@ -98,18 +101,20 @@ export default function AllSessionsSidebar(props: Props) {
         );
       }
       for (const session of page.data) receipts.current.delete(session.id);
+      const pageRows = catalogPageSessions(page);
       const nextWindow = reset && previous.query === search
         ? page.refreshing
-          ? { rows: mergeCatalogSessions(previous.rows, page.data), cursor: previous.cursor ?? page.nextCursor }
+          ? { rows: mergeCatalogSessions(previous.rows, pageRows), cursor: previous.cursor ?? page.nextCursor }
           : refreshCatalogWindow(previous, page)
-        : { rows: reset ? page.data : mergeCatalogSessions(previous.rows, page.data), cursor: page.nextCursor };
-      snapshot.current = { query: search, ...nextWindow };
+        : { rows: reset ? pageRows : mergeCatalogSessions(previous.rows, pageRows), cursor: page.nextCursor };
+      snapshot.current = { query: search, ...nextWindow, expanded: !reset || (previous.query === search && previous.expanded) };
       setSessions(nextWindow.rows); setTotal(page.total); setNextCursor(nextWindow.cursor);
       setShowingCache(false);
       if (reset) setDiscovering(page.refreshing === true);
       if (reset && !search && !page.refreshing) {
         const deleted = new Set(deletedSessionIds.current);
-        writeAllSessionsCache({ ...page, data: page.data.filter(session => !deleted.has(session.id)) });
+        writeAllSessionsCache({ ...page, data: page.data.filter(session => !deleted.has(session.id)),
+          ancestors: page.ancestors?.filter(session => !deleted.has(session.id)) });
       }
       if (reset && previous.query !== search && scroll.current) scroll.current.scrollTop = 0;
     } catch (err) {
@@ -158,44 +163,57 @@ export default function AllSessionsSidebar(props: Props) {
   const normalized = query.trim().toLocaleLowerCase();
   const deleted = useMemo(() => new Set(props.deletedSessionIds), [props.deletedSessionIds]);
   const visible = ordered.filter(session => !deleted.has(session.id));
+  const tree = buildSessionTree(visible);
   const pinned = useMemo(() => new Set(props.pinnedIds), [props.pinnedIds]);
+
+  const renderSession = ({ session, children }: SessionTreeNode<CatalogSession>): React.ReactNode => {
+    const activity = props.needsInput.includes(session.id) ? "needs-input"
+      : props.runningSessionId === session.id ? "running" : session.status === "failed" ? "error"
+      : session.status === "completed" ? "idle" : session.status;
+    const visualState = getSidebarSessionVisualState(activity);
+    const child = Boolean(session.parentSessionId);
+    const expanded = disclosure.expandedIds.has(session.id);
+    return <div key={session.id} className="sidebar-session-tree">
+      <SidebarSessionRow session={{
+        id: session.id, title: session.title, agentType: session.agentType, workspacePath: session.cwd,
+        visualState, statusLabel: SIDEBAR_SESSION_STATUS_LABELS[visualState],
+        completedAt: sessionCompletedAt(session),
+        active: props.selectedSessionId === session.id, pinned: pinned.has(session.id),
+        child, expanded,
+        occupiedExternally: session.agentType !== "codex" && session.occupancy === "owned-externally",
+        canDelete: activity !== "running" && activity !== "needs-input",
+      }} onSelect={() => props.onSelect(session)} onPin={child ? undefined : () => props.onPin(session.id)}
+        onToggleChildren={children.length ? () => disclosure.toggle(session.id) : undefined}
+        deleteLabel={child ? "删除子会话" : undefined} onDelete={anchor => props.onDelete(session, anchor)} />
+      {expanded && children.length > 0 && <div className="all-sessions-children" role="group" aria-label={`${session.title}的子会话`}>
+        {children.map(renderSession)}
+      </div>}
+    </div>;
+  };
 
   return <>
     <label className="sidebar-search-field all-sessions-search">
       <Search size={15} aria-hidden="true" />
       <input aria-label="搜索所有 Agent 的会话" placeholder="搜索会话或目录" value={query}
-        onChange={event => { setQuery(event.target.value); }} />
+        onChange={event => setQuery(event.target.value)} />
     </label>
     <div className="sidebar-project-toolbar">
-      <div className="sidebar-project-heading"><span className="sidebar-project-title">所有会话</span><span className="sidebar-project-count">{Math.max(total, merged.length)}</span></div>
+      <div className="sidebar-project-heading"><span className="sidebar-project-title">所有会话</span><span className="sidebar-project-count">{search ? total : Math.max(total, merged.length)}</span></div>
       <div className="sidebar-project-actions"><span className="all-sessions-sort-label">进行中优先</span>
         <SidebarRefreshButton loading={loading} error={error} subject="所有会话" onRefresh={() => void load(true)} />
       </div>
     </div>
-    <div ref={scroll} className="app-sidebar-scroll all-sessions-list" aria-label="所有 Agent 会话" aria-busy={(loading || discovering) && !showingCache && !visible.length}
+    <div ref={scroll} className="app-sidebar-scroll all-sessions-list" aria-label="所有 Agent 会话" aria-busy={(loading || discovering) && !showingCache && !tree.length}
       onScroll={event => {
         const node = event.currentTarget;
         if (node.scrollTop > 0 && node.scrollHeight - node.scrollTop - node.clientHeight < 120) void load(false);
       }}>
       {error && <div role="alert" className="sidebar-load-error"><span>{error}</span><button onClick={() => void load(true)}>重试</button></div>}
-      {(loading || discovering) && !visible.length && !showingCache && <p className="all-sessions-empty" role="status">正在加载所有会话…</p>}
-      {(!loading || showingCache) && !discovering && !error && !visible.length && <p className="all-sessions-empty">{normalized ? "没有匹配的会话" : "暂无会话，开始一个新任务吧"}</p>}
-      {visible.map(session => {
-        const activity = props.needsInput.includes(session.id) ? "needs-input"
-          : props.runningSessionId === session.id ? "running" : session.status === "failed" ? "error"
-          : session.status === "completed" ? "idle" : session.status;
-        const visualState = getSidebarSessionVisualState(activity);
-        return <SidebarSessionRow key={session.id} session={{
-          id: session.id, title: session.title, agentType: session.agentType, workspacePath: session.cwd,
-          visualState, statusLabel: SIDEBAR_SESSION_STATUS_LABELS[visualState],
-          active: props.selectedSessionId === session.id, pinned: pinned.has(session.id),
-          occupiedExternally: session.agentType !== "codex" && session.occupancy === "owned-externally",
-          canDelete: activity !== "running" && activity !== "needs-input",
-        }} onSelect={() => props.onSelect(session)} onPin={() => props.onPin(session.id)}
-          onDelete={anchor => props.onDelete(session, anchor)} />;
-      })}
+      {(loading || discovering) && !tree.length && !showingCache && <p className="all-sessions-empty" role="status">正在加载所有会话…</p>}
+      {(!loading || showingCache) && !discovering && !error && !tree.length && <p className="all-sessions-empty">{normalized ? "没有匹配的会话" : "暂无会话，开始一个新任务吧"}</p>}
+      {tree.map(renderSession)}
       {nextCursor && <button className="all-sessions-more" disabled={loading} onClick={() => void load(false)}>{loading ? "正在加载…" : "加载更早的会话"}</button>}
-      {discovering && visible.length > 0 ? <p className="sidebar-cache-state" role="status">正在后台同步会话…</p>
+      {discovering && tree.length > 0 ? <p className="sidebar-cache-state" role="status">正在后台同步会话…</p>
         : showingCache && <p className="sidebar-cache-state" role="status">{loading ? "显示缓存，正在后台更新…" : "当前显示缓存"}</p>}
     </div>
   </>;

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { tmpdir } from "node:os";
-import { ContextLoader } from "../ContextLoader.js";
+import { ContextLoader } from "../../../infrastructure/filesystem/ContextLoader.js";
 
 describe("ContextLoader", () => {
   const loader = new ContextLoader();

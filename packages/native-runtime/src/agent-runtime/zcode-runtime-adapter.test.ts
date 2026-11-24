@@ -3,9 +3,10 @@ import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AgentEvent } from "@agent/core";
+import { SQLiteDatabase, type AgentEvent } from "@agent/core";
 import { ZCodeClient, decodeZCodeHistory } from "./zcode-client.js";
 import { ZCodeRuntimeAdapter } from "./zcode-runtime-adapter.js";
+import { NativeRuntimeBrokerClient, NativeRuntimeBrokerHost } from "./native-runtime-broker.js";
 import type { NativeRpcConnection } from "./native-rpc-client.js";
 import { NativeRpcError } from "./native-rpc-client.js";
 import type { NativeJsonPacket } from "./native-stdio-channel.js";
@@ -438,6 +439,19 @@ describe("ZCode native-visible child discovery", () => {
     expect(rpc.calls.some(call => ["session/resume", "session/create", "session/send"].includes(call.method))).toBe(false);
   });
 
+  it("opens a child history using only that session's metadata", async () => {
+    const rpc = new ChildFixture();
+    const client = new ZCodeClient(rpc, { readMany: async () => new Map() });
+    const detail = await client.read("sess_child");
+    expect(detail.session).toMatchObject({ id: "sess_child", parentSessionId: "sess_native", readOnly: true });
+    expect(detail.messages).toMatchObject([{ role: "user", content: "native history" }]);
+    expect(rpc.calls.filter(({ method }) => method === "session/list")).toEqual([
+      { method: "session/list", params: { sessionIds: ["sess_child"] } },
+      { method: "session/list", params: { sessionIds: ["sess_child"] } },
+    ]);
+    expect(rpc.calls.some(({ method }) => method === "session/subagents")).toBe(false);
+  });
+
   it("refreshes child metadata and re-discovers children when the parent changes", async () => {
     const rpc = new ChildFixture();
     const client = new ZCodeClient(rpc, { readMany: async () => new Map() });
@@ -467,13 +481,79 @@ describe("ZCode native NDJSON adapter", () => {
     expect((await client.read("sess_native")).messages[0].content).toBe(content);
     expect(rpc.calls.filter(call => call.method === "session/resume")).toHaveLength(0);
   });
-  it("persists a real native session immediately instead of returning a lost deferred session", async () => {
+  it("requests immediate persistence when creating a native session", async () => {
     const rpc = new ZCodeFixture(); const adapter = new ZCodeRuntimeAdapter(new ZCodeClient(rpc, { readMany: async () => new Map() }));
     const created = await adapter.create({ title: "Owned", cwd: "/native/zcode" });
     expect(created.agentType).toBe("zcode"); expect(created.nativeSessionId).toBe("sess_native");
     expect(rpc.calls[0]).toMatchObject({ method: "session/create", params: { persistence: "immediate", workspace: { workspacePath: "/native/zcode", workspaceKey: "/native/zcode" } } });
     expect((await adapter.getSession("sess_native")).messages).toMatchObject([{ role: "user", content: "native history" }]);
     expect(await adapter.listModels()).toEqual([{ id: "native-model", providerID: "zcode-native", displayName: "Native model", providerDisplayName: "Native provider", description: undefined }]);
+  });
+
+  it.each(["eviction", "broker restart", "older fork"] as const)("continues a ZCode fork after %s", async failure => {
+    const directory = await mkdtemp(join(tmpdir(), "agentroam-zcode-fork-"));
+    imageTestDirectories.push(directory);
+    const rpc = new ZCodeFixture();
+    const source = { ...rpc.session, sessionId: "sess_source", title: "Original" };
+    const request = rpc.request.bind(rpc);
+    let resident = false;
+    let persisted = false;
+    rpc.request = async (method, params) => {
+      if (method === "session/list") {
+        const ids = params.sessionIds;
+        const sessions = resident || persisted ? [source, rpc.session] : [source];
+        return { sessions: sessions.filter(session => !Array.isArray(ids) || ids.includes(session.sessionId)) };
+      }
+      if (params.sessionId === source.sessionId && method === "session/messages") {
+        return { messages: [
+          { info: { id: "source-input", role: "user" }, parts: [{ type: "text", text: "Original request" }] },
+          { info: { id: "source-answer", role: "assistant" }, parts: [{ type: "text", text: "Original answer" }] },
+        ] };
+      }
+      if (params.sessionId === rpc.session.sessionId && !resident && !persisted) {
+        if (method === "session/messages") throw new NativeRpcError(`Session is not available: ${rpc.session.sessionId}`, -32004);
+        if (method === "session/resume") throw new NativeRpcError(`Session not found: ${rpc.session.sessionId}`, -32004);
+        if (method === "session/setMode") throw new NativeRpcError("Session runtime is not ready", -32004);
+      }
+      if (method === "session/create") resident = true;
+      if (method === "session/messages" && !persisted) return { messages: [] };
+      if (method === "session/send") persisted = true;
+      return request(method, params);
+    };
+    const createRuntime = () => new UnifiedSessionService(
+      [new ZCodeRuntimeAdapter(new ZCodeClient(rpc, { readMany: async () => new Map() }))], async () => [],
+    );
+    let host = new NativeRuntimeBrokerHost(directory, createRuntime());
+    try {
+      const fork = await host.fork(encodeUnifiedSessionId("zcode", source.sessionId), { messageId: "source-answer" });
+      expect(await host.list()).toContainEqual(expect.objectContaining({ id: fork.id, title: rpc.session.title }));
+      if (failure !== "eviction") {
+        await host.stop();
+        if (failure === "older fork") {
+          const db = new SQLiteDatabase(directory);
+          try { db.db.prepare("DELETE FROM native_runtime_pending_session WHERE session_id = ?").run(fork.id); }
+          finally { db.close(); }
+        }
+        host = new NativeRuntimeBrokerHost(directory, createRuntime());
+      }
+      resident = false;
+      expect((await host.get(fork.id)).messages).toEqual(expect.arrayContaining([
+        expect.objectContaining({ role: "assistant", content: "Original answer" }),
+      ]));
+      expect(rpc.calls.filter(call => call.method === "session/create")).toHaveLength(1);
+      await host.startRun(fork.id, "Continue from the answer");
+      await vi.waitFor(() => expect(host.snapshot(fork.id).events.at(-1)?.event).toMatchObject({
+        type: "done", finalText: "native answer",
+      }));
+      expect(rpc.calls.filter(call => call.method === "session/create").map(call => call.params.sessionId))
+        .toEqual([undefined, fork.nativeSessionId]);
+      const sends = rpc.calls.filter(call => call.method === "session/send");
+      expect(sends).toHaveLength(1);
+      expect(sends[0].params).toMatchObject({ sessionId: fork.nativeSessionId, content: expect.stringContaining("Continue from the answer") });
+      expect(String(sends[0].params.content)).toContain("Original answer");
+    } finally {
+      await host.stop();
+    }
   });
 
   it("streams native events once per sequence and retains provider/model identity per turn", async () => {
@@ -483,11 +563,11 @@ describe("ZCode native NDJSON adapter", () => {
       rpc.listener("session/event", { sessionId: "sess_native", seq: rpc.sequence, type: "model.streaming", payload: { kind: "text_delta", delta: "DUPLICATE" } });
       rpc.emit("tool.updated", { kind: "started", toolCallId: "tool", toolName: "Read", input: { path: "README" } });
       rpc.emit("tool.updated", { kind: "result", toolCallId: "tool", output: "native result" });
-      rpc.emit("turn.completed", {});
+      rpc.emit("turn.completed", { duration: 65_000 });
     };
     const events = await collect(client.run("sess_native", "request", undefined, { model: { providerID: "zcode-native", id: "native-model" } }));
     expect(events.map(event => event.type)).toEqual(["text_chunk", "tool_call", "tool_result", "done"]);
-    expect(events.at(-1)).toEqual({ type: "done", finalText: "answer" });
+    expect(events.at(-1)).toEqual({ type: "done", finalText: "answer", durationMs: 65_000 });
     expect(rpc.calls.find(call => call.method === "session/send")?.params).toMatchObject({ sessionId: "sess_native", modelSelection: { providerId: "zcode-native", modelId: "native-model" } });
     await collect(client.run("sess_native", "second turn"));
     expect(rpc.calls.filter(call => call.method === "session/resume")).toHaveLength(1);
@@ -677,10 +757,101 @@ describe("ZCode native NDJSON adapter", () => {
     await expect(rpc.handler("interaction/unsupportedOperation", {})).rejects.toThrow("Unsupported");
   });
 
+  it("does not read a snapshot during ordinary refreshes of a loaded session", async () => {
+    const rpc = new ZCodeFixture();
+    const client = new ZCodeClient(rpc, { readMany: async () => new Map() });
+    await client.create({ cwd: "/native/zcode", title: "Native history" });
+    for (let refresh = 0; refresh < 10; refresh++) {
+      expect((await client.read("sess_native")).messages[0]?.content).toBe("native history");
+    }
+    expect(rpc.calls.filter(call => call.method === "session/messages")).toHaveLength(10);
+    expect(rpc.calls.some(call => call.method === "session/read")).toBe(false);
+  });
+
+  it("reuses a question snapshot across refreshes and answers the restored card through the broker", async () => {
+    const rpc = new ZCodeFixture();
+    const request = rpc.request.bind(rpc);
+    const question = { question: "范围？", options: [{ label: "M0–M2", description: "先跑通" }] };
+    let toolStatus = "running";
+    rpc.request = async (method, params) => {
+      if (method === "session/messages") {
+        rpc.calls.push({ method, params });
+        return {
+          messages: [{
+            info: { id: "question-message", role: "assistant" },
+            parts: [{
+              type: "tool",
+              callID: "call-question",
+              tool: "AskUserQuestion",
+              state: { status: toolStatus, input: { questions: [question] } },
+            }],
+          }],
+        };
+      }
+      if (method === "session/read") {
+        rpc.calls.push({ method, params });
+        return {
+          ...rpc.snapshot(),
+          projection: {
+            pendingPermissions: [{
+              requestId: "perm-question",
+              toolCallId: "call-question",
+              toolName: "AskUserQuestion",
+              input: { questions: [question] },
+            }],
+          },
+        };
+      }
+      return request(method, params);
+    };
+    const client = new ZCodeClient(rpc, { readMany: async () => new Map() });
+    await client.create({ cwd: "/native/zcode", title: "Native question" });
+    const directory = await mkdtemp(join(tmpdir(), "ar-zcode-"));
+    imageTestDirectories.push(directory);
+    const host = new NativeRuntimeBrokerHost(directory, new UnifiedSessionService([new ZCodeRuntimeAdapter(client)], async () => []));
+    try {
+      await host.start();
+      const broker = new NativeRuntimeBrokerClient({ directory });
+      const sessionId = encodeUnifiedSessionId("zcode", "sess_native");
+      const refresh = () => broker.get(sessionId, { limit: 30 });
+      const pending = (await refresh()).messages.find(message => message.presentation?.question?.status === "pending");
+      const card = pending?.presentation?.question;
+      expect(card?.questionId).toMatch(/^zcode-pending-question:/);
+      expect((await refresh()).messages).toContainEqual(pending);
+      expect((await refresh()).messages).toContainEqual(pending);
+      expect(rpc.calls.filter(call => call.method === "session/read")).toHaveLength(1);
+
+      const answer = { answer: "M0–M2", selectedIndices: [0] };
+      await expect(broker.answerQuestion(card!.questionId, answer)).resolves.toBe(true);
+      expect(rpc.calls.find(call => call.method === "v4/command")?.params).toMatchObject({
+        type: "resolveInteraction",
+        sessionId: "sess_native",
+        payload: { interactionId: "perm-question", answer: { action: "accept", content: { answers: { "范围？": "M0–M2" } } } },
+      });
+      expect((await refresh()).messages.some(message => message.presentation?.question?.status === "pending")).toBe(false);
+      await expect(broker.answerQuestion(card!.questionId, answer)).resolves.toBe(false);
+      toolStatus = "completed";
+      expect((await refresh()).messages[0]?.presentation?.question?.status).toBe("answered");
+      expect(rpc.calls.filter(call => call.method === "session/read")).toHaveLength(1);
+    } finally {
+      await host.stop();
+    }
+  });
+
   it("coalesces forty native reannouncements and reuses the reply after answering", async () => {
     const rpc = new ZCodeFixture(); const client = new ZCodeClient(rpc, { readMany: async () => new Map() });
     const params = { sessionId: "sess_native", requestId: "perm-question", toolCallId: "call-question", toolName: "AskUserQuestion",
       questions: [{ question: "强制改密，如何处理？", options: [{ value: "pause", label: "暂停" }] }] };
+    const request = rpc.request.bind(rpc);
+    rpc.request = async (method, input) => {
+      if (method !== "session/messages") return request(method, input);
+      rpc.calls.push({ method, params: input });
+      return { messages: [{
+        info: { id: "live-question", role: "assistant" },
+        parts: [{ type: "tool", callID: params.toolCallId, tool: params.toolName,
+          state: { status: "running", input: { questions: params.questions } } }],
+      }] };
+    };
     let replies: unknown[] = [];
     let lateReply: unknown;
     rpc.prompt = async () => {
@@ -695,6 +866,8 @@ describe("ZCode native NDJSON adapter", () => {
     if (first.value.type !== "ask_user") throw new Error("Expected a dedicated question, not raw tool JSON");
     expect(first.value.question).toBe("强制改密，如何处理？");
     expect(replies).toEqual([]);
+    expect((await client.read("sess_native")).messages).toEqual([]);
+    expect(rpc.calls.some(call => call.method === "session/read")).toBe(false);
     await client.answerQuestion(first.value.questionId, { answer: "暂停", selectedIndices: [0] });
     const events = [first.value];
     for (let next = await iterator.next(); !next.done; next = await iterator.next()) events.push(next.value);

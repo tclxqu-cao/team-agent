@@ -1173,6 +1173,62 @@ describe("loadProgressiveSessionHistoryPage", () => {
 });
 
 describe("mergeProgressiveSessionHistoryPage", () => {
+  it("keeps the previous reply ahead of the newly confirmed goal through repeated refreshes", () => {
+    const user = {
+      ...message("history-message.v1.1.user", "你改了些什么"),
+      presentation: { executionTrace: { turnId: "ordinary" } },
+    };
+    const reply = {
+      ...assistant("codex-trace:ordinary:agent:reply", "修改说明"),
+      presentation: { nativeMessageId: "codex-trace:ordinary:agent:reply", forkPoint: { turnId: "ordinary" } },
+    };
+    const pending = { ...message("goal-source", "继续提交"), isGoal: true, awaitingHistory: true };
+    const goal = {
+      ...message("history-message.v1.3.goal", pending.content),
+      presentation: { isGoal: true, executionTrace: { turnId: "goal" } },
+    };
+    // A late chunk can still arrive after the pending goal is promoted.
+    let current: ChatMessage[] = [user, pending, { ...reply, content: "修改", presentation: { agentMessagePhase: "final_answer" } }];
+    for (let attempt = 0; attempt < 2; attempt++) {
+      current = mergeProgressiveSessionHistoryPage(current, [user, reply, goal], "core", { delivery: "core", revision: "new" });
+      expect(current.map(entry => entry.id)).toEqual([user.id, reply.id, goal.id]);
+      expect(current[1].content).toBe(reply.content);
+    }
+  });
+
+  it("preserves a distinct native turn with identical input after the history ordinals change", () => {
+    const user = (id: string, turnId: string) => ({
+      ...message(id, "继续提交"),
+      presentation: { executionTrace: { turnId } },
+    });
+    const earlier = user("history-message.v1.3.goal", "earlier");
+    const next = user(earlier.id, "next");
+    const earlierAfterRevision = user("history-message.v1.2.goal", "earlier");
+    const current = [earlier, assistant("earlier-reply", "第一轮结果")];
+    const refreshed = [earlierAfterRevision, assistant("earlier-reply", "第一轮结果"), next];
+    const merged = mergeProgressiveSessionHistoryPage(current, refreshed, "core", { delivery: "core", revision: "new" });
+    expect(merged.map(entry => entry.id)).toEqual([earlierAfterRevision.id, "earlier-reply", next.id]);
+  });
+
+  it("replaces a live answer fragment with the full completed answer when history embeds reasoning", () => {
+    const user = message("history-message.v1.1.user", "检查边界");
+    const suffix = "-hub-platform-boundaries.md)";
+    const fragment = assistant("live-fragment", suffix);
+    const reasoning = [{ itemId: "thought-1", sectionIndex: 0, text: "核对边界" }];
+    const answer = {
+      ...assistant("history-message.v1.2.answer", `检查完成。详见 [边界文档](message${suffix}`),
+      presentation: { forkPoint: { turnId: "turn-1" }, reasoning },
+    };
+    const thought = { ...assistant("reasoning-only", ""), presentation: { reasoning } };
+    const merged = mergeProgressiveSessionHistoryPage([user, fragment], [user, thought, answer],
+      "core", { delivery: "core", revision: "next" });
+
+    expect(merged.map(({ id, content }) => ({ id, content }))).toEqual([
+      { id: user.id, content: user.content }, { id: answer.id, content: answer.content },
+    ]);
+    expect(merged[1].presentation).toEqual(answer.presentation);
+  });
+
   it.each(["pending", "failed"] as const)("clears a confirmed %s send during a Codex core refresh and retains live tools", (sendState) => {
     const user = { ...message("live-user", "completed?"), sendState, images: ["data:image/png;base64,attachment"] };
     const tool = assistant("live-tool", "", [{ id: "call-1", name: "shell", arguments: {}, result: "ok" }]);

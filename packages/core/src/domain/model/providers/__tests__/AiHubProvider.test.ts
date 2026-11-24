@@ -9,7 +9,7 @@ import {
   parseAiHubToolCall,
   selectAiHubRelayMessages,
   stripCapturedCodeToolbar,
-} from "../AiHubProvider.js";
+} from "../../../../infrastructure/models/AiHubProvider.js";
 
 const tools: ToolDefinition[] = [{
   name: "read_file",

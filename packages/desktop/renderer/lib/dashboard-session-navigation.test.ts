@@ -1,5 +1,5 @@
 import { expect, it, vi } from "vitest";
-import type { AgentApi } from "../global";
+import type { AgentApi } from "../../../shared/src/contracts/agent-api";
 import { getCachedDashboardSession, resolveDashboardSession, initialSessionNavigation } from "./dashboard-session-navigation";
 import { loadProgressiveSessionHistoryPage } from "./session-history";
 

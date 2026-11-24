@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { LoaderCircle } from "lucide-react";
-import type { SessionQueryIndexEntry } from "../global";
+import type { SessionQueryIndexEntry } from "../../../shared/src/contracts/agent-api";
 
 const MAX_TICKS = 60;
 const MIN_RAIL_HEIGHT = 32;

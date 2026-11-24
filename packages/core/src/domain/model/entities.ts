@@ -53,7 +53,9 @@ export interface MessageAttachment {
 export type SessionForkPoint = { turnId: string; messageId?: never } | { messageId: string; turnId?: never };
 
 export interface MessagePresentation {
-  /** Native assistant identity retained when generic pagination assigns a page-local history ID. */
+  /** This user input starts a native goal. */
+  isGoal?: boolean;
+  /** Stable native assistant identity shared by streaming and history. */
   nativeMessageId?: string;
   rawContent?: string;
   attachments?: MessageAttachment[];

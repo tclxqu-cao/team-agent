@@ -1,1 +1,1 @@
-export { default } from "../../../desktop/renderer/components/file-workspace/FileTree";
+export { default } from "../../../shared/src/file-workspace/FileTree";

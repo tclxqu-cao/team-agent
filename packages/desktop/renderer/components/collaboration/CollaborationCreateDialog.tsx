@@ -5,7 +5,7 @@ import {
   type CollaborationGroup,
   type CollaborationMember,
 } from "../../../../core/src/domain/collaboration/types";
-import type { RuntimeHealth, RuntimeModelInfo } from "../../global";
+import type { RuntimeHealth, RuntimeModelInfo } from "../../../../shared/src/contracts/agent-api";
 import { isWebShell } from "../../web/webLayout";
 import HostProjectPicker from "../HostProjectPicker";
 import { AGENT_NAMES, collaborationRequest } from "./client";

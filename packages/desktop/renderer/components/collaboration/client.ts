@@ -1,4 +1,5 @@
 import type { CollaborationCommand } from "@agent/core/domain/collaboration/types";
+import { AGENT_LABELS } from "../../lib/agent-catalog";
 
 export async function collaborationRequest<T>(
   command: CollaborationCommand,
@@ -9,17 +10,7 @@ export async function collaborationRequest<T>(
   return (await window.agentApi.collaboration(command, options)) as T;
 }
 
-export const AGENT_NAMES = {
-  "customer-agent": "Customer Agent",
-  codex: "Codex",
-  "claude-code": "Claude Code",
-  opencode: "OpenCode",
-  "deepseek-harness": "DeepSeek Harness",
-  qoder: "Qoder",
-  zcode: "ZCode",
-  workbuddy: "WorkBuddy",
-  copilot: "VS Code Copilot",
-} as const;
+export const AGENT_NAMES = AGENT_LABELS;
 export const DISCUSSION_STATUS = {
   idle: "未开始",
   running: "协作中",

@@ -16,6 +16,7 @@ import { ArrowDownToLine, AlarmClock, Check, CircleAlert, Copy, CornerUpRight, F
 import AgentBrandIcon from "./AgentBrandIcon";
 import SessionLoading from "./SessionLoading";
 import SessionTaskPanel, { SessionTaskPanelToggle } from "./SessionTaskPanel";
+import SessionGoalQueue from "./SessionGoalQueue";
 import SessionTurnResults from "./SessionTurnResults";
 import { collectTurnChanges, sessionTurnResults } from "../lib/session-turn-results";
 import { hasSessionPlanAdditions, latestSessionPlan, normalizeSessionPlan, sessionPlanSnapshot, successfulSessionPlanUpdate } from "../lib/session-plan";
@@ -86,14 +87,14 @@ import { refreshSessionHistoryWhenReady, startSessionHistoryPolling } from "../l
 import { SessionHistoryRequests } from "../lib/session-history-requests";
 import { presentQuestionAnswers } from "../lib/ask-user-answer-display";
 import { QueryNavigationRail } from "./QueryNavigationRail";
-import type { SessionQueryIndex, SessionQueryIndexEntry } from "../global";
+import type { SessionQueryIndex, SessionQueryIndexEntry } from "../../../shared/src/contracts/agent-api";
 import {
   describeSessionLoadError,
   loadSessionWithRetry,
 } from "../lib/session-load-recovery";
-import { blobToDataUrl, normalizeComposerImage } from "../lib/browser-image-normalization";
+import { blobToDataUrl, normalizeComposerImage } from "../../../shared/src/browser/browser-image-normalization";
 import { canGuideExternalSession, supportsMidTurnSteering, usesNativeSessionPermissions } from "../lib/runtime-capabilities";
-import { copyTextToClipboard } from "../lib/clipboard";
+import { copyTextToClipboard } from "../../../shared/src/browser/clipboard";
 import {
   createComposerSubmission,
   createSuggestionSubmission,
@@ -471,6 +472,8 @@ import {
   validCompletionDurationMs,
 } from "../lib/message-actions";
 import { prepareComposerFiles } from "../lib/composer-file-routing";
+import { encodePromptAttachments, promptAttachmentFiles } from "../lib/prompt-attachments";
+import type { NativeRunOptions } from "../../../shared/src/contracts/agent-api";
 import {
   clearOccupiedRecovery,
   createOccupiedSessionRecovery,
@@ -484,7 +487,7 @@ import {
   type OccupiedSendPayload,
   type OccupiedSessionRecovery,
 } from "../lib/occupied-session-fork";
-import type { AgentType, AgentWorkspace, NativeReasoningEffort, RuntimeHealth, RuntimeModelSelection, SessionGoalState, ThreadGoalInfo, ToolPermissionMode, UnifiedSessionSummary } from "../global";
+import type { AgentType, AgentWorkspace, NativeReasoningEffort, RuntimeHealth, RuntimeModelSelection, SessionGoalState, ThreadGoalInfo, ToolPermissionMode, UnifiedSessionSummary } from "../../../shared/src/contracts/agent-api";
 import { NativeGoalBar } from "./NativeGoalBar";
 import { useNativeSessionGoal } from "../lib/use-native-session-goal";
 import { nativeGoalSubmission } from "../lib/native-goal-submission";
@@ -967,14 +970,25 @@ export default function ChatView({
     : "";
   const nativeEffortOptions = useMemo<NativeReasoningEffort[]>(() => {
     if (!isNativeRuntime) return [];
-    const selected = runtimeModelOptions.find((option) => option.key === selectedNativeModelKey);
+    const selected = selectedNativeModelKey
+      ? runtimeModelOptions.find((option) => option.key === selectedNativeModelKey)
+      : nativeModels.find(model => model.current);
     return nativeReasoningEffortOptions(composerAgentType, selected?.reasoningEfforts);
-  }, [isNativeRuntime, runtimeModelOptions, selectedNativeModelKey, composerAgentType]);
+  }, [isNativeRuntime, runtimeModelOptions, selectedNativeModelKey, composerAgentType, nativeModels]);
   const activeNativeEffort = effectiveNativePref.reasoningEffort
     && nativeEffortOptions.includes(effectiveNativePref.reasoningEffort)
     ? effectiveNativePref.reasoningEffort
     : undefined;
   const nativeModelPickerReady = runtimeModelOptions.length > 0;
+
+  const composerRunOptions = (attachments?: NativeRunOptions["attachments"]): NativeRunOptions | undefined => {
+    if (!isNativeRuntime) return activeProfileId ? { profileId: activeProfileId } : undefined;
+    return {
+      ...(supportsNativeModelSelection && nativeModelCatalogReady && effectiveNativePref.model?.id ? { model: effectiveNativePref.model } : {}),
+      ...(supportsNativeModelSelection && activeNativeEffort ? { reasoningEffort: activeNativeEffort } : {}),
+      ...(attachments?.length ? { attachments } : {}),
+    };
+  };
 
   const hasDurableMessageQueue = sessionSummary?.messageQueueVersion === 1;
   const canSteerQueuedMessages = supportsMidTurnSteering(sessionSummary?.agentType);
@@ -1030,6 +1044,8 @@ export default function ChatView({
   const canStopRun = shouldQueueMessage;
   const isRunning = parallel.group ? parallel.isRunning(viewSessionId)
     : isNativeRunVisible(sessionSummary, viewSessionId, isLocallyRunning, nativeRunObservation);
+  const canInsertQueuedGoal = !!viewSessionId && canCompose && sessionSummary?.occupancy !== "owned-externally";
+  const canSteerQueuedGoals = canInsertQueuedGoal && canSteerQueuedMessages && shouldQueueMessage;
   const desktopToolRunId = isRunning && viewSessionId ? desktopToolRuns.get(viewSessionId) : undefined;
   const sessionDesktop = useSessionDesktopProjection(desktopTaskPane ? null : viewSessionId,
     observedRunId && observedRunId !== desktopToolRunId ? undefined : desktopToolRunId);
@@ -1072,7 +1088,7 @@ export default function ChatView({
   const [permissionMenuOpen, setPermissionMenuOpen] = useState(false);
   const [permissionMode, setPermissionMode] = useState<ToolPermissionMode>("full-access");
   const [nativePermissions, setNativePermissions] = useState<UnifiedSessionSummary["nativePermissions"]>(sessionSummary?.nativePermissions);
-  const usesNativePermissions = usesNativeSessionPermissions(composerAgentType);
+  const usesNativePermissions = !!nativePermissions || usesNativeSessionPermissions(composerAgentType, runtimeHealth);
   const permissionLabel = usesNativePermissions
     ? nativePermissions ? nativePermissionLabel(nativePermissions.currentValue, nativePermissions.options.find(option => option.value === nativePermissions.currentValue)?.label) : "原生权限"
     : PERMISSION_OPTIONS.find(option => option.value === permissionMode)?.label;
@@ -1081,16 +1097,12 @@ export default function ChatView({
   const supportsNativeModelSelection = sessionSummary?.nativeModelSelectionSupported !== false;
   const nativeGoal = useNativeSessionGoal(viewSessionId, supportsNativeGoal);
   const canComposeNativeGoal = supportsNativeGoal && composerRoute.ready && runtimeReady && !isCompatibilityReadOnly;
-  useEffect(() => {
-    if (sessionSummary?.nativeGoalSupported === false) setGoalMode(false);
-  }, [sessionSummary?.nativeGoalSupported]);
   const canSubmitComposer = isParallelComposer
     ? composerRoute.ready && !parallel.submitting
-    : canCompose || (canComposeNativeGoal && goalMode);
+    : canCompose;
   const composerScopeRef = useRef("");
   composerScopeRef.current = JSON.stringify([composerAgentType, selectedProjectId, viewSessionId]);
   const nativePermissionPendingRef = useRef(false);
-  const [draggedGoalId, setDraggedGoalId] = useState<string | null>(null);
   const [isSavingPermission, setIsSavingPermission] = useState(false);
   const effortMenuRef = useRef<HTMLDivElement>(null);
   const permissionMenuRef = useRef<HTMLDivElement>(null);
@@ -1154,6 +1166,7 @@ export default function ChatView({
   const displayedError = sessionLoadError || error || historicalRunError;
   const [sessionReloadGeneration, setSessionReloadGeneration] = useState(0);
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
+  const sendingAttachmentsRef = useRef(false);
   /** Base64 data URLs of images to send with the next message */
   const [pendingImages, setPendingImages] = useState<string[]>([]);
   const [pendingImageReads, setPendingImageReads] = useState(0);
@@ -1769,6 +1782,10 @@ export default function ChatView({
     }
   };
 
+  function restorePromptAttachments(attachments: NativeRunOptions["attachments"]) {
+    if (attachments?.length) setAttachedFiles(files => [...promptAttachmentFiles(attachments), ...files]);
+  }
+
   const removeAttachedFile = (index: number) => {
     setAttachedFiles((prev) => prev.filter((_, i) => i !== index));
   };
@@ -2160,7 +2177,7 @@ export default function ChatView({
             nextAutoScrollRef.current = isNearBottom ? null : "skip";
             setMessages(merged, targetSid, restoredWindow.window);
             syncToolResultScope(targetSid, detail?.history?.revision);
-            if (usesNativeSessionPermissions(detail?.agentType)) setNativePermissions(detail?.nativePermissions);
+            setNativePermissions(detail?.nativePermissions);
             if (detail?.goalState) setGoalState(projectSessionGoals(detail.goalState) as SessionGoalState);
 
             if (historyCursorRef.current !== restoredWindow.window.olderCursor) {
@@ -2592,7 +2609,7 @@ export default function ChatView({
 
           const nextQueued = useAgentStore.getState()
             .getMessagesForSession(targetSessionId)
-            .find((message) => message.isQueued && !message.queueItemId);
+            .find((message) => message.isQueued && !message.isGoal && !message.queueItemId);
           if (!nextQueued) {
             if (runningSessionRef.current === targetSessionId) runningSessionRef.current = null;
             if (useAgentStore.getState().runningSessionId === targetSessionId) setRunningSession(null);
@@ -2777,16 +2794,23 @@ export default function ChatView({
               messagePhase: "commentary",
             }, eventSid);
           } else {
-            if (eventSid && event.turnId && event.itemId && !event.messagePhase && historyAgentType(eventSid) === "codex") {
+            if (eventSid && event.turnId && event.itemId && historyAgentType(eventSid) === "codex") {
               const id = `codex-trace:${event.turnId}:agent:${event.itemId}`;
               const current = getMessagesForSession(eventSid);
-              const inTrace = current.some(message => message.executionTrace?.liveMessages?.some(item => item.id === id));
+              const existing = current.find(message => message.id === id);
+              const inTrace = !event.messagePhase && current.some(message => message.executionTrace?.liveMessages?.some(item => item.id === id));
               if (inTrace) {
                 applyCodexExecutionEvent(event.turnId, { type: "text_chunk", text: event.text, turnId: event.turnId, itemId: event.itemId, messagePhase: "commentary" }, eventSid);
-              } else if (current.some(message => message.id === id)) {
-                updateMessage(id, message => ({ ...message, content: message.content + event.text }), eventSid);
+              } else if (existing) {
+                // A replay can arrive after history has restored the complete item.
+                if (existing.presentation?.nativeMessageId !== id) {
+                  updateMessage(id, message => ({ ...message, content: message.content + event.text }), eventSid);
+                }
               } else {
-                addMessage({ id, role: "assistant", content: event.text, timestamp: Date.now() }, eventSid);
+                addMessage({
+                  id, role: "assistant", content: event.text, timestamp: Date.now(),
+                  ...(event.messagePhase ? { presentation: { agentMessagePhase: event.messagePhase } } : {}),
+                }, eventSid);
               }
             } else {
               appendText(event.text, eventSid);
@@ -3013,6 +3037,8 @@ export default function ChatView({
             options: event.options,
             fields: event.fields,
             multiSelect: event.multiSelect,
+            cancellable: event.cancellable,
+            allowFreeText: event.allowFreeText,
           },
           timestamp: Date.now(),
         }, eventSid);
@@ -3024,10 +3050,12 @@ export default function ChatView({
           : useAgentStore.getState().messages;
         const pending = sessionMessages.find((message) => message.askUser?.questionId === event.questionId);
         if (pending) {
+          const resolved = event.resolvedQuestion;
           updateMessage(pending.id, (message) => ({
             ...message,
             askUser: message.askUser
-              ? { ...message.askUser, answered: true, answer: message.askUser.answer ?? "已处理" }
+              ? { ...message.askUser, answered: resolved?.status !== "cancelled", cancelled: resolved?.status === "cancelled",
+                answer: resolved?.answer ?? message.askUser.answer ?? "已处理" }
               : message.askUser,
           }), eventSid);
         }
@@ -3068,7 +3096,7 @@ export default function ChatView({
         clearRuntimeProgress(eventSid);
         // Only clear running state here if no queued messages — otherwise
         // startRun's finally block will chain the next run seamlessly.
-        if (eventSid && !getMessagesForSession(eventSid).some(m => m.isQueued)) {
+        if (eventSid && !getMessagesForSession(eventSid).some(m => m.isQueued && !m.isGoal)) {
           if (runningSessionRef.current === eventSid) runningSessionRef.current = null;
           if (useAgentStore.getState().runningSessionId === eventSid) setRunningSession(null);
         }
@@ -3181,6 +3209,7 @@ export default function ChatView({
               composerDraftRef.current = restored;
               setInput(restored.text);
               setPendingImages(restored.images);
+              restorePromptAttachments(capturedPayload?.runOptions?.attachments);
             }
           }
           pendingNativeSendPayloadRef.current.delete(eventSid);
@@ -3217,6 +3246,7 @@ export default function ChatView({
                   content: rejectedMessage.content,
                   images: rejectedMessage.images,
                   agentName: rejectedMessage.agentName,
+                  runOptions: capturedPayload?.runOptions,
                 }).then((state) => {
                   applySessionQueueState(state, eventSid);
                   clearSessionDraft(eventSid);
@@ -3229,6 +3259,7 @@ export default function ChatView({
                   if ((selectedSessionIdRef.current || sessionIdRef.current) === eventSid) {
                     setInput(failedContent);
                     setPendingImages(failedImages);
+                    restorePromptAttachments(capturedPayload?.runOptions?.attachments);
                   }
                   setError(queueError instanceof Error ? queueError.message : "排队消息保存失败");
                 });
@@ -3638,16 +3669,14 @@ export default function ChatView({
   };
 
   const moveQueuedMessageByKeyboard = (msgId: string, direction: -1 | 1) => {
-    const queued = useAgentStore.getState().messages.filter((message) => message.isQueued);
+    const queued = useAgentStore.getState().messages.filter((message) => message.isQueued && !message.isGoal);
     const currentIndex = queued.findIndex((message) => message.id === msgId);
     const target = queued[currentIndex + direction];
     if (target) void reorderQueuedMessage(msgId, target.id);
   };
 
-  const dropQueuedGoal = async (targetGoalId: string) => {
-    const sourceGoalId = draggedGoalId;
-    setDraggedGoalId(null);
-    if (!viewSessionId || !sourceGoalId || sourceGoalId === targetGoalId) return;
+  const reorderQueuedGoal = async (sourceGoalId: string, targetGoalId: string) => {
+    if (!viewSessionId || sourceGoalId === targetGoalId) return;
     const orderedIds = goalState.queued.map((goal) => goal.id);
     const from = orderedIds.indexOf(sourceGoalId);
     const to = orderedIds.indexOf(targetGoalId);
@@ -3665,13 +3694,61 @@ export default function ChatView({
     try {
       applySessionQueueState(await window.agentApi.reorderSessionGoals(viewSessionId, nextIds), viewSessionId);
     } catch (goalError) {
-      setGoalState(previous);
-      setError(goalError instanceof Error ? goalError.message : "目标排序保存失败");
+      if (viewSessionIdRef.current === viewSessionId) {
+        setGoalState(previous);
+        setError(goalError instanceof Error ? goalError.message : "目标排序保存失败");
+      }
+    }
+  };
+
+  const editGoal = async (goalId: string, objective: string) => {
+    if (!viewSessionId) return;
+    setError(null);
+    try {
+      const state = await window.agentApi.updateSessionGoal(viewSessionId, goalId, objective);
+      applySessionQueueState(state, viewSessionId);
+      const queued = state.queued.find(goal => goal.id === goalId);
+      if (queued?.sourceMessageId) {
+        const current = useAgentStore.getState().getMessagesForSession(viewSessionId);
+        setMessages(current.map(message => message.id === queued.sourceMessageId
+          ? { ...message, content: queued.objective } : message), viewSessionId);
+      }
+    } catch (goalError) {
+      if (viewSessionIdRef.current === viewSessionId) setError(goalError instanceof Error ? goalError.message : "目标编辑失败");
+      throw goalError;
+    }
+  };
+
+  const steerGoal = async (goalId: string) => {
+    if (!viewSessionId) return;
+    setError(null);
+    try {
+      const state = await window.agentApi.steerSessionGoal(viewSessionId, goalId);
+      const receipt = state.history.find(goal => goal.id === goalId && goal.lastReason === "steered");
+      if (receipt?.sourceMessageId) {
+        const current = getMessagesForSession(viewSessionId);
+        const original = current.find(message => message.id === receipt.sourceMessageId);
+        if (original && !original.isSteered) {
+          setMessages(markDurableMessageSteered(current, original.id), viewSessionId);
+        }
+      }
+      applySessionQueueState(state, viewSessionId);
+    } catch (goalError) {
+      if (viewSessionIdRef.current === viewSessionId) setError(goalError instanceof Error ? goalError.message : "目标插入失败");
+    }
+  };
+
+  const insertGoal = async (goalId: string) => {
+    if (canSteerQueuedGoals) {
+      await steerGoal(goalId);
+    } else if (goalState.queued[0]) {
+      await reorderQueuedGoal(goalId, goalState.queued[0].id);
     }
   };
 
   const removeGoal = async (goalId: string) => {
     if (!viewSessionId) return;
+    const wasActive = goalState.active?.id === goalId;
     const queuedGoal = goalState.queued.find((goal) => goal.id === goalId);
     try {
       const state = await window.agentApi.cancelSessionGoal(viewSessionId, goalId);
@@ -3683,7 +3760,7 @@ export default function ChatView({
           viewSessionId,
         );
       }
-      if (!state.active) setRunningSession(null);
+      if (wasActive && !state.active && useAgentStore.getState().runningSessionId === viewSessionId) setRunningSession(null);
     } catch (goalError) {
       setError(goalError instanceof Error ? goalError.message : "目标删除失败");
     }
@@ -3709,10 +3786,12 @@ export default function ChatView({
       images?: string[];
       restoreDraftOnFailure?: boolean;
       restoreDraftScope?: string;
+      runOptions?: NativeRunOptions;
     },
     targetSessionId: string,
     agentIds?: string[],
   ) {
+    const runOptions = message.runOptions ?? composerRunOptions();
     const notificationRunId = crypto.randomUUID();
     runTerminalBySessionRef.current.delete(targetSessionId);
     let runCompleted = false;
@@ -3725,6 +3804,7 @@ export default function ChatView({
       agentIds: agentIds ? [...agentIds] : undefined,
       agentName: message.agentName,
       restoreDraftOnFailure: message.restoreDraftOnFailure,
+      runOptions,
     });
     abortRef.current = false;
     managedRunSessionsRef.current.add(targetSessionId);
@@ -3733,17 +3813,13 @@ export default function ChatView({
     setRunningSession(targetSessionId);
     try {
       if (window.agentApi) {
-        const runNativeOptions = isNativeRuntime && isNativeAgentType(composerAgentType) ? {
-          ...(supportsNativeModelSelection && nativeModelCatalogReady && effectiveNativePref.model?.id ? { model: effectiveNativePref.model } : {}),
-          ...(supportsNativeModelSelection && activeNativeEffort ? { reasoningEffort: activeNativeEffort } : {}),
-        } : activeProfileId ? { profileId: activeProfileId } : undefined;
         await window.agentApi.run(
           message.content,
           targetSessionId,
           agentIds,
           message.agentName,
           message.images,
-          runNativeOptions,
+          runOptions,
         );
         runCompleted = true;
       }
@@ -3768,6 +3844,7 @@ export default function ChatView({
               composerDraftRef.current = restored;
               setInput(restored.text);
               setPendingImages(restored.images);
+              restorePromptAttachments(failedPayload.runOptions?.attachments);
             }
           }
           pendingNativeSendPayloadRef.current.delete(targetSessionId);
@@ -3803,7 +3880,7 @@ export default function ChatView({
       // Check for next queued message (skip if user aborted)
       const nextQueued = !abortRef.current
         ? useAgentStore.getState().getMessagesForSession(targetSessionId).find(
-            (message) => message.isQueued && !message.queueItemId,
+            (message) => message.isQueued && !message.isGoal && !message.queueItemId,
           )
         : undefined;
       if (nextQueued) {
@@ -3859,6 +3936,21 @@ export default function ChatView({
 
     const specialCommand = (submission.applyGoalMode && goalMode) || /^\/(?:loop|goal)(?:\s|$)/i.test(submission.text);
     const targetsViewedSession = parallel.group && parallel.recipients.length === 1 && parallel.recipients[0] === viewSessionId;
+    if (submission.attachments?.length) {
+      const targets = parallel.group
+        ? parallel.group.members.filter(member => parallel.recipients.includes(member.id)).map(member => member.agentType)
+        : isParallelComposer ? newSessionAgents : [composerAgentType];
+      const capable = (health: readonly RuntimeHealth[]) => targets.every(type =>
+        health.some(runtime => runtime.agentType === type && runtime.available && runtime.capabilities?.promptFileAttachments));
+      const health = runtimeHealth ?? [];
+      const supportsFiles = !specialCommand && (capable(health)
+        || await window.agentApi.getRuntimeHealth().then(capable).catch(() => false));
+      if (!supportsFiles) {
+        setError("所选 Agent 或当前发送方式不支持普通文件附件");
+        return;
+      }
+    }
+    const runOptions = composerRunOptions(submission.attachments);
     if (isParallelComposer && !(specialCommand && targetsViewedSession)) {
       if (specialCommand) {
         setError("目标和定时任务请先选择只发送给当前查看的 Agent");
@@ -3892,9 +3984,10 @@ export default function ChatView({
         const result = await parallel.submit(targets.map(member => ({ member, message: {
           sourceMessageId, content: submission.text, images: submission.images,
           agentIds: submission.agentIds, agentName: submission.agentName,
+          ...(submission.attachments?.length ? { attachments: submission.attachments } : {}),
         } })));
         const stillInConversation = composerScopeRef.current === submittedScope || group.members.some(member => member.id === viewSessionIdRef.current);
-        const consumeComposer = submission.clearComposer && inputRef.current?.value.trim() === submission.text.trim();
+        const consumeComposer = submission.clearComposer && inputRef.current?.value.trim() === input.trim();
         for (const id of result.accepted) {
           if (id === viewSessionIdRef.current && !consumeComposer) {
             writeSessionDraft(id, composerDraftRef.current.text);
@@ -4096,7 +4189,7 @@ export default function ChatView({
     const goalObjective = explicitGoal
       ? explicitGoal[1]?.trim() ?? ""
       : submission.applyGoalMode && goalMode ? finalMsg : null;
-    if (goalObjective !== null && composerAgentType === "deepseek-harness") {
+    if (explicitGoal && supportsNativeGoal) {
       const initialScope = composerScopeRef.current;
       let targetSessionId = viewSessionId;
       const isCurrentGoalSubmission = () => composerScopeRef.current === initialScope
@@ -4174,6 +4267,7 @@ export default function ChatView({
               timestamp: Date.now(),
               agentName: agentNamesLabel,
               images: imagesToSend,
+              isQueued: true,
               isGoal: true,
               goalId: sourceMessageId,
             }, id);
@@ -4242,6 +4336,7 @@ export default function ChatView({
             images: imagesToSend,
             agentIds: agentIdsToSend,
             agentName: agentNamesLabel,
+            runOptions,
           });
           applySessionQueueState(state, queuedSessionId);
         } catch (queueError) {
@@ -4256,6 +4351,7 @@ export default function ChatView({
             if ((selectedSessionIdRef.current || sessionIdRef.current) === queuedSessionId) {
               setInput(finalMsg);
               setPendingImages(imagesToSend ?? []);
+              restorePromptAttachments(submission.attachments);
             }
           }
           setError(queueError instanceof Error ? queueError.message : "排队消息保存失败");
@@ -4321,6 +4417,7 @@ export default function ChatView({
           images: imagesToSend,
           restoreDraftOnFailure: submission.restoreDraftOnFailure,
           restoreDraftScope: submittedComposerScope,
+          runOptions,
         },
         targetSessionId,
         agentIdsToSend.length > 0 ? agentIdsToSend : undefined,
@@ -4336,6 +4433,7 @@ export default function ChatView({
         composerDraftRef.current = restored;
         setInput(restored.text);
         setPendingImages(restored.images);
+        restorePromptAttachments(submission.attachments);
       }
       if (runningSessionRef.current === targetSessionId) runningSessionRef.current = null;
       setError(err instanceof Error ? err.message : "Agent run failed");
@@ -4343,6 +4441,18 @@ export default function ChatView({
   };
 
   const handleSend = async () => {
+    if (sendingAttachmentsRef.current) return;
+    const scope = composerScopeRef.current;
+    let attachments: NativeRunOptions["attachments"];
+    if (attachedFiles.length) {
+      sendingAttachmentsRef.current = true;
+      try { attachments = await encodePromptAttachments(attachedFiles, blobToDataUrl); }
+      catch (error) {
+        setError(error instanceof Error ? error.message : "读取文件附件失败");
+        return;
+      } finally { sendingAttachmentsRef.current = false; }
+      if (composerScopeRef.current !== scope || inputRef.current?.value !== input) return;
+    }
     return submitChatMessage(createComposerSubmission({
       text: input,
       agentIds: pendingAgents.map((agent) => agent.id),
@@ -4350,6 +4460,7 @@ export default function ChatView({
         ? pendingAgents.map((agent) => agent.name).join(", ")
         : undefined,
       images: pendingImages,
+      attachments,
     }));
   };
 
@@ -4412,10 +4523,11 @@ export default function ChatView({
       {...message.askUser!}
       onAnswer={async (answer, selectedIndices) => {
         const targetSid = viewSessionId ?? undefined;
+        const cancelled = message.askUser?.cancellable === true && selectedIndices?.[0] === -1;
         const submittedHistory = (targetSid
           ? getMessagesForSession(targetSid)
           : useAgentStore.getState().messages).map(current => current.id === message.id ? {
-            ...current, askUser: { ...current.askUser!, answered: true, answer },
+            ...current, askUser: { ...current.askUser!, answered: !cancelled, cancelled, answer },
           } : current);
         const resolved = await window.agentApi?.answerQuestion(
           message.askUser!.questionId,
@@ -4426,6 +4538,10 @@ export default function ChatView({
         // The resolved event can refresh history before the POST returns.
         // Restore the confirmed receipt even if that snapshot removed its row.
         const current = targetSid ? getMessagesForSession(targetSid) : useAgentStore.getState().messages;
+        if (cancelled) {
+          setMessages(current.map(row => row.id === message.id ? { ...row, askUser: { ...row.askUser!, answered: false, cancelled: true } } : row), targetSid);
+          return;
+        }
         setMessages(retainAnsweredSessionQuestions(submittedHistory, current), targetSid);
       }}
     />
@@ -4524,7 +4640,7 @@ export default function ChatView({
       {isParallelComposer && <ParallelAgentTabs
         members={parallel.group
           ? parallel.group.members.map(member => ({ id: member.id, agentType: member.agentType,
-            status: parallel.statuses[member.id] ?? member.status }))
+            completedAt: member.completedAt, status: parallel.statuses[member.id] ?? member.status }))
           : newSessionAgents.map(type => ({ id: type, agentType: type, status: "idle" as const }))}
         selectedId={parallel.group ? viewSessionId : newSessionViewingAgent}
         onSelect={id => {
@@ -4700,6 +4816,7 @@ export default function ChatView({
           const isUser = msg.role === "user";
           const isGoalMessage = isUser && (
             chatMsg.isGoal === true
+            || chatMsg.presentation?.isGoal === true
             || [goalState.active, ...goalState.queued, ...goalState.history]
               .some((goal) => Boolean(goal && normalizeGoalMessageText(goal.objective) === normalizeGoalMessageText(msg.content)))
           );
@@ -5607,60 +5724,14 @@ export default function ChatView({
             </div>
           );
         })()}
-        {(goalState.active || goalState.queued.length > 0) && (
-          <div className="goal-queue" aria-label="目标队列">
-            <div className="goal-queue__header">
-              <Target size={14} strokeWidth={1.9} aria-hidden="true" />
-              <span>目标</span>
-              <span className="goal-queue__count">{goalState.queued.length + (goalState.active ? 1 : 0)}</span>
-            </div>
-            {goalState.active && (
-              <div className="goal-queue__row is-active">
-                <span className="goal-queue__state">进行中</span>
-                <span className="goal-queue__objective" title={goalState.active.objective}>
-                  {goalState.active.objective}
-                </span>
-                <button
-                  type="button"
-                  className="goal-queue__action"
-                  onClick={() => { void removeGoal(goalState.active!.id); }}
-                  title="停止当前目标"
-                  aria-label="停止当前目标"
-                >
-                  <Trash2 size={14} strokeWidth={1.8} aria-hidden="true" />
-                </button>
-              </div>
-            )}
-            {goalState.queued.map((goal, index) => (
-              <div
-                key={goal.id}
-                className={`goal-queue__row is-queued${draggedGoalId === goal.id ? " is-dragging" : ""}`}
-                draggable
-                onDragStart={() => setDraggedGoalId(goal.id)}
-                onDragEnd={() => setDraggedGoalId(null)}
-                onDragOver={(event) => event.preventDefault()}
-                onDrop={() => { void dropQueuedGoal(goal.id); }}
-              >
-                <GripVertical className="goal-queue__grip" size={14} strokeWidth={1.8} aria-hidden="true" />
-                <span className="goal-queue__state">#{index + 1}</span>
-                <span className="goal-queue__objective" title={goal.objective}>{goal.objective}</span>
-                <button
-                  type="button"
-                  className="goal-queue__action"
-                  onClick={() => { void removeGoal(goal.id); }}
-                  title="移出目标队列"
-                  aria-label="移出目标队列"
-                >
-                  <Trash2 size={14} strokeWidth={1.8} aria-hidden="true" />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
+        <SessionGoalQueue key={viewSessionId} active={goalState.active} queued={goalState.queued}
+          onEdit={editGoal}
+          insertion={canInsertQueuedGoal ? { mode: canSteerQueuedGoals ? "current" : "next", submit: insertGoal } : undefined}
+          onRemove={removeGoal} onReorder={reorderQueuedGoal} />
 
         {/* Queued messages — shown above input when agent is running */}
         {(() => {
-          const queuedMsgs = visibleMessages.filter(m => m.isQueued);
+          const queuedMsgs = visibleMessages.filter(m => m.isQueued && !m.isGoal);
           if (queuedMsgs.length === 0) return null;
           return (
             <div className="queued-message-list">
@@ -5947,7 +6018,7 @@ export default function ChatView({
             }}
             onBlur={() => setTimeout(() => { setAtQuery(null); setSlashToken(null); }, 120)}
             onKeyDown={handleComposerKeyDown}
-            placeholder={isParallelComposer ? "输入消息，选择接收的 Agent" : canComposeNativeGoal && goalMode ? "输入要持续推进的目标" : codexReleaseState === "released" ? "已停止在 AgentRoam 中使用；Codex Desktop 最长约 30 分钟后可用" : isCompatibilityReadOnly ? (compatibilityStatus === "incompatible" ? "Codex 版本不兼容" : "正在验证会话兼容性") : isReadOnly ? "原客户端使用中，当前只读" : canGuideExternalSession(sessionSummary) ? "补充要求会交给桌面端原会话" : runtimeReady ? (goalMode ? "输入要持续推进的目标" : shouldQueueMessage ? "输入下一条排队消息" : isNewSessionComposer ? "描述你想做的事，第一条消息会创建会话" : "提出后续修改要求") : "请先在设置中配置 API Key"}
+            placeholder={isParallelComposer ? "输入消息，选择接收的 Agent" : codexReleaseState === "released" ? "已停止在 AgentRoam 中使用；Codex Desktop 最长约 30 分钟后可用" : isCompatibilityReadOnly ? (compatibilityStatus === "incompatible" ? "Codex 版本不兼容" : "正在验证会话兼容性") : isReadOnly ? "原客户端使用中，当前只读" : canGuideExternalSession(sessionSummary) ? "补充要求会交给桌面端原会话" : runtimeReady ? (goalMode ? "输入要持续推进的目标" : shouldQueueMessage ? "输入下一条排队消息" : isNewSessionComposer ? "描述你想做的事，第一条消息会创建会话" : "提出后续修改要求") : "请先在设置中配置 API Key"}
             disabled={!canSubmitComposer}
           />
 
@@ -5969,8 +6040,7 @@ export default function ChatView({
                 className={`web-native-runtime-status goal-mode-toggle${goalMode ? " is-active" : ""}`}
                 aria-pressed={goalMode}
                 aria-label={goalMode ? "关闭目标模式" : "开启目标模式"}
-                title={sessionSummary?.nativeGoalSupported === false ? "子会话不支持单独设置目标" : goalMode ? "目标模式已开启" : "目标模式"}
-                disabled={sessionSummary?.nativeGoalSupported === false}
+                title={goalMode ? "目标模式已开启" : "目标模式"}
                 onClick={() => setGoalMode((enabled) => !enabled)}
               >
                 <Target size={18} strokeWidth={1.9} aria-hidden="true" />
@@ -5993,7 +6063,7 @@ export default function ChatView({
                     </svg>
                   </button>
                   {permissionMenuOpen && usesNativePermissions && (
-                    <div className="web-native-permission-menu" role="menu" aria-label="DeepSeek Harness 原生权限">
+                    <div className="web-native-permission-menu" role="menu" aria-label={`${AGENT_LABELS[composerAgentType]} 原生权限`}>
                       {nativePermissions?.options.map(option => (
                         <button key={option.value} type="button" role="menuitemradio"
                           aria-checked={nativePermissions.currentValue === option.value}
@@ -6065,13 +6135,13 @@ export default function ChatView({
               /> : <div className={`web-native-model-control${isNativeRuntime ? " web-native-model-control--native" : ""}`} title="切换模型">
                 {isNativeRuntime && isNativeAgentType(composerAgentType) ? (
                   <>
-                    <span
+                    {(!supportsNativeModelSelection || !nativeModelPickerReady) && <span
                       className="web-native-model-agent"
                       title={`${NATIVE_AGENT_LABELS[composerAgentType]} 会话`}
                     >
                       <AgentBrandIcon agentType={composerAgentType} size={14} />
                       <span className="web-native-model-agent-name">{NATIVE_AGENT_LABELS[composerAgentType]}</span>
-                    </span>
+                    </span>}
                     {!supportsNativeModelSelection && <span title="子会话沿用原生模型设置">原生模型</span>}
                     {supportsNativeModelSelection && (composerAgentType === "qoder" || composerAgentType === "zcode" || composerAgentType === "opencode") && (
                       <NativeModelCatalogNotice status={nativeModelCatalog.status} error={nativeModelCatalog.error} onRetry={nativeModelCatalog.retry} />
@@ -6079,6 +6149,7 @@ export default function ChatView({
                     {supportsNativeModelSelection && nativeModelPickerReady && (
                       <ComposerModelPicker
                         ref={modelPickerRef}
+                        icon={<AgentBrandIcon agentType={composerAgentType} size={14} />}
                         value={selectedNativeModelKey}
                         options={[
                           { value: "", label: "默认模型" },
@@ -6212,7 +6283,7 @@ export default function ChatView({
               <button
                 type="button"
                 onClick={handleSend}
-                disabled={creatingSession || (!viewSessionId && sessionCreationPending) || !canSubmitComposer || nativeGoal.pending || pendingImageReads > 0 || (!input.trim() && !pendingImages.length)}
+                disabled={creatingSession || (!viewSessionId && sessionCreationPending) || !canSubmitComposer || nativeGoal.pending || pendingImageReads > 0 || (!input.trim() && !pendingImages.length && !attachedFiles.length)}
                 className="web-native-send-button"
                 aria-busy={creatingSession}
                 aria-label={creatingSession ? "正在创建会话" : !isParallelComposer && shouldQueueMessage ? "排队发送" : "发送"}

@@ -19,10 +19,11 @@ describe("VS Code Copilot projection", () => {
   });
 
   it("preserves turn/part identity and native tool order in history", () => {
-    const t = { ...turn(), state: TurnState.Complete };
+    const t = { ...turn(), state: TurnState.Complete, duration: 12_340 };
     t.responseParts = [{ kind: ResponsePartKind.Reasoning, id: "r", content: "Plan" }, { kind: ResponsePartKind.ToolCall, toolCall: tool }, { kind: ResponsePartKind.Markdown, id: "m", content: "Done" }];
     const chat: ChatState = { resource: "ahp-chat:/c", title: "test", modifiedAt: "", status: SessionStatus.Idle, turns: [t] };
     const messages = copilotHistory(chat);
+    expect(messages[0].presentation?.completionDurationMs).toBe(12_340);
     expect(messages.map(message => message.role)).toEqual(["user", "assistant", "assistant", "tool", "assistant"]);
     expect(messages.at(-1)).toMatchObject({ historyId: "native-turn:m", content: "Done" });
     expect(messages[1]?.presentation?.reasoning?.[0]?.text).toBe("Plan");

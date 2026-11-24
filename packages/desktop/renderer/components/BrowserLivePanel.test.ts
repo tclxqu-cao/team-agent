@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
-import type { BrowserLiveSession } from "../global";
+import type { BrowserLiveSession } from "../../../shared/src/contracts/agent-api";
 import { BrowserLiveTouch } from "./browser-live-touch";
 import { decodePcm16Base64, encodePcm16Base64, isStaleControlReply, prepareVoiceAudio, remoteFieldContains, remoteShortcutModifier, selectBrowserLiveSessionId, shouldOfferVisualTakeover, touchScrollDelta } from "./BrowserLivePanel";
 

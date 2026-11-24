@@ -92,7 +92,9 @@ export class UnifiedSessionService {
   async health(): Promise<RuntimeHealth[]> {
     const results = await Promise.all([...this.adapters.values()].map(async (adapter) => {
       try {
-        return await adapter.health();
+        const result = await adapter.health();
+        if (!result.available || !adapter.setNativePermissionPreset) return result;
+        return { ...result, capabilities: { nativePermissionPresets: true, ...result.capabilities } };
       } catch (error) {
         return {
           agentType: adapter.agentType,
@@ -104,6 +106,13 @@ export class UnifiedSessionService {
     }));
     this.healthCache = results;
     return results;
+  }
+
+  async assertPromptFileAttachments(agentType: AgentType): Promise<void> {
+    const capabilities = await this.adapters.get(agentType)?.getCapabilities?.();
+    if (!capabilities?.promptFileAttachments) {
+      throw new RuntimeSessionError("当前 Agent 不支持普通文件附件", "OPERATION_NOT_SUPPORTED");
+    }
   }
 
   getCachedHealth(): RuntimeHealth[] {
@@ -221,7 +230,9 @@ export class UnifiedSessionService {
     this.queryIndexCache.getOrCreate(id, associated.messages);
     if (!query) return associated;
     const page = paginateSessionHistory(associated.messages, associated.events, query, {
-      includePendingQuestions: associated.agentType === "deepseek-harness" || associated.agentType === "copilot",
+      includePendingQuestions: associated.agentType === "deepseek-harness"
+        || associated.agentType === "copilot"
+        || associated.agentType === "zcode",
     });
     return {
       ...associated,

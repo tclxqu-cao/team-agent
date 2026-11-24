@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { UnifiedSessionSummary } from "../global";
+import type { UnifiedSessionSummary } from "../../../shared/src/contracts/agent-api";
 import { createSessionForWorkspace, resolveSessionComposerRoute } from "./session-composer-routing";
 import { prepareChatCommand } from "./chat-command";
 

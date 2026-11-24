@@ -1,4 +1,4 @@
-import type { AgentType, NativeReasoningEffort, RuntimeModelInfo, RuntimeModelSelection } from "../global";
+import type { AgentType, NativeReasoningEffort, RuntimeModelInfo, RuntimeModelSelection } from "../../../shared/src/contracts/agent-api";
 
 /**
  * Per-agent-type model/reasoning-effort choices made in the composer. Kept in

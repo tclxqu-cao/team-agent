@@ -1,6 +1,7 @@
 import type { CatalogSession, SessionActivitySnapshot, SessionDashboardSnapshot } from "../../../core/src/domain/supervision/types";
 import { AGENT_TYPES, isAgentType } from "../../../core/src/domain/agent/agent-type";
 import { mergeCatalogSessions } from "./all-sessions";
+import { includeSessionAncestors } from "./session-tree";
 
 export function applySessionActivity(rows: readonly CatalogSession[], activity: SessionActivitySnapshot | null, query = ""): CatalogSession[] {
   if (!activity) return [...rows];
@@ -9,7 +10,9 @@ export function applySessionActivity(rows: readonly CatalogSession[], activity: 
   const merged = mergeCatalogSessions(rows.map(session => fresh.get(session.id) ?? (known.has(session.agentType) && session.status === "running"
     ? { ...session, status: "idle" as const } : session)), activity.sessions);
   const search = query.trim().toLocaleLowerCase();
-  return merged.filter(session => `${session.title} ${session.cwd} ${session.agentType}`.toLocaleLowerCase().includes(search));
+  if (!search) return merged;
+  const matches = merged.filter(session => `${session.title} ${session.cwd} ${session.agentType}`.toLocaleLowerCase().includes(search));
+  return includeSessionAncestors(matches, merged);
 }
 
 export function applyDashboardActivity(snapshot: SessionDashboardSnapshot | null, activity: SessionActivitySnapshot | null): SessionDashboardSnapshot | null {
@@ -57,13 +60,27 @@ export function createSessionActivityStore(
     const current = supplied ?? snapshot?.sessions.find(session => session.id === id);
     if (!current || !isAgentType(current.agentType) || !current.id) return;
     let status = current.status;
+    let completedAt = current.completedAt;
+    const now = new Date().toISOString();
+    const recovered = event._nativeRecoveredFromSnapshot === true;
     if (event.type === "run_admitted") status = "running";
-    else if (event.type === "done") status = "completed";
+    else if (event.type === "done") {
+      const result = event.result as { status?: string } | undefined;
+      status = !result || result.status === "completed" ? "completed" : result.status === "failed" ? "failed" : "idle";
+      if (status === "completed" && recovered) {
+        completedAt = typeof event._nativeCompletedAt === "string" ? event._nativeCompletedAt : undefined;
+        if (!completedAt) status = "idle";
+      } else completedAt = status === "completed" ? now : undefined;
+    }
     else if (event.type === "turn_aborted") status = "idle";
     else if (event.type === "error" && !event._preserveActiveRun) status = "failed";
     else if (event.type !== "session_summary") return;
     local.delete(current.id);
-    local.set(current.id, { session: { ...current, status, updated: new Date().toISOString() }, at: Date.now(), revision: ++revision });
+    local.set(current.id, {
+      session: { ...current, status, completedAt, updated: event.type === "session_summary" || recovered ? current.updated : now },
+      at: Date.now(),
+      revision: ++revision,
+    });
     if (local.size > 256) local.delete(local.keys().next().value!);
     publish();
   };

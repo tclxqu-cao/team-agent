@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AgentBuilder } from "../AgentBuilder.js";
+import { AgentBuilder } from "../../../bootstrap/AgentBuilder.js";
 import type { IModelProvider, Message, StreamEvent } from "../../model/entities.js";
 import type { RemoteToolDefinition, RemoteToolJob, RemoteToolRegistration } from "../../remote-tools/entities.js";
 import type { RemoteToolStore } from "../../remote-tools/RemoteToolStore.js";

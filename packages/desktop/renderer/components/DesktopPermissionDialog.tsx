@@ -9,7 +9,7 @@ export default function DesktopPermissionDialog({ onClose }: { onClose: () => vo
   useEffect(() => {
     dialog.current?.showModal();
     let active = true;
-    const update = (status: import("../global").DesktopLiveStatus) => {
+    const update = (status: import("../../../shared/src/contracts/agent-api").DesktopLiveStatus) => {
       if (active) setReady(status.enabled && status.permissionScreen === "granted" && status.sessionOnline);
     };
     void window.agentApi.desktopLiveGetStatus().then(update).catch(() => undefined);

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import type { LSPServerConfig } from "../global";
+import type { LSPServerConfig } from "../../../shared/src/contracts/agent-api";
 
 const PRESETS: Array<{ label: string; language: string; fileTypes: string; command: string; args: string }> = [
   { label: "TypeScript / JavaScript", language: "typescript", fileTypes: ".ts,.tsx,.js,.jsx", command: "typescript-language-server", args: "--stdio" },

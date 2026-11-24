@@ -1,3 +1,5 @@
+import type { AgentType } from "../../shared-kernel/agent-type.js";
+
 export const COLLABORATION_AGENTS = [
   "customer-agent",
   "codex",
@@ -9,7 +11,7 @@ export const COLLABORATION_AGENTS = [
 export type CollaborationAgent = (typeof COLLABORATION_AGENTS)[number];
 export interface MonitoredSession {
   id: string;
-  agentType: CollaborationAgent | "qoder" | "zcode" | "workbuddy";
+  agentType: AgentType;
   title: string;
   cwd: string;
   projectId?: string;

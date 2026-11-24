@@ -4,8 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import ComposerAgentPicker, { agentPickerItems } from "./ComposerAgentPicker";
 import ComposerWorkspacePicker, { workspacePickerLabel } from "./ComposerWorkspacePicker";
-import type { RuntimeHealth } from "../global";
-import { AGENT_TYPES } from "../../../core/src/domain/agent/agent-type";
+import type { RuntimeHealth } from "../../../shared/src/contracts/agent-api";
 
 const noop = () => {};
 const WORKSPACES = [
@@ -23,26 +22,24 @@ describe("ComposerAgentPicker", () => {
     expect(html).not.toContain('role="menu"');
   });
 
-  it("lists every agent, grays out unavailable ones and checks the current one", () => {
+  it("shows only available options and checks the current one", () => {
     const health: RuntimeHealth[] = [
       { agentType: "codex", available: false, label: "Codex", error: "not installed" },
       { agentType: "claude-code", available: true, label: "Claude Code" },
     ];
     const html = renderToStaticMarkup(createElement(ComposerAgentPicker, { value: "claude-code", health, onChange: noop, defaultOpen: true }));
     expect(html).toContain('role="menu"');
-    expect(html.match(/role="menuitemradio"/g)).toHaveLength(AGENT_TYPES.length);
-    expect(html).toContain("远程未安装 Codex");
-    expect(html).toContain('aria-disabled="true"');
+    expect(html.match(/role="menuitemradio"/g)).toHaveLength(2);
+    expect(html).not.toContain("Codex");
+    expect(html).not.toContain('aria-disabled="true"');
     expect(html).toContain('aria-checked="true"');
     expect(html).toContain("✓");
   });
 
-  it("derives availability reasons from runtime health", () => {
+  it("uses only reported available native engines", () => {
     const items = agentPickerItems([{ agentType: "opencode", available: false, label: "OpenCode" }, { agentType: "codex", available: true, label: "Codex" }]);
-    expect(items).toHaveLength(AGENT_TYPES.length);
-    expect(items.find((item) => item.agentType === "opencode")?.unavailableMessage).toBe("远程 OpenCode 暂不可用");
-    expect(items.find((item) => item.agentType === "codex")?.unavailableMessage).toBeUndefined();
-    expect(agentPickerItems().find((item) => item.agentType === "customer-agent")?.unavailableMessage).toBeUndefined();
+    expect(items.map(item => item.agentType)).toEqual(["customer-agent", "codex"]);
+    expect(agentPickerItems().map(item => item.agentType)).toEqual(["customer-agent"]);
   });
 });
 
@@ -52,8 +49,8 @@ describe("ComposerAgentPicker multiple recipients", () => {
       value: "codex", values: ["codex", "zcode"], onChange: noop, onValuesChange: noop,
       health: [{ agentType: "codex", available: true, label: "Codex" }, { agentType: "zcode", available: true, label: "ZCode" }], defaultOpen: true,
     }));
-    expect(html.match(/role="menuitemcheckbox"/g)).toHaveLength(AGENT_TYPES.length);
-    expect(html.match(/role="menuitem"/g)).toHaveLength(AGENT_TYPES.length);
+    expect(html.match(/role="menuitemcheckbox"/g)).toHaveLength(3);
+    expect(html.match(/role="menuitem"/g)).toHaveLength(3);
     expect(html).toContain('aria-label="仅使用 Codex"');
     expect(html).toContain('aria-label="取消选择 ZCode"');
     expect(html).toContain("点名称单选，勾选框多选 · 立即生效");

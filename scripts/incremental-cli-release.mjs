@@ -33,7 +33,7 @@ export function affectedPackages(path) {
   if (["packages/core/", "packages/desktop/", "packages/sdk/"].some((prefix) => path.startsWith(prefix))) return [names[0], names[1], names[4], names[5]];
   if (path.startsWith("packages/computer-use/")) return [names[0], names[1]];
   if (path.startsWith("packages/native-runtime/")) return [names[0], names[1]];
-  if (["packages/server/", "packages/webapp/"].some((prefix) => path.startsWith(prefix))) return names.slice(0, 2);
+  if (["packages/server/", "packages/webapp/", "packages/shared/"].some((prefix) => path.startsWith(prefix))) return names.slice(0, 2);
   if (path === "scripts/build-cli-remote-helper.mjs") return [names[0]];
   if (path === "scripts/stage-cli-runtime.mjs") return names.slice(0, 2);
   if (path === "scripts/build-tui-package.mjs") return names.slice(4, 6);

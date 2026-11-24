@@ -71,6 +71,25 @@ describe("live session activity", () => {
     again();
   });
 
+  it("does not announce a cancelled turn as successfully completed", () => {
+    const store = createSessionActivityStore(vi.fn(), vi.fn());
+    const session = row("codex");
+    store.receive({ type: "session_summary", session, _sid: session.id });
+    store.receive({ type: "done", _sid: session.id, result: { status: "cancelled" } });
+    expect(store.getSnapshot()?.sessions[0].status).toBe("idle");
+  });
+
+  it("keeps the broker completion time when recovering a stream from a snapshot", () => {
+    const store = createSessionActivityStore(vi.fn(), vi.fn());
+    const session = row("codex");
+    const completedAt = "2026-11-17T12:34:56Z";
+    store.receive({ type: "session_summary", session, _sid: session.id });
+    store.receive({ type: "done", _sid: session.id, _nativeRecoveredFromSnapshot: true });
+    expect(store.getSnapshot()?.sessions[0]).toMatchObject({ status: "idle", completedAt: undefined });
+    store.receive({ type: "done", _sid: session.id, _nativeRecoveredFromSnapshot: true, _nativeCompletedAt: completedAt });
+    expect(store.getSnapshot()?.sessions[0]).toMatchObject({ status: "completed", completedAt });
+  });
+
   it("retains a newly observed external session after it stops, even while the history catalog is blocked", async () => {
     vi.useFakeTimers();
     const read = vi.fn().mockResolvedValueOnce(activity([row("codex")]))

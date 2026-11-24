@@ -119,6 +119,8 @@ export async function catalogSessions(includeInternal = false, backgroundRefresh
     id: session.id, agentType: session.agentType, title: session.title || "未命名会话",
     cwd: "cwd" in session ? session.cwd : paths.get(session.projectId) || "",
     projectId: session.projectId, updated: session.updated,
+    ...("completedAt" in session && session.completedAt ? { completedAt: session.completedAt } : {}),
+    ...(session.parentSessionId ? { parentSessionId: session.parentSessionId } : {}),
     status: session.agentType === "customer-agent"
       ? agentHost.isSessionRunning(session.id) ? "running" : session.status === "failed" ? "failed" : session.status === "completed" ? "completed" : "idle"
       : session.status as CatalogSession["status"],
@@ -127,7 +129,12 @@ export async function catalogSessions(includeInternal = false, backgroundRefresh
   })) };
 }
 
-interface CatalogSnapshot { sessions: CatalogSession[]; query: string; expiresAt: number }
+interface CatalogSnapshot {
+  sessions: CatalogSession[];
+  byId: Map<string, CatalogSession>;
+  query: string;
+  expiresAt: number;
+}
 const shared = globalThis as typeof globalThis & { __sessionCatalogSnapshots?: Map<string, CatalogSnapshot> };
 const snapshots = shared.__sessionCatalogSnapshots ??= new Map();
 
@@ -149,11 +156,27 @@ export async function querySessionCatalog(input: { query?: string; cursor?: stri
     if (discoveryError) throw new Error(`原生会话暂时不可用：${discoveryError}`);
     const filtered = sessions.filter(s => `${s.title} ${s.cwd} ${s.agentType}`.toLocaleLowerCase().includes(query));
     filtered.sort((a, b) => Number(b.status === "running") - Number(a.status === "running") || b.updated.localeCompare(a.updated) || a.id.localeCompare(b.id));
-    snapshot = { sessions: filtered, query, expiresAt: Date.now() + 300_000 };
+    const parentIds = new Set(sessions.map(session => session.parentSessionId));
+    const parents = sessions.filter(session => parentIds.has(session.id));
+    snapshot = { sessions: filtered, byId: new Map(parents.map(session => [session.id, session])),
+      query, expiresAt: Date.now() + 300_000 };
     id = randomUUID(); snapshots.set(id, snapshot);
     if (snapshots.size > 64) snapshots.delete(snapshots.keys().next().value!);
   }
   const data = snapshot.sessions.slice(offset, offset + limit);
+  const seen = new Set(data.map(session => session.id));
+  const ancestors: CatalogSession[] = [];
+  for (const session of data) {
+    let parentId = session.parentSessionId;
+    while (parentId && !seen.has(parentId)) {
+      const parent = snapshot.byId.get(parentId);
+      if (!parent || parent.agentType !== session.agentType) break;
+      seen.add(parentId);
+      ancestors.push(parent);
+      parentId = parent.parentSessionId;
+    }
+  }
   return { data, nextCursor: offset + data.length < snapshot.sessions.length ? `catalog.${id}.${offset + data.length}` : null,
-    total: snapshot.sessions.length, ...(refreshing ? { refreshing: true } : {}) };
+    total: snapshot.sessions.length, ...(ancestors.length ? { ancestors } : {}),
+    ...(refreshing ? { refreshing: true } : {}) };
 }

@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { ChromeHubConversation, ChromeHubStatus } from "../../main/ai-hub/chrome-bridge-protocol";
+import type { ChromeHubConversation, ChromeHubStatus } from "../../../shared/src/contracts/chrome-bridge-types";
 import { renderAssistantText } from "./ChatView";
 
 export default function ChromeHubPane({ siteId, name, onSetup }: { siteId: string; name: string; onSetup: () => void }) {

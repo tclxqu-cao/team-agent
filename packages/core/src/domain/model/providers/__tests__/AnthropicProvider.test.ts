@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AnthropicProvider } from "../AnthropicProvider.js";
+import { AnthropicProvider } from "../../../../infrastructure/models/AnthropicProvider.js";
 import { anthropicUsageFrames, collectEvents, fixtureResponse, usageEvents } from "./usage-fixtures.js";
 
 afterEach(() => {

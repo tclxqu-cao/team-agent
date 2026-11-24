@@ -1,14 +1,14 @@
 import { useContext, useEffect, useState } from "react";
 import { WebAppHeaderActionsContext } from "./browser-live-header-context";
-import { Check, FolderOpen, LayoutDashboard, LayoutGrid, LoaderCircle, Monitor, PanelsTopLeft, Unplug, UsersRound } from "lucide-react";
+import { Check, Columns2, FolderOpen, LayoutDashboard, LayoutGrid, LoaderCircle, Monitor, Unplug, UsersRound } from "lucide-react";
 import { navigationLayoutSwitchTitle, nextNavigationLayout } from "../../../core/src/domain/web-console/navigation-layout";
 import { useUIStore } from "../stores/uiStore";
 import { isDesktopLiveSetupPending } from "../lib/desktop-live-setup";
 import { isWebShell } from "../web/webLayout";
-import type { DesktopLiveStatus } from "../global";
+import type { DesktopLiveStatus } from "../../../shared/src/contracts/agent-api";
 import MobilePairingButton from "./MobilePairingButton";
 import HeaderActionMenu from "./HeaderActionMenu";
-import RunningSessionsIcon from "./RunningSessionsIcon";
+import RunningSessionsIcon from "../../../shared/src/console/RunningSessionsIcon";
 
 /**
  * Tracks whether remote authorization still needs user action, so the header
@@ -101,7 +101,7 @@ export default function ChatHeaderActions({
       {webAppActions}
       {typeof window !== "undefined" && window.sharedServiceApi?.mobilePairing && <MobilePairingButton />}
       {onOpenSessionDashboard && <button type="button" onClick={onOpenSessionDashboard} title="进行中的 Agent 会话" aria-label="打开进行中的 Agent 会话" className="ui-icon-button chat-header-action"><RunningSessionsIcon size={17} aria-hidden="true"/></button>}
-      {onOpenTaskSplit && <button type="button" onClick={onOpenTaskSplit} title="任务分屏" aria-label="打开任务分屏" className="ui-icon-button chat-header-action"><PanelsTopLeft size={17} aria-hidden="true" /></button>}
+      {onOpenTaskSplit && <button type="button" onClick={onOpenTaskSplit} title="任务分屏" aria-label="打开任务分屏" className="ui-icon-button chat-header-action"><Columns2 size={17} aria-hidden="true" /></button>}
       {onOpenCollaborationDashboard && <button
         type="button"
         onClick={onOpenCollaborationDashboard}

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { RuntimeModelInfo } from "../global";
+import type { RuntimeModelInfo } from "../../../shared/src/contracts/agent-api";
 import { resolveNativeRunPref } from "./native-agent-run-prefs";
 import { isNativeModelCatalogReady, nativeModelCatalogScope, requestNativeModelCatalog, type NativeModelCatalogState } from "./use-native-model-catalog";
 
@@ -20,7 +20,7 @@ async function flush() { await new Promise(resolve => setImmediate(resolve)); }
 const models: RuntimeModelInfo[] = [{ id: "native-model", displayName: "Native model" }];
 
 describe("native model catalog requests", () => {
-  it.each(["qoder", "zcode"] as const)("reloads a %s catalog after the first session is created instead of retaining an empty result", async agentType => {
+  it.each(["qoder", "zcode", "agy"] as const)("reloads a %s catalog after the first session is created instead of retaining an empty result", async agentType => {
     const observed = observer();
     const load = vi.fn().mockResolvedValueOnce({ models: [] }).mockResolvedValueOnce({ models });
     const draftScope = nativeModelCatalogScope(agentType, null);

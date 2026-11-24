@@ -110,13 +110,13 @@ describe("AI Hub reauth session routing", () => {
       getWindow: () => ({ contentView: { addChildView, removeChildView } }) as never,
     });
 
-    await manager.openEmbeddedPage("flow-studio", "http://127.0.0.1:8788/auth/entry?token=test");
-    manager.setEmbeddedPageBounds("flow-studio", { x: 0, y: 52, width: 1200, height: 748 });
+    await manager.openEmbeddedPage("task-pane-right", "https://example.com/first");
+    manager.setEmbeddedPageBounds("task-pane-right", { x: 0, y: 52, width: 1200, height: 748 });
 
     expect(mock.views).toHaveLength(1);
-    expect(mock.views[0].webPreferences).toMatchObject({ partition: "persist:embedded-flow-studio" });
+    expect(mock.views[0].webPreferences).toMatchObject({ partition: "persist:embedded-task-pane-right" });
     expect((mock.views[0] as any).webContents.loadURL).toHaveBeenCalledWith(
-      "http://127.0.0.1:8788/auth/entry?token=test",
+      "https://example.com/first",
     );
     expect(addChildView).toHaveBeenCalledWith(mock.views[0]);
     expect(mock.views[0].setBounds).toHaveBeenLastCalledWith({ x: 0, y: 52, width: 1200, height: 748 });
@@ -127,10 +127,10 @@ describe("AI Hub reauth session routing", () => {
     expect(removeChildView).toHaveBeenCalledWith(mock.views[1]);
     expect(removeChildView).not.toHaveBeenCalledWith(mock.views[0]);
 
-    manager.setEmbeddedPageBounds("flow-studio", null);
+    manager.setEmbeddedPageBounds("task-pane-right", null);
     expect(removeChildView).toHaveBeenCalledWith(mock.views[0]);
-    manager.closeEmbeddedPage("flow-studio");
-    await manager.openEmbeddedPage("flow-studio", "https://example.com/");
+    manager.closeEmbeddedPage("task-pane-right");
+    await manager.openEmbeddedPage("task-pane-right", "https://example.com/");
     expect(mock.views).toHaveLength(3);
     expect((mock.views[2] as any).webContents.loadURL).toHaveBeenCalledWith("https://example.com/");
   });

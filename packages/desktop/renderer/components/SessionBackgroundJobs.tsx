@@ -1,7 +1,7 @@
 import { isPageActive } from "../lib/page-activity";
 import { useEffect, useId, useRef, useState } from "react";
 import { RefreshCw, Square, Terminal, X } from "lucide-react";
-import type { RuntimeBackgroundJob, RuntimeBackgroundJobOutput } from "../global";
+import type { RuntimeBackgroundJob, RuntimeBackgroundJobOutput } from "../../../shared/src/contracts/agent-api";
 import { useSessionBackgroundJobs } from "../lib/use-session-background-jobs";
 import ElapsedTime from "./ElapsedTime";
 

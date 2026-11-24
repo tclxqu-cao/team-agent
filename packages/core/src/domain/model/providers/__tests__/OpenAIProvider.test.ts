@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { OpenAIProvider } from '../OpenAIProvider.js';
-import { DeepSeekProvider } from '../DeepSeekProvider.js';
+import { OpenAIProvider } from '../../../../infrastructure/models/OpenAIProvider.js';
+import { DeepSeekProvider } from '../../../../infrastructure/models/DeepSeekProvider.js';
 import { estimateRequestTokens } from '../../tokenBudget.js';
 import { collectEvents, fixtureResponse, openAIUsageFrames, usageEvents } from './usage-fixtures.js';
 

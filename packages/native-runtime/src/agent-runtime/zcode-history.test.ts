@@ -1,11 +1,16 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { buildSessionQueryIndex, paginateSessionHistory } from "@agent/core";
 import { ZCodeClient } from "./zcode-client.js";
 import type { NativeRpcConnection } from "./native-rpc-client.js";
 import { NativeRpcError } from "./native-rpc-client.js";
 import type { NativeJsonPacket } from "./native-stdio-channel.js";
+import { readZCodeTurnDurations } from "./zcode-turn-duration.js";
 
-function fixture(messages: NativeJsonPacket[]) {
+function fixture(messages: NativeJsonPacket[], databasePath?: string) {
   const request = vi.fn<NativeRpcConnection["request"]>(async (method, params) => {
     if (method === "session/list") return { sessions: [{ sessionId: "large", title: "Large", status: "idle", workspace: { workspacePath: "/native" } }] };
     if (method === "session/subagents") return { childSessionIds: [] };
@@ -21,7 +26,8 @@ function fixture(messages: NativeJsonPacket[]) {
   });
   const rpc: NativeRpcConnection = { request, notify: async () => {}, onNotification: () => () => {},
     onRequest: () => {}, onFailure: () => () => {}, dispose: async () => {} };
-  return { request, client: new ZCodeClient(rpc, { readMany: async () => new Map() }) };
+  return { request, client: new ZCodeClient(rpc, { readMany: async () => new Map() }, undefined, undefined,
+    id => databasePath ? readZCodeTurnDurations(id, databasePath) : new Map()) };
 }
 
 const message = (index: number, content = `message-${index}`): NativeJsonPacket => ({
@@ -30,6 +36,35 @@ const message = (index: number, content = `message-${index}`): NativeJsonPacket 
 });
 
 describe("ZCode bounded persisted history", () => {
+  it("restores native completion timing by session and user message identity", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "zcode-timing-"));
+    const path = join(directory, "db.sqlite");
+    const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as typeof import("node:sqlite");
+    const database = new DatabaseSync(path);
+    try {
+      database.exec(`CREATE TABLE turn_usage (
+        session_id TEXT, user_message_id TEXT, status TEXT, duration_ms INTEGER, completed_at INTEGER
+      ); INSERT INTO turn_usage VALUES
+        ('large', 'msg-0', 'completed', 65000, 66000),
+        ('other', 'msg-0', 'completed', 99000, 100000),
+        ('large', 'msg-2', 'completed', 0, 70000),
+        ('large', 'msg-4', 'cancelled', 1200, 74000),
+        ('large', 'msg-6', 'completed', 2000, 77000),
+        ('large', 'msg-6', 'running', NULL, NULL),
+        ('large', 'msg-8', 'completed', 1000, NULL);`);
+      const { client } = fixture(Array.from({ length: 10 }, (_, index) =>
+        message(index, index % 2 ? "same answer" : "same prompt")), path);
+      const { messages } = await client.read("large");
+      expect(messages.filter(row => row.role === "user").map(row => row.presentation?.completionDurationMs))
+        .toEqual([65_000, 0, undefined, undefined, undefined]);
+      const page = paginateSessionHistory(messages, [], { limit: 10 });
+      expect(page.messages[0].presentation?.completionDurationMs).toBe(65_000);
+      expect(readZCodeTurnDurations("large", join(directory, "missing.sqlite")).size).toBe(0);
+    } finally {
+      database.close();
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
   it("distinguishes inline steering from queued inputs restored as new turns", async () => {
     const original = message(0, "original");
     const guided = message(2, "follow up");

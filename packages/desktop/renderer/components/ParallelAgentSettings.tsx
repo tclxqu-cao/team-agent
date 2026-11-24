@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ChevronDown } from "lucide-react";
-import type { AgentType, NativeReasoningEffort, RuntimeModelInfo, UnifiedSessionSummary } from "../global";
+import type { AgentType, NativeReasoningEffort, RuntimeModelInfo, UnifiedSessionSummary } from "../../../shared/src/contracts/agent-api";
 import { AGENT_LABELS } from "../lib/agent-catalog";
 import { isNativeAgentType, loadNativeRunPref, nativeModelFromKey, nativeModelKey, nativeReasoningEffortOptions, resolveNativeRunPref, saveNativeRunPref, type NativeAgentRunPref } from "../lib/native-agent-run-prefs";
 import { useScopedAgentStore as useAgentStore } from "../stores/AgentStoreContext";

@@ -39,7 +39,7 @@ contextBridge.exposeInMainWorld("desktopDeviceApi", {
     ipcRenderer.on("notification:open", handler);
     return () => ipcRenderer.removeListener("notification:open", handler);
   },
-  // 用系统浏览器打开 http(s) 链接（如 Flow Studio 免登入口）
+  // 用系统浏览器打开链接
   openExternal: (url: string) => ipcRenderer.invoke("shell:open-external", url),
   notifyTaskCompletion: (notification: unknown, preferences: unknown) =>
     ipcRenderer.invoke("task-notification:show", notification, preferences),
@@ -192,6 +192,8 @@ contextBridge.exposeInMainWorld("desktopDeviceApi", {
   showFileContextMenu: (path: string, options?: { label?: string; line?: number }): Promise<{ shown: true }> => options === undefined
     ? ipcRenderer.invoke("file:show-context-menu", path)
     : ipcRenderer.invoke("file:show-context-menu", path, options),
+  artifactFileAction: (path: string, action: "reveal" | "open-with"): Promise<void> =>
+    ipcRenderer.invoke("file:artifact-action", path, action),
   fileWorkspaceRequest: (method: string, params?: Record<string, unknown>) =>
     ipcRenderer.invoke("file-workspace:request", method, params),
   onFileWorkspaceEvent: (callback: (event: unknown) => void): (() => void) => {
@@ -236,21 +238,11 @@ contextBridge.exposeInMainWorld("desktopDeviceApi", {
     return () => ipcRenderer.removeListener("hub:event", handler);
   },
 
-  // Flow Studio reuses the native AI Hub embedding path without becoming a Hub site.
-  flowStudioOpen: (url: string) => ipcRenderer.invoke("flow-studio:open", url),
-  flowStudioSetBounds: (rect: { x: number; y: number; width: number; height: number } | null) =>
-    ipcRenderer.invoke("flow-studio:set-bounds", rect),
-  flowStudioReload: () => ipcRenderer.invoke("flow-studio:reload"),
   taskPageOpen: (paneId: string, url: string) => ipcRenderer.invoke("task-page:open", paneId, url),
   taskPageSetBounds: (paneId: string, rect: { x: number; y: number; width: number; height: number } | null) =>
     ipcRenderer.invoke("task-page:set-bounds", paneId, rect),
   taskPageReload: (paneId: string) => ipcRenderer.invoke("task-page:reload", paneId),
   taskPageClose: (paneId: string) => ipcRenderer.invoke("task-page:close", paneId),
-  onFlowStudioEvent: (callback: (event: unknown) => void): (() => void) => {
-    const handler = (_event: unknown, data: unknown) => callback(data);
-    ipcRenderer.on("flow-studio:event", handler);
-    return () => ipcRenderer.removeListener("flow-studio:event", handler);
-  },
 
   // AI Hub 浏览器 Profile 导入 + 托管 Google 重登录（只传固定来源 id，不传路径）
   hubListProfileSources: () => ipcRenderer.invoke("hub:list-profile-sources"),

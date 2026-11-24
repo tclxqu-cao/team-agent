@@ -1,0 +1,153 @@
+import { z } from "zod";
+import type { ITool, ToolContext, ToolResult } from '../../../domain/tool/entities.js';
+import { readFile, readdir, lstat } from "node:fs/promises";
+import { resolve, join, relative } from "node:path";
+
+function filenameGlob(pattern: string): RegExp {
+  let source = "^";
+  for (const character of pattern) {
+    if (character === "*") source += ".*";
+    else if (character === "?") source += ".";
+    else source += character.replace(/[\\^$.[\]{}()+|]/g, "\\$&");
+  }
+  return new RegExp(`${source}$`);
+}
+
+function includeMatches(filename: string, patterns: string[]): boolean {
+  return patterns.some((pattern) => {
+    if (pattern.includes("*") || pattern.includes("?")) {
+      return filenameGlob(pattern).test(filename);
+    }
+    const extension = pattern.startsWith(".") ? pattern : `.${pattern}`;
+    return filename.endsWith(extension);
+  });
+}
+
+export class GrepTool implements ITool {
+  readonly name = "grep";
+  readonly description = "Search for a keyword or regex pattern in files. Returns matching lines with file path and line number.";
+  readonly schema = z.object({
+    pattern: z.string().describe("The search pattern (string or regex)"),
+    path: z.string().optional().describe("File or directory to search in (defaults to working directory)"),
+    recursive: z.boolean().optional().describe("Search recursively in directories (default: true)"),
+    case_sensitive: z.boolean().optional().describe("Case-sensitive search (default: false)"),
+    include: z.string().optional().describe("Comma-separated filename globs or extensions, e.g. '*.ts*' or '.ts,.js'"),
+    max_results: z.number().optional().describe("Maximum number of matching lines to return (default: 50)"),
+  });
+  readonly parameters = this.schemaToParams();
+
+  async execute(
+    params: Record<string, unknown>,
+    ctx: ToolContext,
+  ): Promise<ToolResult> {
+    const parsed = this.schema.safeParse(params);
+    if (!parsed.success) {
+      return { toolCallId: "", content: `Invalid parameters: ${parsed.error.message}`, isError: true };
+    }
+
+    const {
+      pattern,
+      path: searchPath = ".",
+      recursive = true,
+      case_sensitive = false,
+      include,
+      max_results = 50,
+    } = parsed.data;
+
+    const absPath = resolve(ctx.workingDirectory, searchPath);
+
+    let regex: RegExp;
+    try {
+      regex = new RegExp(pattern, case_sensitive ? "g" : "gi");
+    } catch {
+      return { toolCallId: "", content: `Invalid regex pattern: ${pattern}`, isError: true };
+    }
+
+    const includePatterns = include
+      ? include.split(",").map((entry) => entry.trim()).filter(Boolean)
+      : null;
+
+    const results: string[] = [];
+
+    const searchFile = async (filePath: string) => {
+      if (results.length >= max_results) return;
+      try {
+        const content = await readFile(filePath, "utf-8");
+        const lines = content.split("\n");
+        const relPath = relative(ctx.workingDirectory, filePath);
+        for (let i = 0; i < lines.length; i++) {
+          if (results.length >= max_results) break;
+          regex.lastIndex = 0;
+          if (regex.test(lines[i])) {
+            results.push(`${relPath}:${i + 1}: ${lines[i].trim()}`);
+          }
+        }
+      } catch {
+        // skip unreadable files
+      }
+    };
+
+    const walk = async (dir: string) => {
+      if (results.length >= max_results) return;
+      let entries: string[];
+      try {
+        entries = await readdir(dir);
+      } catch {
+        return;
+      }
+      for (const entry of entries) {
+        if (results.length >= max_results) break;
+        if (entry.startsWith(".") || entry === "node_modules" || entry === "dist") continue;
+        const full = join(dir, entry);
+        const s = await lstat(full).catch(() => null);
+        if (!s) continue;
+        if (s.isSymbolicLink()) continue;
+        if (s.isDirectory()) {
+          if (recursive) await walk(full);
+        } else {
+          if (!includePatterns || includeMatches(entry, includePatterns)) {
+            await searchFile(full);
+          }
+        }
+      }
+    };
+
+    try {
+      const s = await lstat(absPath);
+      if (s.isSymbolicLink()) throw new Error("Symbolic link search roots are not supported");
+      if (s.isFile()) {
+        await searchFile(absPath);
+      } else {
+        await walk(absPath);
+      }
+
+      if (results.length === 0) {
+        return { toolCallId: "", content: `No matches found for "${pattern}"` };
+      }
+
+      const header = `Found ${results.length}${results.length >= max_results ? "+" : ""} match(es) for "${pattern}":\n\n`;
+      return { toolCallId: "", content: header + results.join("\n") };
+    } catch (err) {
+      return {
+        toolCallId: "",
+        content: err instanceof Error ? err.message : "Search failed",
+        isError: true,
+      };
+    }
+  }
+
+  private schemaToParams(): Record<string, unknown> {
+    return {
+      type: "object",
+      properties: {
+        pattern: { type: "string", description: "The search pattern (string or regex)" },
+        path: { type: "string", description: "File or directory to search in (defaults to working directory)" },
+        recursive: { type: "boolean", description: "Search recursively in directories (default: true)" },
+        case_sensitive: { type: "boolean", description: "Case-sensitive search (default: false)" },
+        include: { type: "string", description: "Comma-separated filename globs or extensions, e.g. '*.ts*' or '.ts,.js'" },
+        max_results: { type: "number", description: "Maximum number of matching lines to return (default: 50)" },
+      },
+      required: ["pattern"],
+    };
+  }
+}

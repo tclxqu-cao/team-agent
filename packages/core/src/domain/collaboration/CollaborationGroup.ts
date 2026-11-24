@@ -1,3 +1,4 @@
+import { isAgentType } from "../../shared-kernel/agent-type.js";
 import {
   COLLABORATION_AGENTS,
   CollaborationError,
@@ -24,7 +25,7 @@ export function validateCollaborationGroup(group: CollaborationGroup): void {
     const { supervisorId, targets } = group.monitoring;
     if (supervisorId && !ids.has(supervisorId))
       throw new CollaborationError("监工必须是群成员");
-    if (targets.length > 200 || new Set(targets.map(target => target.id)).size !== targets.length || targets.some(target => !target.id || target.id.length > 400 || !target.title || target.title.length > 1000 || !target.cwd || ![...COLLABORATION_AGENTS, "qoder", "zcode", "workbuddy"].includes(target.agentType)))
+    if (targets.length > 200 || new Set(targets.map(target => target.id)).size !== targets.length || targets.some(target => !target.id || target.id.length > 400 || !target.title || target.title.length > 1000 || !target.cwd || !isAgentType(target.agentType)))
       throw new CollaborationError("关联会话无效或重复（最多 200 条）");
   }
   if (

@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { watch as watchFs, type FSWatcher } from "node:fs";
 import { lstat, open, readFile, readdir, stat } from "node:fs/promises";
-import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { Marked } from "marked";
 import {
   HostPathPolicy,
@@ -15,6 +15,7 @@ import {
   type FileWorkspaceTextInspection,
   type FileWorkspaceTextStatus,
 } from "@agent/core";
+import { supportsArtifactBrowserPreview } from "../shared/artifact-preview-types.js";
 
 const MAX_READ_CHUNK_BYTES = 1024 * 1024;
 const MAX_EDITABLE_TEXT_BYTES = 8 * 1024 * 1024;
@@ -23,16 +24,19 @@ const MAX_TICKETS = 256;
 
 const MIME_BY_EXTENSION: Record<string, string> = {
   ".aac": "audio/aac",
+  ".bmp": "image/bmp",
   ".css": "text/css",
   ".gif": "image/gif",
   ".htm": "text/html; charset=utf-8",
   ".html": "text/html; charset=utf-8",
+  ".ico": "image/x-icon",
   ".jpeg": "image/jpeg",
   ".jpg": "image/jpeg",
   ".js": "text/javascript; charset=utf-8",
   ".json": "application/json",
   ".m4a": "audio/mp4",
   ".m4v": "video/mp4",
+  ".mjs": "text/javascript; charset=utf-8",
   ".md": "text/markdown; charset=utf-8",
   ".markdown": "text/markdown; charset=utf-8",
   ".mov": "video/quicktime",
@@ -46,6 +50,8 @@ const MIME_BY_EXTENSION: Record<string, string> = {
   ".wav": "audio/wav",
   ".webm": "video/webm",
   ".webp": "image/webp",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
   ".xml": "application/xml",
 };
 
@@ -56,6 +62,7 @@ interface PreviewTicketState {
   mime: string;
   markdown: boolean;
   expiresAt: number;
+  browser: boolean;
 }
 
 export interface DesktopFileWorkspaceServiceOptions {
@@ -193,14 +200,39 @@ export class DesktopFileWorkspaceService {
     }
   }
 
-  resolvePreviewTicket(ticketId: string): PreviewTicketState | null {
+  resolvePreviewTicket(ticketId: string, browser = false): PreviewTicketState | null {
     const ticket = this.tickets.get(ticketId);
-    if (!ticket) return null;
+    if (!ticket || ticket.browser !== browser) return null;
     if (ticket.expiresAt <= this.now()) {
       this.tickets.delete(ticketId);
       return null;
     }
     return { ...ticket };
+  }
+
+  async openBrowserPreview(path: string): Promise<FileWorkspacePreviewTicket> {
+    if (!isAbsolute(path) || !supportsArtifactBrowserPreview(path)) {
+      throw workspaceError("UNSUPPORTED_FORMAT", "该文件格式不支持浏览器预览");
+    }
+    return this.openPreview(path, true);
+  }
+
+  resolveBrowserPreviewResource(ticketId: string, resource: string): { path: string; mime: string; primary: boolean } | null {
+    const ticket = this.resolvePreviewTicket(ticketId, true);
+    if (!ticket) return null;
+    const primary = this.policy.assertAllowed(ticket.path);
+    if (primary !== ticket.path) return null;
+    if (resource === basename(primary)) return { path: primary, mime: ticket.mime, primary: true };
+    if (!ticket.mime.startsWith("text/html") || !resource || resource.split("/").some(part => part.startsWith("."))) return null;
+
+    const directory = dirname(primary);
+    const target = this.policy.assertAllowed(resolve(directory, resource));
+    const inside = relative(directory, target);
+    if (isAbsolute(inside) || inside.split(sep).some(part => part.startsWith("."))) return null;
+    const mime = mimeFor(target);
+    // HTML can load static assets from its own directory, without serving other documents.
+    if (!/^(?:image\/|audio\/|video\/|font\/|text\/(?:css|javascript))/.test(mime)) return null;
+    return { path: target, mime, primary: false };
   }
 
   close(): void {
@@ -353,7 +385,7 @@ export class DesktopFileWorkspaceService {
     this.watchers.delete(path);
   }
 
-  private async openPreview(inputPath: string): Promise<FileWorkspacePreviewTicket> {
+  private async openPreview(inputPath: string, browser = false): Promise<FileWorkspacePreviewTicket> {
     const filePath = this.policy.assertAllowed(inputPath);
     const info = await stat(filePath);
     if (!info.isFile()) throw workspaceError("EISDIR", "只能预览普通文件");
@@ -361,11 +393,15 @@ export class DesktopFileWorkspaceService {
     const ticketId = this.token();
     const extension = extname(filePath).toLowerCase();
     const mime = mimeFor(filePath);
+    if (browser && !supportsArtifactBrowserPreview(filePath)) {
+      throw workspaceError("UNSUPPORTED_FORMAT", "该文件格式不支持浏览器预览");
+    }
     this.tickets.set(ticketId, {
       path: filePath,
       mime,
       markdown: MARKDOWN_EXTENSIONS.has(extension),
       expiresAt: this.now() + this.ticketTtlMs,
+      browser,
     });
     return {
       ticketId,
@@ -393,7 +429,7 @@ export class DesktopFileWorkspaceService {
   }
 }
 
-function parseRange(header: string | null, size: number): { start: number; end: number } | null {
+export function parseDesktopPreviewRange(header: string | null, size: number): { start: number; end: number } | null {
   if (!header) return null;
   const match = /^bytes=(\d*)-(\d*)$/.exec(header.trim());
   if (!match || (!match[1] && !match[2]) || size <= 0) throw workspaceError("EINVALIDRANGE", "无效的文件范围");
@@ -433,7 +469,7 @@ export async function createDesktopPreviewResponse(
 
   let range: { start: number; end: number } | null;
   try {
-    range = parseRange(request.headers.get("range"), info.size);
+    range = parseDesktopPreviewRange(request.headers.get("range"), info.size);
   } catch {
     return new Response(null, {
       status: 416,

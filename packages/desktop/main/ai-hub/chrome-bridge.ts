@@ -1,14 +1,10 @@
+import type { ChromeBridgeEvent } from "../../../shared/src/contracts/chrome-bridge-types.js";
+export type { ChromeBridgeEvent } from "../../../shared/src/contracts/chrome-bridge-types.js";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { WebSocket, WebSocketServer } from "ws";
 import { chromeHubSiteForUrl, isChromeHubSite, validChromeConversation, chromeHubErrorMessage, type ChromeHubConversation, type ChromeHubFrame, type ChromeHubStatus, type ChromeHubTab } from "./chrome-bridge-protocol.js";
-
-export type ChromeBridgeEvent =
-  | { type: "chrome-status"; status: ChromeHubStatus }
-  | { type: "chrome-conversation"; conversation: ChromeHubConversation }
-  | { type: "chrome-page-error"; siteId: string; error: string }
-  | { type: "chrome-frame"; frame: ChromeHubFrame };
 
 /** Only the local extension with the pairing secret can control explicitly attached provider tabs. */
 export class ChromeHubBridge {

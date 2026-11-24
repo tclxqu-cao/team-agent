@@ -35,5 +35,4 @@ export {
   type ToolPolicyNetworkMode,
   type ToolPolicyProgramRule,
 } from './execution-policy.js';
-export { PolicyAwareToolExecutor, parseSimpleCommand, resolvePolicyPath } from './policy-executor.js';
 export { fileChangeOperation, fileChangeLineStats, isFileLineStats, summarizeFileChanges, textLines, textLineStats, type FileLineStats, type FileChangeSummary } from './file-change-summary.js';

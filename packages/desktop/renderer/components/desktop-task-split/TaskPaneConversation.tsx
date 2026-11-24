@@ -1,5 +1,5 @@
 import { cloneElement, useEffect, useRef, useState, type ReactElement } from "react";
-import type { AgentType, AgentWorkspace } from "../../global";
+import type { AgentType, AgentWorkspace } from "../../../../shared/src/contracts/agent-api";
 import { readAgentWorkspaceCache } from "../../lib/agent-workspace-cache";
 import type { ChatViewProps } from "../ChatView";
 import HostProjectPicker from "../HostProjectPicker";

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 const appSource = readFileSync(new URL("../../App.tsx", import.meta.url), "utf8");
 const desktopStyles = readFileSync(new URL("../../styles/global.css", import.meta.url), "utf8");
-const filePreviewSource = readFileSync(new URL("./FilePreview.tsx", import.meta.url), "utf8");
+const filePreviewSource = readFileSync(new URL("../../../../shared/src/file-workspace/FilePreview.tsx", import.meta.url), "utf8");
 
 describe("Electron file workspace layout", () => {
   it("enables the dock grid only when the Electron gateway exists", () => {

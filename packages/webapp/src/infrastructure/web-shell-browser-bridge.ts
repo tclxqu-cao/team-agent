@@ -7,7 +7,7 @@ import {
   type WebBrowserBinaryFrame,
   type WebBrowserMethod,
 } from "../../../core/src/domain/web-console/WebBrowserBridge";
-import type { BrowserLiveApi } from "../../../desktop/renderer/global";
+import type { BrowserLiveApi } from "../../../shared/src/contracts/agent-api";
 
 type PendingRequest = {
   resolve: (value: unknown) => void;

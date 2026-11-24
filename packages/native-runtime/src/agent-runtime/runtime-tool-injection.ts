@@ -18,6 +18,8 @@ export const TODO_NATIVE_INJECTION_SUPPORT: Record<NativeAgentType, string> = {
   codex: "session",
   opencode: "launch",
   zcode: "session", "deepseek-harness": "command-bridge", copilot: "session",
+  grok: "AgentRoam Todo MCP injection is not configured for Grok CLI",
+  agy: "AgentRoam Todo MCP injection is not configured for Antigravity CLI",
 };
 export function nativeTodoMcpConfiguration(
   context: RuntimeTodoContext,

@@ -1,4 +1,4 @@
-import type { AgentApi, AgentType, AgentWorkspace, UnifiedSessionSummary, WorkspacePage } from "../global";
+import type { AgentApi, AgentType, AgentWorkspace, UnifiedSessionSummary, WorkspacePage } from "../../../shared/src/contracts/agent-api";
 
 export interface AgentRailSessions {
   workspaces: AgentWorkspace[];

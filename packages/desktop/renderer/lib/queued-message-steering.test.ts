@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { canSteerQueuedMessage, steerQueuedMessage } from "./queued-message-steering";
 import { markDurableMessageSteered, reconcileDurableQueuedMessages } from "./queued-message-order";
 import { useAgentStore, type ChatMessage } from "../stores/agentStore";
-import type { SessionGoalState } from "../global";
+import type { SessionGoalState } from "../../../shared/src/contracts/agent-api";
 import { mergeProgressiveSessionHistoryPage } from "./session-history";
 
 describe("queued message steering", () => {

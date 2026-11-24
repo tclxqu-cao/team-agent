@@ -1,19 +1,8 @@
 import { NextResponse } from "next/server";
-import { EngineSwitchError, type AgentType } from "@agent/core";
+import { EngineSwitchError, isNativeAgentType } from "@agent/core";
 import { getEngineSwitchContainer } from "../../../../../lib/engine-switch/container";
 import { handoffForWire, switchRecordForWire } from "../../../../../lib/engine-switch/wire";
 import { getNativeRuntimeService } from "../../../../../lib/native-runtime-service";
-
-const NATIVE_AGENT_TYPES: readonly AgentType[] = [
-  "codex",
-  "claude-code",
-  "opencode",
-  "deepseek-harness",
-  "qoder",
-  "zcode",
-  "workbuddy",
-  "copilot",
-];
 
 function errorStatus(error: unknown): number {
   if (error instanceof EngineSwitchError) {
@@ -47,13 +36,13 @@ export async function POST(
 ) {
   try {
     const body = await request.json().catch(() => null) as
-      | { targetAgentType?: AgentType; clean?: boolean; budgetTokens?: number; threadKey?: string }
+      | { targetAgentType?: unknown; clean?: boolean; budgetTokens?: number; threadKey?: string }
       | null;
     const targetAgentType = body?.targetAgentType;
     if (!targetAgentType || typeof targetAgentType !== "string") {
       return NextResponse.json({ error: "targetAgentType is required" }, { status: 400 });
     }
-    if (!NATIVE_AGENT_TYPES.includes(targetAgentType)) {
+    if (!isNativeAgentType(targetAgentType)) {
       return NextResponse.json({ error: `Unknown native agent type: ${targetAgentType}` }, { status: 400 });
     }
     if (body?.budgetTokens !== undefined && (!Number.isInteger(body.budgetTokens) || body.budgetTokens < 1_024 || body.budgetTokens > 64_000)) {

@@ -1,8 +1,8 @@
 import { X } from "lucide-react";
 import type { FileWorkspaceGateway } from "../../../../core/src/application/file-workspace/FileWorkspaceGateway";
-import FilePreview from "./FilePreview";
-import FileTree from "./FileTree";
-import type { FileTreeRevealRequest } from "./fileTreeReveal";
+import FilePreview from "../../../../shared/src/file-workspace/FilePreview";
+import FileTree from "../../../../shared/src/file-workspace/FileTree";
+import type { FileTreeRevealRequest } from "../../../../shared/src/file-workspace/fileTreeReveal";
 
 export type FileWorkspaceDrawerTab = "files" | "history";
 

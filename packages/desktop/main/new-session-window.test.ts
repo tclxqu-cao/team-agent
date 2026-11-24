@@ -61,4 +61,19 @@ describe("new session desktop windows", () => {
     main.close();
     expect(stop).toHaveBeenCalledTimes(2);
   });
+
+  it("limits renderer document permissions to the registered main frame at the app entry URL", () => {
+    const registry = new DesktopRendererWindows(vi.fn());
+    const main = renderer(), unrelated = renderer();
+    registry.register(main.window);
+    const entry = new URL("file:///AgentRoam/renderer-dist/index.html");
+    const sameDocument = { isMainFrame: true, requestingUrl: `${entry.href}?newSessionWindow=1#chat` };
+    expect(registry.isRendererDocument(main.window.webContents, sameDocument, entry)).toBe(true);
+    expect(registry.isRendererDocument(unrelated.window.webContents, sameDocument, entry)).toBe(false);
+    expect(registry.isRendererDocument(main.window.webContents, { ...sameDocument, isMainFrame: false }, entry)).toBe(false);
+    expect(registry.isRendererDocument(main.window.webContents, { ...sameDocument, requestingUrl: "file:///tmp/other.html" }, entry)).toBe(false);
+    expect(registry.isRendererDocument(main.window.webContents, { ...sameDocument, requestingUrl: "https://example.test/" }, entry)).toBe(false);
+    main.close();
+    expect(registry.isRendererDocument(main.window.webContents, sameDocument, entry)).toBe(false);
+  });
 });

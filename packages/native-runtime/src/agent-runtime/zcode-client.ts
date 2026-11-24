@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { AgentEvent, Message, ToolPermissionMode } from "@agent/core";
@@ -8,8 +8,17 @@ import { persistZCodeImageAttachments, readZCodeHistoryImages } from "./zcode-im
 import { resolveNativeCliCommand } from "./native-cli-command.js";
 import { NativeRpcClient, NativeRpcError, nativeRecord, type NativeRpcConnection } from "./native-rpc-client.js";
 import { zcodeModelProgress } from "./zcode-model-progress.js";
+import { readZCodeTurnDurations } from "./zcode-turn-duration.js";
 import { ZCodeDesktopActivityReader, type ZCodeActivityReader } from "./zcode-desktop-activity.js";
-import { isZCodeQuestionTool, zcodeInteractionId, zcodeQuestionHistory } from "./zcode-questions.js";
+import {
+  isZCodeQuestionTool,
+  parseZCodePendingQuestionId,
+  zcodeInteractionId,
+  zcodePendingQuestionsFromSnapshot,
+  zcodePendingQuestionToolIds,
+  zcodeQuestionHistory,
+  type ZCodeQuestionHistoryOptions,
+} from "./zcode-questions.js";
 import { ZCodeSteering } from "./zcode-steering.js";
 import { ZCodeDesktopBridge, type ZCodeDesktopGuide } from "./zcode-desktop-bridge.js";
 import type { NativeJsonPacket } from "./native-stdio-channel.js";
@@ -25,9 +34,17 @@ interface Run {
   finished: boolean;
   lastSeq: number;
   toolIds: Set<string>;
+  handledQuestionToolIds: Set<string>;
   reasoningId: string;
 }
 interface Question { sessionId: string; options: NativeJsonPacket[]; resolve(result: NativeJsonPacket): void; cancelled: NativeJsonPacket; inputQuestion?: string; multiSelect?: boolean }
+interface PendingQuestion { sessionId: string; interactionId: string; question: string; options: Array<{ label: string; description: string }>; multiSelect: boolean }
+type PendingQuestionProjection = ReturnType<typeof zcodePendingQuestionsFromSnapshot>;
+interface PendingQuestionRead {
+  key: string;
+  checkedAt: number;
+  projection?: PendingQuestionProjection;
+}
 const rows = (value: unknown): NativeJsonPacket[] => Array.isArray(value) ? value.map(nativeRecord) : [];
 const reasoningEfforts: readonly NativeReasoningEffort[] = ["low", "medium", "high", "xhigh", "max"];
 const nativeEffort = (value: unknown) => reasoningEfforts.find(effort => effort === value);
@@ -43,6 +60,7 @@ const modelRefKey = (providerId: string | undefined, modelId: string) => JSON.st
 const desktopActivity = new ZCodeDesktopActivityReader();
 const HISTORY_BATCH_SIZE = 256;
 const HISTORY_RECONCILE_MS = 30_000;
+const PENDING_QUESTION_RECHECK_MS = 10_000;
 const nativeDate = (value: unknown): string => {
   const date = new Date(typeof value === "string" || typeof value === "number" ? value : Date.now());
   return Number.isFinite(date.getTime()) ? date.toISOString() : new Date().toISOString();
@@ -53,12 +71,24 @@ function isUnavailableResident(error: unknown, id: string): boolean {
     && (error.message === `Session is not active: ${id}` || error.message === "Session runtime is not ready");
 }
 
+export function isZCodeMissingSession(error: unknown, id: string): boolean {
+  return error instanceof NativeRpcError && error.nativeCode === -32004
+    && (error.message === `Session not found: ${id}` || error.message === `Session is not available: ${id}`);
+}
+
 /** ZCode native modes accepted by session/setMode; build asks before changes, edit auto-applies edits, yolo runs fully automatic. */
 export function zcodeModeForPermission(permissionMode: ToolPermissionMode): "build" | "edit" | "yolo" {
   return permissionMode === "full-access" ? "yolo" : permissionMode === "auto-approval" ? "edit" : "build";
 }
 
-export function decodeZCodeHistory(value: unknown, sessionId = "", imageData?: ReadonlyMap<string, string>): Message[] {
+export type ZCodeHistoryDecodeOptions = ZCodeQuestionHistoryOptions;
+
+export function decodeZCodeHistory(
+  value: unknown,
+  sessionId = "",
+  imageData?: ReadonlyMap<string, string>,
+  options: ZCodeHistoryDecodeOptions = {},
+): Message[] {
   const messages: Message[] = [];
   for (const row of rows(value)) {
     const info = nativeRecord(row.info);
@@ -79,7 +109,7 @@ export function decodeZCodeHistory(value: unknown, sessionId = "", imageData?: R
     let hasQuestionTool = false;
     const tools = parts.filter(part => {
       if (part.type !== "tool") return false;
-      const history = zcodeQuestionHistory({ ...part, id: part.partId ?? part.id, callID: part.callId ?? part.callID }, sessionId, String(messageId ?? ""));
+      const history = zcodeQuestionHistory(part, sessionId, String(messageId ?? ""), options);
       if (history === null) return true;
       hasQuestionTool = true;
       questionMessages.push(...history);
@@ -104,6 +134,7 @@ export function decodeZCodeHistory(value: unknown, sessionId = "", imageData?: R
 /** ZCode's strict NDJSON RPC deliberately has no JSON-RPC version field. */
 export class ZCodeClient implements NativeSessionProtocol {
   private readonly sessions = new Map<string, NativeProtocolSession>();
+  private readonly drafts = new Map<string, NativeProtocolSession>();
   private readonly loaded = new Set<string>();
   private readonly todoMcp = new Map<string, NativeTodoMcpConfiguration>();
   private readonly resumes = new Map<string, Promise<NativeProtocolSession>>();
@@ -112,6 +143,8 @@ export class ZCodeClient implements NativeSessionProtocol {
   private readonly runs = new Map<string, Run>();
   private readonly pendingTodoRuns = new Map<string, AbortController>();
   private readonly questions = new Map<string, Question>();
+  private readonly pendingQuestions = new Map<string, PendingQuestion>();
+  private readonly pendingQuestionReads = new Map<string, PendingQuestionRead>();
   private readonly interactions = new Map<string, { sessionId: string; response: Promise<NativeJsonPacket> }>();
   private models: RuntimeModelInfo[] = [];
   private readonly modelDefaults = new Map<string, NativeReasoningEffort>();
@@ -119,14 +152,17 @@ export class ZCodeClient implements NativeSessionProtocol {
   private readonly unsubscribe: Array<() => void>;
   private readonly steering: ZCodeSteering;
 
-  constructor(private readonly rpc: NativeRpcConnection = new NativeRpcClient(() => resolveNativeCliCommand("zcode"), false),
+  // The legacy resume reply carries the whole history and the model catalog.
+  constructor(private readonly rpc: NativeRpcConnection = new NativeRpcClient(() => resolveNativeCliCommand("zcode"), false, 64 * 1024 * 1024),
     private readonly activity: ZCodeActivityReader = desktopActivity,
     private readonly desktopGuide: ZCodeDesktopGuide = new ZCodeDesktopBridge(),
-    private readonly imageStorageRoot = join(homedir(), ".agentroam", "zcode-images")) {
+    private readonly imageStorageRoot = join(homedir(), ".agentroam", "zcode-images"),
+    private readonly readTurnDurations: (sessionId: string) => ReadonlyMap<string, number> = readZCodeTurnDurations) {
     this.steering = new ZCodeSteering(rpc);
     rpc.onRequest((method, params) => this.callback(method, params));
     this.unsubscribe = [rpc.onNotification((method, params) => this.notification(method, params)), rpc.onFailure(error => {
       this.loaded.clear(); this.resumes.clear(); this.historyCache.clear(); this.models = []; this.modelDefaults.clear();
+      this.pendingQuestionReads.clear(); this.pendingQuestions.clear();
       for (const [id, run] of this.runs) this.finish(id, run.aborted ? { type: "turn_aborted" } : { type: "error", message: error.message, code: error.code });
     })];
   }
@@ -229,6 +265,10 @@ export class ZCodeClient implements NativeSessionProtocol {
     }, 60_000).then(result => {
       const session = this.snapshot(result); this.loaded.add(id);
       return session;
+    }).catch(error => {
+      const draft = this.drafts.get(id);
+      if (!draft || !isZCodeMissingSession(error, id)) throw error;
+      return this.createSession(draft.cwd, draft.title, configuration, id);
     }).finally(() => {
       if (this.resumes.get(id) === loading) this.resumes.delete(id);
     });
@@ -283,7 +323,17 @@ export class ZCodeClient implements NativeSessionProtocol {
   read(id: string): Promise<{ session: NativeProtocolSession; messages: Message[] }> {
     const pending = this.historyReads.get(id);
     if (pending) return pending;
-    const reading = this.readHistory(id).finally(() => {
+    const reading = this.readHistory(id).then(detail => {
+      const durations = this.readTurnDurations(id);
+      if (!durations.size) return detail;
+      return { ...detail, messages: detail.messages.map(message => {
+        const duration = message.role === "user" && message.historyId && !message.name?.startsWith("__native_steered:")
+          ? durations.get(message.historyId) : undefined;
+        return duration === undefined ? message : {
+          ...message, presentation: { ...message.presentation, completionDurationMs: duration },
+        };
+      }) };
+    }).finally(() => {
       if (this.historyReads.get(id) === reading) this.historyReads.delete(id);
     });
     this.historyReads.set(id, reading);
@@ -334,21 +384,37 @@ export class ZCodeClient implements NativeSessionProtocol {
     }
   }
 
+  private async readHistorySession(id: string): Promise<NativeProtocolSession | undefined> {
+    try {
+      const result = await this.rpc.request("session/list", { sessionIds: [id] });
+      const row = rows(result.sessions).find(entry => entry.sessionId === id);
+      if (row) return this.session(row);
+    } catch (error) {
+      if (!(error instanceof NativeRpcError) || error.nativeCode !== -32602) throw error;
+    }
+    // Older versions may ignore or reject the ID filter.
+    return (await this.list()).find(session => session.id === id);
+  }
+
   private async readHistory(id: string) {
-    const current = this.sessions.get(id) ?? (await this.list()).find(session => session.id === id);
+    const current = this.sessions.get(id) ?? await this.readHistorySession(id);
     if (current) {
       const [observed] = await this.withDesktopActivity([current]);
       if (observed?.externalGuideSupported && this.desktopGuide.read) {
         const snapshot = await this.desktopGuide.read(observed);
-        return { session: { ...this.snapshot(snapshot, false), externalGuideSupported: true }, messages: decodeZCodeHistory(snapshot.messages, id, await readZCodeHistoryImages(snapshot.messages, this.imageStorageRoot)) };
+        const messages = decodeZCodeHistory(snapshot.messages, id, await readZCodeHistoryImages(snapshot.messages, this.imageStorageRoot));
+        return { session: { ...this.snapshot(snapshot, false), externalGuideSupported: true }, messages };
       }
     }
     try {
       const history = await this.historyBatches(id);
-      const latest = (await this.list()).find(session => session.id === id) ?? current;
+      const latest = await this.readHistorySession(id) ?? current;
       if (!latest) throw new RuntimeSessionError("ZCode session not found", "SESSION_NOT_FOUND");
-      return { session: latest, messages: decodeZCodeHistory(history, id, await readZCodeHistoryImages(history, this.imageStorageRoot)) };
+      const [[session], messages] = await Promise.all([this.withDesktopActivity([latest]), this.decodeSessionHistory(id, history)]);
+      return { session: session!, messages };
     } catch (error) {
+      const draft = this.drafts.get(id);
+      if (draft && isZCodeMissingSession(error, id)) return { session: draft, messages: [] };
       // Older native versions require a resident for forward history. Preserve
       // their bounded idle recovery; unrelated protocol failures stay visible.
       if (!(error instanceof NativeRpcError) || error.nativeCode !== -32004
@@ -358,23 +424,110 @@ export class ZCodeClient implements NativeSessionProtocol {
       const snapshot = await this.rpc.request("session/read", { sessionId: id, messageLimit: 1 });
       const history = await this.historyBatches(id);
       const [session] = await this.withDesktopActivity([this.snapshot(snapshot, false)]);
-      return { session: session!, messages: decodeZCodeHistory(history, id, await readZCodeHistoryImages(history, this.imageStorageRoot)) };
+      return { session: session!, messages: await this.decodeSessionHistory(id, history, snapshot) };
     });
   }
 
+  private async decodeSessionHistory(id: string, history: NativeJsonPacket[], snapshot?: NativeJsonPacket): Promise<Message[]> {
+    if (history.length) this.drafts.delete(id);
+    const images = await readZCodeHistoryImages(history, this.imageStorageRoot);
+    const pending = snapshot
+      ? zcodePendingQuestionsFromSnapshot(snapshot)
+      : await this.readPendingQuestionState(id, history);
+    const messages = decodeZCodeHistory(history, id, images, pending ? {
+      includePendingQuestions: true,
+      pendingInteractionIds: pending.interactionIds,
+      pendingQuestionInputs: pending.inputs,
+      handledQuestionToolIds: this.runs.get(id)?.handledQuestionToolIds,
+    } : undefined);
+    this.rememberPendingQuestions(id, pending?.interactionIds.size ? messages : []);
+    return messages;
+  }
+
+  private async readPendingQuestionState(id: string, history: NativeJsonPacket[]): Promise<PendingQuestionProjection | undefined> {
+    const run = this.runs.get(id);
+    if (!this.loaded.has(id) && !run) return undefined;
+    const toolIds = zcodePendingQuestionToolIds(history, run?.handledQuestionToolIds);
+    if (toolIds.length === 0) {
+      this.pendingQuestionReads.delete(id);
+      return undefined;
+    }
+    // session/read loads the stored transcript before applying messageLimit.
+    // Recheck only when an unmatched question appears or its state may be stale.
+    const key = JSON.stringify(toolIds);
+    const cached = this.pendingQuestionReads.get(id);
+    if (cached?.key === key && Date.now() - cached.checkedAt < PENDING_QUESTION_RECHECK_MS) return cached.projection;
+    const read: PendingQuestionRead = { key, checkedAt: Date.now() };
+    this.pendingQuestionReads.set(id, read);
+    try {
+      const snapshot = await this.rpc.request("session/read", { sessionId: id, messageLimit: 1 });
+      if (this.pendingQuestionReads.get(id) !== read) return undefined;
+      read.projection = zcodePendingQuestionsFromSnapshot(snapshot);
+      return read.projection;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private rememberPendingQuestions(sessionId: string, messages: Message[]): void {
+    const active = new Set<string>();
+    for (const message of messages) {
+      const question = message.presentation?.question;
+      if (!question || question.status !== "pending") continue;
+      const interactionId = parseZCodePendingQuestionId(question.questionId);
+      if (!interactionId) continue;
+      active.add(question.questionId);
+      this.pendingQuestions.set(question.questionId, {
+        sessionId,
+        interactionId,
+        question: question.question,
+        options: question.options,
+        multiSelect: question.multiSelect,
+      });
+    }
+    for (const [questionId, question] of this.pendingQuestions) {
+      if (question.sessionId === sessionId && !active.has(questionId)) this.pendingQuestions.delete(questionId);
+    }
+  }
+
+  private clearPendingInteraction(sessionId: string, interactionId: string): void {
+    const projection = this.pendingQuestionReads.get(sessionId)?.projection;
+    const handled = this.runs.get(sessionId)?.handledQuestionToolIds;
+    for (const [toolCallId, requestId] of projection?.interactionIds ?? []) {
+      if (requestId !== interactionId) continue;
+      projection?.interactionIds.delete(toolCallId);
+      projection?.inputs.delete(toolCallId);
+      handled?.add(toolCallId);
+    }
+    for (const [questionId, question] of this.pendingQuestions) {
+      if (question.sessionId === sessionId && question.interactionId === interactionId) this.pendingQuestions.delete(questionId);
+    }
+  }
+
   async create(options: CreateRuntimeSessionOptions): Promise<NativeProtocolSession> {
-    const result = await this.rpc.request("session/create", {
-      workspace: { workspacePath: options.cwd, workspaceKey: options.cwd }, persistence: "immediate", titleGenerationEnabled: false,
-      ...(options.todoMcp ? { mcpServers: todoMcpServers(options.todoMcp) } : {}),
-    }, 60_000);
-    const session = this.snapshot(result);
-    session.title = options.title;
-    this.loaded.add(session.id);
+    const session = await this.createSession(options.cwd, options.title, options.todoMcp);
+    this.drafts.set(session.id, session);
     if (options.todoMcp) this.todoMcp.set(session.id, { command: options.todoMcp.command, args: [...options.todoMcp.args], env: { ...options.todoMcp.env } });
     return session;
   }
 
-  restoreDraft(session: NativeProtocolSession): void { this.sessions.set(session.id, { ...session }); }
+  private async createSession(cwd: string, title: string, todoMcp?: NativeTodoMcpConfiguration, sessionId?: string): Promise<NativeProtocolSession> {
+    const result = await this.rpc.request("session/create", {
+      workspace: { workspacePath: cwd, workspaceKey: cwd }, persistence: "immediate", titleGenerationEnabled: false,
+      ...(sessionId ? { sessionId } : {}),
+      ...(todoMcp ? { mcpServers: todoMcpServers(todoMcp) } : {}),
+    }, 60_000);
+    const session = this.snapshot(result);
+    if (sessionId && session.id !== sessionId) throw new RuntimeSessionError("ZCode returned a different draft session ID", "NATIVE_PROTOCOL_ERROR");
+    session.title = title;
+    this.loaded.add(session.id);
+    return session;
+  }
+
+  restoreDraft(session: NativeProtocolSession): void {
+    this.drafts.set(session.id, { ...session });
+    if (!this.sessions.has(session.id)) this.sessions.set(session.id, { ...session });
+  }
 
   async listModels(): Promise<RuntimeModelInfo[]> {
     if (!this.models.length) {
@@ -448,7 +601,11 @@ export class ZCodeClient implements NativeSessionProtocol {
     signal?.throwIfAborted();
     const attachments = await persistZCodeImageAttachments(parsedImages, this.imageStorageRoot);
     signal?.throwIfAborted();
-    const run: Run = { queue: new AsyncEventQueue(), text: "", aborted: false, finished: false, lastSeq: typeof subscribed.eventSeq === "number" ? subscribed.eventSeq : 0, toolIds: new Set(), reasoningId: randomUUID() };
+    const run: Run = {
+      queue: new AsyncEventQueue(), text: "", aborted: false, finished: false,
+      lastSeq: typeof subscribed.eventSeq === "number" ? subscribed.eventSeq : 0,
+      toolIds: new Set(), handledQuestionToolIds: new Set(), reasoningId: randomUUID(),
+    };
     this.runs.set(id, run);
     if (this.pendingTodoRuns.get(id)?.signal === signal) this.pendingTodoRuns.delete(id);
     try {
@@ -482,6 +639,9 @@ export class ZCodeClient implements NativeSessionProtocol {
   private finish(id: string, event: AgentEvent): void {
     const run = this.runs.get(id);
     if (!run || run.finished) return;
+    if (event.type === "done") this.drafts.delete(id);
+    this.pendingQuestionReads.delete(id);
+    this.rememberPendingQuestions(id, []);
     this.cancelQuestions(id); run.finished = true; run.queue.push(event); run.queue.close();
     const session = this.sessions.get(id); if (session) session.running = false;
   }
@@ -492,7 +652,15 @@ export class ZCodeClient implements NativeSessionProtocol {
     if (!run || run.finished) return;
     if (typeof params.seq === "number") { if (params.seq <= run.lastSeq) return; run.lastSeq = params.seq; }
     const payload = nativeRecord(params.payload);
-    if (params.type === "session.updated") {
+    if (params.type === "permission.resolved" && typeof payload.toolCallId === "string") {
+      const projection = this.pendingQuestionReads.get(params.sessionId)?.projection;
+      const interactionId = projection?.interactionIds.get(payload.toolCallId);
+      if (interactionId || isZCodeQuestionTool(payload.toolName)) {
+        run.handledQuestionToolIds.add(payload.toolCallId);
+        const requestId = interactionId ?? (typeof payload.requestId === "string" ? payload.requestId : undefined);
+        if (requestId) this.clearPendingInteraction(params.sessionId, requestId);
+      }
+    } else if (params.type === "session.updated") {
       const progress = zcodeModelProgress(payload);
       if (progress) run.queue.push(progress);
     } else if (params.type === "model.streaming") {
@@ -517,9 +685,14 @@ export class ZCodeClient implements NativeSessionProtocol {
         if (!isZCodeQuestionTool(payload.toolName)) run.queue.push({ type: "tool_call", toolCall: { id: payload.toolCallId, name: String(payload.toolName ?? "ZCode tool"), arguments: nativeRecord(payload.input) } });
       } else if (payload.kind === "result" || payload.kind === "error") run.queue.push({ type: "tool_result", result: { toolCallId: payload.toolCallId, content: typeof payload.output === "string" ? payload.output : typeof payload.result === "string" ? payload.result : String(nativeRecord(payload.error).message ?? ""), isError: payload.kind === "error" } });
     } else if (params.type === "turn.completed") {
-      this.finish(params.sessionId, run.aborted ? { type: "turn_aborted" } : {
+      const durationMs = typeof payload.duration === "number" && Number.isFinite(payload.duration) && payload.duration >= 0
+        ? payload.duration : undefined;
+      this.finish(params.sessionId, run.aborted || payload.resultType === "cancelled" ? {
+        type: "turn_aborted", ...(durationMs === undefined ? {} : { durationMs }),
+      } : {
         type: "done",
         finalText: run.text,
+        ...(durationMs === undefined ? {} : { durationMs }),
         ...(run.finalMessageId ? { forkPoint: { messageId: run.finalMessageId } } : {}),
       });
     } else if (params.type === "turn.failed") {
@@ -547,6 +720,9 @@ export class ZCodeClient implements NativeSessionProtocol {
     const id = zcodeInteractionId(method, params);
     const previous = this.interactions.get(id);
     if (previous) return previous.response;
+    if (method === "interaction/requestUserInput" && typeof params.toolCallId === "string") {
+      run.handledQuestionToolIds.add(params.toolCallId);
+    }
     const response = new Promise<NativeJsonPacket>(resolve => {
       const inputs = method === "interaction/requestUserInput" ? input : [undefined];
       const ids = inputs.map((_, index) => inputs.length === 1 ? id : `${id}:${index}`);
@@ -593,6 +769,8 @@ export class ZCodeClient implements NativeSessionProtocol {
   private cancelQuestions(sessionId: string): void { for (const [id, pending] of this.questions) if (pending.sessionId === sessionId) this.resolveQuestion(id, pending.cancelled); }
 
   async answerQuestion(id: string, answer: RuntimeQuestionAnswer): Promise<boolean> {
+    const pendingSnapshot = this.pendingQuestions.get(id);
+    if (pendingSnapshot) return this.resolvePendingQuestion(pendingSnapshot, answer);
     const pending = this.questions.get(id);
     if (!pending) return false;
     const index = answer.selectedIndices?.length === 1 ? answer.selectedIndices[0] : pending.options.findIndex(option => option.optionId === answer.answer || option.name === answer.answer || option.label === answer.answer || option.value === answer.answer);
@@ -612,6 +790,45 @@ export class ZCodeClient implements NativeSessionProtocol {
       if (!option || typeof response.decision !== "string") throw new RuntimeSessionError("Select a native permission option", "QUESTION_ANSWER_FAILED");
       this.resolveQuestion(id, response);
     }
+    return true;
+  }
+
+  private async resolvePendingQuestion(pending: PendingQuestion, answer: RuntimeQuestionAnswer): Promise<boolean> {
+    const selected = answer.selectedIndices;
+    if (selected?.some(index => !Number.isInteger(index) || index < 0 || index >= pending.options.length)
+      || (!pending.multiSelect && selected && selected.length > 1)) {
+      throw new RuntimeSessionError("Select valid native question options", "QUESTION_ANSWER_FAILED");
+    }
+    const option = selected?.length
+      ? [...new Set(selected)].map(index => pending.options[index]!.label).join(", ")
+      : answer.answer;
+    if (!option?.trim()) return false;
+    const key = JSON.stringify([pending.sessionId, pending.interactionId, pending.question, option]);
+    const commandId = "agentroam-question:" + createHash("sha256").update(key).digest("hex");
+    const envelope = {
+      commandId,
+      clientId: "agentroam",
+      sessionId: pending.sessionId,
+      type: "resolveInteraction",
+      payload: {
+        interactionId: pending.interactionId,
+        answer: { action: "accept", content: { answers: { [pending.question]: option } } },
+      },
+      issuedAt: Date.now(),
+    };
+    let ack: NativeJsonPacket;
+    try {
+      ack = await this.rpc.request("v4/command", envelope);
+    } catch {
+      ack = await this.rpc.request("v4/commands/query", { commands: [{ sessionId: pending.sessionId, commandId }] });
+      const result = rows(ack.results).find(row => nativeRecord(row.key).commandId === commandId)?.result;
+      if (!result || result === "unknown") throw new RuntimeSessionError("ZCode 未确认问题回答，原问题仍保留", "NATIVE_PROTOCOL_ERROR");
+      ack = nativeRecord(result);
+    }
+    if (ack.commandId !== commandId || !["accepted", "duplicate", "noop"].includes(String(ack.status))) {
+      throw new RuntimeSessionError("ZCode 未确认问题回答，原问题仍保留", "NATIVE_PROTOCOL_ERROR");
+    }
+    this.clearPendingInteraction(pending.sessionId, pending.interactionId);
     return true;
   }
 
@@ -640,6 +857,8 @@ export class ZCodeClient implements NativeSessionProtocol {
     this.pendingTodoRuns.clear();
     for (const id of this.runs.keys()) { this.cancelQuestions(id); this.steering.clearSession(id); }
     this.interactions.clear();
+    this.pendingQuestionReads.clear();
+    this.pendingQuestions.clear();
     this.todoMcp.clear();
     await this.rpc.dispose();
     for (const unsubscribe of this.unsubscribe) unsubscribe();

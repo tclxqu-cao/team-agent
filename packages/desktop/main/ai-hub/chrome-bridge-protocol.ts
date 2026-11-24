@@ -1,5 +1,7 @@
+import type { ChromeHubSiteId, ChromeHubInput } from "../../../shared/src/contracts/chrome-bridge-types.js";
+export type * from "../../../shared/src/contracts/chrome-bridge-types.js";
+
 export const CHROME_HUB_SITES = ["chatgpt", "gemini", "grok"] as const;
-export type ChromeHubSiteId = typeof CHROME_HUB_SITES[number];
 export const CHROME_HUB_ORIGINS: Record<ChromeHubSiteId, string> = {
   chatgpt: "https://chatgpt.com", gemini: "https://gemini.google.com", grok: "https://grok.com",
 };
@@ -14,27 +16,6 @@ export function chromeHubSiteForUrl(value: string): ChromeHubSiteId | null {
     return CHROME_HUB_SITES.find((site) => CHROME_HUB_ORIGINS[site] === url.origin) ?? null;
   } catch { return null; }
 }
-export interface ChromeHubTab {
-  siteId: ChromeHubSiteId;
-  tabId: number;
-  url: string;
-}
-export interface ChromeHubStatus {
-  compatible?: boolean;
-  paused?: boolean;
-  connected: boolean;
-  tabs: ChromeHubTab[];
-}
-export interface ChromeHubFrame {
-  siteId: ChromeHubSiteId;
-  data: string;
-  width: number;
-  height: number;
-}
-export type ChromeHubInput =
-  | { kind: "pointer"; action: "down" | "up" | "move" | "wheel"; x: number; y: number; deltaX?: number; deltaY?: number; button?: "left" | "right" | "middle" }
-  | { kind: "key"; action: "down" | "up"; key: string; code: string; modifiers: number }
-  | { kind: "text"; text: string };
 export function validChromeHubInput(input: unknown): input is ChromeHubInput {
   if (!input || typeof input !== "object") return false;
   const value = input as Record<string, unknown>;
@@ -46,17 +27,6 @@ export function validChromeHubInput(input: unknown): input is ChromeHubInput {
     && [value.x, value.y].every((n) => typeof n === "number" && Number.isFinite(n) && n >= 0 && n <= 1)
     && [value.deltaX, value.deltaY].every((n) => n === undefined || (typeof n === "number" && Number.isFinite(n) && Math.abs(n) <= 100_000))
     && (value.button === undefined || ["left", "right", "middle"].includes(String(value.button)));
-}
-
-export interface ChromeHubMessage { id: string; role: "user" | "assistant"; content: string }
-export interface ChromeHubConversation {
-  siteId: ChromeHubSiteId;
-  conversationId: string;
-  revision: number;
-  messages: ChromeHubMessage[];
-  generating: boolean;
-  composerAvailable: boolean;
-  receivedAt: number;
 }
 export function validChromeConversation(value: unknown): boolean {
   if (!value || typeof value !== "object") return false;
