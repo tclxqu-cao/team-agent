@@ -1,0 +1,33 @@
+packages/desktop/renderer/components/ChatView.model-source.test.ts
+  s_09a6be8e939422::t_bf6cb69d0b4818 31,33-35
+packages/desktop/renderer/components/ChatView.tsx
+  s_09a6be8e939422::t_29ace39bc31132 6052,6146
+packages/desktop/renderer/lib/runtime-capabilities.test.ts
+  s_09a6be8e939422::t_c846ad26c60ace 29,32-33
+packages/desktop/renderer/lib/runtime-capabilities.ts
+  s_09a6be8e939422::t_1d45333627773b 16
+packages/native-runtime/src/agent-runtime/acp-cli-client.test.ts
+  s_09a6be8e939422::t_3d709846e73c2b 60,94-146
+packages/native-runtime/src/agent-runtime/acp-cli-client.ts
+  s_09a6be8e939422::t_a0d2cc48016765 20-23,84-85,143,211,213-218,222-224,252-265,274-279,301
+packages/native-runtime/src/agent-runtime/native-runtime-broker.test.ts
+  s_09a6be8e939422::t_eb558f49724285 3124-3125,3127,3131
+packages/native-runtime/src/agent-runtime/native-runtime-broker.ts
+  s_09a6be8e939422::t_9b5fa247bc0299 2451-2453,2459-2460
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c566bfdf5aedfea1d7e32d02efef1cef6068288e",
+  "prompts": {},
+  "sessions": {
+    "s_09a6be8e939422": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a20c77-e053-7cf0-b1f9-1cba9062bbe4",
+        "model": "unknown"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
