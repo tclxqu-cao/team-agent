@@ -1,0 +1,90 @@
+packages/cli/src/service/service-command.ts
+  s_e6d37a19db3f20::t_5393a6867b298f 1,104
+deploy/headscale/policy.hujson
+  s_e6d37a19db3f20::t_7e6f3742f59b82 1-11
+packages/cli/src/tailscale/daemon-manager.ts
+  s_e6d37a19db3f20::t_114124be70741c 1-68,70-94,99-131
+  s_e6d37a19db3f20::t_5393a6867b298f 69,95-98
+packages/server/lib/mesh/mesh-gateway.test.ts
+  s_e6d37a19db3f20::t_1c603dfecb6647 1-39,41-111,113-147,149-153
+  s_e6d37a19db3f20::t_09fd68ab507c83 40,112,148
+packages/server/lib/mesh/headscale-client.mjs
+  s_e6d37a19db3f20::t_6bc9847b48b897 1-81
+deploy/headscale/config.yaml
+  s_e6d37a19db3f20::t_f2fc9d00227bc4 32-34,67
+  s_e6d37a19db3f20::t_7e6f3742f59b82 1-31,35-36,40-66,68-78
+  s_e6d37a19db3f20::t_5393a6867b298f 37-39
+packages/cli/src/tailscale/installer.ts
+  s_e6d37a19db3f20::t_114124be70741c 1-136
+packages/server/lib/mesh/mesh-gateway.mjs
+  s_e6d37a19db3f20::t_2730384eb603a2 1,4-77,79,81-108,110-111,115-156,161-168
+  s_e6d37a19db3f20::t_47b9bfab1d1473 2-3,109,114,157-160
+  s_e6d37a19db3f20::t_d96daf2e6c9540 78,80,112-113
+packages/cli/src/mesh/mesh-runtime.ts
+  s_e6d37a19db3f20::t_1133b29ecd96cc 44-51,58
+  s_e6d37a19db3f20::t_cb7637a5f78709 1-43,52-56,59,61-62,68,70-106
+  s_e6d37a19db3f20::t_114124be70741c 60
+  s_e6d37a19db3f20::t_af5958a187f861 57,63-67,69
+scripts/audit-cli-tarball.mjs
+  s_e6d37a19db3f20::t_f2fc9d00227bc4 25-26,74-75
+scripts/build-tailscale-platform-package.mjs
+  s_e6d37a19db3f20::t_47b9bfab1d1473 8-87
+  s_e6d37a19db3f20::t_499bf02f370c34 1-7,88-91
+deploy/headscale/docker-compose.yml
+  s_e6d37a19db3f20::t_7e6f3742f59b82 1-74
+deploy/headscale/README.md
+  s_e6d37a19db3f20::t_5393a6867b298f 1-62,64-92
+  s_e6d37a19db3f20::t_acc03df6eb2258 63
+packages/server/ws-server.mjs
+  s_e6d37a19db3f20::t_2730384eb603a2 5,1305-1310,1330,1494
+packages/server/lib/mesh/mesh-service.mjs
+  s_e6d37a19db3f20::t_5393a6867b298f 61
+  s_e6d37a19db3f20::t_6bc9847b48b897 1-60,62-114
+packages/cli/src/mesh/mesh-payload.ts
+  s_e6d37a19db3f20::t_cb7637a5f78709 1-9,11-23
+  s_e6d37a19db3f20::t_4fb864e7db9b93 10
+packages/cli/src/tailscale/tailnet-cli.ts
+  s_e6d37a19db3f20::t_114124be70741c 1-142
+packages/cli/src/mesh/mesh-config.ts
+  s_e6d37a19db3f20::t_5393a6867b298f 1-31
+packages/cli/src/mesh/mesh-command.test.ts
+  s_e6d37a19db3f20::t_f2fc9d00227bc4 1-57
+scripts/e2e-mesh.mjs
+  s_e6d37a19db3f20::t_df82a597130024 1-23,26-168,171-202,204-218,220-223,229-238,240-246,251-272
+  s_e6d37a19db3f20::t_48f5c179a8b14f 25,203,219,224-228,239,247-250
+  s_e6d37a19db3f20::t_ed609e3f7c92ef 24,169-170
+packages/cli/src/tailscale/bundled-asset.ts
+  s_e6d37a19db3f20::t_114124be70741c 1-69
+packages/server/lib/mesh/mesh-service.test.ts
+  s_e6d37a19db3f20::t_1c603dfecb6647 1-84
+packages/cli/src/runtime-manager.ts
+  s_e6d37a19db3f20::t_5393a6867b298f 1,86-89,95
+packages/cli/src/mesh/mesh-command.ts
+  s_e6d37a19db3f20::t_cb7637a5f78709 1-34,37-64
+  s_e6d37a19db3f20::t_ee95ccc9509eb4 35-36
+packages/cli/src/args.ts
+  s_e6d37a19db3f20::t_f2fc9d00227bc4 5,7,36-37,43,49-56,116,124-126,142-146
+packages/cli/src/cli.ts
+  s_e6d37a19db3f20::t_cb7637a5f78709 30-31,56-60,137-147,182-183,199-200,220-222,225,261
+  s_e6d37a19db3f20::t_5393a6867b298f 223-224
+scripts/audit-runtime-tarball.mjs
+  s_e6d37a19db3f20::t_5811f868b12abe 51-53
+scripts/stage-cli-runtime.mjs
+  s_e6d37a19db3f20::t_cc2b30b2bc4d30 43
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2214c50f4ba96364c84eb33be4444c4d93eaf527",
+  "prompts": {},
+  "sessions": {
+    "s_e6d37a19db3f20": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a20909-03b3-79a3-bab2-135256ede030",
+        "model": "gpt-6.2-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
