@@ -33,8 +33,7 @@ export async function fileContextMenuActions(value: unknown, options?: unknown, 
   return actions;
 }
 
-/** Resolve a user-selected artifact before handing it to the native file manager. */
-export async function resolveFileForReveal(value: unknown, home = homedir()): Promise<string> {
+async function inspectLocalArtifactPath(value: unknown, home: string) {
   if (typeof value !== "string" || !value.trim() || /[\0\r\n]/.test(value)) {
     throw new Error("文件路径无效");
   }
@@ -42,13 +41,25 @@ export async function resolveFileForReveal(value: unknown, home = homedir()): Pr
   if (!isAbsolute(path)) throw new Error("只能定位本机绝对文件路径");
 
   try {
-    const file = await realpath(path);
-    if (!(await stat(file)).isFile()) throw new Error("目标不是文件");
-    return file;
-  } catch (error) {
-    if (error instanceof Error && error.message === "目标不是文件") throw error;
+    const canonicalPath = await realpath(path);
+    return { path: canonicalPath, metadata: await stat(canonicalPath) };
+  } catch {
     throw new Error("文件不存在或无法访问");
   }
+}
+
+/** Resolve a regular file for callers that only support file operations. */
+export async function resolveFileForReveal(value: unknown, home = homedir()): Promise<string> {
+  const { path, metadata } = await inspectLocalArtifactPath(value, home);
+  if (!metadata.isFile()) throw new Error("目标不是文件");
+  return path;
+}
+
+export async function resolveArtifactTarget(value: unknown, home = homedir()) {
+  const { path, metadata } = await inspectLocalArtifactPath(value, home);
+  if (metadata.isDirectory()) return { path, kind: "directory" as const };
+  if (metadata.isFile()) return { path, kind: "file" as const };
+  throw new Error("目标不是文件或目录");
 }
 
 export function fileRevealMenuLabel(platform: NodeJS.Platform = process.platform): string {

@@ -526,7 +526,7 @@ describe("ZCode native NDJSON adapter", () => {
     let host = new NativeRuntimeBrokerHost(directory, createRuntime());
     try {
       const fork = await host.fork(encodeUnifiedSessionId("zcode", source.sessionId), { messageId: "source-answer" });
-      expect(await host.list()).toContainEqual(expect.objectContaining({ id: fork.id }));
+      expect(await host.list()).toContainEqual(expect.objectContaining({ id: fork.id, title: rpc.session.title }));
       if (failure !== "eviction") {
         await host.stop();
         if (failure === "older fork") {

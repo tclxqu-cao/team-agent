@@ -2733,7 +2733,8 @@ export class NativeRuntimeBrokerHost {
     const reconciled = discovered.map((session) => {
       const pending = this.pendingCreations.get(session.id);
       const materialized = pending && isMaterializedPendingSession(session);
-      if (materialized) {
+      // ZCode discovery includes empty residents whose first input is not persisted yet.
+      if (materialized && session.agentType !== "zcode") {
         this.pendingCreations.delete(session.id);
         this.state.deletePendingSession(session.id);
       }
@@ -4073,9 +4074,6 @@ function mergePendingSessionContext(
 
 function isMaterializedPendingSession(session: UnifiedSessionSummary): boolean {
   if (session.compatibility !== undefined) return false;
-  // ZCode lists in-memory drafts before their first input is persisted.
-  // Keep the broker draft until execution confirms it has run.
-  if (session.agentType === "zcode") return false;
   return session.agentType !== "claude-code" || session.sourceLabel !== "Claude Code SDK";
 }
 

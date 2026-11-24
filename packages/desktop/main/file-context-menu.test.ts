@@ -2,7 +2,7 @@ import { mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { fileContextMenuActions, fileRevealMenuLabel, resolveFileForReveal } from "./file-context-menu.js";
+import { fileContextMenuActions, fileRevealMenuLabel, resolveArtifactTarget, resolveFileForReveal } from "./file-context-menu.js";
 
 const directories: string[] = [];
 afterEach(async () => {
@@ -28,6 +28,21 @@ describe("artifact file context menu", () => {
 
   it.each([null, "", "relative.docx", "https://example.com/report.docx", "file:///tmp/report.docx", "/tmp/bad\nfile", "/tmp/bad\0file"])("rejects invalid or non-local target %j", async (value) => {
     await expect(resolveFileForReveal(value)).rejects.toThrow();
+  });
+
+  it("classifies artifact targets by filesystem type, including linked folders and files without extensions", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "agentroam-artifact-target-"));
+    directories.push(directory);
+    const file = join(directory, "README");
+    const folderLink = join(directory, "folder.docx");
+    await writeFile(file, "report");
+    await symlink(directory, folderLink, "dir");
+
+    await expect(resolveArtifactTarget("~/folder.docx", directory)).resolves.toEqual({
+      path: await realpath(directory), kind: "directory",
+    });
+    await expect(resolveArtifactTarget(file)).resolves.toEqual({ path: await realpath(file), kind: "file" });
+    await expect(resolveArtifactTarget(join(directory, "missing"))).rejects.toThrow("文件不存在或无法访问");
   });
 
   it("labels the native action for each platform", () => {

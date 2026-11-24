@@ -639,6 +639,7 @@ export class ZCodeClient implements NativeSessionProtocol {
   private finish(id: string, event: AgentEvent): void {
     const run = this.runs.get(id);
     if (!run || run.finished) return;
+    if (event.type === "done") this.drafts.delete(id);
     this.pendingQuestionReads.delete(id);
     this.rememberPendingQuestions(id, []);
     this.cancelQuestions(id); run.finished = true; run.queue.push(event); run.queue.close();

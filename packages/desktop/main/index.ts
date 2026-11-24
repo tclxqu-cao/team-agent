@@ -38,7 +38,7 @@ import { createDesktopNotificationSound } from "./notification-sound.js";
 import { DesktopNotificationSubscription } from "./notification-subscription.js";
 import { resolveTaskNotificationPreferences, type TaskCompletionNotification } from "@agent/core";
 import { directoryOpenMenuLabel, revealDirectoryWithShell, resolveDirectoryForOpen } from "./directory-context-menu.js";
-import { fileContextMenuActions, resolveFileForReveal } from "./file-context-menu.js";
+import { fileContextMenuActions, resolveArtifactTarget } from "./file-context-menu.js";
 import { installImageContextMenu } from "./image-context-menu.js";
 import { createDesktopPreviewResponse, DesktopFileWorkspaceService } from "./file-workspace-service.js";
 import { ArtifactBrowserPreview } from "./artifact-browser-preview.js";
@@ -1016,11 +1016,17 @@ ipcMain.handle("file:show-context-menu", async (event, path: unknown, options?: 
 ipcMain.handle("file:artifact-action", async (event, path: unknown, action: unknown) => {
   trustedServiceSender(event);
   if (action !== "reveal" && action !== "open-with") throw new Error("无效的交付物操作");
-  const file = await resolveFileForReveal(path);
+  const target = await resolveArtifactTarget(path);
   if (action === "reveal") {
-    shell.showItemInFolder(file);
+    shell.showItemInFolder(target.path);
     return;
   }
+  if (target.kind === "directory") {
+    const error = await shell.openPath(target.path);
+    if (error) throw new Error(error);
+    return;
+  }
+  const file = target.path;
   const owner = BrowserWindow.fromWebContents(event.sender);
   if (!owner) throw new Error("找不到交付物所在的窗口");
   const preview = supportsArtifactBrowserPreview(file);
