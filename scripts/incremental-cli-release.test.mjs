@@ -32,6 +32,11 @@ test("installation verification does not invalidate shipped platform packages", 
   assert.deepEqual(changed(plan(["scripts/verify-cli-install.mjs", "packages/server/next.config.js"])), [names[0], names[1], "agentroam"]);
 });
 
+test("mesh tooling does not invalidate unrelated binaries", () => {
+  assert.equal(plan(["scripts/e2e-mesh.mjs", "scripts/build-tailscale-platform-package.mjs"]).noop, true);
+  assert.deepEqual(changed(plan(["scripts/e2e-mesh.mjs", "packages/server/lib/mesh/mesh-service.mjs"])), [names[0], names[1], "agentroam"]);
+});
+
 test("runtime staging changes retain the published TUI and cloudflared packages", () => {
   const result = plan(["scripts/stage-cli-runtime.mjs"]);
   assert.deepEqual(changed(result), [names[0], names[1], "agentroam"]);
