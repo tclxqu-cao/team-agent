@@ -1,0 +1,899 @@
+packages/shared/src/file-workspace/codeSyntax.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-62
+packages/shared/src/infrastructure/http/http-client.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-155
+scripts/harness/proposer.ts
+  s_09a6be8e939422::t_5429eee6a87caf 3
+packages/core/src/domain/model/entities.ts
+  s_09a6be8e939422::t_5429eee6a87caf 56-58
+packages/desktop/renderer/lib/queued-message-order.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 106-136
+packages/shared/src/file-workspace/codePreviewLines.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-10
+packages/desktop/renderer/components/AllSessionsSidebar.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 4,7,13-14,41,49,76,104,107,109-110,116-117,166,169-193,198,201,206,212-214,216
+packages/desktop/main/file-workspace-service.ts
+  s_09a6be8e939422::t_5429eee6a87caf 5,18,27,32,39,53-54,65,203,205,213-237,388,396-398,404,432,472
+packages/desktop/main/ai-hub/manager-reauth.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 113-114,117,119,130,132-133
+packages/cli/src/opencode-runtime-manager.ts
+  s_09a6be8e939422::t_5429eee6a87caf 4,26,47,91-98,101,120,129-137,139,143-161,265,268,270,281
+packages/native-runtime/src/agent-runtime/acp-cli-client.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-484
+packages/native-runtime/src/agent-runtime/acp-session-projection.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-175
+packages/native-runtime/src/agent-runtime/native-cli-command.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1,9-10,18,22-38,45-96,98,104-108,110-113,117-118,121-134,142-143,145-148,155,160-161,164-184,211-212,215-217
+packages/shared/src/console/TerminalPane.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 1-834
+packages/desktop/main/ai-hub/chrome-bridge-protocol.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-3
+packages/core/src/infrastructure/tools/builtin/RemoteProjectActionTool.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-83
+packages/native-runtime/src/agent-runtime/acp-attachments.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-51
+packages/core/src/domain/supervision/types.ts
+  s_09a6be8e939422::t_5429eee6a87caf 5,7,13-20,142
+packages/desktop/renderer/components/ParallelAgentTabs.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 1,4,7,34-35
+packages/desktop/renderer/lib/session-activity.ts
+  s_09a6be8e939422::t_5429eee6a87caf 4,13-15,63-65,67-74,79-83
+packages/desktop/main/artifact-browser-preview.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-117
+packages/desktop/main/artifact-open-with.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-59
+packages/desktop/renderer/components/desktop-task-split/task-session-catalog.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-63
+packages/desktop/renderer/components/SessionTurnResults.test.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 1-53
+packages/desktop/renderer/components/SessionTurnResults.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 7,69,88,103-110,173,178-179,181
+packages/desktop/renderer/lib/sidebar-session-sort.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1
+packages/desktop/renderer/components/SidebarSessionRow.test.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 11-23,85,92,97
+packages/desktop/renderer/lib/use-session-background-jobs.ts
+  s_09a6be8e939422::t_5429eee6a87caf 3
+packages/native-runtime/src/agent-runtime/native-rpc-client.ts
+  s_09a6be8e939422::t_5429eee6a87caf 34-38,48
+packages/core/src/infrastructure/tools/builtin/GlobTool.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-172
+packages/core/src/infrastructure/tools/builtin/AskUserTool.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-134
+packages/desktop/renderer/lib/session-composer-routing.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 2
+packages/core/src/domain/model/providers/__tests__/AnthropicProvider.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 2
+packages/desktop/renderer/components/ChatView.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 19,90,95,97,475-476,490,973-975,977,984-992,1047-1048,1091,1102,1169,1785-1788,2180,2612,2797,2800-2801,2804-2808,2810-2813,3040-3041,3053,3057-3058,3099,3212,3249,3262,3672,3678-3679,3697-3745,3751,3763,3789,3794,3807,3822,3847,3883,3939-3953,3987,3990,4192,4270,4339,4354,4420,4436,4444-4455,4463,4526,4530,4541-4544,4643,4819,5727-5730,5734,6021,6043,6066,6138,6144,6152,6286
+packages/desktop/renderer/components/DesktopAppActions.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 1,4,7,10
+packages/core/src/domain/context/__tests__/ContextAssembler.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 3
+packages/core/src/domain/context/__tests__/ContextLoader.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 5
+packages/native-runtime/src/agent-runtime/types.ts
+  s_09a6be8e939422::t_5429eee6a87caf 10,55,79,220,236,243-244,248
+packages/cli/src/tunnel/tunnel-controller.ts
+  s_09a6be8e939422::t_5429eee6a87caf 2
+packages/server/app/api/session-views/route.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-8
+packages/server/app/web/CollaborationPane.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 8
+packages/desktop/renderer/components/MCPServerList.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 2
+packages/desktop/renderer/lib/use-tunnel-connection.ts
+  s_09a6be8e939422::t_5429eee6a87caf 2
+packages/core/src/application/collaboration/architecture.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 8,30
+packages/server/app/web/terminalOutput.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 3
+scripts/harness/worker.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1,13-16
+packages/core/src/infrastructure/tools/builtin/BashTool.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-57
+packages/desktop/renderer/lib/engine-thread-index.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1
+packages/desktop/renderer/components/desktop-task-split/TaskSessionPicker.test.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 7,18,56-69,71,76,91,95-105
+packages/server/lib/tunnel-control.d.mts
+  s_09a6be8e939422::t_5429eee6a87caf 1-3
+packages/webapp/src/infrastructure/web-shell-project-bridge.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 5
+packages/shared/src/contracts/chrome-bridge-types.d.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-44
+packages/shared/src/file-workspace/FilePreview.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 1-1031
+packages/native-runtime/src/agent-runtime/deepseek-harness-client.ts
+  s_09a6be8e939422::t_5429eee6a87caf 7,130-137
+packages/core/src/infrastructure/tools/policy-executor.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-178
+packages/desktop/renderer/lib/agent-workspace-cache.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 15
+packages/core/src/infrastructure/lsp/LSPManager.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-41
+packages/core/src/infrastructure/tools/builtin/StrReplaceTool.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-79
+packages/desktop/renderer/components/desktop-task-split/TaskSessionPicker.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 7-8,10-14,26-27,33,44,46-47,52-53,72-73,80,83-90,93-94,99-100,102-104,107-117,119-120,125-128,138,141-151,153-170,190,195-197,212,217-219
+packages/desktop/renderer/components/desktop-task-split/task-session-catalog.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-76
+packages/core/src/domain/agent/entities.ts
+  s_09a6be8e939422::t_5429eee6a87caf 92,102-103,105
+packages/core/src/infrastructure/tools/builtin/WebFetchTool.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-82
+packages/desktop/renderer/lib/agent-workspace-cache.ts
+  s_09a6be8e939422::t_5429eee6a87caf 6
+packages/desktop/main/shared-service.ts
+  s_09a6be8e939422::t_5429eee6a87caf 6
+packages/desktop/renderer/lib/desktop-live-setup.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 3
+packages/desktop/renderer/components/ComposerNewSessionControls.test.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 7,25,32-34,39,41-42,52-53
+packages/desktop/renderer/stores/agentStore.ts
+  s_09a6be8e939422::t_5429eee6a87caf 13,74,79-80,176-177,287-289,292
+packages/server/app/api/collaboration/route.ts
+  s_09a6be8e939422::t_5429eee6a87caf 20-21,64,123-125
+scripts/incremental-cli-release.test.mjs
+  s_09a6be8e939422::t_5429eee6a87caf 22-23
+packages/core/src/shared-kernel/agent-type.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-20
+packages/webapp/src/main.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 9,11,15,28-29,38-39
+packages/core/src/infrastructure/filesystem/SkillLoader.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-312
+packages/desktop/main/new-session-window.ts
+  s_09a6be8e939422::t_5429eee6a87caf 3,43-49
+  s_09a6be8e939422::t_e4d6ece2029b31 50-51
+packages/core/src/domain/agent/__tests__/AgentBuilder.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 2
+packages/desktop/renderer/lib/runtime-capabilities.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1,14-16
+packages/shared/src/domain/ports/dictation-port.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-7
+packages/core/src/infrastructure/tools/builtin/WriteFileTool.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-47
+packages/desktop/renderer/App.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 33,59,69,73,81,102,112-113,148,163,366-367,521,523,635,885-887,1338,1382,1466-1488,1764,1768-1769,1779,1784,1793-1795,1798-1800,1805-1840,1896,1906,1913,1954,2004,2032,2053-2054,2140,2260-2263,2265,2277,2279,2481,2486,2491-2492,2517-2520,2525,2563,2611
+packages/desktop/renderer/components/AskUserCard.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 12-13,26-27,169,188
+packages/desktop/renderer/lib/all-sessions-cache.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 39-49,57-58
+packages/desktop/renderer/lib/sidebar-session-status.ts
+  s_09a6be8e939422::t_5429eee6a87caf 20-23
+packages/core/src/infrastructure/filesystem/ContextLoader.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-160
+packages/native-runtime/src/agent-runtime/native-stdio-channel.ts
+  s_09a6be8e939422::t_5429eee6a87caf 20,39-40,77,134-146,150-156,187-188
+packages/native-runtime/src/agent-runtime/zcode-questions.ts
+  s_09a6be8e939422::t_5429eee6a87caf 7-14,27-84,105-111,114-119,121-123,125-127,134
+packages/desktop/renderer/lib/session-activity.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 74-92
+packages/shared/src/file-workspace/codePreviewLines.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-25
+packages/desktop/renderer/components/collaboration/useCollaborationComposer.ts
+  s_09a6be8e939422::t_5429eee6a87caf 3
+packages/desktop/renderer/components/SessionTaskPanel.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 26,30-60,62
+packages/desktop/renderer/components/desktop-task-split/DesktopTaskWorkspace.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 5,18,155-156,158,288,292-295
+packages/core/src/domain/tool/execution-policy.ts
+  s_09a6be8e939422::t_5429eee6a87caf 72,106,149,158
+packages/desktop/renderer/lib/all-sessions-cache.ts
+  s_09a6be8e939422::t_5429eee6a87caf 3,5,14,17,24-28,31,42,49,52,56
+packages/core/src/domain/collaboration/CollaborationGroup.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1,28
+packages/core/src/domain/context/ContextAssembler.ts
+  s_09a6be8e939422::t_5429eee6a87caf 55,162
+packages/core/src/domain/model/providers/__tests__/AiHubProvider.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 12
+packages/native-runtime/src/agent-runtime/native-runtime-broker.ts
+  s_09a6be8e939422::t_5429eee6a87caf 15,31,68,70-71,79-80,93,269,316,368-369,387-395,470-491,793-798,849-852,901-917,954,956,1103-1108,1134-1139,1146-1147,1156,1347-1352,1358,1386,1395-1400,1402-1403,1405,1488-1501,1596,1605,1888-1910,1957,1970,1987,2008-2017,2026,2035,2038,2110,2144-2153,2159-2160,2180,2185-2187,2196-2197,2224-2247,2254-2256,2299-2303,2483,2495,2599-2602,2615-2616,2619-2621,2664,2736-2737,2885-2889,2920,2967,2969-2970,3093,3115,3212-3215,3245-3246,3470,3539-3540,3678-3699,3704,3719-3720,3724,3913-3914,3917,3928-3929,3933,3936,3954,3960-3964,3976,4021,4206-4210
+packages/shared/src/infrastructure/http/think-filter.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-75
+packages/core/src/infrastructure/tools/builtin/CronTools.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-102
+packages/desktop/renderer/lib/parallel-failed-messages.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1
+packages/desktop/renderer/lib/shared-service.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-4,7,101,124
+packages/server/app/web/compact-toolbar.test.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 5-6,64
+packages/desktop/renderer/components/MessageLinkActions.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 4
+packages/webapp/src/infrastructure/http/agent-http-gateway.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 2-3,1851-1874
+  s_09a6be8e939422::t_919ba362f5ad68 1875
+packages/webapp/src/infrastructure/http/agent-http-native-turn-replay.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 2
+packages/core/src/domain/session/SessionMessageOptions.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 19-28
+packages/core/src/infrastructure/persistence/SessionStore.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-40
+packages/desktop/renderer/components/ParallelAgentSettings.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 4
+packages/core/src/infrastructure/RunCheckpointStore.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 7
+packages/desktop/renderer/components/desktop-task-split/session-state.ts
+  s_09a6be8e939422::t_5429eee6a87caf 3-4,156-163
+packages/shared/src/file-workspace/FileTree.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 1-410
+packages/core/src/infrastructure/tools/builtin/ShowWidgetTool.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-63
+packages/desktop/renderer/lib/native-goal-submission.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 3
+packages/server/app/web/AuthGate.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 5-6
+packages/cli/package.json
+  s_09a6be8e939422::t_5429eee6a87caf 3,30-33,36-37
+packages/core/src/infrastructure/AiHubSocketTransport.ts
+  s_09a6be8e939422::t_5429eee6a87caf 7
+packages/desktop/renderer/lib/session-execution-trace.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 82-92
+packages/core/src/infrastructure/models/openAIEndpoint.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-8
+packages/desktop/renderer/lib/session-history.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1176-1231
+packages/server/app/web/mobileViewport.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 2
+packages/core/src/domain/memory/__tests__/FileSystemMemoryStore.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 2
+packages/desktop/renderer/styles/session-task-panel.css
+  s_09a6be8e939422::t_5429eee6a87caf 59-63,78,83
+packages/native-runtime/src/agent-runtime/acp-questions.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-182
+packages/server/lib/terminal-readiness-contract.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 37-38
+packages/shared/tsconfig.json
+  s_09a6be8e939422::t_5429eee6a87caf 1-8
+packages/webapp/index.html
+  s_09a6be8e939422::t_5429eee6a87caf 13-61,64-69,85-93
+packages/native-runtime/src/agent-runtime/copilot-events.ts
+  s_09a6be8e939422::t_5429eee6a87caf 42-48
+packages/desktop/renderer/components/BrowserLivePanel.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 16
+packages/desktop/renderer/styles/global.css
+  s_09a6be8e939422::t_5429eee6a87caf 1211-1212,1253-1257,1292-1295,2006-2007,2706-2710,2736,2809,4950-4962
+packages/server/lib/session-catalog.ts
+  s_09a6be8e939422::t_5429eee6a87caf 122-123,132-137,159-162,167-178,180-181
+packages/server/lib/shared-customer-queue.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1
+packages/core/src/infrastructure/SQLiteDatabase.ts
+  s_09a6be8e939422::t_5429eee6a87caf 84-89
+packages/shared/src/console/ResponsiveToolbar.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 1-127
+packages/desktop/renderer/components/desktop-task-split/TaskPaneWebPage.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 3
+packages/core/src/infrastructure/tools/builtin/WaitAgentTool.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-47
+packages/shared/src/infrastructure/local/local-settings-repository.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-163
+packages/tui-darwin-arm64/package.json
+  s_09a6be8e939422::t_5429eee6a87caf 3
+packages/webapp/src/infrastructure/http/http-client.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 2
+packages/webapp/src/push/push-notifications.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1
+scripts/incremental-cli-release.mjs
+  s_09a6be8e939422::t_5429eee6a87caf 36
+packages/desktop/renderer/components/RemoteClipboardPasteButton.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 2
+packages/core/src/domain/session/SessionGoals.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 6,17,52-66
+  s_09a6be8e939422::t_c490e5651d958c 67-68
+packages/native-runtime/src/agent-runtime/codex-runtime-adapter.ts
+  s_09a6be8e939422::t_5429eee6a87caf 637-640,708-716,1375,1838-1839,2373-2376,2593-2594,2608,2611,2616-2635,2649,2658,2677,2764,2772-2778,2787,2925,2928-2933,3019
+packages/shared/src/browser/artifact-links.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-47
+packages/shared/src/console/console-styles.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-290
+packages/desktop/renderer/styles/session-turn-results.css
+  s_09a6be8e939422::t_5429eee6a87caf 44,51-52,73,75-89,97,114-122,137,139-145
+packages/server/app/web/AiHubPane.test.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 8
+packages/core/src/infrastructure/tools/builtin/GrepTool.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-153
+packages/desktop/renderer/lib/artifact-links.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 3,27-34
+  s_09a6be8e939422::t_15209271dc605c 35
+packages/desktop/main/artifact-open-with.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-27
+packages/server/app/api/sessions/[id]/goals/route.ts
+  s_09a6be8e939422::t_5429eee6a87caf 3,39,49,62-65,87,91-100,167
+packages/desktop/renderer/lib/prompt-attachments.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-19
+packages/server/lib/native-runtime-service.ts
+  s_09a6be8e939422::t_5429eee6a87caf 33,77,146,165,491-495,564,569
+packages/desktop/main/task-pane-pages.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 7
+packages/shared/src/browser/browser-image-normalization.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-131
+packages/desktop/renderer/components/QueryNavigationRail.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 3
+packages/core/src/infrastructure/SQLiteSessionStore.ts
+  s_09a6be8e939422::t_5429eee6a87caf 5,18-29
+  s_09a6be8e939422::t_4371aa975c64c7 30
+packages/core/src/infrastructure/mcp/MCPManager.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-86
+packages/desktop/renderer/lib/clipboard.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 2
+packages/desktop/renderer/lib/desktop-live-setup.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1
+packages/shared/src/infrastructure/http/agent-http-gateway.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-1534
+packages/desktop/renderer/lib/use-parallel-sessions.ts
+  s_09a6be8e939422::t_5429eee6a87caf 2,171-177
+packages/desktop/renderer/components/AllSessionsSidebar.test.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 16,29,44,57-76
+  s_09a6be8e939422::t_6e4cb604daf0a9 77
+packages/desktop/renderer/lib/dashboard-session-navigation.ts
+  s_09a6be8e939422::t_5429eee6a87caf 2
+packages/desktop/renderer/lib/native-goal-submission.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1
+scripts/harness/supervisor.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 53
+packages/desktop/main/artifact-browser-preview.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-75
+packages/core/src/domain/agent/agent-type.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 6
+packages/desktop/renderer/components/NativeGoalBar.test.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 5
+packages/desktop/renderer/components/collaboration/SessionDashboard.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 9,66
+packages/server/app/web/AuthGate.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 4-5
+packages/server/app/web/glass-mobile-toolbar.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 4,6
+packages/server/app/web/ThemePicker.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 6
+packages/cloudflared-win32-x64/package.json
+  s_09a6be8e939422::t_5429eee6a87caf 3
+packages/core/src/infrastructure/tools/builtin/SkillTools.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-92
+packages/cloudflared-darwin-arm64/package.json
+  s_09a6be8e939422::t_5429eee6a87caf 3
+packages/core/src/infrastructure/filesystem/PluginManager.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-123
+packages/desktop/renderer/components/AgentWorkspaceSwitcher.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 3,6,13,16,37-38,41,44-50,52
+packages/desktop/renderer/components/SessionBackgroundJobs.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 4
+packages/native-runtime/src/agent-runtime/unified-session-service.ts
+  s_09a6be8e939422::t_5429eee6a87caf 95-97,111-117,233-235
+packages/core/src/infrastructure/models/DeepSeekProvider.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-254
+packages/desktop/renderer/lib/chrome-hub-input-queue.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1
+packages/desktop/renderer/lib/occupied-session-fork.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1,14
+packages/desktop/renderer/lib/session-execution-trace.ts
+  s_09a6be8e939422::t_5429eee6a87caf 71-75
+packages/native-runtime/src/agent-runtime/acp-cli-runtime-adapter.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-17
+packages/core/src/bootstrap/AgentBuilder.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-81
+packages/desktop/renderer/components/ChatHeaderActions.test.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 67,74,79,82
+packages/desktop/renderer/components/collaboration/session-dashboard.css
+  s_09a6be8e939422::t_5429eee6a87caf 65
+packages/desktop/renderer/components/collaboration/MonitoredSessionPicker.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 5-6,8-10,21,35,50,58-78,83,91-92,94
+packages/server/app/web/useComputerDirectory.ts
+  s_09a6be8e939422::t_5429eee6a87caf 6
+packages/desktop/renderer/components/DesktopLiveControlBanner.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 2
+packages/desktop/renderer/lib/queued-message-steering.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 5
+packages/desktop/renderer/global.d.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1
+packages/desktop/renderer/stores/settingsStore.ts
+  s_09a6be8e939422::t_5429eee6a87caf 2
+packages/desktop/renderer/components/desktop-task-split/TaskPaneTerminal.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 2-4
+packages/native-runtime/src/agent-runtime/codex-runtime-adapter.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 818-822,1637,1665,1683,3065-3099
+  s_09a6be8e939422::t_95c8383c10452a 3100-3101
+packages/shared/src/console/SortableToolbarAction.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 1-84
+packages/desktop/renderer/lib/native-agent-run-prefs.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1
+packages/core/src/domain/tool/__tests__/ToolRegistry.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 3-7
+packages/webapp/src/infrastructure/http/parallel-sessions.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 2
+packages/shared/src/file-workspace/codeSyntax.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-80
+packages/runtime-darwin-arm64/package.json
+  s_09a6be8e939422::t_5429eee6a87caf 3
+packages/core/src/infrastructure/tools/builtin/GrepTool.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-70
+packages/core/src/application/session/SharedCustomerQueue.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-104
+packages/core/src/infrastructure/tools/builtin/WebSearchTool.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-183
+packages/desktop/renderer/components/ChatComposerStyle.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 63-70,135
+packages/desktop/renderer/lib/parallel-message-dispatch.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 2
+packages/core/src/application/engine-switch/SwitchEngineUseCase.ts
+  s_09a6be8e939422::t_5429eee6a87caf 18,84
+packages/desktop/renderer/lib/parallel-run-options.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1
+packages/native-runtime/src/agent-runtime/native-stdio-channel.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 78-91
+packages/server/lib/customer-goal-service.ts
+  s_09a6be8e939422::t_5429eee6a87caf 2,22,26
+packages/desktop/renderer/components/StructuredAgentMessage.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 3
+packages/server/app/web/terminalSurfaceStyle.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 4
+packages/core/src/domain/web-console/WebArtifactBridge.ts
+  s_09a6be8e939422::t_5429eee6a87caf 7,40
+packages/shared/src/console/WorkspaceBoot.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 1-86
+packages/shared/src/domain/ports/agent-port.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-25
+packages/desktop/renderer/components/AgentWorkspaceSwitcher.test.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 9-13,17,19,23,25,29,33-36
+packages/core/src/infrastructure/models/OpenAIProvider.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-379
+packages/desktop/renderer/components/file-workspace/DesktopFileWorkspaceLayout.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 6
+packages/desktop/renderer/lib/agent-availability.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-2,5-10
+packages/desktop/renderer/lite/api.ts
+  s_09a6be8e939422::t_5429eee6a87caf 4
+packages/cloudflared-win32-x64/manifest.json
+  s_09a6be8e939422::t_5429eee6a87caf 2
+packages/core/src/application/agent-run/StartAgentRunUseCase.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 2
+packages/desktop/main/ai-hub/chrome-bridge.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-2
+packages/native-runtime/src/agent-runtime/acp-cli-client.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-232
+packages/server/app/web/FileTree.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 1
+packages/server/lib/session-views.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-53
+packages/core/src/infrastructure/tools/builtin/RemoteProjectActionTool.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-147
+packages/core/src/domain/session/PromptAttachment.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-31
+packages/desktop/renderer/components/desktop-task-split/session-state.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 2,226-241
+  s_09a6be8e939422::t_8ef5dc183f0e96 242-243
+packages/core/src/bootstrap/ModelRegistry.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-52
+packages/cloudflared-darwin-arm64/manifest.json
+  s_09a6be8e939422::t_5429eee6a87caf 2
+packages/desktop/renderer/lib/session-change-history.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1,5-36,48,62,80-81,87
+packages/native-runtime/src/agent-runtime/native-runtime-registration.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 27,30
+packages/runtime-darwin-arm64/manifest.json
+  s_09a6be8e939422::t_5429eee6a87caf 2,10
+packages/core/src/infrastructure/tools/checkpoints.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-108
+packages/desktop/main/new-session-window.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 64-78
+packages/server/app/web/fileDiff.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1
+packages/core/src/domain/model/providers/__tests__/OpenAIProvider.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 2-3
+packages/desktop/renderer/lib/shared-service.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 2,59,61
+packages/desktop/renderer/components/SidebarReferenceStyle.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 8,62,83,188-196,199,201-202,231,234,236,249,295,318-319
+packages/desktop/renderer/styles/artifact-file-actions.css
+  s_09a6be8e939422::t_5429eee6a87caf 1-58
+packages/desktop/renderer/components/SessionDisclosureButton.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 1-19
+packages/server/app/api/agent/run/route.ts
+  s_09a6be8e939422::t_5429eee6a87caf 2,39,55-63,72,192
+packages/server/app/web/fileTreeReveal.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1
+packages/shared/src/file-workspace/HighlightedCode.css
+  s_09a6be8e939422::t_5429eee6a87caf 1-83
+packages/desktop/renderer/components/LSPServerList.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 2
+packages/shared/src/browser/clipboard.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-67
+packages/desktop/renderer/lib/session-history.ts
+  s_09a6be8e939422::t_5429eee6a87caf 10,48-49,55-57,223-224,229-252,316-324,328-329,375,418,432-436,442-443,590-591
+packages/core/src/domain/model/providers/__tests__/usage.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 2
+packages/desktop/renderer/lib/use-parallel-sessions.test.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 4
+packages/shared/package.json
+  s_09a6be8e939422::t_5429eee6a87caf 1-20
+packages/desktop/renderer/lib/chat-submission.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-2,12,20,31,39
+packages/desktop/renderer/lib/occupied-session-fork.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 4
+packages/shared/src/console/terminalInputPolicy.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-16
+packages/shared/src/console/useGateway.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-206
+packages/server/app/web/projectFrameBridge.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 3
+packages/core/src/infrastructure/tools/builtin/index.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-44
+packages/shared/src/infrastructure/web-shell-project-bridge.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-75
+packages/server/app/web/FlowStudioPane.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 6
+packages/desktop/renderer/lib/parallel-failed-messages.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 2
+packages/desktop/renderer/components/file-workspace/index.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-2,5-7
+packages/cli/src/opencode-runtime-manager.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 124-136,149-151
+packages/desktop/renderer/components/desktop-task-split/notification-state.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 2
+packages/desktop/renderer/components/SessionCompletionTracker.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 1-22
+packages/desktop/renderer/lib/all-sessions.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 31,36
+packages/shared/src/contracts/agent-api.d.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-674
+packages/desktop/renderer/components/desktop-task-split/draft-workspace.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 2
+packages/desktop/renderer/components/BrowserLivePanel.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 3
+packages/shared/src/console/RunningSessionsIcon.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-8
+packages/desktop/renderer/lib/all-sessions.ts
+  s_09a6be8e939422::t_5429eee6a87caf 15,24-27,32-35,42-43,58,60-62,74
+packages/desktop/renderer/lib/use-session-disclosure.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-16
+packages/core/src/infrastructure/tools/builtin/LspTools.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-245
+packages/server/lib/tool-execution-policies.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1,34
+packages/native-runtime/src/agent-runtime/zcode-questions.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 3,58-74
+packages/server/app/web/fileTreeReveal.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 29-35
+packages/core/src/infrastructure/tools/builtin/SpawnAgentTool.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-65
+packages/desktop/renderer/components/ArtifactFileActions.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 1-82
+packages/cli/src/tunnel/tunnel-controller.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 4
+packages/desktop/renderer/components/SessionStatusDot.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 1-23
+packages/desktop/renderer/components/ToolCallCard.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 24
+packages/desktop/renderer/styles/composer.css
+  s_09a6be8e939422::t_5429eee6a87caf 619-624,847-865
+packages/server/app/web/FilePreview.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 1-2
+packages/server/app/web/layout.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 4-5
+packages/desktop/renderer/components/AgentSessionRail.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 5,7,9-11,27-28,33,43-44,46,49-60,62,67-87,98-99,101-105,108,114-115,122,124-125
+packages/desktop/renderer/lib/use-native-session-goal.ts
+  s_09a6be8e939422::t_5429eee6a87caf 3
+packages/desktop/renderer/lib/use-session-activity.ts
+  s_09a6be8e939422::t_5429eee6a87caf 6,15
+packages/core/src/domain/session/SessionGoalCoordinator.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 2
+packages/desktop/renderer/lib/session-tree.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-67
+packages/desktop/renderer/lib/queued-message-steering.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1
+packages/server/lib/shared-customer-queue.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 9-34
+packages/desktop/renderer/components/collaboration/CollaborationCreateDialog.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 8
+packages/server/lib/collaboration/dashboard.ts
+  s_09a6be8e939422::t_5429eee6a87caf 29-32
+packages/core/src/infrastructure/cron/CronTaskLock.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-129
+packages/core/src/infrastructure/tools/builtin/ApplyPatchTool.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-306
+packages/desktop/main/file-context-menu.ts
+  s_09a6be8e939422::t_5429eee6a87caf 36,44-46,51-63
+  s_09a6be8e939422::t_62664fb25f94e3 64
+packages/core/src/infrastructure/persistence/FileSystemMemoryStore.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-224
+packages/desktop/renderer/lib/new-session-window.ts
+  s_09a6be8e939422::t_5429eee6a87caf 2
+packages/native-runtime/src/agent-runtime/native-cli-command.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 16-134
+packages/server/app/web/FilePreview.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 15,18
+packages/server/app/web/FileTree.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 5
+packages/core/src/infrastructure/models/AiHubProvider.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-795
+packages/core/src/infrastructure/tools/builtin/SkillTools.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-43
+packages/native-runtime/src/agent-runtime/zcode-turn-duration.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-38
+packages/server/lib/external-cli-probe.ts
+  s_09a6be8e939422::t_5429eee6a87caf 3-4,33-35,41-60,85,88,91-92,96-97,102-114
+packages/desktop/renderer/assets/agent-brands/sources.json
+  s_09a6be8e939422::t_5429eee6a87caf 35-48
+packages/core/src/domain/tool/builtin/__tests__/ShowWidgetTool.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 2
+packages/native-runtime/src/agent-runtime/zcode-history.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-4,11,13,29-30,39-67
+packages/server/lib/session-views.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-6
+packages/server/ws-server.mjs
+  s_09a6be8e939422::t_5429eee6a87caf 1047-1050,1060,1274,1287-1293,1300-1301
+packages/core/src/infrastructure/mcp/MCPClient.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-477
+packages/core/src/infrastructure/tools/policy-executor.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-419
+packages/shared/src/console/mobileViewport.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-27
+packages/core/src/domain/session/SessionGoals.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-2,10,25,32,101,168-190
+  s_09a6be8e939422::t_7d52de8f6cb374 191
+packages/server/app/web/HistoryPanel.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 7
+packages/desktop/renderer/lib/queued-message-order.ts
+  s_09a6be8e939422::t_5429eee6a87caf 35,38,94,113,227-246,249,252-253
+packages/desktop/renderer/stores/agentStore.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 138-146
+packages/desktop/renderer/components/ComposerModelPicker.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 1,14,19,92-95
+packages/shared/src/console/themes.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-507
+packages/desktop/renderer/components/ComposerAgentPicker.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 3,6,15-17,74,115,124-125,132-133,135,147
+packages/desktop/renderer/components/DesktopLiveSettings.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 2
+scripts/agent-navigation-architecture.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1,18-19,39,74,88-122
+  s_09a6be8e939422::t_f61de0f756eaa3 123
+packages/server/app/web/themes.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 2
+packages/core/src/infrastructure/lsp/LSPClient.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-222
+packages/server/app/web/page.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 7-8,11,16,34,41-42,53,55,370-375,512,862
+packages/desktop/renderer/components/collaboration/CollaborationDashboard.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 21
+packages/desktop/renderer/lib/agent-rail-sessions.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 3
+packages/webapp/src/infrastructure/web-shell-browser-bridge.ts
+  s_09a6be8e939422::t_5429eee6a87caf 10
+packages/server/app/web/terminalStartup.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 4-5
+packages/webapp/src/mobile/presentation/native-console.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 3-4
+packages/desktop/renderer/components/SidebarSessionRow.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 1,3,5-6,23,37,46,61,94-96
+packages/desktop/shared/artifact-preview-types.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-4
+packages/native-runtime/src/agent-runtime/native-runtime-broker.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 5,407,411-413,423-433,437-447,739-755,757-763,769-793,892-923,1695-1790,3502-3548
+  s_09a6be8e939422::t_7e43b79150e2aa 3549
+packages/server/lib/session-activity.ts
+  s_09a6be8e939422::t_5429eee6a87caf 48,55-56
+packages/desktop/renderer/lib/zcode-question-cards.test.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 34-45
+packages/shared/src/file-workspace/codePreviewLanguage.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-31
+packages/desktop/renderer/components/DesktopAppActions.test.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 10,12,17-18
+packages/core/src/domain/agent/agent-type.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1
+packages/desktop/renderer/lib/use-native-model-catalog.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 2,23
+packages/desktop/renderer/NewSessionWindow.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 3,5,45
+packages/native-runtime/src/agent-runtime/index.ts
+  s_09a6be8e939422::t_5429eee6a87caf 11
+packages/native-runtime/src/agent-runtime/stdio-native-runtime-adapter.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1,26,47-51
+packages/shared/src/console/terminalOutput.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-48
+packages/shared/src/file-workspace/fileTreeReveal.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-42
+packages/tui-win32-x64/package.json
+  s_09a6be8e939422::t_5429eee6a87caf 3
+packages/desktop/renderer/lib/session-composer-routing.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1
+packages/webapp/src/mobile/presentation/UnpairedHome.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 3-6,56
+packages/core/src/infrastructure/AiHubRelayPath.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-11
+packages/shared/src/console/neural-boot.css
+  s_09a6be8e939422::t_5429eee6a87caf 1-457
+packages/core/src/application/session/SyncSessionViews.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-30
+packages/desktop/renderer/components/SessionGoalQueue.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 1-133
+packages/core/src/infrastructure/tools/builtin/TodoTool.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-203
+packages/core/src/infrastructure/models/AnthropicProvider.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-45
+packages/core/src/infrastructure/tools/builtin/ReadFileTool.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-61
+packages/desktop/renderer/components/MessageImageAttachment.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 50-59
+packages/core/src/infrastructure/tools/builtin/DispatchAgentTool.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-61
+packages/desktop/renderer/lib/engine-thread-index.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 3
+packages/desktop/renderer/lib/session-turn-results.ts
+  s_09a6be8e939422::t_5429eee6a87caf 4
+packages/server/app/web/ComputerSwitcher.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 6,15
+packages/native-runtime/src/agent-runtime/zcode-client.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1,11,13-21,37,41-47,63,74-78,84-91,112,137,146-147,155-156,159-160,165,268-271,326-336,387-398,400,405-406,411,413-414,416-417,427,431-506,508-514,516-518,521-522,527-530,604-608,642-644,655-663,688-692,695,723-725,772-773,796-834,860-861
+packages/core/src/infrastructure/models/requestTimeout.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-18
+packages/server/app/web/terminalInputPolicy.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 2
+packages/shared/src/contracts/tunnel-status.d.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-8
+packages/server/lib/external-cli-probe.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 2-4,48-63
+  s_09a6be8e939422::t_3c37c328afbd6c 64
+packages/server/app/api/sessions/[id]/switch-engine/route.ts
+  s_09a6be8e939422::t_5429eee6a87caf 2,39,45
+packages/shared/src/console/console-environment.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-20
+packages/webapp/src/infrastructure/http/agent-http-gateway-observation-policy.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 2
+packages/desktop/renderer/components/AgentBrandIcon.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 1,11-14,27-30
+packages/native-runtime/src/agent-runtime/zcode-runtime-adapter.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 6,9,442-454,484,493-558,566,570,760-840,845-854,869-870
+packages/desktop/renderer/components/EmptySessionWelcome.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 3
+packages/core/src/infrastructure/models/usage.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-110
+packages/desktop/main/file-context-menu.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 5,33-45
+  s_09a6be8e939422::t_a535681fe103e4 46-47
+packages/core/src/domain/collaboration/types.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-2,14
+packages/desktop/renderer/components/ChromeHubPane.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 2
+packages/core/src/domain/file-workspace/entities.ts
+  s_09a6be8e939422::t_5429eee6a87caf 48
+packages/desktop/renderer/components/AIHubView.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 13
+packages/core/src/index.ts
+  s_09a6be8e939422::t_5429eee6a87caf 33,37-41,44,47-51,53-54,56-57,101-111
+packages/desktop/main/image-context-menu.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-14
+packages/server/app/web/webappLoading.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 4-5,7,36
+packages/desktop/main/index.ts
+  s_09a6be8e939422::t_5429eee6a87caf 10,42-43,45-47,110-112,202,331,346-347,350,378,385-386,986-1024,1218-1221,1271
+packages/desktop/main/preload.ts
+  s_09a6be8e939422::t_5429eee6a87caf 42,195-196
+packages/native-runtime/src/agent-runtime/claude-runtime-adapter.ts
+  s_09a6be8e939422::t_5429eee6a87caf 10,337,1405-1416,1419
+packages/server/app/api/agent/steer/route.ts
+  s_09a6be8e939422::t_5429eee6a87caf 12-22
+packages/desktop/renderer/lib/browser-image-normalization.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 8
+packages/native-runtime/src/agent-runtime/runtime-tool-injection.ts
+  s_09a6be8e939422::t_5429eee6a87caf 21-22
+packages/desktop/renderer/lib/runtime-capabilities.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 24-25
+packages/desktop/renderer/components/AgentWorkspaceHeader.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 2
+packages/tui/src/runtime.ts
+  s_09a6be8e939422::t_5429eee6a87caf 6,9,23,28,30
+packages/desktop/renderer/components/SessionTaskPanel.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 38,48,92-97,110-113,116,181
+packages/server/lib/session-view-request.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-10
+packages/desktop/renderer/lib/parallel-message-dispatch.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1,10
+packages/desktop/renderer/components/HarnessModeControl.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 3
+packages/server/app/web/drawerLayout.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 4,47-50
+packages/server/app/web/nativeTerminalTouch.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 3,78-79
+packages/server/lib/session-catalog.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 51-69
+packages/desktop/renderer/components/file-workspace/FileWorkspaceDrawer.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 3-5
+packages/webapp/src/infrastructure/local/local-settings-repository.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 2
+packages/desktop/renderer/components/UpdateNotice.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 3
+packages/desktop/renderer/components/collaboration/collaboration.css
+  s_09a6be8e939422::t_5429eee6a87caf 1241-1243,1245
+packages/desktop/renderer/styles/all-sessions.css
+  s_09a6be8e939422::t_5429eee6a87caf 11
+packages/shared/src/console/nativeTerminalTouch.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-210
+packages/core/src/bootstrap/AgentBuilder.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-439
+packages/desktop/renderer/components/NativeGoalBar.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 3
+packages/runtime-win32-x64/manifest.json
+  s_09a6be8e939422::t_5429eee6a87caf 2
+packages/core/src/infrastructure/persistence/SessionStore.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-144
+packages/desktop/renderer/components/ChatHeaderActions.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 3,8,11,104
+packages/desktop/renderer/lib/use-session-view-sync.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-65
+packages/runtime-win32-x64/package.json
+  s_09a6be8e939422::t_5429eee6a87caf 3
+packages/shared/src/file-workspace/fileDiff.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-59
+packages/core/src/infrastructure/models/AnthropicProvider.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-333
+packages/core/src/infrastructure/cron/CronTasks.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-108
+packages/core/src/infrastructure/tools/checkpoints.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-139
+packages/desktop/renderer/lib/agent-rail-sessions.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1
+package.json
+  s_09a6be8e939422::t_5429eee6a87caf 15
+packages/core/src/infrastructure/SQLiteSessionViews.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-31
+packages/desktop/renderer/stores/session-completion-store.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-58
+packages/desktop/renderer/components/AgentManager.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 2
+packages/core/src/domain/tool/builtin/__tests__/RemoteProjectActionTool.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 2
+packages/core/src/application/session/RuntimeCapabilities.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-4
+packages/desktop/renderer/lib/use-native-model-catalog.ts
+  s_09a6be8e939422::t_5429eee6a87caf 2,15-18,20,29
+packages/desktop/renderer/lib/dashboard-session-navigation.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 2
+packages/core/src/domain/tool/__tests__/WebSearchTool.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 2
+packages/desktop/renderer/components/collaboration/client.ts
+  s_09a6be8e939422::t_5429eee6a87caf 2,13
+packages/desktop/renderer/components/desktop-task-split/desktop-task-split.css
+  s_09a6be8e939422::t_5429eee6a87caf 151-152,154,156
+packages/webapp/src/infrastructure/voice/browser-dictation.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1
+packages/desktop/renderer/components/collaboration/CollaborationMessageText.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 2
+packages/desktop/main/video-window.ts
+  s_09a6be8e939422::t_5429eee6a87caf 1-2
+packages/desktop/renderer/lib/agent-catalog.ts
+  s_09a6be8e939422::t_5429eee6a87caf 7
+packages/core/src/domain/session/index.ts
+  s_09a6be8e939422::t_5429eee6a87caf 27
+packages/desktop/renderer/components/ToolPolicyManager.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 2
+packages/shared/src/file-workspace/HighlightedCode.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 1-47
+packages/desktop/renderer/components/desktop-task-split/TaskPaneConversation.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 2
+packages/desktop/renderer/components/DesktopPermissionDialog.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 12
+packages/native-runtime/src/agent-runtime/copilot-events.test.ts
+  s_09a6be8e939422::t_5429eee6a87caf 22,26
+packages/desktop/renderer/components/SettingsPanel.tsx
+  s_09a6be8e939422::t_5429eee6a87caf 3
+bun.lock
+  s_09a6be8e939422::t_d3d98b869f45a0 18,46,50,75,138,142,189-206,227,234,301-302
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a52900da58682e031df9e0860a1066feb3ea28d6",
+  "prompts": {},
+  "sessions": {
+    "s_09a6be8e939422": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a20c77-e053-7cf0-b1f9-1cba9062bbe4",
+        "model": "gpt-6.2-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
