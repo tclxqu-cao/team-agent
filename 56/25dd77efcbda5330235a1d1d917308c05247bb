@@ -1,0 +1,1138 @@
+packages/desktop/renderer/lib/agent-workspace-cache.test.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 15
+packages/desktop/renderer/styles/session-turn-results.css
+  s_1f21183b9fa862::t_2a9acd3a8a3f5c 73,77,82-87,114-122,139
+  s_1f21183b9fa862::t_99b95b0bf07a0d 44,140-145
+  s_1f21183b9fa862::t_f8d11c77334b22 51-52,75-76,78-81,89,97,137
+  s_1f21183b9fa862::t_c0e4d991d9e2c3 88
+packages/server/lib/collaboration/dashboard.ts
+  s_1f21183b9fa862::t_b43e6803b3d27c 29-32
+packages/native-runtime/src/agent-runtime/zcode-questions.ts
+  s_04cf33d7456514::t_8a92334345346e 115-119
+  s_04cf33d7456514::t_d1d2704afd20fe 7,13,28,31-65,105,114,121,123
+  s_04cf33d7456514::t_9abc7f9b8e62eb 12,27,66-84
+  s_04cf33d7456514::t_ecbed95c1f4078 9-11,14,29-30,106-111,122,125,127,134
+  s_04cf33d7456514::t_1d49e380e6aaf3 126
+  s_04cf33d7456514::t_39ca173466a657 8
+packages/core/src/infrastructure/tools/builtin/GrepTool.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 2
+packages/server/app/web/AuthGate.tsx
+  s_f90f84eec6f857::t_9a27a5813f9dc5 4-5
+packages/core/src/infrastructure/tools/builtin/BashTool.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 2
+packages/server/lib/session-catalog.ts
+  s_1f21183b9fa862::t_4e3bbd4add67c5 122
+  s_1f21183b9fa862::t_34ed528eb283a7 159-161
+  s_1f21183b9fa862::t_8f5d86682fcb28 123,132-137,162,167-178,180-181
+packages/desktop/renderer/lib/zcode-question-cards.test.tsx
+  s_04cf33d7456514::t_4933060d6f9152 34-41,43-45
+  s_04cf33d7456514::t_0ca19edec61f4b 42
+packages/native-runtime/src/agent-runtime/native-cli-command.ts
+  s_f90f84eec6f857::t_1f44a7d364c9eb 9,20-27,51-52,56,74,79-80,83,110
+packages/core/src/infrastructure/mcp/MCPClient.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 1
+packages/native-runtime/src/agent-runtime/native-runtime-broker.test.ts
+  s_1f21183b9fa862::t_b0d04d3c8609d8 407,425-427
+  s_d043de2265a0d7::t_ca8af993782e49 1696-1711,1713,1715,1748-1749
+  s_d043de2265a0d7::t_4b00bc324f2980 1695,1712,1714
+  s_d043de2265a0d7::t_02baf6fc1d2ef4 5,1716-1747
+  s_d043de2265a0d7::t_ccca10ae5f2ac0 892-923
+  s_d043de2265a0d7::t_d22afa4930a56a 1756-1757,1779,1785-1788
+  s_1f21183b9fa862::t_709f76bfb6598b 438-443
+  s_d043de2265a0d7::t_55b372b82b4f11 1750-1755,1758-1778,1780-1784,1789-1790
+  s_d043de2265a0d7::t_bff46d4f794bec 742-755,757-763,769-793
+  s_d043de2265a0d7::t_c3386466c35a5f 3502-3549
+  s_d043de2265a0d7::t_2ed40935ff1804 739-741
+  s_1f21183b9fa862::t_69928f4564b99c 411-413,423-424,428-433,437,444-447
+packages/core/src/infrastructure/models/AnthropicProvider.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 1
+packages/desktop/renderer/lib/chat-submission.ts
+  s_f90f84eec6f857::t_ef786c0f3381a2 1-2,12,20,31,39
+packages/core/src/domain/tool/builtin/__tests__/ShowWidgetTool.test.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 2
+packages/desktop/main/artifact-open-with.test.ts
+  s_a541868d963e71::t_865d714ef11aa1 1-27
+packages/desktop/renderer/components/file-workspace/DesktopFileWorkspaceLayout.test.ts
+  s_f90f84eec6f857::t_9a27a5813f9dc5 6
+packages/desktop/renderer/components/collaboration/CollaborationMessageText.tsx
+  s_f90f84eec6f857::t_9a27a5813f9dc5 2
+packages/desktop/renderer/components/ToolPolicyManager.tsx
+  s_f90f84eec6f857::t_14c8702c5b9c27 2
+packages/desktop/renderer/lib/use-parallel-sessions.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 2
+  s_f90f84eec6f857::t_6af099964498c0 171-176
+  s_f90f84eec6f857::t_790e667519f66a 177
+packages/core/src/bootstrap/ModelRegistry.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 1-5
+packages/core/src/infrastructure/tools/builtin/AskUserTool.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 2
+packages/desktop/renderer/components/collaboration/client.ts
+  s_f90f84eec6f857::t_9eb1877ab335fb 2,13
+packages/native-runtime/src/agent-runtime/zcode-history.test.ts
+  s_d043de2265a0d7::t_9cefa32956ed46 1,3-4,11,13,29-30,39-41,43-67
+  s_d043de2265a0d7::t_1d66f3a5fe32e1 2,42
+packages/desktop/renderer/components/ChatView.tsx
+  s_d043de2265a0d7::t_9351cb1bc55216 5718
+  s_f90f84eec6f857::t_14c8702c5b9c27 90,95,97,476,490
+  s_1f21183b9fa862::t_9fe47de7c20ef8 4635
+  s_d043de2265a0d7::t_9be42434585e8e 3715,3719-3727,5721
+  s_d043de2265a0d7::t_d39b72073229b0 3744,3756
+  s_f90f84eec6f857::t_1c6df6a0152d08 475,984-992,1169,1785-1788,3033-3034,3205,3242,3255,3782,3787,3800,3815,3840,3932-3935,3943-3946,3983,4331,4346,4412,4436-4445,4447,4455,4518,4522,4533-4536,6277
+  s_d043de2265a0d7::t_ba13d14fa6571c 19,3671-3672,3694-3698,3700-3714,3716,3718,3728-3730
+  s_f90f84eec6f857::t_6af099964498c0 3980,4446
+  s_d043de2265a0d7::t_e75c77c0803687 1047-1048,1102,3690-3693,3731-3738,4185,5719-5720,6012,6034
+  s_d043de2265a0d7::t_248ba3d255c2db 3699,3717
+  s_f90f84eec6f857::t_54b705e507f06c 6129,6135,6143
+  s_f90f84eec6f857::t_25e3322472d07e 973-975,977,6057
+  s_f90f84eec6f857::t_9e250c3254e94e 3046,3050-3051,4428
+  s_f90f84eec6f857::t_971ec9bd616eb9 2180,3942
+  s_f90f84eec6f857::t_c8c1ab15e31c74 3936-3941
+  s_d043de2265a0d7::t_f7e72b86a5be22 1091
+packages/core/src/domain/model/providers/__tests__/AiHubProvider.test.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 12
+packages/core/src/infrastructure/models/AiHubProvider.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 6-9
+packages/native-runtime/src/agent-runtime/native-runtime-broker.ts
+  s_f90f84eec6f857::t_258860f130c8bd 387-395,1135-1139,1490-1493,2888
+  s_f90f84eec6f857::t_de1dab64fad8d6 93,2026,2483,2495,3092,3114,3469,4208-4212
+  s_f90f84eec6f857::t_63f70f38157768 1488-1489,1494-1495,1497
+  s_f90f84eec6f857::t_9226d839406f1b 3718-3719
+  s_d043de2265a0d7::t_c3386466c35a5f 1396-1400
+  s_d043de2265a0d7::t_4b00bc324f2980 2254,2601-2602,2664
+  s_1f21183b9fa862::t_4e3bbd4add67c5 316,482-491,1347-1352,1358,1596,3916
+  s_d043de2265a0d7::t_e75c77c0803687 793-798
+  s_1f21183b9fa862::t_b4d22e606d1c7f 2966,2968-2969
+  s_f90f84eec6f857::t_971ec9bd616eb9 2035,2160,2180,2185-2187
+  s_d043de2265a0d7::t_baa7294498ecfa 68,1403,3678-3680,3683,3685-3688,3690-3693,3695-3696
+  s_d043de2265a0d7::t_5af1a428f3e50c 15,901-917,1500,1605,2016,2110,2148-2150,2152,2196-2197,2224-2247,2255-2256,2599-2600,2919,3213,3244-3245
+  s_f90f84eec6f857::t_5e07a34428728a 2159
+  s_d043de2265a0d7::t_d39b72073229b0 2615-2616,2620-2621
+  s_d043de2265a0d7::t_2ab74c9eda3db9 3928
+  s_1f8905d0866d1b::t_3daf0f9c2d649c 1888-1890,1893-1910,1957,1970,1987,2008-2015,2038,4076-4078
+  s_d043de2265a0d7::t_f559a47c8e6237 269,368-369,470-481,1103-1108,1146-1147,1156,1405,3912-3913,3927,3932,3935,3953,3959-3963,3975,4020
+  s_f90f84eec6f857::t_9eb1877ab335fb 70,3538-3539
+  s_04cf33d7456514::t_e156f408c99760 80,2299-2303
+  s_d043de2265a0d7::t_1d80b865a5fb78 1395,1402,3677,3681-3682,3684,3689,3694,3703,3723
+  s_1f8905d0866d1b::t_e3d43668aac722 79,1891-1892
+  s_d043de2265a0d7::t_896f276bbc1d5e 31,849-852,954,956,2144-2147,2151,2619,2884-2887,3211-3212
+  s_f90f84eec6f857::t_450910faf7cfdc 71,1496,1498-1499
+  s_f90f84eec6f857::t_ecd99599d09cba 1134
+  s_d043de2265a0d7::t_2462dee9f61bff 1501
+  s_d043de2265a0d7::t_66193674cacbad 2017
+  s_d043de2265a0d7::t_d17eab43b2b353 2153
+  s_d043de2265a0d7::t_5b32bdee78ec52 3214
+  s_d043de2265a0d7::t_eb18de7158fb45 3697-3698
+  s_1f8905d0866d1b::t_97a9257e66b600 1386
+packages/desktop/renderer/components/SessionDisclosureButton.tsx
+  s_1f21183b9fa862::t_a8405a51ce3551 1-19
+packages/core/src/domain/supervision/types.ts
+  s_1f21183b9fa862::t_09a649b6765bc8 7,142
+  s_1f21183b9fa862::t_8f5d86682fcb28 5,13-20
+packages/desktop/renderer/components/AskUserCard.tsx
+  s_f90f84eec6f857::t_415581c1627089 12-13,26-27,169,188
+packages/desktop/renderer/components/DesktopFlowStudioView.tsx
+  s_f90f84eec6f857::t_14c8702c5b9c27 3
+packages/desktop/renderer/lib/runtime-capabilities.ts
+  s_f90f84eec6f857::t_971ec9bd616eb9 14-16
+  s_f90f84eec6f857::t_14c8702c5b9c27 1
+packages/core/src/infrastructure/models/requestTimeout.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 1
+packages/desktop/renderer/components/SessionStatusDot.tsx
+  s_1f21183b9fa862::t_dcc3873623b03f 18
+  s_1f21183b9fa862::t_1af328f661a7da 1-7,9-11,13-17,22-23
+  s_1f21183b9fa862::t_3d94ed46256895 8,12,19-21
+packages/core/src/domain/session/SessionGoals.test.ts
+  s_d043de2265a0d7::t_4b00bc324f2980 6,52-53,57,60-65
+  s_d043de2265a0d7::t_9ce979f56f5523 17,54-56,58-59,66
+  s_4dd3bff5b942a5::t_e9c5e61032a14f 67-68
+package.json
+  s_f90f84eec6f857::t_6fa51acb6203d3 15
+packages/core/src/infrastructure/tools/policy-executor.test.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 5-7
+packages/desktop/renderer/lib/parallel-failed-messages.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 1
+packages/webapp/src/push/push-notifications.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 1
+packages/desktop/renderer/lib/session-history.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 10
+  s_d043de2265a0d7::t_0d975069357152 398-399,401-402,408-409
+  s_4dd3bff5b942a5::t_8f7b28da617041 55-57
+  s_d043de2265a0d7::t_7a9189f9eba646 400
+  s_f90f84eec6f857::t_415581c1627089 48-49,556-557
+packages/desktop/renderer/components/AllSessionsSidebar.tsx
+  s_1f21183b9fa862::t_a8405a51ce3551 13-14,41,175,182,186,198
+  s_1f21183b9fa862::t_4e3bbd4add67c5 7,180
+  s_1f21183b9fa862::t_c939598b8a62b4 4,49,76,104,107,109-110,116-117,166,169-174,176-179,181,183-185,187-193,201,206,212-214,216
+packages/native-runtime/src/agent-runtime/native-rpc-client.ts
+  s_1f21183b9fa862::t_4b7d14171bb7ac 34-38,48
+packages/core/src/infrastructure/tools/builtin/ShowWidgetTool.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 2
+packages/desktop/renderer/components/SessionGoalQueue.tsx
+  s_d043de2265a0d7::t_4b00bc324f2980 45,67
+  s_d043de2265a0d7::t_9be42434585e8e 1-2,5,29,36,40,49,66,70-71,85,94,100,122-125,127
+  s_d043de2265a0d7::t_e75c77c0803687 11,16,19,34-35,37-39,42,68-69,119-121
+  s_d043de2265a0d7::t_1b911055b0aa63 4,6-10,12-15,17-18,20-28,30-33,41,43-44,46-48,50-65,73,75-78,80-81,83,86-87,89,91-93,95,98-99,102,104-116,118,126,128-133
+  s_d043de2265a0d7::t_248ba3d255c2db 3,72,74,79,82,84,88,90,96-97,101,103,117
+packages/core/src/infrastructure/models/OpenAIProvider.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 1-2,4
+packages/desktop/renderer/lib/agent-rail-sessions.test.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 3
+packages/server/app/web/HistoryPanel.tsx
+  s_f90f84eec6f857::t_14c8702c5b9c27 7
+packages/desktop/renderer/components/UpdateNotice.tsx
+  s_f90f84eec6f857::t_14c8702c5b9c27 3
+packages/server/lib/session-views.ts
+  s_f90f84eec6f857::t_8eb95e9afa9998 1,4-5
+  s_1f21183b9fa862::t_402dd204e09bd0 2-3,6
+packages/server/lib/shared-customer-queue.test.ts
+  s_d043de2265a0d7::t_02baf6fc1d2ef4 9-34
+packages/core/src/infrastructure/tools/builtin/StrReplaceTool.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 2
+packages/desktop/main/artifact-browser-preview.test.ts
+  s_a541868d963e71::t_3b5b6c75d037aa 1-75
+packages/desktop/renderer/styles/artifact-file-actions.css
+  s_a541868d963e71::t_960a20a2d3652d 1-58
+packages/server/app/api/agent/run/route.ts
+  s_f90f84eec6f857::t_687891891c4c17 39,56-59,61-63,72
+  s_f90f84eec6f857::t_971ec9bd616eb9 2,60
+  s_f90f84eec6f857::t_d343b91d2e3a2c 55
+  s_f90f84eec6f857::t_450910faf7cfdc 192
+packages/desktop/renderer/components/collaboration/SessionDashboard.tsx
+  s_1f21183b9fa862::t_b43e6803b3d27c 9,66
+packages/desktop/renderer/styles/global.css
+  s_f90f84eec6f857::t_05dba3f4d6d6d6 1336,2786-2790
+  s_1f21183b9fa862::t_8c93986a153018 1333-1335
+  s_d043de2265a0d7::t_248ba3d255c2db 2086-2087
+  s_1f21183b9fa862::t_89a53544539988 1292
+  s_1f21183b9fa862::t_b4d22e606d1c7f 1372-1375
+  s_1f21183b9fa862::t_7cfa98122abf0d 1291
+  s_d043de2265a0d7::t_1c29c59471600d 2816,2889
+  s_f90f84eec6f857::t_a4a0d85ba28d8c 1337
+packages/core/src/shared-kernel/agent-type.ts
+  s_f90f84eec6f857::t_b08e42161969cb 1-20
+packages/core/src/application/session/SharedCustomerQueue.ts
+  s_d043de2265a0d7::t_e75c77c0803687 28-30
+  s_d043de2265a0d7::t_212ff24950b9b1 4,41-43,81-82
+  s_f90f84eec6f857::t_6fa51acb6203d3 1-3,6-26,31-40,44-51,53,59-80,83-104
+  s_d043de2265a0d7::t_81ff35ac4b2ed9 5,27,52,54-58
+packages/desktop/renderer/components/SettingsPanel.tsx
+  s_f90f84eec6f857::t_14c8702c5b9c27 3
+packages/desktop/main/new-session-window.test.ts
+  s_f90f84eec6f857::t_bc7f890c736a43 64-78
+packages/native-runtime/src/agent-runtime/runtime-tool-injection.ts
+  s_f90f84eec6f857::t_1f44a7d364c9eb 21-22
+packages/server/app/web/FileTree.test.ts
+  s_f90f84eec6f857::t_9a27a5813f9dc5 5
+packages/core/src/infrastructure/lsp/LSPClient.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 6
+packages/server/app/web/terminalSurfaceStyle.test.ts
+  s_f90f84eec6f857::t_9a27a5813f9dc5 4
+packages/desktop/renderer/components/desktop-task-split/desktop-task-split.css
+  s_1f21183b9fa862::t_b43e6803b3d27c 156
+  s_1f21183b9fa862::t_a8405a51ce3551 151-152
+  s_1f21183b9fa862::t_e5c08740d6f80a 154
+packages/server/app/api/agent/steer/route.ts
+  s_d043de2265a0d7::t_4cefb8394fb722 12-22
+packages/desktop/renderer/lib/native-goal-submission.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 1
+packages/server/app/web/FileTree.tsx
+  s_f90f84eec6f857::t_9a27a5813f9dc5 1
+packages/desktop/renderer/lib/parallel-run-options.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 1
+packages/core/src/domain/collaboration/types.ts
+  s_f90f84eec6f857::t_b08e42161969cb 1
+  s_f90f84eec6f857::t_9eb1877ab335fb 2,14
+packages/desktop/renderer/components/SessionBackgroundJobs.tsx
+  s_f90f84eec6f857::t_14c8702c5b9c27 4
+scripts/harness/worker.ts
+  s_f90f84eec6f857::t_e1f557e7fd2bee 1,13-16
+packages/desktop/renderer/components/desktop-task-split/task-session-catalog.ts
+  s_1f21183b9fa862::t_03033e2bf8cd0d 1-76
+packages/server/lib/customer-goal-service.ts
+  s_f90f84eec6f857::t_6fa51acb6203d3 2
+  s_f90f84eec6f857::t_8eb95e9afa9998 22,26
+packages/desktop/renderer/components/SessionTurnResults.test.tsx
+  s_a541868d963e71::t_5741eb1f55ddc1 1-4,6-9,11-23,31,53
+  s_a541868d963e71::t_865d714ef11aa1 5,10,24-30,51
+  s_a541868d963e71::t_e7da7d28896fa0 32-50,52
+packages/desktop/renderer/lib/use-tunnel-connection.ts
+  s_f90f84eec6f857::t_e1f557e7fd2bee 2
+packages/desktop/renderer/lib/engine-thread-index.test.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 3
+packages/core/src/domain/tool/builtin/__tests__/RemoteProjectActionTool.test.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 2
+packages/core/src/infrastructure/models/usage.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 1-2
+packages/desktop/renderer/components/desktop-task-split/notification-state.test.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 2
+packages/server/app/web/CollaborationPane.tsx
+  s_f90f84eec6f857::t_14c8702c5b9c27 8
+packages/server/app/web/ComputerSwitcher.tsx
+  s_f90f84eec6f857::t_14c8702c5b9c27 15
+  s_f90f84eec6f857::t_9a27a5813f9dc5 6
+packages/native-runtime/src/agent-runtime/copilot-events.ts
+  s_d043de2265a0d7::t_60d4d781c8b9fa 42-48
+packages/desktop/renderer/components/SessionTaskPanel.test.ts
+  s_d043de2265a0d7::t_a2b9f7a5cdc31f 26,30-50,53-60,62
+  s_d043de2265a0d7::t_e08dcd49a9f1b8 51-52
+packages/core/src/infrastructure/tools/builtin/GlobTool.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 2
+packages/desktop/renderer/lib/session-composer-routing.test.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 2
+packages/native-runtime/src/agent-runtime/codex-runtime-adapter.test.ts
+  s_d043de2265a0d7::t_d89f884d810a2d 1633,1661,1679
+packages/server/app/web/compact-toolbar.test.tsx
+  s_f90f84eec6f857::t_9a27a5813f9dc5 5-6,64
+packages/shared/src/infrastructure/http/agent-http-gateway.ts
+  s_d043de2265a0d7::t_81ff35ac4b2ed9 363-368
+  s_d043de2265a0d7::t_896f276bbc1d5e 667-668
+  s_f90f84eec6f857::t_14c8702c5b9c27 5,23,152-160,188,219,222,669-670,796,800,804,807,1024,1026,1217
+packages/desktop/renderer/components/MessageLinkActions.tsx
+  s_f90f84eec6f857::t_14c8702c5b9c27 4
+packages/desktop/renderer/lib/shared-service.test.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 2
+packages/server/lib/tunnel-control.d.mts
+  s_f90f84eec6f857::t_e1f557e7fd2bee 1-3
+packages/desktop/renderer/components/NativeGoalBar.tsx
+  s_f90f84eec6f857::t_14c8702c5b9c27 3
+packages/core/src/index.ts
+  s_f90f84eec6f857::t_8eb95e9afa9998 101-103
+  s_f90f84eec6f857::t_14c8702c5b9c27 33,37-41,44,47-51,53-54,56-57
+  s_f90f84eec6f857::t_6fa51acb6203d3 105-110
+  s_f90f84eec6f857::t_971ec9bd616eb9 104
+  s_f90f84eec6f857::t_3fafe2d6b4bc63 111
+packages/server/app/web/glass-mobile-toolbar.test.ts
+  s_f90f84eec6f857::t_9a27a5813f9dc5 4,6
+packages/core/src/infrastructure/tools/builtin/SpawnAgentTool.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 2
+packages/desktop/renderer/stores/agentStore.ts
+  s_f90f84eec6f857::t_9e250c3254e94e 74
+  s_f90f84eec6f857::t_14c8702c5b9c27 13
+  s_f90f84eec6f857::t_415581c1627089 79-80,176-177
+packages/core/src/infrastructure/filesystem/ContextLoader.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 1
+packages/desktop/renderer/lib/use-native-model-catalog.ts
+  s_f90f84eec6f857::t_24cea44bd644d7 15-18,20,29
+  s_f90f84eec6f857::t_14c8702c5b9c27 2
+packages/desktop/renderer/components/collaboration/useCollaborationComposer.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 3
+packages/server/app/api/collaboration/route.ts
+  s_1f21183b9fa862::t_402dd204e09bd0 21
+  s_f90f84eec6f857::t_8eb95e9afa9998 20,64,123-125
+packages/desktop/main/preload.ts
+  s_a541868d963e71::t_e16e408cc404ef 196
+  s_a541868d963e71::t_53c40070102c9f 195
+packages/desktop/renderer/components/AgentWorkspaceHeader.tsx
+  s_f90f84eec6f857::t_14c8702c5b9c27 2
+packages/server/lib/shared-customer-queue.ts
+  s_f90f84eec6f857::t_6fa51acb6203d3 1
+packages/desktop/renderer/lib/agent-rail-sessions.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 1
+packages/webapp/src/infrastructure/http/agent-http-native-turn-replay.test.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 2
+packages/desktop/renderer/components/AgentBrandIcon.tsx
+  s_f90f84eec6f857::t_dae98be178b890 11-14,27-30
+  s_f90f84eec6f857::t_14c8702c5b9c27 1
+packages/core/src/bootstrap/AgentBuilder.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 2-24,34,36,71,246
+  s_f90f84eec6f857::t_8847133e03989c 1,317,386
+packages/desktop/renderer/components/AgentWorkspaceSwitcher.test.tsx
+  s_1f21183b9fa862::t_3147bb4ccdc86c 9-13,17,19,23,25,29,33-36
+packages/core/src/infrastructure/tools/builtin/RemoteProjectActionTool.test.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 3-4
+packages/desktop/renderer/lib/engine-thread-index.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 1
+packages/desktop/renderer/lib/native-agent-run-prefs.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 1
+packages/core/src/infrastructure/persistence/SessionStore.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 1-3
+packages/server/app/web/terminalStartup.test.ts
+  s_f90f84eec6f857::t_9a27a5813f9dc5 5
+  s_f90f84eec6f857::t_14c8702c5b9c27 4
+packages/webapp/src/infrastructure/local/local-settings-repository.test.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 2
+packages/native-runtime/src/agent-runtime/zcode-turn-duration.ts
+  s_d043de2265a0d7::t_60d4d781c8b9fa 1-38
+packages/desktop/renderer/lib/use-native-model-catalog.test.ts
+  s_f90f84eec6f857::t_62c631411469bf 23
+  s_f90f84eec6f857::t_14c8702c5b9c27 2
+packages/desktop/renderer/components/BrowserLivePanel.test.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 3
+packages/core/src/domain/context/__tests__/ContextAssembler.test.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 3
+packages/webapp/src/infrastructure/http/agent-http-gateway-observation-policy.test.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 2
+packages/core/src/domain/model/providers/__tests__/usage.test.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 2
+packages/desktop/renderer/components/SidebarSessionRow.tsx
+  s_1f21183b9fa862::t_b4d22e606d1c7f 23
+  s_1f21183b9fa862::t_c939598b8a62b4 37,46,96
+  s_1f21183b9fa862::t_09a649b6765bc8 6,61
+  s_f90f84eec6f857::t_14c8702c5b9c27 3
+  s_1f21183b9fa862::t_a8405a51ce3551 1,5,94-95
+packages/desktop/main/artifact-browser-preview.ts
+  s_a541868d963e71::t_e16e408cc404ef 1-117
+packages/core/src/domain/session/SessionGoalCoordinator.test.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 2
+packages/desktop/renderer/stores/settingsStore.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 2
+packages/native-runtime/src/agent-runtime/acp-cli-client.test.ts
+  s_f90f84eec6f857::t_42df9072547542 1,208-231
+  s_f90f84eec6f857::t_dcb5ca983892fc 5-6,14,30,64-80
+  s_f90f84eec6f857::t_dfcf5e05e49869 2-4,7-13,15-28,31-63,94-150,206-207,232
+  s_f90f84eec6f857::t_186eee77cb35f1 90
+  s_f90f84eec6f857::t_555ffa3d3afcb0 29,151-183,185-205
+  s_f90f84eec6f857::t_62c631411469bf 81-89,91-93
+  s_f90f84eec6f857::t_3ab20d1784b85f 184
+packages/core/src/infrastructure/SQLiteDatabase.ts
+  s_1f21183b9fa862::t_402dd204e09bd0 84-89
+packages/desktop/renderer/components/collaboration/CollaborationDashboard.tsx
+  s_f90f84eec6f857::t_14c8702c5b9c27 21
+packages/core/src/application/engine-switch/SwitchEngineUseCase.ts
+  s_f90f84eec6f857::t_1f44a7d364c9eb 18,84
+packages/core/src/infrastructure/tools/builtin/SkillTools.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 2-3
+packages/webapp/src/infrastructure/web-shell-browser-bridge.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 10
+packages/desktop/renderer/lib/session-composer-routing.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 1
+packages/desktop/renderer/lib/use-session-activity.ts
+  s_1f21183b9fa862::t_dcc3873623b03f 6,15
+packages/core/src/domain/collaboration/CollaborationGroup.ts
+  s_f90f84eec6f857::t_b08e42161969cb 1
+  s_f90f84eec6f857::t_9eb1877ab335fb 28
+packages/shared/src/file-workspace/fileTreeReveal.ts
+  s_f90f84eec6f857::t_9a27a5813f9dc5 4,7-12,16,18,23-25,29,34,38
+packages/desktop/renderer/stores/session-completion-store.ts
+  s_1f21183b9fa862::t_b4d22e606d1c7f 1-2,6-13,17-19,21,23-27,29-32,36-42,51,54-58
+  s_1f21183b9fa862::t_09a649b6765bc8 3,15,33-35
+  s_f90f84eec6f857::t_8eb95e9afa9998 4-5
+  s_1f21183b9fa862::t_dcc3873623b03f 14,16,20,22,28,43-50,52-53
+packages/core/src/infrastructure/filesystem/SkillLoader.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 1
+packages/desktop/renderer/lib/agent-catalog.ts
+  s_f90f84eec6f857::t_1f44a7d364c9eb 7
+packages/desktop/renderer/assets/agent-brands/sources.json
+  s_f90f84eec6f857::t_3de37d7b2f0678 35-48
+packages/desktop/renderer/styles/all-sessions.css
+  s_1f21183b9fa862::t_c939598b8a62b4 11
+packages/desktop/renderer/components/DesktopLiveSettings.tsx
+  s_f90f84eec6f857::t_14c8702c5b9c27 2
+packages/shared/src/browser/artifact-links.ts
+  s_f90f84eec6f857::t_9a27a5813f9dc5 36,44
+packages/core/src/infrastructure/tools/builtin/SkillTools.test.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 2-3
+packages/core/src/domain/web-console/WebArtifactBridge.ts
+  s_a541868d963e71::t_40fbe04328a9e6 7,40
+packages/desktop/renderer/global.d.ts
+  s_f90f84eec6f857::t_6fa51acb6203d3 1
+packages/native-runtime/src/agent-runtime/types.ts
+  s_f90f84eec6f857::t_b40cf90d9f42a0 10,236,243
+  s_1f21183b9fa862::t_09a649b6765bc8 79
+  s_f90f84eec6f857::t_971ec9bd616eb9 55,248
+  s_f90f84eec6f857::t_25e3322472d07e 220
+  s_f90f84eec6f857::t_f3789f2163df55 244
+packages/desktop/renderer/components/ToolCallCard.tsx
+  s_f90f84eec6f857::t_9a27a5813f9dc5 24
+packages/webapp/src/infrastructure/http/http-client.test.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 2
+packages/native-runtime/src/agent-runtime/index.ts
+  s_f90f84eec6f857::t_9eb1877ab335fb 11
+packages/shared/src/contracts/agent-api.d.ts
+  s_f90f84eec6f857::t_e1f557e7fd2bee 143
+  s_f90f84eec6f857::t_6fa51acb6203d3 273,678-685
+  s_f90f84eec6f857::t_14c8702c5b9c27 1-3,8,13-15,18-142,144-272,274-395,398-407,409-486,491-493,496-677,686
+  s_d043de2265a0d7::t_81ff35ac4b2ed9 396,408
+  s_d043de2265a0d7::t_896f276bbc1d5e 397
+  s_f90f84eec6f857::t_8b950048bcf3c5 4-7
+  s_f90f84eec6f857::t_9a202df655faa0 9-12
+  s_f90f84eec6f857::t_5e0fdd7963b382 16-17
+  s_f90f84eec6f857::t_b5e0d8f7b73ccb 487-490
+  s_f90f84eec6f857::t_de781317bbe200 494-495
+packages/webapp/src/infrastructure/web-shell-project-bridge.test.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 5
+packages/server/app/web/FlowStudioPane.tsx
+  s_f90f84eec6f857::t_14c8702c5b9c27 6
+packages/desktop/renderer/components/SidebarSessionRow.test.tsx
+  s_1f21183b9fa862::t_d9318e5811fdd7 11-23
+  s_1f21183b9fa862::t_7cfa98122abf0d 85,92,97
+packages/server/app/web/terminalInputPolicy.test.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 2
+scripts/agent-navigation-architecture.test.ts
+  s_f90f84eec6f857::t_971ec9bd616eb9 39
+  s_f90f84eec6f857::t_0cd397e83d5c12 1,18-19,74,88-123
+packages/desktop/renderer/components/StructuredAgentMessage.tsx
+  s_f90f84eec6f857::t_14c8702c5b9c27 3
+scripts/harness/supervisor.test.ts
+  s_f90f84eec6f857::t_e1f557e7fd2bee 53
+packages/desktop/renderer/lib/session-change-history.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 1
+  s_d043de2265a0d7::t_d1e978faa7335d 5-36,48,62,80-81,87
+packages/desktop/main/shared-service.ts
+  s_f90f84eec6f857::t_e1f557e7fd2bee 6
+packages/core/src/domain/tool/__tests__/WebSearchTool.test.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 2
+packages/desktop/renderer/components/EmptySessionWelcome.tsx
+  s_f90f84eec6f857::t_14c8702c5b9c27 3
+packages/core/src/domain/agent/__tests__/AgentBuilder.test.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 2
+packages/core/src/infrastructure/models/AnthropicProvider.test.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 3
+packages/shared/src/console/TerminalPane.tsx
+  s_f90f84eec6f857::t_14c8702c5b9c27 15
+packages/desktop/renderer/lib/use-parallel-sessions.test.tsx
+  s_f90f84eec6f857::t_14c8702c5b9c27 4
+packages/server/app/web/FilePreview.test.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 15
+  s_f90f84eec6f857::t_9a27a5813f9dc5 18
+packages/desktop/renderer/components/desktop-task-split/draft-workspace.test.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 2
+packages/desktop/renderer/components/AgentSessionRail.tsx
+  s_1f21183b9fa862::t_e2fec08a634a96 10,67-73,75-77,79,82,84-87,122,125
+  s_1f21183b9fa862::t_7cfa98122abf0d 83
+  s_1f21183b9fa862::t_8c93986a153018 11,33,74,80-81,101-104
+  s_1f21183b9fa862::t_4e3bbd4add67c5 9,78
+  s_f90f84eec6f857::t_14c8702c5b9c27 5
+  s_f90f84eec6f857::t_611a41a2caaabe 7,27-28,43-44,46,49-60,62,98-99,105,108,114-115,124
+packages/native-runtime/src/agent-runtime/acp-cli-runtime-adapter.ts
+  s_f90f84eec6f857::t_971ec9bd616eb9 9-12
+  s_f90f84eec6f857::t_8df674a42afcc0 1-8,13-17
+packages/desktop/renderer/lib/all-sessions-cache.test.ts
+  s_1f21183b9fa862::t_e07c2af4d26b2b 39-49,57-58
+packages/desktop/renderer/lib/shared-service.ts
+  s_f90f84eec6f857::t_e1f557e7fd2bee 7
+  s_a541868d963e71::t_e16e408cc404ef 101
+  s_f90f84eec6f857::t_14c8702c5b9c27 1-4
+packages/desktop/renderer/components/RemoteClipboardPasteButton.tsx
+  s_f90f84eec6f857::t_14c8702c5b9c27 2
+packages/cli/src/tunnel/tunnel-controller.test.ts
+  s_f90f84eec6f857::t_e1f557e7fd2bee 4
+packages/desktop/renderer/components/QueryNavigationRail.tsx
+  s_f90f84eec6f857::t_14c8702c5b9c27 3
+packages/desktop/renderer/lib/native-goal-submission.test.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 3
+packages/server/lib/session-activity.ts
+  s_1f21183b9fa862::t_4e3bbd4add67c5 55
+  s_1f21183b9fa862::t_8f5d86682fcb28 48,56
+packages/desktop/renderer/lib/session-turn-results.ts
+  s_f90f84eec6f857::t_9a27a5813f9dc5 4
+packages/server/app/web/drawerLayout.test.ts
+  s_a541868d963e71::t_830e3f975046b5 47-50
+  s_f90f84eec6f857::t_9a27a5813f9dc5 4
+packages/server/app/web/FilePreview.tsx
+  s_f90f84eec6f857::t_9a27a5813f9dc5 1-2
+packages/desktop/renderer/components/LSPServerList.tsx
+  s_f90f84eec6f857::t_14c8702c5b9c27 2
+packages/desktop/renderer/lib/parallel-message-dispatch.test.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 2
+packages/desktop/renderer/lib/session-history.test.ts
+  s_d043de2265a0d7::t_bf1da01eb4cbbb 1176-1194
+packages/core/src/domain/session/SessionGoals.ts
+  s_d043de2265a0d7::t_212ff24950b9b1 168-179
+  s_d043de2265a0d7::t_e75c77c0803687 101
+  s_d043de2265a0d7::t_81ff35ac4b2ed9 180-190
+  s_f90f84eec6f857::t_b40cf90d9f42a0 1-2,10,25,32
+  s_d043de2265a0d7::t_64db3b20765666 191
+packages/desktop/renderer/lib/occupied-session-fork.test.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 4
+packages/server/app/api/sessions/[id]/goals/route.ts
+  s_f90f84eec6f857::t_6af099964498c0 3,167
+  s_d043de2265a0d7::t_896f276bbc1d5e 87,91-100
+  s_f90f84eec6f857::t_25d56af6c34348 39,49,62-65
+packages/native-runtime/src/agent-runtime/zcode-client.ts
+  s_04cf33d7456514::t_f8050183abe8b0 1,17,41,146
+  s_1f21183b9fa862::t_4b7d14171bb7ac 155-156
+  s_d043de2265a0d7::t_9cefa32956ed46 689-691
+  s_1f21183b9fa862::t_d1795e06c4fb9d 387-398,400,411,413-414
+  s_04cf33d7456514::t_188eb67dd34ce6 405
+  s_d043de2265a0d7::t_60d4d781c8b9fa 11,159-160,326-336,687-688,694
+  s_1f8905d0866d1b::t_8a4c47f44132ee 75-78,137,268-269,271,432,505,508-514,516-518,521-522,527-530,832
+  s_04cf33d7456514::t_c3795b56e28381 771,796-829,860
+  s_1f8905d0866d1b::t_e3d43668aac722 74,270,416-417
+  s_04cf33d7456514::t_54ca43ac04b40f 15,18,20,37,42-47,63,84,147,165,427,431,433-461,463-466,473,477-486,604-608,642-643,654-658,661-662,722-724,859
+  s_04cf33d7456514::t_7e6af75f8cff6a 462,467-472,488-489
+  s_04cf33d7456514::t_75d7c9abbc90e0 112,490-500,502-504,659-660,772,795,830
+  s_04cf33d7456514::t_c1175a81a29c9c 13-14,16,19,21,85-91,406,474-476,487,501
+  s_1f8905d0866d1b::t_3e4544ac57b914 506
+  s_1f8905d0866d1b::t_e0bd74431e6a14 833
+  s_1f8905d0866d1b::t_05c424335bc846 831
+packages/native-runtime/src/agent-runtime/acp-questions.ts
+  s_f90f84eec6f857::t_39b47ac4344cfc 71-73
+  s_f90f84eec6f857::t_415581c1627089 90-91
+  s_f90f84eec6f857::t_0d45a4fe515e34 143-173
+  s_f90f84eec6f857::t_c9c09ff257ef32 68-70
+  s_f90f84eec6f857::t_456b54f4c4f70a 74-76,87-89
+  s_f90f84eec6f857::t_aade9a42f8172a 92-94,140-142
+  s_f90f84eec6f857::t_cafda24e531bc0 174-176
+  s_4dd3bff5b942a5::t_27f802d3fa6ee3 1-67,77-86,95-139,177-182
+packages/core/src/domain/model/providers/__tests__/AnthropicProvider.test.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 2
+packages/desktop/renderer/lib/all-sessions.ts
+  s_1f21183b9fa862::t_03033e2bf8cd0d 15,24-25
+  s_1f21183b9fa862::t_2220195afac31f 26,32-35,43,58,60-62,74
+  s_1f21183b9fa862::t_4e3bbd4add67c5 42
+  s_4dd3bff5b942a5::t_dd52c79e143cf8 27
+packages/server/app/web/themes.test.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 2
+packages/server/app/web/AuthGate.test.ts
+  s_f90f84eec6f857::t_9a27a5813f9dc5 5-6
+packages/core/src/infrastructure/persistence/SessionStore.test.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 6
+packages/core/src/domain/session/PromptAttachment.ts
+  s_f90f84eec6f857::t_de1dab64fad8d6 21
+  s_f90f84eec6f857::t_e0b470c057c46f 1-10,13-15,17-20,22-24,26-27,29-31
+  s_f90f84eec6f857::t_6af099964498c0 11-12,16,25,28
+packages/core/src/infrastructure/tools/builtin/TodoTool.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 2-3
+packages/desktop/renderer/lib/clipboard.test.ts
+  s_d043de2265a0d7::t_1c29c59471600d 2
+packages/desktop/renderer/components/collaboration/collaboration.css
+  s_1f21183b9fa862::t_c6daf427ae8af8 1243
+  s_1f21183b9fa862::t_f80e7e09ca04ee 1241-1242
+  s_1f21183b9fa862::t_b43e6803b3d27c 1245
+packages/native-runtime/src/agent-runtime/acp-session-projection.ts
+  s_f90f84eec6f857::t_24cea44bd644d7 36,42
+  s_f90f84eec6f857::t_450910faf7cfdc 146-175
+  s_f90f84eec6f857::t_9226d839406f1b 1-2,71,94-95,105-117
+  s_f90f84eec6f857::t_25e3322472d07e 26-29,37,43,47
+  s_f90f84eec6f857::t_8df674a42afcc0 3-25,30-35,38-41,44-46,48-70,72-93,96-104,118-145
+packages/server/app/api/session-views/route.ts
+  s_f90f84eec6f857::t_8eb95e9afa9998 1-8
+packages/core/src/infrastructure/tools/builtin/ReadFileTool.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 2
+packages/desktop/renderer/components/SidebarReferenceStyle.test.ts
+  s_1f21183b9fa862::t_9fe47de7c20ef8 288
+  s_1f21183b9fa862::t_7cfa98122abf0d 62,189,192,194-195,224,227,229,311
+  s_1f21183b9fa862::t_046d6a41224ece 8,83,242,312
+packages/server/app/web/AiHubPane.test.tsx
+  s_f90f84eec6f857::t_9a27a5813f9dc5 8
+packages/desktop/renderer/components/DesktopPermissionDialog.tsx
+  s_f90f84eec6f857::t_14c8702c5b9c27 12
+packages/desktop/renderer/lib/use-native-session-goal.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 3
+packages/desktop/renderer/lib/artifact-links.test.ts
+  s_f90f84eec6f857::t_9a27a5813f9dc5 3
+  s_a541868d963e71::t_3b5b6c75d037aa 27-35
+packages/desktop/renderer/components/ChatHeaderActions.tsx
+  s_f90f84eec6f857::t_14c8702c5b9c27 8
+  s_f90f84eec6f857::t_9a27a5813f9dc5 11
+packages/core/src/bootstrap/AgentBuilder.test.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 3
+packages/shared/package.json
+  s_f90f84eec6f857::t_e1f557e7fd2bee 1-8,13-14,19-20
+  s_f90f84eec6f857::t_1e9c809a68fff1 9-12,15-18
+packages/native-runtime/src/agent-runtime/acp-cli-client.ts
+  s_f90f84eec6f857::t_9d780f792e0657 19,70-71,100,112-119,125,141-142,161-164,168,173,199,223,235,475
+  s_f90f84eec6f857::t_7db938950ad071 7,83-84,88,90-95,296
+  s_f90f84eec6f857::t_24cea44bd644d7 28,126,282-284,305,332-334,343-345,372
+  s_f90f84eec6f857::t_415581c1627089 43,386-387,404,410,423,454-457
+  s_f90f84eec6f857::t_15c81dee01c54d 147,150
+  s_f90f84eec6f857::t_450910faf7cfdc 32,304,419
+  s_f90f84eec6f857::t_ef786c0f3381a2 81,137-139,291-294
+  s_f90f84eec6f857::t_63f70f38157768 385,413-414,417
+  s_f90f84eec6f857::t_ad8136cc37b007 136,140
+  s_f90f84eec6f857::t_25e3322472d07e 5,256-257,260-261
+  s_f90f84eec6f857::t_971ec9bd616eb9 120-124
+  s_f90f84eec6f857::t_8df674a42afcc0 1-3,8-18,20-27,29-31,33-40,48-69,72-76,78-80,82,85-87,89,96-99,101-102,104-111,127-129,131-135,143-146,148-149,151-160,165-167,169-172,174-198,200-222,224-234,236-243,251-255,258-259,262-267,269-273,278-281,285-289,295,297-303,306-323,325-331,336-341,346-355,357-371,373-380,390-399,422,424-426,434-441,443-445,449-451,462-474,483-484
+  s_f90f84eec6f857::t_0e282447311673 4,290,477-482
+  s_f90f84eec6f857::t_39b47ac4344cfc 6,41-42,44-47,77,103,130,244-250,268,274-277,324,335,342,356,381-384,388-389,400-403,405-409,411-412,415-416,418,420-421,427-433,442,446-448,452-453,458-461,476
+packages/server/lib/session-views.test.ts
+  s_f90f84eec6f857::t_8eb95e9afa9998 8-11
+  s_1f21183b9fa862::t_7a45aa513c7e4c 5,40-45
+  s_f90f84eec6f857::t_4abfcffe5163ea 1-4,6-7,12-39,46-53
+packages/desktop/renderer/components/desktop-task-split/session-state.test.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 2
+  s_4dd3bff5b942a5::t_8f7b28da617041 226-236,238-243
+  s_1f21183b9fa862::t_3a4d7019331fe6 237
+packages/desktop/renderer/components/desktop-task-split/TaskPaneWebPage.tsx
+  s_f90f84eec6f857::t_14c8702c5b9c27 3
+packages/native-runtime/src/agent-runtime/copilot-events.test.ts
+  s_d043de2265a0d7::t_9cefa32956ed46 22,26
+packages/desktop/renderer/components/desktop-task-split/TaskSessionPicker.test.tsx
+  s_1f21183b9fa862::t_7cfa98122abf0d 96,102-104
+  s_1f21183b9fa862::t_e07c2af4d26b2b 7,71,76,91,95,97-101
+  s_1f21183b9fa862::t_602de2995d88cc 18,56,63
+  s_1f21183b9fa862::t_69928f4564b99c 57-62,64-67
+  s_1f21183b9fa862::t_14c5e18faa7315 68-69,105
+packages/desktop/renderer/lib/queued-message-steering.test.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 5
+packages/desktop/renderer/components/desktop-task-split/TaskPaneConversation.tsx
+  s_f90f84eec6f857::t_14c8702c5b9c27 2
+packages/core/src/infrastructure/persistence/FileSystemMemoryStore.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 1
+packages/desktop/renderer/lite/api.ts
+  s_f90f84eec6f857::t_e1f557e7fd2bee 4
+packages/desktop/renderer/components/desktop-task-split/TaskSessionPicker.tsx
+  s_1f21183b9fa862::t_9fe47de7c20ef8 12,84-85,158-159,162
+  s_1f21183b9fa862::t_b43e6803b3d27c 8,72-73
+  s_1f21183b9fa862::t_6269ca31d3f90b 10,14,86-90,93-94,99-100,102-104,107-117,119-120,125-128,138,141-151,153,195,219
+  s_1f21183b9fa862::t_a8405a51ce3551 7,13,83,156-157,160-161,163-166,169-170
+  s_1f21183b9fa862::t_e5c08740d6f80a 11,26-27,33,44,46-47,52-53,154-155,167-168,196,212,217-218
+  s_1f21183b9fa862::t_7fd433dab4e52f 80,190,197
+packages/server/app/web/projectFrameBridge.test.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 3
+packages/core/src/infrastructure/tools/builtin/ApplyPatchTool.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 2
+packages/desktop/renderer/lib/use-session-view-sync.ts
+  s_f90f84eec6f857::t_8eb95e9afa9998 2,21,32-33,38
+  s_1f21183b9fa862::t_dcc3873623b03f 1,3-20,22-31,34-37,39-65
+packages/core/src/infrastructure/tools/builtin/RemoteProjectActionTool.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 2-3
+packages/core/src/domain/memory/__tests__/FileSystemMemoryStore.test.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 2
+packages/desktop/renderer/components/ChatComposerStyle.test.ts
+  s_f90f84eec6f857::t_54b705e507f06c 63-70
+packages/native-runtime/src/agent-runtime/native-stdio-channel.ts
+  s_1f21183b9fa862::t_4b7d14171bb7ac 20,39-40,77,134-146,150-156,187-188
+packages/native-runtime/src/agent-runtime/zcode-runtime-adapter.test.ts
+  s_1f21183b9fa862::t_d1795e06c4fb9d 442-454
+  s_1f8905d0866d1b::t_0e453c10b5d604 545-549
+  s_04cf33d7456514::t_efd9a34f190048 808
+  s_1f8905d0866d1b::t_8434811bb540be 6,523,526,533-534,537
+  s_d043de2265a0d7::t_ccca10ae5f2ac0 566,570
+  s_04cf33d7456514::t_108498a203f5a7 557,761,773,776-785,787-799,801-807,839-840
+  s_04cf33d7456514::t_9419318f688649 9,760,762-772,774-775,786,800,809-838,845-854,869-870
+  s_1f8905d0866d1b::t_737704414416b5 484,493-522,524-525,527-532,535-536,538-544,550-556
+  s_04cf33d7456514::t_4f6cfa8459ccdb 558
+packages/desktop/renderer/components/ParallelAgentSettings.tsx
+  s_f90f84eec6f857::t_14c8702c5b9c27 4
+packages/desktop/renderer/lib/browser-image-normalization.test.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 8
+packages/core/src/infrastructure/cron/CronTasks.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 3-4
+packages/desktop/renderer/components/NativeGoalBar.test.tsx
+  s_f90f84eec6f857::t_14c8702c5b9c27 5
+packages/desktop/renderer/components/collaboration/MonitoredSessionPicker.tsx
+  s_1f21183b9fa862::t_b43e6803b3d27c 6,67-68
+  s_1f21183b9fa862::t_9fe47de7c20ef8 59,83
+  s_1f21183b9fa862::t_c6daf427ae8af8 8-9,35,50,58,75-76,91-92,94
+  s_1f21183b9fa862::t_f80e7e09ca04ee 5,10,21,60-66,69-74,77-78
+packages/desktop/renderer/lib/agent-availability.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 1
+  s_f90f84eec6f857::t_dae98be178b890 2,5-10
+packages/desktop/renderer/lib/agent-workspace-cache.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 6
+packages/webapp/src/mobile/presentation/native-console.tsx
+  s_f90f84eec6f857::t_14c8702c5b9c27 3
+  s_f90f84eec6f857::t_da26b3ff8486e7 4
+packages/desktop/renderer/components/ComposerAgentPicker.tsx
+  s_f90f84eec6f857::t_14c8702c5b9c27 3
+  s_f90f84eec6f857::t_4fa300fbaafe10 6,15-17,74,115,124-125,132-133,135,147
+packages/desktop/renderer/lib/session-activity.test.ts
+  s_1f21183b9fa862::t_d9318e5811fdd7 74-81
+  s_1f21183b9fa862::t_c2849ac437c77b 82-92
+packages/core/src/domain/agent/agent-type.ts
+  s_f90f84eec6f857::t_b08e42161969cb 1
+packages/server/app/web/useComputerDirectory.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 6
+packages/core/src/infrastructure/tools/builtin/CronTools.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 2,5
+  s_f90f84eec6f857::t_42df9072547542 3-4
+packages/native-runtime/src/agent-runtime/native-stdio-channel.test.ts
+  s_1f21183b9fa862::t_4b7d14171bb7ac 78-91
+packages/desktop/renderer/components/AgentWorkspaceSwitcher.tsx
+  s_f90f84eec6f857::t_14c8702c5b9c27 3
+  s_f90f84eec6f857::t_dae98be178b890 6,13,16,37-38,41,44-50,52
+packages/core/src/infrastructure/tools/builtin/WebFetchTool.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 2
+packages/webapp/src/main.tsx
+  s_f90f84eec6f857::t_14c8702c5b9c27 9,11,15,28-29
+  s_f90f84eec6f857::t_37b93d28f5be84 38-39
+packages/shared/src/file-workspace/FileTree.tsx
+  s_f90f84eec6f857::t_9a27a5813f9dc5 10,14-15,44,141,151,221-222,224-225,228,231,246,253,260-264,274,324
+packages/desktop/renderer/components/DesktopLiveControlBanner.tsx
+  s_f90f84eec6f857::t_14c8702c5b9c27 2
+packages/desktop/renderer/lib/runtime-capabilities.test.ts
+  s_d043de2265a0d7::t_02baf6fc1d2ef4 24-25
+packages/desktop/renderer/lib/new-session-window.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 2
+packages/webapp/index.html
+  s_d043de2265a0d7::t_a2886c31824361 47
+  s_d043de2265a0d7::t_2d1db5e19e7668 13-46,48-61,64-69,85-93
+packages/core/src/application/session/SyncSessionViews.ts
+  s_f90f84eec6f857::t_8eb95e9afa9998 1-30
+packages/desktop/renderer/lib/desktop-live-setup.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 1
+packages/desktop/renderer/components/ComposerNewSessionControls.test.tsx
+  s_f90f84eec6f857::t_4572a39349d082 25,32-34,39,41-42,52-53
+  s_f90f84eec6f857::t_14c8702c5b9c27 7
+packages/core/src/infrastructure/SQLiteSessionViews.ts
+  s_f90f84eec6f857::t_8eb95e9afa9998 1-31
+packages/desktop/renderer/lib/parallel-message-dispatch.ts
+  s_f90f84eec6f857::t_6af099964498c0 10
+  s_f90f84eec6f857::t_14c8702c5b9c27 1
+packages/desktop/renderer/components/desktop-task-split/TaskPaneTerminal.tsx
+  s_f90f84eec6f857::t_14c8702c5b9c27 2-4
+packages/server/lib/terminal-readiness-contract.test.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 37-38
+packages/server/app/web/fileTreeReveal.ts
+  s_f90f84eec6f857::t_9a27a5813f9dc5 1
+packages/desktop/renderer/lib/session-tree.ts
+  s_1f21183b9fa862::t_d5202b88827ec0 12-25
+  s_1f21183b9fa862::t_8f5d86682fcb28 1-11,26-67
+packages/webapp/src/mobile/presentation/UnpairedHome.tsx
+  s_f90f84eec6f857::t_14c8702c5b9c27 6
+  s_f90f84eec6f857::t_42df9072547542 56
+  s_f90f84eec6f857::t_48fc72402d8e34 3-5
+packages/core/src/infrastructure/mcp/MCPManager.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 1-2
+packages/desktop/renderer/components/desktop-task-split/DesktopTaskWorkspace.tsx
+  s_1f21183b9fa862::t_b43e6803b3d27c 18,155-156,158,288,292-295
+  s_f90f84eec6f857::t_14c8702c5b9c27 5
+packages/tui/src/runtime.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 6,9,23,28,30
+packages/core/src/infrastructure/tools/builtin/LspTools.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 6,8
+packages/server/app/web/layout.tsx
+  s_f90f84eec6f857::t_14c8702c5b9c27 4
+  s_f90f84eec6f857::t_9a27a5813f9dc5 5
+scripts/harness/proposer.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 3
+packages/cli/src/tunnel/tunnel-controller.ts
+  s_f90f84eec6f857::t_e1f557e7fd2bee 2
+packages/native-runtime/src/agent-runtime/codex-runtime-adapter.ts
+  s_d043de2265a0d7::t_d89f884d810a2d 1839-1840
+  s_d043de2265a0d7::t_ffd57da8bbd1e3 3001
+  s_d043de2265a0d7::t_baa7294498ecfa 1376,2374-2377,2759-2764
+packages/desktop/renderer/lib/session-activity.ts
+  s_1f21183b9fa862::t_b4d22e606d1c7f 67-69,74
+  s_1f21183b9fa862::t_b43e6803b3d27c 63-64
+  s_1f21183b9fa862::t_2220195afac31f 4,13-15
+  s_1f21183b9fa862::t_c2849ac437c77b 65,70-73,79-83
+packages/desktop/renderer/components/AIHubView.tsx
+  s_f90f84eec6f857::t_14c8702c5b9c27 13
+packages/desktop/renderer/lib/parallel-failed-messages.test.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 2
+packages/server/app/web/ThemePicker.tsx
+  s_f90f84eec6f857::t_14c8702c5b9c27 6
+scripts/incremental-cli-release.mjs
+  s_f90f84eec6f857::t_6fa51acb6203d3 36
+packages/core/src/domain/agent/entities.ts
+  s_f90f84eec6f857::t_450910faf7cfdc 105
+  s_d043de2265a0d7::t_baa7294498ecfa 92
+  s_f90f84eec6f857::t_415581c1627089 102-103
+packages/desktop/renderer/components/collaboration/session-dashboard.css
+  s_1f21183b9fa862::t_b43e6803b3d27c 65
+packages/desktop/renderer/components/HarnessModeControl.tsx
+  s_f90f84eec6f857::t_14c8702c5b9c27 3
+packages/desktop/main/artifact-open-with.ts
+  s_a541868d963e71::t_f582a768efdcaf 1-59
+packages/desktop/main/file-workspace-service.ts
+  s_a541868d963e71::t_a3046c4692fb3d 5,27,32,39,53-54,65,203,205,213-225,227-237,388,396-398,404,432,472
+  s_a541868d963e71::t_48b99e70d886d1 18
+  s_a541868d963e71::t_e16e408cc404ef 226
+packages/core/src/infrastructure/SQLiteSessionStore.ts
+  s_f90f84eec6f857::t_8eb95e9afa9998 5,18-29
+  s_f90f84eec6f857::t_e88eff023b0679 30
+packages/desktop/renderer/styles/session-task-panel.css
+  s_d043de2265a0d7::t_d1e978faa7335d 59-63,78,83
+packages/desktop/renderer/lib/desktop-live-setup.test.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 3
+packages/core/src/application/session/RuntimeCapabilities.ts
+  s_f90f84eec6f857::t_971ec9bd616eb9 1-4
+packages/desktop/renderer/components/SessionTaskPanel.tsx
+  s_d043de2265a0d7::t_d1e978faa7335d 38,48,92-97,110-113,116,181
+packages/desktop/main/video-window.ts
+  s_f90f84eec6f857::t_6fa51acb6203d3 1-2
+packages/server/app/web/fileDiff.ts
+  s_f90f84eec6f857::t_9a27a5813f9dc5 1
+packages/desktop/renderer/lib/occupied-session-fork.ts
+  s_f90f84eec6f857::t_ef786c0f3381a2 14
+  s_f90f84eec6f857::t_14c8702c5b9c27 1
+packages/native-runtime/src/agent-runtime/zcode-questions.test.ts
+  s_04cf33d7456514::t_d7f040a72b068d 58
+  s_04cf33d7456514::t_7d4238bdf73f75 59-60,65-66,69-73
+  s_04cf33d7456514::t_95e4968143d53e 3,61-64,67-68,74
+packages/desktop/main/new-session-window.ts
+  s_f90f84eec6f857::t_bc7f890c736a43 3,43-49
+  s_f90f84eec6f857::t_9d29f7ef386443 50-51
+packages/desktop/renderer/lib/use-session-background-jobs.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 3
+packages/desktop/renderer/lib/session-execution-trace.test.ts
+  s_d043de2265a0d7::t_9cefa32956ed46 82-92
+packages/desktop/main/index.ts
+  s_a541868d963e71::t_865d714ef11aa1 45,1027-1033,1035
+  s_a541868d963e71::t_f582a768efdcaf 46,1018,1020-1026,1034,1036-1038,1041-1047
+  s_a541868d963e71::t_e16e408cc404ef 41,44,199,1016-1017,1019,1039-1040,1048,1293
+  s_d043de2265a0d7::t_178ac1e89cbe21 42,328,375
+  s_f90f84eec6f857::t_bc7f890c736a43 10,109-111,343-344,347,382-383,1241-1244
+packages/core/src/infrastructure/lsp/LSPManager.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 4
+packages/core/src/infrastructure/tools/policy-executor.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 5-7
+packages/server/lib/session-view-request.ts
+  s_f90f84eec6f857::t_8eb95e9afa9998 1-10
+packages/server/app/web/terminalOutput.test.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 3
+packages/desktop/renderer/components/ArtifactFileActions.tsx
+  s_a541868d963e71::t_53c40070102c9f 52,60
+  s_a541868d963e71::t_48b99e70d886d1 3
+  s_a541868d963e71::t_960a20a2d3652d 1-2,4,6-20,24-31,33-48,51,53-59,61-76,78-82
+  s_a541868d963e71::t_865d714ef11aa1 77
+  s_f90f84eec6f857::t_9a27a5813f9dc5 5
+  s_a541868d963e71::t_86c8692260d914 21-23,32,49-50
+packages/desktop/renderer/components/desktop-task-split/session-state.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 3
+  s_1f21183b9fa862::t_3a4d7019331fe6 4,156-157
+  s_4dd3bff5b942a5::t_8f7b28da617041 158-163
+packages/desktop/renderer/lib/sidebar-session-status.ts
+  s_1f21183b9fa862::t_09a649b6765bc8 20-23
+packages/core/src/domain/session/index.ts
+  s_f90f84eec6f857::t_b40cf90d9f42a0 27
+packages/core/src/infrastructure/models/DeepSeekProvider.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 1
+packages/desktop/renderer/components/BrowserLivePanel.tsx
+  s_f90f84eec6f857::t_14c8702c5b9c27 16
+packages/desktop/renderer/lib/dashboard-session-navigation.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 2
+packages/desktop/main/image-context-menu.ts
+  s_d043de2265a0d7::t_178ac1e89cbe21 1-14
+packages/native-runtime/src/agent-runtime/native-runtime-registration.test.ts
+  s_f90f84eec6f857::t_9eb1877ab335fb 27,30
+packages/desktop/renderer/components/SessionTurnResults.tsx
+  s_a541868d963e71::t_e7da7d28896fa0 88
+  s_1f21183b9fa862::t_2a9acd3a8a3f5c 69,107-108,173,178-179,181
+  s_1f21183b9fa862::t_f8d11c77334b22 103-106,109-110
+  s_a541868d963e71::t_0f41843b1b742d 7
+packages/core/src/infrastructure/tools/builtin/DispatchAgentTool.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 2
+packages/desktop/renderer/components/MessageImageAttachment.tsx
+  s_f90f84eec6f857::t_05dba3f4d6d6d6 50-59
+packages/desktop/renderer/lib/all-sessions.test.ts
+  s_1f21183b9fa862::t_e07c2af4d26b2b 31,36
+packages/desktop/renderer/components/ComposerModelPicker.tsx
+  s_f90f84eec6f857::t_54b705e507f06c 1,14,19,92-95
+packages/desktop/renderer/components/SessionCompletionTracker.tsx
+  s_1f21183b9fa862::t_b4d22e606d1c7f 1-22
+packages/server/lib/native-runtime-service.ts
+  s_d043de2265a0d7::t_4cefb8394fb722 165,564,569
+  s_d043de2265a0d7::t_896f276bbc1d5e 146,491-493
+  s_f90f84eec6f857::t_de1dab64fad8d6 33,77
+  s_4dd3bff5b942a5::t_59dc4d1c401391 494-495
+packages/desktop/renderer/lib/prompt-attachments.ts
+  s_f90f84eec6f857::t_5c69b9cb6d4ac8 1-19
+packages/core/src/application/collaboration/architecture.test.ts
+  s_f90f84eec6f857::t_b08e42161969cb 8,30
+packages/native-runtime/src/agent-runtime/acp-attachments.ts
+  s_f90f84eec6f857::t_5c69b9cb6d4ac8 5-7,34-38,40,51
+  s_f90f84eec6f857::t_dc52e2f5979fed 1-4,8-13,15-33,39,41-50
+  s_f90f84eec6f857::t_25d56af6c34348 14
+packages/core/src/domain/context/__tests__/ContextLoader.test.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 5
+packages/core/src/infrastructure/tools/builtin/index.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 31
+packages/desktop/shared/artifact-preview-types.ts
+  s_a541868d963e71::t_48b99e70d886d1 1-4
+packages/server/app/web/nativeTerminalTouch.test.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 3,78-79
+packages/desktop/renderer/components/desktop-task-split/task-session-catalog.test.ts
+  s_1f21183b9fa862::t_c652d96ea55bb7 1-63
+packages/core/src/domain/tool/__tests__/ToolRegistry.test.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 3-7
+packages/desktop/renderer/components/collaboration/CollaborationCreateDialog.tsx
+  s_f90f84eec6f857::t_14c8702c5b9c27 8
+packages/shared/src/file-workspace/FilePreview.tsx
+  s_f90f84eec6f857::t_9a27a5813f9dc5 14,17
+packages/desktop/renderer/components/MCPServerList.tsx
+  s_f90f84eec6f857::t_14c8702c5b9c27 2
+packages/server/ws-server.mjs
+  s_a541868d963e71::t_40fbe04328a9e6 1046-1049,1059,1273,1286-1292,1299-1300
+packages/desktop/renderer/lib/use-session-disclosure.ts
+  s_1f21183b9fa862::t_a8405a51ce3551 1-16
+packages/desktop/renderer/lib/dashboard-session-navigation.test.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 2
+packages/webapp/src/infrastructure/voice/browser-dictation.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 1
+packages/shared/src/domain/ports/agent-port.ts
+  s_f90f84eec6f857::t_e1f557e7fd2bee 1
+  s_f90f84eec6f857::t_14c8702c5b9c27 22
+packages/server/app/web/mobileViewport.test.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 2
+packages/native-runtime/src/agent-runtime/unified-session-service.ts
+  s_f90f84eec6f857::t_971ec9bd616eb9 95,111-115
+  s_04cf33d7456514::t_fca02cac47733b 233-235
+  s_f90f84eec6f857::t_186eee77cb35f1 96-97
+  s_f90f84eec6f857::t_d7adb4da9c32a9 116-117
+packages/server/app/web/page.tsx
+  s_a541868d963e71::t_40fbe04328a9e6 370
+  s_a541868d963e71::t_60f3a158ab8448 371-375,512,862
+  s_f90f84eec6f857::t_9a27a5813f9dc5 7,11,16,53
+  s_f90f84eec6f857::t_14c8702c5b9c27 8,34,41-42,55
+packages/core/src/infrastructure/tools/builtin/WebSearchTool.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 2
+packages/desktop/renderer/lib/session-execution-trace.ts
+  s_d043de2265a0d7::t_cdfb15114ee458 71-75
+packages/desktop/renderer/styles/composer.css
+  s_1f21183b9fa862::t_3d94ed46256895 619-624
+  s_f90f84eec6f857::t_54b705e507f06c 847-865
+packages/desktop/renderer/lib/sidebar-session-sort.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 1
+packages/desktop/renderer/components/AllSessionsSidebar.test.tsx
+  s_1f21183b9fa862::t_e07c2af4d26b2b 16,29,44,57,59-69,71-72,76
+  s_1f21183b9fa862::t_7cfa98122abf0d 58,70,73-75
+  s_1f21183b9fa862::t_538eefbcf4abd2 77
+packages/desktop/renderer/components/file-workspace/index.ts
+  s_f90f84eec6f857::t_9a27a5813f9dc5 1-2,5-7
+packages/core/src/domain/session/SessionMessageOptions.test.ts
+  s_f90f84eec6f857::t_555ffa3d3afcb0 19-28
+packages/desktop/renderer/lib/queued-message-steering.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 1
+packages/webapp/src/infrastructure/http/agent-http-gateway.test.ts
+  s_f90f84eec6f857::t_19e50f83827ce7 1851-1875
+  s_f90f84eec6f857::t_14c8702c5b9c27 2-3
+packages/core/src/infrastructure/filesystem/PluginManager.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 7,10-11
+packages/desktop/renderer/components/ParallelAgentTabs.tsx
+  s_1f21183b9fa862::t_9fe47de7c20ef8 4,7
+  s_1f21183b9fa862::t_3d94ed46256895 34-35
+  s_f90f84eec6f857::t_14c8702c5b9c27 1
+packages/native-runtime/src/agent-runtime/native-cli-command.test.ts
+  s_f90f84eec6f857::t_9eb1877ab335fb 16-23
+packages/desktop/renderer/lib/all-sessions-cache.ts
+  s_1f21183b9fa862::t_03033e2bf8cd0d 49
+  s_1f21183b9fa862::t_4e3bbd4add67c5 52
+  s_1f21183b9fa862::t_2220195afac31f 3,5,14,17,24-28,31,42,56
+packages/core/src/infrastructure/tools/builtin/WriteFileTool.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 2
+packages/core/src/infrastructure/tools/builtin/WaitAgentTool.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 2
+packages/server/lib/session-catalog.test.ts
+  s_1f21183b9fa862::t_e07c2af4d26b2b 51-69
+packages/webapp/src/infrastructure/http/parallel-sessions.test.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 2
+packages/desktop/renderer/NewSessionWindow.tsx
+  s_f90f84eec6f857::t_14c8702c5b9c27 3
+  s_1f21183b9fa862::t_c49884e86b3b94 5,45
+packages/core/src/domain/model/providers/__tests__/OpenAIProvider.test.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 2-3
+packages/core/src/infrastructure/RunCheckpointStore.test.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 7
+packages/shared/src/browser/browser-image-normalization.ts
+  s_f90f84eec6f857::t_72d1abe386e3a4 18-19
+packages/desktop/renderer/components/file-workspace/FileWorkspaceDrawer.tsx
+  s_f90f84eec6f857::t_9a27a5813f9dc5 3-5
+packages/core/src/application/agent-run/StartAgentRunUseCase.test.ts
+  s_f90f84eec6f857::t_14c8702c5b9c27 2
+packages/server/app/api/sessions/[id]/switch-engine/route.ts
+  s_f90f84eec6f857::t_1f44a7d364c9eb 2,39,45
+packages/desktop/renderer/App.tsx
+  s_f90f84eec6f857::t_9a27a5813f9dc5 74,104
+  s_f90f84eec6f857::t_611a41a2caaabe 59,1491-1513
+  s_1f21183b9fa862::t_8c93986a153018 115,368-369,524,526,1793-1794,1809,1818-1820,1825,1832,1845,1857,2061
+  s_1f21183b9fa862::t_09a649b6765bc8 150,1804,1840
+  s_1f21183b9fa862::t_7cfa98122abf0d 1789,1823-1824,1860,2082-2083,2169,2306
+  s_f90f84eec6f857::t_14c8702c5b9c27 82,165
+  s_1f21183b9fa862::t_7fd433dab4e52f 888-890
+  s_1f21183b9fa862::t_89a53544539988 1830-1831,1833-1839,1841-1844,1846-1856,1858-1859,1861-1865,2508,2513,2518-2519
+  s_1f21183b9fa862::t_d5202b88827ec0 114,638,1363,1407
+  s_1f21183b9fa862::t_b4d22e606d1c7f 70,2544-2547
+  s_1f21183b9fa862::t_4e3bbd4add67c5 33
+packages/server/app/web/fileTreeReveal.test.ts
+  s_a541868d963e71::t_584a0b2367e0db 29-35
+packages/desktop/renderer/components/AgentManager.tsx
+  s_f90f84eec6f857::t_14c8702c5b9c27 2
+packages/core/src/domain/file-workspace/entities.ts
+  s_a541868d963e71::t_40fbe04328a9e6 48
+bun.lock
+  s_f90f84eec6f857::t_11357cea7014c5 18,46,50,75,138,142,189-206,227,234,301-302
+packages/core/src/domain/agent/agent-type.test.ts
+  s_f90f84eec6f857::t_b3ac1d4e4614ec 6
+packages/core/src/domain/context/ContextAssembler.ts
+  s_f90f84eec6f857::t_c8bd3974544aab 55,162
+packages/core/src/domain/tool/execution-policy.ts
+  s_f90f84eec6f857::t_53ff3377cfbaaa 72,106,149,158
+packages/core/src/infrastructure/AiHubRelayPath.ts
+  s_f90f84eec6f857::t_249d40d272e895 1-11
+packages/core/src/infrastructure/AiHubSocketTransport.ts
+  s_f90f84eec6f857::t_a945d80fb3ca6e 7
+packages/core/src/infrastructure/tools/checkpoints.test.ts
+  s_f90f84eec6f857::t_a27ab2ab042da9 7
+packages/core/src/infrastructure/tools/checkpoints.ts
+  s_f90f84eec6f857::t_0f65ddffa50e36 3-4
+packages/desktop/main/ai-hub/chrome-bridge-protocol.ts
+  s_f90f84eec6f857::t_f7a2749683f14b 1-3
+packages/desktop/main/ai-hub/chrome-bridge.ts
+  s_f90f84eec6f857::t_aae146b6e937c3 1-2
+packages/desktop/renderer/components/ChromeHubPane.tsx
+  s_f90f84eec6f857::t_aa05bcf1c358bc 2
+packages/desktop/renderer/lib/chrome-hub-input-queue.ts
+  s_f90f84eec6f857::t_4cd14f19be7040 1
+packages/native-runtime/src/agent-runtime/stdio-native-runtime-adapter.ts
+  s_f90f84eec6f857::t_bb84b69674f1f6 1,26,47-51
+packages/server/app/web/webappLoading.test.ts
+  s_f90f84eec6f857::t_100a38b1e809bd 4-5,7,36
+packages/server/lib/tool-execution-policies.ts
+  s_f90f84eec6f857::t_07ce1a2e58e63e 1,34
+packages/shared/src/contracts/chrome-bridge-types.d.ts
+  s_f90f84eec6f857::t_87a0fc5cc0fe38 1-44
+packages/shared/src/contracts/tunnel-status.d.ts
+  s_f90f84eec6f857::t_8a2a6d18659484 1-8
+packages/shared/tsconfig.json
+  s_f90f84eec6f857::t_dd2ae972956248 1-8
+scripts/incremental-cli-release.test.mjs
+  s_f90f84eec6f857::t_727c4491d1d2fd 22-23
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5625dd77efcbda5330235a1d1d917308c05247bb",
+  "prompts": {},
+  "sessions": {
+    "s_04cf33d7456514": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1f940-0f5b-7b23-8eb5-dfd095423444",
+        "model": "chat-gpt-omhk9/gpt-6.2-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_1f21183b9fa862": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a20656-9ba1-7d41-9fe9-c4ee585bc671",
+        "model": "chat-gpt-omhk9/gpt-6.2-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_1f8905d0866d1b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a20c40-0d50-75f0-baa7-5fb62097704e",
+        "model": "gpt-6.2-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_4dd3bff5b942a5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1f7de-114a-7943-a1b8-4808cd30696d",
+        "model": "chat-gpt-omhk9/gpt-6.2-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_a541868d963e71": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a2075a-f7f4-7ff0-ad61-fae17cd6d7ba",
+        "model": "gpt-6.2-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_d043de2265a0d7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a208ee-70bb-7192-adbb-8c11c232a2d4",
+        "model": "gpt-6.2-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_f90f84eec6f857": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a207aa-7887-72e0-82bb-782f1cb0fc29",
+        "model": "gpt-6.2-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
