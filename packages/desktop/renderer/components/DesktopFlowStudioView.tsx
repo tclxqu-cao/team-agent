@@ -1,6 +1,6 @@
 import { ArrowLeft, LoaderCircle, RotateCw } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { EmbeddedPageRect, FlowStudioEvent } from "../global";
+import type { EmbeddedPageRect, FlowStudioEvent } from "../../../shared/src/contracts/agent-api";
 
 type ViewState = "loading" | "ready" | "error";
 

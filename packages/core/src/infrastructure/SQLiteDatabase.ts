@@ -81,6 +81,12 @@ export class SQLiteDatabase {
         updated_at TEXT NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS session_views (
+        session_id TEXT PRIMARY KEY,
+        viewed_at INTEGER NOT NULL,
+        revision INTEGER NOT NULL UNIQUE
+      );
+
       CREATE TABLE IF NOT EXISTS memories (
         name TEXT PRIMARY KEY,
         description TEXT NOT NULL DEFAULT '',

@@ -1,26 +1,20 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowRightLeft, ChevronDown, LoaderCircle } from "lucide-react";
-import type { AgentType, RuntimeHealth } from "../global";
+import type { AgentType, RuntimeHealth } from "../../../shared/src/contracts/agent-api";
 import { AGENT_TYPES } from "../../../core/src/domain/agent/agent-type";
 import { AGENT_LABELS } from "../lib/agent-catalog";
-import { agentUnavailableMessage } from "../lib/agent-availability";
+import { availableAgentTypes } from "../lib/agent-availability";
 import { useComposerPickerHeight } from "../lib/use-composer-picker-height";
 import AgentBrandIcon from "./AgentBrandIcon";
 
 export interface AgentPickerItem {
   agentType: AgentType;
   label: string;
-  unavailableMessage?: string;
 }
 
-/** Full agent list plus the reason each unavailable runtime is blocked. */
-export function agentPickerItems(health: readonly RuntimeHealth[] = []): AgentPickerItem[] {
-  return AGENT_TYPES.map((agentType) => {
-    const unavailableMessage = agentUnavailableMessage(agentType, health);
-    return unavailableMessage
-      ? { agentType, label: AGENT_LABELS[agentType], unavailableMessage }
-      : { agentType, label: AGENT_LABELS[agentType] };
-  });
+export function agentPickerItems(health: readonly RuntimeHealth[] = [], purpose: "participants" | "recipients" = "participants"): AgentPickerItem[] {
+  const agents = purpose === "recipients" ? AGENT_TYPES : availableAgentTypes(health);
+  return agents.map(agentType => ({ agentType, label: AGENT_LABELS[agentType] }));
 }
 
 interface ComposerAgentPickerProps {
@@ -77,7 +71,7 @@ export default function ComposerAgentPicker({ value, health = [], onChange, onSw
   };
 
   const switchable = !multiple && onSwitchEngine !== undefined;
-  const items = agentPickerItems(health)
+  const items = agentPickerItems(health, purpose)
     .filter(item => !allowedAgentTypes || allowedAgentTypes.includes(item.agentType))
     .filter(item => !switchable || item.agentType !== "customer-agent");
   const committed = values ?? [value];
@@ -117,31 +111,28 @@ export default function ComposerAgentPicker({ value, health = [], onChange, onSw
             <span className="composer-picker-copy"><strong>全部 Agent</strong></span>
           </button>}
           {items.map((item) => {
-            const blocked = purpose !== "recipients" && item.unavailableMessage !== undefined;
             const selected = multiple ? committed.includes(item.agentType) : item.agentType === value;
-            const className = [selected ? "is-active" : "", blocked ? "is-unavailable" : ""].filter(Boolean).join(" ") || undefined;
+            const className = selected ? "is-active" : undefined;
             const copy = <><AgentBrandIcon agentType={item.agentType} size={18} />
               <span className="composer-picker-copy">
                 <strong>{item.label}</strong>
-                {blocked && <small>{item.unavailableMessage}</small>}
               </span></>;
             if (multiple) {
               const lastSelected = selected && committed.length === 1;
               return <div key={item.agentType} role="none" className={`composer-agent-option${className ? ` ${className}` : ""}`}>
                 <button type="button" role="menuitem" className="composer-agent-option-main"
-                  data-agent-type={item.agentType} aria-label={`仅使用 ${item.label}`} aria-disabled={blocked || undefined}
-                  title={blocked ? item.unavailableMessage : `仅使用 ${item.label}`}
+                  data-agent-type={item.agentType} aria-label={`仅使用 ${item.label}`}
+                  title={`仅使用 ${item.label}`}
                   onClick={() => {
-                    if (blocked) return;
                     onValuesChange([item.agentType]);
                     setOpen(false);
                   }}>{copy}</button>
                 <button type="button" role="menuitemcheckbox" className="composer-agent-option-toggle"
                   aria-label={`${selected ? "取消选择" : "添加"} ${item.label}`} aria-checked={selected}
-                  aria-disabled={blocked || lastSelected || undefined}
-                  title={blocked ? item.unavailableMessage : lastSelected ? "至少保留一个 Agent" : `${selected ? "取消选择" : "添加"} ${item.label}`}
+                  aria-disabled={lastSelected || undefined}
+                  title={lastSelected ? "至少保留一个 Agent" : `${selected ? "取消选择" : "添加"} ${item.label}`}
                   onClick={() => {
-                    if (blocked || lastSelected) return;
+                    if (lastSelected) return;
                     onValuesChange(selected ? committed.filter(type => type !== item.agentType) : [...committed, item.agentType]);
                   }}><span className="composer-agent-checkbox" aria-hidden="true">{selected ? "✓" : ""}</span></button>
               </div>;
@@ -152,12 +143,10 @@ export default function ComposerAgentPicker({ value, health = [], onChange, onSw
                 type="button"
                 role="menuitemradio"
                 aria-checked={selected}
-                aria-disabled={blocked || undefined}
                 data-agent-type={item.agentType}
-                title={blocked ? item.unavailableMessage : item.label}
+                title={item.label}
                 className={className}
                 onClick={() => {
-                  if (blocked) return;
                   if (switchable && item.agentType !== value) {
                     onSwitchEngine!(item.agentType);
                   } else {

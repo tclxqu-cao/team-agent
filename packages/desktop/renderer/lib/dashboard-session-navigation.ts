@@ -1,5 +1,5 @@
 import type { MonitoredSession } from "../../../core/src/domain/supervision/types";
-import type { AgentApi, AgentType, UnifiedSessionSummary } from "../global";
+import type { AgentApi, AgentType, UnifiedSessionSummary } from "../../../shared/src/contracts/agent-api";
 import { isAgentType } from "../../../core/src/domain/agent/agent-type";
 import type { AgentRailSessions } from "./agent-rail-sessions";
 import { LATEST_SESSION_HISTORY_PAGE_SIZE, type SessionHistoryDetail, type SessionHistorySeed } from "./session-history";

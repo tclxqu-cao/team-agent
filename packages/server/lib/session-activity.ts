@@ -45,13 +45,15 @@ export async function sessionActivity(options: { includeInternal?: boolean } = {
     || Date.parse(session.created) >= recent || Date.parse(session.updated) >= recent).map(session => ({
     id: session.id, agentType: "customer-agent", title: session.title, cwd: paths.get(session.projectId) ?? "",
     projectId: session.projectId, updated: session.updated,
+    ...(session.parentSessionId ? { parentSessionId: session.parentSessionId } : {}),
     status: agentHost.isSessionRunning(session.id) ? "running" : session.status === "failed" ? "failed"
       : session.status === "completed" ? "completed" : "idle",
     canResume: true,
   }));
   const sessions = [...local, ...native.sessions.map((session): CatalogSession => ({
     id: session.id, agentType: session.agentType, title: session.title, cwd: session.cwd,
-    projectId: session.projectId, updated: session.updated, status: session.status,
+    projectId: session.projectId, updated: session.updated, completedAt: session.completedAt, status: session.status,
+    ...(session.parentSessionId ? { parentSessionId: session.parentSessionId } : {}),
     canResume: session.canResume, occupancy: session.occupancy, readOnly: session.readOnly,
   }))].filter(session => !hidden.has(session.id));
   return { sessions, agentTypes: [...new Set<AgentType>(["customer-agent", ...native.agentTypes])], updatedAt: new Date().toISOString() };

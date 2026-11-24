@@ -4,6 +4,7 @@ import type { SessionToolResultBody, SessionToolResultRef } from "@agent/core";
 import type { ChatMessage } from "../stores/agentStore";
 import { collectTurnArtifacts, collectTurnChanges, groupTurnChanges, restoreOmittedPatchFiles, traceNeedsTurnResults, turnFileName, turnResultMessages, type SessionTurnResult, type TurnFileChange } from "../lib/session-turn-results";
 import MessageArtifactLink from "./MessageArtifactLink";
+import ArtifactFileActions from "./ArtifactFileActions";
 import ToolCallCard from "./ToolCallCard";
 import { patchChanges } from "../lib/file-tool-presentation";
 import "../styles/session-turn-results.css";
@@ -61,15 +62,11 @@ export function TurnChangeDetails({ changes, onLoadResult, onOpenArtifact }: {
 }
 
 function TurnChangeStats({ changes }: { changes: TurnFileChange[] }) {
-  const latest = changes[changes.length - 1];
   const stats = changes.every(change => change.stats) ? changes.reduce((total, change) => ({
     added: total.added + change.stats!.added,
     removed: total.removed + change.stats!.removed,
   }), { added: 0, removed: 0 }) : null;
-  return <>
-    {stats && <span className="turn-results__stats"><span className="is-added">+{stats.added}</span> <span className="is-removed">−{stats.removed}</span></span>}
-    <span>{CHANGE_LABEL[latest.operation]}</span>
-  </>;
+  return stats && <span className="turn-results__stats"><span className="is-added">+{stats.added}</span> <span className="is-removed">−{stats.removed}</span></span>;
 }
 
 interface TurnFile {
@@ -88,6 +85,7 @@ function TurnFileRow({ file, onLoadResult, onOpenArtifact, trailing }: {
   const changeId = useId();
   const name = turnFileName(file.path);
   const { artifactLabel } = file;
+  const latestChange = file.changes?.at(-1);
   const changeAction = {
     "aria-expanded": showChanges,
     "aria-controls": changeId,
@@ -102,8 +100,14 @@ function TurnFileRow({ file, onLoadResult, onOpenArtifact, trailing }: {
         <FileDiff size={14} aria-hidden="true" /><span className="turn-results__label">{name}</span>
         <TurnChangeStats changes={file.changes} />
       </button>}
-      {artifactLabel && onOpenArtifact && file.changes && <button className="turn-results__file-action" type="button" {...changeAction}>改动</button>}
-      {trailing}
+      <div className="turn-results__file-controls">
+        {onOpenArtifact && latestChange?.operation !== "delete" && (artifactLabel || latestChange) && (
+          <ArtifactFileActions key={file.path} path={file.path} label={artifactLabel || name} />
+        )}
+        {artifactLabel && onOpenArtifact && file.changes && <button className="turn-results__file-action" type="button"
+          title={changeAction["aria-label"]} {...changeAction}><FileDiff size={14} aria-hidden="true" /></button>}
+        {trailing}
+      </div>
     </div>
     {file.changes && <div id={changeId} hidden={!showChanges}>
       {showChanges && <TurnChangeDetails changes={file.changes} onLoadResult={onLoadResult} onOpenArtifact={onOpenArtifact} />}
@@ -166,15 +170,15 @@ export default function SessionTurnResults({ turn, workspacePath, loadTrace, onL
   const artifactLabels = new Map(onOpenArtifact ? artifacts.map(artifact => [artifact.path, artifact.label]) : []);
   const resultPaths = new Set([...artifactLabels.keys(), ...files.keys()]);
   const [firstFile, ...moreFiles] = [...resultPaths].map(path => ({ path, artifactLabel: artifactLabels.get(path), changes: files.get(path) }));
+  const moreFilesLabel = showMoreFiles ? "收起其余文件" : `展开其余 ${moreFiles.length} 个文件`;
 
   return <section className="turn-results" aria-label="本轮结果" ref={footerRef}>
     {firstFile && <div className="turn-results__files" role="group" aria-label="本轮文件">
       <TurnFileRow key={firstFile.path} file={firstFile} onLoadResult={onLoadResult} onOpenArtifact={onOpenArtifact}
-        trailing={moreFiles.length > 0 && <button className="turn-results__file-action" type="button"
-          aria-controls={moreFilesId} aria-expanded={showMoreFiles}
-          aria-label={showMoreFiles ? "收起其余文件" : `展开其余 ${moreFiles.length} 个文件`}
+        trailing={moreFiles.length > 0 && <button className="turn-results__file-action turn-results__file-action--more" type="button"
+          aria-controls={moreFilesId} aria-expanded={showMoreFiles} aria-label={moreFilesLabel} title={moreFilesLabel}
           onClick={() => setShowMoreFiles(value => !value)}>
-          {showMoreFiles ? "收起" : `另 ${moreFiles.length} 个`}<ChevronDown size={13} aria-hidden="true" />
+          <ChevronDown size={13} aria-hidden="true" />
         </button>} />
       {moreFiles.length > 0 && <div id={moreFilesId} hidden={!showMoreFiles}>
         {showMoreFiles && moreFiles.map(file => <TurnFileRow key={file.path} file={file} onLoadResult={onLoadResult} onOpenArtifact={onOpenArtifact} />)}

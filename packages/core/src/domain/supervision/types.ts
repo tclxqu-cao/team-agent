@@ -2,13 +2,22 @@ import type { AgentType } from "../agent/agent-type.js";
 import type { CollaborationGroup, CollaborationStatus, MonitoredSession } from "../collaboration/types.js";
 export type { MonitoredSession } from "../collaboration/types.js";
 export interface CatalogSession extends MonitoredSession {
+  parentSessionId?: string;
   updated: string;
+  completedAt?: string;
   status: "idle" | "running" | "completed" | "failed";
   canResume: boolean;
   readOnly?: boolean;
   occupancy?: "available" | "owned-by-customer-agent" | "owned-externally";
 }
-export interface SessionCatalogPage { data: CatalogSession[]; nextCursor: string | null; total: number; refreshing?: boolean }
+export interface SessionCatalogPage {
+  data: CatalogSession[];
+  /** Ancestors outside this page's matches. They do not consume cursor slots. */
+  ancestors?: CatalogSession[];
+  nextCursor: string | null;
+  total: number;
+  refreshing?: boolean;
+}
 /** Independent live summaries; an absent Agent has not completed discovery yet. */
 export interface SessionActivitySnapshot {
   sessions: CatalogSession[];
@@ -130,7 +139,7 @@ export interface DashboardGroup {
   decisionCount: number;
   discussionId?: string;
   questions: Array<{ discussionId: string; questionId: string; text: string; decisionRevision?: number; options?: Array<{ label: string; description: string }> }>;
-  sessions: Array<MonitoredSession & { status?: string }>;
+  sessions: Array<MonitoredSession & { status?: string; completedAt?: string; updated?: string }>;
   supervision?: SupervisionState;
   configurationChanged?: boolean;
 }

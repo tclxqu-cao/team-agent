@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_THEME_ID, resolveWebTheme, WEB_THEMES } from "./themes";
+import { DEFAULT_THEME_ID, resolveWebTheme, WEB_THEMES } from "../../../shared/src/console/themes";
 import { SKINS } from "../../../desktop/renderer/stores/uiStore";
 
 describe("web skin registry", () => {

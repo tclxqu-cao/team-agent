@@ -13,7 +13,7 @@ import { BrowserRemoteVideoNegotiation } from './remote-video-negotiation.js';
 import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal, flushSync } from "react-dom";
 import { ExternalLink, Hand, Keyboard, LoaderCircle, Lock, LockOpen, Mic, MicOff, MonitorUp, Maximize, Minimize, MousePointer2, PhoneOff, Power, RotateCcw, Volume2, VolumeX, X, ZoomIn, ZoomOut } from "lucide-react";
-import type { BrowserLiveSession } from "../global";
+import type { BrowserLiveSession } from "../../../shared/src/contracts/agent-api";
 
 import { BrowserLiveTouch } from "./browser-live-touch";
 import { trackBrowserLiveViewport } from "./browser-live-viewport";

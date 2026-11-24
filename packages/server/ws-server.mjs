@@ -1043,7 +1043,10 @@ const requestHandlers = {
   "fs:unwatch": async (msg, conn) => { await unwatchPath(conn, msg.path); return null; },
 
   "fs:preview-open": async (msg, conn) => {
-    const abs = assertAllowed(msg.path, conn.principal.userId);
+    const input = typeof msg.path === "string" && msg.path.startsWith("~/")
+      ? path.resolve(os.homedir(), msg.path.slice(2))
+      : msg.path;
+    const abs = assertAllowed(input, conn.principal.userId);
     const st = await fsp.stat(abs);
     if (!st.isFile()) throw Object.assign(new Error("not a regular file"), { code: "EISDIR" });
     const ticketId = previewTickets.issue(abs, conn.principal.userId, conn.principal.transport === "native" ? conn.principal.deviceId : undefined);
@@ -1053,6 +1056,7 @@ const requestHandlers = {
       size: st.size,
       mtime: st.mtimeMs,
       mime: mimeFor(abs),
+      fileName: path.basename(abs),
     };
   },
   "fs:preview-close": async (msg, conn) => ({
@@ -1266,7 +1270,7 @@ async function serveTicketedFilePreview(req, res) {
     res.writeHead(404, { "cache-control": "private, no-store" }).end("Not found");
     return true;
   }
-  if (ticket.nativeDeviceId) res.setHeader("referrer-policy", "no-referrer");
+  res.setHeader("referrer-policy", "no-referrer");
   try {
     const primary = assertAllowed(ticket.path, ticket.userId);
     let target = primary;
@@ -1279,12 +1283,21 @@ async function serveTicketedFilePreview(req, res) {
       // assertAllowed canonicalizes symlinks; recheck the capability boundary.
       if (ticket.nativeDeviceId) resolvePreviewResourcePath({ ...ticket, path: primary }, target);
     }
+    if (target === primary && url.searchParams.get("download") === "1") {
+      const name = encodeURIComponent(path.basename(primary)).replace(/[!'()*]/g, char => `%${char.charCodeAt(0).toString(16)}`);
+      await servePreviewFile(req, res, primary, "application/octet-stream", {
+        "content-disposition": `attachment; filename*=UTF-8''${name}`,
+      });
+      return true;
+    }
     if (relativeSegments.length > 0 && target === primary && isMarkdownPreviewPath(primary)) {
       await serveMarkdownPreview(req, res, primary, { "content-security-policy": MARKDOWN_PREVIEW_CSP });
       return true;
     }
     if (mimeFor(target).startsWith("text/html")) {
       extraHeaders = { "content-security-policy": HTML_PREVIEW_CSP };
+    } else if (mimeFor(target) === "image/svg+xml") {
+      extraHeaders = { "content-security-policy": "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:" };
     }
     await servePreviewFile(req, res, target, mimeFor(target), extraHeaders);
   } catch (error) {

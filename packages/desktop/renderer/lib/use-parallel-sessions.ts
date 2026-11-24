@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { CreateParallelSessionsInput, ParallelConversation, SessionGoalState, UnifiedSessionSummary } from "../global";
+import type { CreateParallelSessionsInput, ParallelConversation, SessionGoalState, UnifiedSessionSummary } from "../../../shared/src/contracts/agent-api";
 import type { ParallelAgentStatus } from "../components/ParallelAgentTabs";
 import { useAgentStore as useGlobalAgentStore, type AgentStore, type StreamEvent } from "../stores/agentStore";
 import { hasPendingSessionQuestion } from "./sidebar-session-status";
@@ -168,7 +168,13 @@ export function useParallelSessions({ sessionId, onSelect, onQueueState, profile
       }
       const result = await dispatchParallelMessages(attempts, {
         enqueue: (id, message) => window.agentApi.enqueueSessionMessage(id, message),
-        prepare: async (member, message) => ({ ...message, runOptions: message.runOptions ?? await parallelRunOptions(window.agentApi, member, profileId) }),
+        prepare: async (member, { attachments, ...message }) => ({
+          ...message,
+          runOptions: message.runOptions ?? {
+            ...await parallelRunOptions(window.agentApi, member, profileId),
+            ...(attachments?.length ? { attachments } : {}),
+          },
+        }),
         admitted: (member, state) => {
           queueStateCallback.current(state, member.id);
           updateStatus(member.id, state.active ? "running" : "idle");

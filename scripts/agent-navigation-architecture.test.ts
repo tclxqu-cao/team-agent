@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { builtinModules } from "node:module";
 import { resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -15,6 +15,8 @@ function dependencies(source: string): string[] {
   const visit = (node: ts.Node): void => {
     if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) && node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)) {
       result.push(node.moduleSpecifier.text);
+    } else if (ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument) && ts.isStringLiteral(node.argument.literal)) {
+      result.push(node.argument.literal.text);
     } else if (ts.isCallExpression(node) && (
       node.expression.kind === ts.SyntaxKind.ImportKeyword ||
       (ts.isIdentifier(node.expression) && node.expression.text === "require")
@@ -34,7 +36,7 @@ describe("Agent navigation DDD boundaries", () => {
   });
 
   it.each([
-    "packages/core/src/domain/agent/agent-type.ts",
+    "packages/core/src/shared-kernel/agent-type.ts",
     "packages/core/src/domain/web-console/navigation-layout.ts",
   ])("keeps %s independent of infrastructure and browser state", path => {
     const source = readFileSync(resolve(root, path), "utf8");
@@ -69,6 +71,7 @@ describe("Agent navigation DDD boundaries", () => {
     "qoder-client", "qoder-runtime-adapter", "qoder-session-history", "zcode-client", "zcode-runtime-adapter", "zcode-model-progress",
     "workbuddy-client", "workbuddy-runtime-adapter", "stdio-native-runtime-adapter",
     "native-cli-command", "native-rpc-client", "native-stdio-channel",
+    "acp-cli-client", "acp-cli-runtime-adapter", "acp-attachments", "acp-questions", "acp-session-projection",
   ])("keeps %s behind the native-runtime boundary", name => {
     const path = `packages/native-runtime/src/agent-runtime/${name}.ts`;
     for (const dependency of dependencies(readFileSync(resolve(root, path), "utf8"))) {
@@ -77,6 +80,42 @@ describe("Agent navigation DDD boundaries", () => {
         const target = resolve(root, path, "..", dependency);
         for (const outer of ["desktop", "server", "webapp"]) {
           expect(target.startsWith(resolve(root, "packages", outer) + sep), `${path}: ${dependency}`).toBe(false);
+        }
+      }
+    }
+  });
+});
+
+
+describe("Shared and Core dependency direction", () => {
+  it("keeps reusable client contracts and adapters independent from application packages", () => {
+    const directory = resolve(root, "packages/shared/src");
+    for (const file of readdirSync(directory, { recursive: true, encoding: "utf8" })) {
+      if (!/\.tsx?$/.test(file) || file.includes(".test.")) continue;
+      const path = resolve(directory, file);
+      for (const dependency of dependencies(readFileSync(path, "utf8"))) {
+        if (dependency.startsWith(".")) {
+          const target = resolve(path, "..", dependency);
+          for (const application of ["desktop", "server", "webapp"]) {
+            expect(target.startsWith(resolve(root, "packages", application) + sep), `${file}: ${dependency}`).toBe(false);
+          }
+        }
+        expect(dependency, file).not.toMatch(/^@agent\/(desktop|server|webapp)(?:\/|$)/);
+      }
+    }
+  });
+
+  it("keeps filesystem and transport implementations outside Core domain modules", () => {
+    const outer = ["infrastructure", "bootstrap", "application"].map(layer => resolve(domainRoot, "..", layer) + sep);
+    for (const file of readdirSync(domainRoot, { recursive: true, encoding: "utf8" })) {
+      if (!file.endsWith(".ts") || file.includes(".test.")) continue;
+      const path = resolve(domainRoot, file);
+      for (const dependency of dependencies(readFileSync(path, "utf8"))) {
+        if (dependency.startsWith(".")) {
+          const target = resolve(path, "..", dependency);
+          expect(outer.some(layer => target.startsWith(layer)), `${file}: ${dependency}`).toBe(false);
+        } else {
+          expect(dependency, file).not.toMatch(/^(?:node:)?(?:fs(?:\/|$)|child_process$|net$|https?$|os$|electron$|better-sqlite3$)/);
         }
       }
     }

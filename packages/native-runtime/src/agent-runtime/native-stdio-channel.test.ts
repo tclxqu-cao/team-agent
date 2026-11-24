@@ -75,6 +75,20 @@ describe("native stdio channel", () => {
     } finally { await cli.dispose(); }
   });
 
+  it("allows a larger reply across chunks while preserving the outbound limit", async () => {
+    const cli = channel(`${inputLoop}lines.on('line',line=>{
+      const {id,method}=JSON.parse(line);
+      const part='会'.repeat(method==='large' ? 50 : 24);
+      process.stdout.write('{"id":'+JSON.stringify(id)+',"result":"'+part);
+      setTimeout(()=>process.stdout.write(part+'"}\\n'),10);
+    });`, { maxLineBytes: 64, maxOutputLineBytes: 256 });
+    try {
+      await expect(cli.send({ content: "x".repeat(128) })).rejects.toThrow("Native CLI request exceeds the line limit");
+      await expect(cli.request("1", { id: "1" })).resolves.toEqual({ id: "1", result: "会".repeat(48) });
+      await expect(cli.request("2", { id: "2", method: "large" })).rejects.toThrow("Native CLI output exceeds the line limit");
+    } finally { await cli.dispose(); }
+  });
+
   it("bounds request concurrency and rejects duplicate request IDs", async () => {
     const cli = channel(`${inputLoop}lines.on('line',()=>{});`, { maxPendingRequests: 1 });
     const pending = cli.request("held", { id: "held" }).catch(error => error);

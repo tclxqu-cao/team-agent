@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { WebSearchTool } from '../builtin/WebSearchTool.js';
+import { WebSearchTool } from '../../../infrastructure/tools/builtin/WebSearchTool.js';
 
 const CTX = { workingDirectory: ".", sessionId: "t", signal: new AbortController().signal } as any;
 

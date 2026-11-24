@@ -1,5 +1,5 @@
 import { X } from "lucide-react";
-import type { AgentType, RuntimeHealth } from "../global";
+import type { AgentType, RuntimeHealth } from "../../../shared/src/contracts/agent-api";
 import { AGENT_LABELS } from "../lib/agent-catalog";
 import AgentBrandIcon from "./AgentBrandIcon";
 import SidebarLayoutSwitcher from "./SidebarLayoutSwitcher";

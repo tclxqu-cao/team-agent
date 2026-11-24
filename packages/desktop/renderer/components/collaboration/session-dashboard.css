@@ -62,7 +62,7 @@
 .session-dashboard-group:is(:hover,:focus-within) .session-dashboard-linked > summary svg,.session-dashboard-linked[open] > summary svg { opacity:1; }
 .session-dashboard-linked[open] > summary svg { transform:rotate(180deg); }
 .session-dashboard button.session-dashboard-session { width:100%; border:0; border-radius:5px; background:transparent; justify-content:flex-start; text-align:left; padding:8px 2px; }
-.session-dashboard-session > span { min-width:0; flex:1; }
+.session-dashboard-session-text { min-width:0; flex:1; }
 .session-dashboard-session strong,.session-dashboard-session small { display:block; white-space:nowrap; text-overflow:ellipsis; overflow:hidden; font-size:11px; }
 .session-dashboard-session small { font-size:10px; color:var(--text-secondary); margin-top:3px; }
 .session-dashboard-session em { font-size:10px; color:var(--text-secondary); font-style:normal; }

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Download, RefreshCw, X } from "lucide-react";
-import type { UpdateStatus } from "../global";
+import type { UpdateStatus } from "../../../shared/src/contracts/agent-api";
 
 const ACTIVE_PHASES = new Set<UpdateStatus["phase"]>(["downloading", "installing", "reconnecting"]);
 const POLL_PHASES = new Set<UpdateStatus["phase"]>(["checking", ...ACTIVE_PHASES]);

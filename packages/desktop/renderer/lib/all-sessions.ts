@@ -12,7 +12,7 @@ export async function readSessionCatalogPage(
     page = await read(cursor);
   } catch (error) {
     signal.throwIfAborted();
-    if (!cursor || !(error instanceof Error) || !/会话列表已更新|会话分页标记无效/.test(error.message)) throw error;
+    if (!cursor || !isExpiredSessionCatalogCursor(error)) throw error;
     // Retain visible rows while replacing an expired snapshot's cursor.
     page = await read();
   }
@@ -21,8 +21,16 @@ export async function readSessionCatalogPage(
   return { ...page, data: mergeCatalogSessions([], page.data) };
 }
 
+export function isExpiredSessionCatalogCursor(error: unknown): boolean {
+  return error instanceof Error && /会话列表已更新|会话分页标记无效/.test(error.message);
+}
+
 export function mergeCatalogSessions(existing: readonly CatalogSession[], page: readonly CatalogSession[]): CatalogSession[] {
   return [...new Map([...existing, ...page].map(session => [session.id, session])).values()];
+}
+
+export function catalogPageSessions(page: SessionCatalogPage): CatalogSession[] {
+  return mergeCatalogSessions(page.data, page.ancestors ?? []);
 }
 
 export type CatalogSessionReceipt = Omit<CatalogSession, "status"> & { status: string };
@@ -31,8 +39,8 @@ export function catalogSessionReceipt(session: CatalogSessionReceipt): CatalogSe
   const status = session.status === "active" ? "running"
     : session.status === "running" || session.status === "completed" || session.status === "failed" ? session.status : "idle";
   return { id: session.id, agentType: session.agentType, title: session.title, cwd: session.cwd,
-    projectId: session.projectId, updated: session.updated, status, canResume: session.canResume,
-    occupancy: session.occupancy, readOnly: session.readOnly };
+    projectId: session.projectId, updated: session.updated, completedAt: session.completedAt, status, canResume: session.canResume,
+    occupancy: session.occupancy, readOnly: session.readOnly, parentSessionId: session.parentSessionId };
 }
 
 /** Create receipts stay visible until discovery confirms them, even over a stale first page. */
@@ -47,11 +55,11 @@ export function mergeCatalogReceipts(
 
 /** A head refresh must not discard an expanded immutable history window. */
 export function refreshCatalogWindow(
-  previous: { rows: CatalogSession[]; cursor: string | null }, page: SessionCatalogPage,
+  previous: { rows: CatalogSession[]; cursor: string | null; expanded: boolean }, page: SessionCatalogPage,
 ): { rows: CatalogSession[]; cursor: string | null } {
-  const expanded = previous.rows.length > 20;
-  return { rows: expanded ? mergeCatalogSessions(previous.rows, page.data) : page.data,
-    cursor: expanded && previous.cursor ? previous.cursor : page.nextCursor };
+  const rows = catalogPageSessions(page);
+  return { rows: previous.expanded ? mergeCatalogSessions(previous.rows, rows) : rows,
+    cursor: previous.expanded && previous.cursor ? previous.cursor : page.nextCursor };
 }
 
 export function orderAllSessions(
@@ -63,6 +71,6 @@ export function orderAllSessions(
   const active = new Set(activeIds);
   const running = (session: CatalogSession) => session.status === "running" || active.has(session.id);
   return [...sessions].sort((a, b) => Number(running(b)) - Number(running(a))
-    || Number(pinned.has(b.id)) - Number(pinned.has(a.id))
+    || Number(!b.parentSessionId && pinned.has(b.id)) - Number(!a.parentSessionId && pinned.has(a.id))
     || b.updated.localeCompare(a.updated) || a.id.localeCompare(b.id));
 }

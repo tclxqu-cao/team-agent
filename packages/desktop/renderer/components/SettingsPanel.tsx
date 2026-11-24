@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useSettingsStore } from "../stores/settingsStore";
-import type { ModelProfile } from "../global.d.ts";
+import type { ModelProfile } from "../../../shared/src/contracts/agent-api.d.ts";
 import { parseMaxIterationsDraft } from "../lib/settings-validation";
 import AppActionNotice, { type AppActionNoticeType } from "./AppActionNotice";
 import ToolPolicyManager from "./ToolPolicyManager";

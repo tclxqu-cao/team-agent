@@ -36,6 +36,17 @@ describe("all sessions first-page cache", () => {
     expect(cached?.total).toBe(45);
   });
 
+  it("retains the parent of a first-page child even when the parent is outside the cache window", () => {
+    let saved = "";
+    const parent = session("parent");
+    const child = { ...session("child"), parentSessionId: parent.id };
+    const data = [child, ...Array.from({ length: 20 }, (_, index) => session(String(index)))];
+    writeAllSessionsCache({ data, ancestors: [parent], total: 22, nextCursor: null }, {
+      setItem: (_key, value) => { saved = value; },
+    });
+    expect(readAllSessionsCache({ getItem: () => saved })?.data).toEqual([...data.slice(0, 20), parent]);
+  });
+
   it("keeps a successful empty catalog so stale rows are not restored later", () => {
     let saved = "";
     writeAllSessionsCache({ data: [], total: 0, nextCursor: null }, { setItem: (_key, value) => { saved = value; } });
@@ -43,8 +54,8 @@ describe("all sessions first-page cache", () => {
   });
 
   it("discards incompatible, incomplete or corrupt stored data", () => {
-    const valid = { version: 1, data: [session("cached")], total: 1 };
-    for (const value of [null, { ...valid, version: 0 }, { ...valid, total: -1 },
+    const valid = { version: 2, data: [session("cached")], total: 1 };
+    for (const value of [null, { ...valid, version: 1 }, { ...valid, total: -1 },
       { ...valid, data: [{ ...session("broken"), status: "unexpected" }] },
       { ...valid, data: [{ ...session("broken"), agentType: "unknown" }] },
       { ...valid, data: [{ ...session("broken"), title: null }] }]) {

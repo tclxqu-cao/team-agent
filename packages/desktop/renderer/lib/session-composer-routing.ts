@@ -1,4 +1,4 @@
-import type { AgentApi, AgentType, AgentWorkspace, UnifiedSessionSummary } from "../global";
+import type { AgentApi, AgentType, AgentWorkspace, UnifiedSessionSummary } from "../../../shared/src/contracts/agent-api";
 
 /** Imported workspace IDs identify sidebar entries, not native runtime projects. */
 export function createSessionForWorkspace(

@@ -56,8 +56,11 @@
 .session-task-panel__file { display: flex; align-items: center; gap: 7px; width: 100%; min-height: 32px; padding: 5px 0; text-align: left; cursor: pointer; }
 .session-task-panel__file::-webkit-details-marker { display: none; }
 .session-task-panel__file:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-.session-task-panel__filename { flex: 1; min-width: 0; display: flex; flex-direction: column; font-size: 12px; }
-.session-task-panel__basename, .session-task-panel__directory { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.session-task-panel__filename {
+  flex: 1; min-width: 0; display: grid; grid-template-columns: max-content; font-size: 12px;
+  overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin;
+}
+.session-task-panel__basename, .session-task-panel__directory { white-space: nowrap; }
 .session-task-panel__directory { color: var(--text-secondary); font-size: 10px; }
 .session-task-panel__file-status { font-size: 10px; color: var(--text-secondary); white-space: nowrap; }
 .session-task-panel__step { display: flex; align-items: flex-start; gap: 9px; padding: 8px 0; }
@@ -72,11 +75,12 @@
 
 @media (max-width: 640px) {
   .session-task-panel { top: 8px; right: 12px; width: min(280px, calc(100% - 24px)); max-height: calc(100% - 16px); border-radius: 15px; }
-  .session-task-panel.is-expanded { width: min(360px, calc(100% - 24px)); }
+  .session-task-panel.is-expanded { width: min(360px, calc(100% - 56px)); }
   .session-task-panel__header { min-height: 44px; }
   .session-task-panel__toggle, .session-task-panel__hide { width: 34px; height: 36px; }
   .session-task-panel__summary, .session-task-panel__current { min-height: 40px; }
   .session-task-panel__file, .session-task-panel__refresh { min-height: 40px; }
+  .session-task-panel__files { max-height: none; overflow: visible; padding-right: 0; }
   .session-task-panel__refresh { width: 40px; }
 }
 

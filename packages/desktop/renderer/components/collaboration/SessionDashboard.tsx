@@ -6,6 +6,7 @@ import { SESSION_DASHBOARD_READY } from "../../../../core/src/domain/web-console
 import { postDashboardIntent } from "../../lib/dashboard-navigation-delivery";
 import { useUIStore } from "../../stores/uiStore";
 import AgentBrandIcon from "../AgentBrandIcon";
+import SessionStatusDot from "../SessionStatusDot";
 import ActionErrorDialog from "../ActionErrorDialog";
 import { AGENT_NAMES, DISCUSSION_STATUS, collaborationRequest } from "./client";
 import DashboardDecision from "./DashboardDecision";
@@ -62,7 +63,7 @@ function GroupCard({ item, onOpenGroup, onOpenSession, refresh }: { item: Dashbo
     <p className="session-dashboard-progress">{item.progress}</p>
     <div className="session-dashboard-meta"><span>{item.runningCount} 运行中</span><span className={item.decisionCount ? "needs-attention" : ""}>{item.decisionCount} 待决策</span>{supervisor && <span><ShieldCheck size={13}/>{supervisor.name}{scope?.paused ? " · 已暂停监管" : " · 监工"}</span>}</div>
     <details className="session-dashboard-linked"><summary><span>{item.sessions.length ? `${item.sessions.length} 条${(scope?.group ?? item.group).monitoring?.targets.length ? "原始" : "群内"}会话` : "暂无工作会话"}</span><ChevronDown size={15}/></summary>
-      <div>{item.sessions.map(session => <button className="session-dashboard-session" key={session.id} onClick={() => onOpenSession(session)}><AgentBrandIcon agentType={session.agentType} size={17}/><span><strong>{session.title}</strong><small>{AGENT_NAMES[session.agentType]}</small></span><em>{session.status === "running" ? "运行中" : session.status === "failed" ? "异常" : session.status === "unknown" ? "待核对" : "空闲"}</em><ArrowRight size={14}/></button>)}</div>
+      <div>{item.sessions.map(session => <button className="session-dashboard-session" key={session.id} onClick={() => onOpenSession(session)}><SessionStatusDot session={session} /><AgentBrandIcon agentType={session.agentType} size={17}/><span className="session-dashboard-session-text"><strong>{session.title}</strong><small>{AGENT_NAMES[session.agentType]}</small></span><em>{session.status === "running" ? "运行中" : session.status === "failed" ? "异常" : session.status === "unknown" ? "待核对" : "空闲"}</em><ArrowRight size={14}/></button>)}</div>
     </details>
     {supervisor && <details className="session-dashboard-policy"><summary>监工职责</summary><p>{supervisor.role || "关注意外中断与交接断档，在原任务授权内恢复；业务选择交由你决策。"}</p><button disabled={busy} onClick={() => void act("pause")}>{scope?.paused ? <Play size={13}/> : <Pause size={13}/>} {scope?.paused ? "恢复监管" : "暂停监管"}</button></details>}
     {item.configurationChanged && <p className="session-dashboard-config">群配置已更新，当前监工沿用原配置。<button disabled={busy} onClick={() => void act("apply")}>应用最新监管配置</button></p>}

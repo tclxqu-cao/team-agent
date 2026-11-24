@@ -35,7 +35,7 @@ export function SessionTaskPanelToggle({ visible, panelId, onToggle }: { visible
 
 export default function SessionTaskPanel({ id, sessionId, workspacePath, visibleChanges, todos, running, onLoadResult, onOpenArtifact, onHide, position = null, onPositionChange }: SessionTaskPanelProps) {
   const [expanded, setExpanded] = useState(false);
-  const [snapshot, setSnapshot] = useState<TurnFileChange[] | null>(null);
+  const [snapshot, setSnapshot] = useState<{ changes: TurnFileChange[]; complete: boolean } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [refresh, setRefresh] = useState(0);
@@ -45,7 +45,7 @@ export default function SessionTaskPanel({ id, sessionId, workspacePath, visible
   const [dragPosition, setDragPosition] = useState<TaskPanelPosition | null>(null);
   const drag = useRef<{ pointerId: number; offset: TaskPanelPosition; position: TaskPanelPosition | null } | null>(null);
   const contentId = useId();
-  const recordedChanges = new Map((snapshot ?? []).map(change => [JSON.stringify([change.tool.id, change.path]), change]));
+  const recordedChanges = new Map((snapshot?.changes ?? []).map(change => [JSON.stringify([change.tool.id, change.path]), change]));
   for (const change of visibleChanges) {
     const key = JSON.stringify([change.tool.id, change.path]);
     if (!recordedChanges.has(key)) recordedChanges.set(key, change);
@@ -89,8 +89,12 @@ export default function SessionTaskPanel({ id, sessionId, workspacePath, visible
     const controller = new AbortController();
     setLoading(true);
     setError(null);
-    void loadSessionChangeHistory(window.agentApi, sessionId, workspacePath, controller.signal)
-      .then(result => { if (!controller.signal.aborted) setSnapshot(result); })
+    void loadSessionChangeHistory(window.agentApi, sessionId, workspacePath, controller.signal, changes => {
+      if (!controller.signal.aborted) {
+        setSnapshot(previous => previous?.complete ? previous : { changes, complete: false });
+      }
+    })
+      .then(changes => { if (!controller.signal.aborted) setSnapshot({ changes, complete: true }); })
       .catch(failure => { if (!controller.signal.aborted) setError(failure instanceof Error ? failure.message : "读取变更失败，请重试"); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => { controller.abort(); setLoading(false); };
@@ -103,13 +107,13 @@ export default function SessionTaskPanel({ id, sessionId, workspacePath, visible
   const added = changes.reduce((sum, change) => sum + (change.stats?.added ?? 0), 0);
   const removed = changes.reduce((sum, change) => sum + (change.stats?.removed ?? 0), 0);
   const hasCounts = changes.some(change => change.stats);
-  const changesLabel = error ? "读取失败"
-    : !sessionId ? "暂无会话"
-    : loading ? "读取中…"
-    : snapshot ? files.size ? `${files.size} 项` : "暂无变更"
+  const changesLabel = !sessionId ? "暂无会话"
+    : loading && !files.size ? "读取中…"
+    : error && !files.size ? "读取失败"
+    : snapshot?.complete && !loading && !error ? files.size ? `${files.size} 项` : "暂无变更"
     : files.size ? `已加载 ${files.size} 项` : "查看全部";
 
-  return <aside id={id} ref={panelRef} className={`session-task-panel${expanded ? " is-expanded" : ""}${dragPosition ? " is-dragging" : ""}`} aria-label="变更与计划"
+  return <aside id={id} ref={panelRef} className={`session-task-panel${expanded ? " is-expanded" : ""}${dragPosition ? " is-dragging" : ""}`} aria-label="变更与计划" data-tab-swipe-ignore
     style={placement ? { left: placement.x, top: placement.y, right: "auto" } : undefined}
     onKeyDown={event => {
       if (event.key === "Escape" && expanded) { event.stopPropagation(); setExpanded(false); toggleRef.current?.focus(); }
@@ -174,7 +178,7 @@ export default function SessionTaskPanel({ id, sessionId, workspacePath, visible
             {loading ? <LoaderCircle size={14} className="session-task-panel__spinner" aria-hidden="true" /> : <RefreshCw size={14} aria-hidden="true" />}
           </button>
         </div>
-        {error && <div className="session-task-panel__empty" role="status">{error}<button type="button" onClick={() => setRefresh(value => value + 1)}>重试</button></div>}
+        {error && <div className="session-task-panel__empty" role="status">{files.size ? `部分变更未能读取。${error}` : error}<button type="button" onClick={() => setRefresh(value => value + 1)}>重试</button></div>}
         {!files.size ? !error && <p className="session-task-panel__empty">{changesLabel}</p>
           : <ul className="session-task-panel__files" aria-label="变更文件">
             {[...files].map(([path, entries]) => {

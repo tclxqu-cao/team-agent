@@ -5,7 +5,7 @@ import {
   normalizeComposerImage,
   normalizeOutgoingComposerImages,
   type BrowserImageNormalizer,
-} from "./browser-image-normalization";
+} from "../../../shared/src/browser/browser-image-normalization";
 
 function imageBlob(size: number, type = "image/png"): Blob {
   return new Blob([new Uint8Array(size)], { type });

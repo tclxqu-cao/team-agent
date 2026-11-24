@@ -1,4 +1,4 @@
-import type { AgentApi, SessionMessageRunOptions, UnifiedSessionSummary } from "../global";
+import type { AgentApi, SessionMessageRunOptions, UnifiedSessionSummary } from "../../../shared/src/contracts/agent-api";
 import { isNativeAgentType, loadNativeRunPref, nativeModelKey, nativeReasoningEffortOptions, resolveNativeRunPref } from "./native-agent-run-prefs";
 
 export async function parallelRunOptions(

@@ -1,23 +1,19 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronsLeft, ChevronsRight } from "lucide-react";
-import type { AgentType, RuntimeHealth } from "../global";
+import type { AgentType, RuntimeHealth } from "../../../shared/src/contracts/agent-api";
 import AgentBrandIcon from "./AgentBrandIcon";
-import { AGENT_TYPES } from "../../../core/src/domain/agent/agent-type";
 import { AGENT_LABELS } from "../lib/agent-catalog";
-import { agentUnavailableMessage } from "../lib/agent-availability";
-
-const AGENTS = AGENT_TYPES.map((agentType) => ({ agentType, label: AGENT_LABELS[agentType] }));
+import { availableAgentTypes } from "../lib/agent-availability";
 
 interface AgentWorkspaceSwitcherProps {
   value: AgentType;
   health: RuntimeHealth[];
   onChange(agentType: AgentType): void;
-  onUnavailable(message: string): void;
   vertical?: boolean;
-  onPreview?(agentType: AgentType, label: string, anchor: DOMRect, unavailableMessage?: string): void;
+  onPreview?(agentType: AgentType, label: string, anchor: DOMRect): void;
 }
 
-export default function AgentWorkspaceSwitcher({ value, health, onChange, onUnavailable, vertical = false, onPreview }: AgentWorkspaceSwitcherProps) {
+export default function AgentWorkspaceSwitcher({ value, health, onChange, vertical = false, onPreview }: AgentWorkspaceSwitcherProps) {
   const track = useRef<HTMLDivElement>(null);
   const [showPrevious, setShowPrevious] = useState(false);
   useEffect(() => {
@@ -38,27 +34,22 @@ export default function AgentWorkspaceSwitcher({ value, health, onChange, onUnav
   return (
     <div className={`agent-workspace-switcher${vertical ? " is-vertical" : ""}`}>
       <div ref={track} className="agent-workspace-track" role="tablist" aria-label="切换 Agent" aria-orientation={vertical ? "vertical" : "horizontal"} onScroll={(event) => setShowPrevious(event.currentTarget.scrollLeft > 1)}>
-      {AGENTS.map((agent) => {
-        const message = agentUnavailableMessage(agent.agentType, health);
-        const blocked = message !== undefined;
+      {availableAgentTypes(health).map(agentType => {
+        const label = AGENT_LABELS[agentType];
         return (
           <button
-            key={agent.agentType}
+            key={agentType}
             type="button"
             role="tab"
-            aria-selected={value === agent.agentType}
-            aria-label={agent.label}
-            aria-disabled={blocked}
-            title={blocked ? message : agent.label}
-            className={[value === agent.agentType ? "is-active" : "", blocked ? "is-unavailable" : ""].filter(Boolean).join(" ")}
-            onPointerEnter={event => onPreview?.(agent.agentType, agent.label, event.currentTarget.getBoundingClientRect(), blocked ? message : undefined)}
-            onFocus={event => onPreview?.(agent.agentType, agent.label, event.currentTarget.getBoundingClientRect(), blocked ? message : undefined)}
-            onClick={() => {
-              if (blocked) { onUnavailable(message); return; }
-              onChange(agent.agentType);
-            }}
+            aria-selected={value === agentType}
+            aria-label={label}
+            title={label}
+            className={value === agentType ? "is-active" : undefined}
+            onPointerEnter={event => onPreview?.(agentType, label, event.currentTarget.getBoundingClientRect())}
+            onFocus={event => onPreview?.(agentType, label, event.currentTarget.getBoundingClientRect())}
+            onClick={() => onChange(agentType)}
           >
-            <AgentBrandIcon agentType={agent.agentType} size={22} />
+            <AgentBrandIcon agentType={agentType} size={22} />
           </button>
         );
       })}

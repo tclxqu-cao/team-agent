@@ -28,12 +28,12 @@ describe("all Agent sessions", () => {
     const rows = Array.from({ length: 40 }, (_, index) => session(`${index}`, "codex", "idle"));
     const newest = session("new", "codex", "running");
     const page = { data: [newest, { ...rows[0], title: "Updated" }], nextCursor: "new-head-cursor", total: 41 };
-    const refreshed = refreshCatalogWindow({ rows, cursor: "old-history-cursor" }, page);
+    const refreshed = refreshCatalogWindow({ rows, cursor: "old-history-cursor", expanded: true }, page);
     expect(refreshed.rows).toHaveLength(41);
     expect(refreshed.rows.find(row => row.id === "0")?.title).toBe("Updated");
     expect(refreshed.rows).toContainEqual(rows[39]);
     expect(refreshed.cursor).toBe("old-history-cursor");
-    expect(refreshCatalogWindow({ rows: rows.slice(0, 20), cursor: "old" }, page)).toEqual({ rows: page.data, cursor: page.nextCursor });
+    expect(refreshCatalogWindow({ rows, cursor: "old", expanded: false }, page)).toEqual({ rows: page.data, cursor: page.nextCursor });
   });
   it("puts running sessions before pinned idle ones and keeps recency within each group", () => {
     const rows = [session("pinned", "codex", "idle"), session("running-old", "opencode", "running", "2026-10-01"),

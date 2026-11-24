@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AgentWorkspace } from "../../global";
+import type { AgentWorkspace } from "../../../../shared/src/contracts/agent-api";
 import { resolveTaskDraftWorkspace } from "./session-state";
 
 const first: AgentWorkspace = { agentType: "customer-agent", workspaceId: "first", name: "first", roots: ["/first"], source: "native", order: 0 };

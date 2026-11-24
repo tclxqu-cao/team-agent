@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 
 const application = dirname(fileURLToPath(import.meta.url));
 const domain = resolve(application, "../../domain/collaboration");
+const agentIdentity = resolve(application, "../../shared-kernel/agent-type.js");
 
 describe("collaboration DDD boundaries", () => {
   for (const [layer, allowed] of [
@@ -26,7 +27,7 @@ describe("collaboration DDD boundaries", () => {
           }
           const target = resolve(layer, dependency);
           expect(
-            allowed.some((root) => target.startsWith(root + "/")),
+            target === agentIdentity || allowed.some((root) => target.startsWith(root + "/")),
             `${name}: ${dependency}`,
           ).toBe(true);
         }

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { AgentApi } from "../global";
+import type { AgentApi } from "../../../shared/src/contracts/agent-api";
 import { createSharedAgentApi, ServiceEventSource, type SharedServiceApi } from "./shared-service";
 afterEach(() => vi.useRealTimers());
 describe("desktop SSE transport", () => {

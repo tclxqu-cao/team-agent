@@ -5,10 +5,10 @@ import { navigationLayoutSwitchTitle, nextNavigationLayout } from "../../../core
 import { useUIStore } from "../stores/uiStore";
 import { isDesktopLiveSetupPending } from "../lib/desktop-live-setup";
 import { isWebShell } from "../web/webLayout";
-import type { DesktopLiveStatus } from "../global";
+import type { DesktopLiveStatus } from "../../../shared/src/contracts/agent-api";
 import MobilePairingButton from "./MobilePairingButton";
 import HeaderActionMenu from "./HeaderActionMenu";
-import RunningSessionsIcon from "./RunningSessionsIcon";
+import RunningSessionsIcon from "../../../shared/src/console/RunningSessionsIcon";
 
 /**
  * Tracks whether remote authorization still needs user action, so the header

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import type { MCPServer } from "../global";
+import type { MCPServer } from "../../../shared/src/contracts/agent-api";
 
 type Transport = "stdio" | "sse" | "streamableHttp";
 type ToolInfo = { name: string; description: string };

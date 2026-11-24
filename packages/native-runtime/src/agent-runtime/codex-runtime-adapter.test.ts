@@ -1630,6 +1630,7 @@ describe("Codex history mapping", () => {
       role: "user",
       content: "inspect both",
       presentation: {
+        executionTrace: { turnId: "turn-1", segmentIndex: 0 },
         rawContent: attachmentEnvelope("inspect both").trim(),
         attachments: [
           { type: "image", name: "first.png", dataUrl: "data:image/png;base64,iVBORw==" },
@@ -1657,6 +1658,7 @@ describe("Codex history mapping", () => {
       role: "user",
       content: "look at this",
       presentation: {
+        executionTrace: { turnId: "turn-1", segmentIndex: 0 },
         attachments: [{ type: "image", name: "codex-runtime-adapter-does-not-exist.png", unavailable: true }],
       },
     }]);
@@ -1674,7 +1676,7 @@ describe("Codex history mapping", () => {
     }]);
 
     expect(messages).toEqual([
-      { role: "user", content: "first\nsecond" },
+      { role: "user", content: "first\nsecond", presentation: { executionTrace: { turnId: "turn-1", segmentIndex: 0 } } },
       { role: "assistant", content: "answer", presentation: { forkPoint: { turnId: "turn-1" } } },
     ]);
   });

@@ -2,8 +2,8 @@ import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import ResponsiveToolbar, { compactToolbarGroups, glassMobileToolbarActions } from "./ResponsiveToolbar";
-import { CONSOLE_CSS } from "./console-styles";
+import ResponsiveToolbar, { compactToolbarGroups, glassMobileToolbarActions } from "../../../shared/src/console/ResponsiveToolbar";
+import { CONSOLE_CSS } from "../../../shared/src/console/console-styles";
 
 describe("shared glass toolbar", () => {
   it("also gives classic glass mobile menus separate appearance cards without duplicating files", () => {
@@ -61,7 +61,7 @@ describe("shared glass toolbar", () => {
   });
 
   it("keeps tool dialogs mounted when their menu is closed", () => {
-    const toolbar = readFileSync(new URL("./ResponsiveToolbar.tsx", import.meta.url), "utf8");
+    const toolbar = readFileSync(new URL("../../../shared/src/console/ResponsiveToolbar.tsx", import.meta.url), "utf8");
     expect(toolbar).toContain('hidden={!overflowOpen} className="glass-desktop-menu"');
     expect(toolbar).toContain('hidden={!overflowOpen} className="glass-tools-backdrop"');
     expect(toolbar).not.toContain("overflowOpen && portalNode");

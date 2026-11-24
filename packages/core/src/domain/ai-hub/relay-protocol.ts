@@ -1,6 +1,3 @@
-import { homedir } from "node:os";
-import { join } from "node:path";
-
 /**
  * AI Hub relay wire contract, shared by the three ends of the protocol:
  * the desktop Unix-socket server (desktop/main/ai-hub/relay.ts), the
@@ -13,11 +10,3 @@ export const AI_HUB_RELAY_SOCKET_NAME = "ai-hub-relay.sock";
 export const MAX_RELAY_TEXT_LENGTH = 100_000;
 export const MAX_RELAY_SITES = 8;
 export { MAX_RELAY_IMAGES, MAX_RELAY_IMAGE_LENGTH } from "./image-limits";
-
-export function resolveAiHubRelayDirectory(env: NodeJS.ProcessEnv = process.env): string {
-  return env.AGENT_NATIVE_RUNTIME_DIR?.trim() || join(homedir(), ".agentroam", "native-runtime");
-}
-
-export function resolveAiHubRelaySocketPath(env: NodeJS.ProcessEnv = process.env): string {
-  return join(resolveAiHubRelayDirectory(env), AI_HUB_RELAY_SOCKET_NAME);
-}

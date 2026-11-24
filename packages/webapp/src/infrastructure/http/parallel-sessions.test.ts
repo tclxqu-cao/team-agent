@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { AgentHttpGateway } from "./agent-http-gateway";
+import { AgentHttpGateway } from "../../../../shared/src/infrastructure/http/agent-http-gateway";
 
 describe("parallel session HTTP gateway", () => {
   it("creates and reopens associations through the shared authenticated transport", async () => {

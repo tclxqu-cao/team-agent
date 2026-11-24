@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { AgentRunError, StartAgentRunUseCase, type AgentEvent, type AgentRunSource, type SkillDefinition } from "@agent/core";
+import { AgentRunError, readPromptAttachments, StartAgentRunUseCase, type AgentEvent, type AgentRunSource, type SkillDefinition } from "@agent/core";
 import { RuntimeSessionError } from "@agent/native-runtime";
 import { agentHost, CustomerAgentRunConflictError } from "../../agent-host";
 import {
@@ -36,6 +36,7 @@ export async function POST(request: Request) {
       toolPolicyId?: string;
       nativeModel?: { id: string; providerID?: string };
       nativeReasoningEffort?: "low" | "medium" | "high" | "xhigh" | "max";
+      attachments?: unknown;
     };
 
     if (!body.input) {
@@ -51,6 +52,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "profileId must be a non-empty string" }, { status: 400 });
     }
 
+    let attachments: ReturnType<typeof readPromptAttachments> = undefined;
+    try { attachments = readPromptAttachments(body.attachments); }
+    catch (error) {
+      return NextResponse.json({ error: error instanceof Error ? error.message : "Invalid attachment" }, { status: 400 });
+    }
+    if (attachments?.length && !(body.sessionId && isNativeSessionId(body.sessionId))) {
+      return NextResponse.json({ error: "当前 Agent 不支持普通文件附件" }, { status: 400 });
+    }
+
     if (body.sessionId && isNativeSessionId(body.sessionId)) {
       const sessionId = body.sessionId;
       const service = getNativeRuntimeService();
@@ -59,6 +69,7 @@ export async function POST(request: Request) {
       const admission = await service.startRun(sessionId, body.input, body.images, "web", {
         ...(body.nativeModel?.id ? { model: body.nativeModel } : {}),
         ...(body.nativeReasoningEffort ? { reasoningEffort: body.nativeReasoningEffort } : {}),
+        ...(attachments?.length ? { attachments } : {}),
       });
       agentHost.resetExternalStream(sessionId);
       agentHost.publishExternal(sessionId, {
@@ -178,7 +189,7 @@ export async function POST(request: Request) {
         error: err instanceof Error ? err.message : "Internal error",
         ...(resolvedCode ? { code: resolvedCode } : {}),
       },
-      { status: isConflict ? 409 : applicationStatus ?? 500 },
+      { status: isConflict ? 409 : code === "OPERATION_NOT_SUPPORTED" ? 400 : applicationStatus ?? 500 },
     );
   }
 }

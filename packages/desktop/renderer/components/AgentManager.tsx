@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import type { AgentDefinition, ContextPlaceholder, AgentCapabilities } from "../global.d.ts";
+import type { AgentDefinition, ContextPlaceholder, AgentCapabilities } from "../../../shared/src/contracts/agent-api.d.ts";
 import { useSettingsStore } from "../stores/settingsStore";
 
 const BUILTIN_TOOLS = [

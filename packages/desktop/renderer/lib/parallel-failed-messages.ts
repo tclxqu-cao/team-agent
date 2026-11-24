@@ -1,4 +1,4 @@
-import type { ParallelConversation } from "../global";
+import type { ParallelConversation } from "../../../shared/src/contracts/agent-api";
 import type { FailedParallelMessage, ParallelMessage } from "./parallel-message-dispatch";
 import type { SessionImageDraftRepository } from "./session-image-draft";
 

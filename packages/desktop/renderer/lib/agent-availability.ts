@@ -1,7 +1,13 @@
-import type { AgentType, RuntimeHealth } from "../global";
+import type { AgentType, RuntimeHealth } from "../../../shared/src/contracts/agent-api";
+import { AGENT_TYPES } from "../../../core/src/domain/agent/agent-type";
 import { AGENT_LABELS } from "./agent-catalog";
 
-/** Unavailable choices stay visible so a click can explain why switching is blocked. */
+export function availableAgentTypes(health: readonly RuntimeHealth[]): AgentType[] {
+  const available = new Set(health.filter(entry => entry.available).map(entry => entry.agentType));
+  return AGENT_TYPES.filter(type => available.has(type) || (type === "customer-agent" && !health.some(entry => entry.agentType === type)));
+}
+
+/** Direct links and existing sessions can still report why their runtime is unavailable. */
 export function agentUnavailableMessage(agentType: AgentType, health: readonly RuntimeHealth[]): string | undefined {
   const runtime = health.find(entry => entry.agentType === agentType);
   if (runtime?.available || (agentType === "customer-agent" && !runtime)) return undefined;

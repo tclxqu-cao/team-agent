@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { WEBAPP_PROJECT_REQUEST_TYPE, WEBAPP_PROJECT_RESPONSE_TYPE } from "../../../core/src/domain/web-console/WebProjectBridge";
-import { WebShellProjectBridge } from "../../../webapp/src/infrastructure/web-shell-project-bridge";
+import { WebShellProjectBridge } from "../../../shared/src/infrastructure/web-shell-project-bridge";
 import { forwardWebProjectRequest } from "./projectFrameBridge";
 
 const origin = "http://localhost:3000";

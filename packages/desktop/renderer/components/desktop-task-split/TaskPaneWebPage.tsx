@@ -1,6 +1,6 @@
 import { ExternalLink, LoaderCircle, RotateCw } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { EmbeddedPageRect } from "../../global";
+import type { EmbeddedPageRect } from "../../../../shared/src/contracts/agent-api";
 import { isWebShell } from "../../web/webLayout";
 import TaskPaneBrowserPage from "./TaskPaneBrowserPage";
 import "./task-pane-web-page.css";

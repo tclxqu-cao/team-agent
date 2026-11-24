@@ -45,6 +45,7 @@ export interface FileWorkspacePreviewTicket {
   size: number;
   mtime: number;
   mime: string;
+  fileName?: string;
 }
 
 export type FileWorkspaceMethod =

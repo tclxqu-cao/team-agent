@@ -192,6 +192,8 @@ contextBridge.exposeInMainWorld("desktopDeviceApi", {
   showFileContextMenu: (path: string, options?: { label?: string; line?: number }): Promise<{ shown: true }> => options === undefined
     ? ipcRenderer.invoke("file:show-context-menu", path)
     : ipcRenderer.invoke("file:show-context-menu", path, options),
+  artifactFileAction: (path: string, action: "reveal" | "open-with"): Promise<void> =>
+    ipcRenderer.invoke("file:artifact-action", path, action),
   fileWorkspaceRequest: (method: string, params?: Record<string, unknown>) =>
     ipcRenderer.invoke("file-workspace:request", method, params),
   onFileWorkspaceEvent: (callback: (event: unknown) => void): (() => void) => {

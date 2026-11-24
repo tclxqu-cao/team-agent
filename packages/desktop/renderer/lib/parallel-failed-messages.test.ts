@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ParallelConversation, UnifiedSessionSummary } from "../global";
+import type { ParallelConversation, UnifiedSessionSummary } from "../../../shared/src/contracts/agent-api";
 import { ParallelFailedMessageRepository } from "./parallel-failed-messages";
 
 describe("failed parallel message recovery", () => {

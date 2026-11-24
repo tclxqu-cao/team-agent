@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resetHorizontalScroll, resolveVisualViewport } from "./mobileViewport";
+import { resetHorizontalScroll, resolveVisualViewport } from "../../../shared/src/console/mobileViewport";
 
 describe("resolveVisualViewport", () => {
   it("uses and rounds visual viewport dimensions and offsets", () => {

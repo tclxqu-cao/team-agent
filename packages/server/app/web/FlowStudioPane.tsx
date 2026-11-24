@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import FlowStudioLoading from "./FlowStudioLoading";
 import { RotateCw } from "lucide-react";
-import { consoleOrigin } from "./console-environment";
+import { consoleOrigin } from "../../../shared/src/console/console-environment";
 
 type PaneState = "loading" | "ready" | "error";
 

@@ -10,7 +10,7 @@ import type {
   TokenUsage,
   SessionToolResultRef,
 } from "@agent/core";
-import type { CronTask } from "../global";
+import type { CronTask } from "../../../shared/src/contracts/agent-api";
 import {
   applyCodexLiveExecutionEvent,
   type CodexLiveExecutionEvent,
@@ -71,10 +71,13 @@ export interface StreamEvent {
   total?: number;
   /** For ask_user events */
   questionId?: string;
+  resolvedQuestion?: MessagePresentation["question"];
   question?: string;
   options?: Array<{ label: string; description: string }>;
   fields?: AskUserField[];
   multiSelect?: boolean;
+  cancellable?: boolean;
+  allowFreeText?: boolean;
   /** For show_widget events */
   widgetId?: string;
   widgetType?: string;
@@ -170,6 +173,8 @@ export interface ChatMessage {
     options?: Array<{ label: string; description: string }>;
     fields?: AskUserField[];
     multiSelect?: boolean;
+    cancellable?: boolean;
+    allowFreeText?: boolean;
     answered?: boolean;
     cancelled?: boolean;
     answer?: string;

@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { validateCollaborationImages } from "../../../../core/src/domain/collaboration/images";
-import { normalizeComposerImage } from "../../lib/browser-image-normalization";
+import { normalizeComposerImage } from "../../../../shared/src/browser/browser-image-normalization";
 import { prepareComposerFiles } from "../../lib/composer-file-routing";
 
 interface Draft { text: string; images: string[] }

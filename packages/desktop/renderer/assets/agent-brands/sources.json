@@ -32,6 +32,20 @@
       "source": "Official GitHub Copilot extension bundled with Visual Studio Code: extensions/copilot/assets/copilot.png (original 256px PNG)",
       "capturedOn": "2026-11-03",
       "sha256": "cb853b5b8a881d697cd6e51439ebbc7ac1eea436ce450371fb948093ea509217"
+    },
+    "grok": {
+      "file": "grok.png",
+      "product": "Grok",
+      "source": "https://grok.com/images/android-chrome-192x192.png",
+      "capturedOn": "2026-11-23",
+      "sha256": "768cbbf7a7528d6e7b3af8112d7cde43eb6c9c8989ad9b06be8047dae1227463"
+    },
+    "agy": {
+      "file": "agy.png",
+      "product": "Google Antigravity",
+      "source": "https://antigravity.google/assets/image/antigravity-logo.png",
+      "capturedOn": "2026-11-23",
+      "sha256": "193ba1805de11c23cd0c7a1df92aa0a886708e57350f6f7766100afe5befed73"
     }
   }
 }

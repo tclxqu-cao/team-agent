@@ -3,6 +3,7 @@ import {
   EMPTY_SESSION_GOAL_STATE,
   cancelQueuedSessionMessage,
   cancelSessionGoal,
+  completeSteeredSessionGoal,
   enqueueSessionGoal,
   enqueueSessionMessage,
   finishActiveSessionGoal,
@@ -13,6 +14,7 @@ import {
   reorderQueuedSessionGoals,
   reorderQueuedSessionMessages,
   updateQueuedSessionMessage,
+  updateSessionGoal,
   writeSessionGoalState,
 } from "./SessionGoals";
 
@@ -45,6 +47,23 @@ describe("SessionGoals", () => {
       ["goal-2", 1],
     ]);
     expect(() => reorderQueuedSessionGoals(state, ["goal-2"])).toThrow();
+  });
+
+  it("edits and steers a queued goal without changing the active goal or message order", () => {
+    let state = enqueue(enqueue(enqueue(), "steer", 2), "tail", 3);
+    state = enqueueSessionMessage(state, {
+      id: "message", sessionId: "session-1", objective: "message", sourceMessageId: "plain", now: 3, activate: false,
+    });
+    state = updateSessionGoal(state, "steer", " edited ", 5);
+    state = updateSessionGoal(state, "goal-1", "active revision", 6);
+    expect(state.active).toMatchObject({ id: "goal-1", objective: "active revision", updatedAt: 6 });
+    expect(state.queued.map(item => [item.id, item.objective])).toEqual([["steer", "edited"], ["tail", "tail"], ["message", "message"]]);
+    const steered = completeSteeredSessionGoal(state, "steer", 7);
+    expect(steered.active?.id).toBe("goal-1");
+    expect(steered.queued.map(item => item.id)).toEqual(["tail", "message"]);
+    expect(steered.history.at(-1)).toMatchObject({ id: "steer", objective: "edited", status: "completed", lastReason: "steered" });
+    expect(completeSteeredSessionGoal(steered, "steer", 8)).toBe(steered);
+    expect(() => updateSessionGoal(state, "message", "replacement", 7)).toThrow("目标已结束");
   });
 
   it("persists metadata and promotes the next goal when active is cancelled", () => {

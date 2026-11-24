@@ -7,7 +7,7 @@ import type {
   SessionToolResultRef,
 } from "@agent/core";
 import type { ChatMessage, ContextUsageSnapshot, SessionHistoryWindow } from "../stores/agentStore";
-import type { SessionGoalState, UnifiedSessionSummary } from "../global";
+import type { SessionGoalState, UnifiedSessionSummary } from "../../../shared/src/contracts/agent-api";
 import { uniqueSessionMessages } from "./session-message-identity";
 import { mergeRunResultPresentation } from "./run-result";
 import type { NativeSessionViewState } from "./native-session-view-state";
@@ -45,11 +45,16 @@ export interface PersistedHistoryEvent {
   options?: Array<{ label: string; description: string }>;
   fields?: Array<{ name: string; label: string; description?: string; type?: "text" | "secret" }>;
   multiSelect?: boolean;
+  cancellable?: boolean;
+  allowFreeText?: boolean;
   todos?: unknown;
 }
 
 export interface SessionHistoryDetail extends NativeSessionViewState {
   id?: string;
+  threadKey?: string;
+  activeSessionId?: string;
+  segments?: Array<{ sessionId: string; agentType: string }>;
   nativePermissions?: UnifiedSessionSummary["nativePermissions"];
   messages?: Array<{
     historyId?: string;
@@ -390,12 +395,18 @@ function mergeCoreSessionHistory(
 }
 
 function isCoreAssistantMessage(message: ChatMessage): boolean {
+  const presentation = message.presentation;
+  // Legacy native history can store the completed answer and its reasoning on
+  // one row. Keep that answer in the merge so it can replace a live fragment.
+  const completedAnswer = Boolean(message.content.trim()
+    && (presentation?.agentMessagePhase === "final_answer" || presentation?.forkPoint));
   return message.role === "assistant"
     && !message.executionTrace
     && !message.toolCalls?.length
     && !message.askUser
     && !message.isCompactionSummary
-    && !message.presentation?.reasoning?.length;
+    && presentation?.agentMessagePhase !== "commentary"
+    && (!presentation?.reasoning?.length || completedAnswer);
 }
 
 export function restoreSessionHistoryPage(detail: SessionHistoryDetail | null): ChatMessage[] {
@@ -542,6 +553,8 @@ function restoreSessionMessages(
         options: event.options,
         fields: event.fields,
         multiSelect: event.multiSelect,
+        cancellable: event.cancellable,
+        allowFreeText: event.allowFreeText,
       },
       timestamp: Date.now(),
     });

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { ContextAssembler } from '../ContextAssembler.js';
-import { ContextLoader } from '../ContextLoader.js';
+import { ContextLoader } from '../../../infrastructure/filesystem/ContextLoader.js';
 import type { AssembleInput } from '../entities.js';
 
 describe("ContextAssembler", () => {

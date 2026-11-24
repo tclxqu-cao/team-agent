@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useId, useImperativeHandle, useLayoutEffect, useRef, useState } from "react";
+import { forwardRef, useEffect, useId, useImperativeHandle, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 export interface ComposerModelPickerHandle {
@@ -11,11 +11,12 @@ interface Props {
   value: string;
   options: ModelOption[];
   disabled?: boolean;
+  icon?: ReactNode;
   onChange(value: string): void;
 }
 
 /** Keep model choices anchored inside this document, including mobile iframes. */
-const ComposerModelPicker = forwardRef<ComposerModelPickerHandle, Props>(function ComposerModelPicker({ value, options, disabled, onChange }, ref) {
+const ComposerModelPicker = forwardRef<ComposerModelPickerHandle, Props>(function ComposerModelPicker({ value, options, disabled, icon, onChange }, ref) {
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState({ top: -1000, left: 0, width: 280, maxHeight: 360 });
   const trigger = useRef<HTMLButtonElement>(null);
@@ -88,7 +89,10 @@ const ComposerModelPicker = forwardRef<ComposerModelPickerHandle, Props>(functio
       aria-haspopup="listbox" aria-expanded={open} aria-controls={open ? menuId : undefined} disabled={disabled}
       onClick={() => setOpen(current => !current)} onKeyDown={event => {
         if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); setOpen(true); }
-      }}>{selected?.label ?? "默认模型"}</button>
+      }}>
+      {icon && <span className="composer-model-trigger-icon" aria-hidden="true">{icon}</span>}
+      <span className="composer-model-trigger-label">{selected?.label ?? "默认模型"}</span>
+    </button>
     {open && createPortal(<div ref={menu} id={menuId} className="composer-model-menu" role="listbox" aria-label="选择模型" style={position}
       onKeyDown={event => {
         if (event.key === "Tab") { setOpen(false); return; }

@@ -23,12 +23,43 @@ describe("session change history", () => {
     expect(getSession).toHaveBeenNthCalledWith(2, "session", { before: "next", limit: 100, view: "trace" }, { signal });
   });
 
-  it("rejects data belonging to another session or a different history revision", async () => {
+  it("rejects data belonging to another session", async () => {
     const signal = new AbortController().signal;
     const getSession = vi.fn().mockResolvedValueOnce({ ...page("other.txt", null), id: "other" });
     await expect(loadSessionChangeHistory({ getSession, getSessionToolResult }, "session", "/repo", signal)).rejects.toThrow("会话记录不可用");
-    getSession.mockResolvedValueOnce(page("latest.txt", "next")).mockResolvedValueOnce(page("earlier.txt", null, "new"));
+  });
+
+  it("restarts from the newest page when a live update changes the revision between pages", async () => {
+    const signal = new AbortController().signal;
+    const getSession = vi.fn()
+      .mockResolvedValueOnce(page("before-rewind.txt", "previous"))
+      .mockResolvedValueOnce(page("unmatched.txt", null, "new"))
+      .mockResolvedValueOnce(page("latest.txt", "next", "new"))
+      .mockResolvedValueOnce(page("earlier.txt", null, "new"));
+    const changes = await loadSessionChangeHistory({ getSession, getSessionToolResult }, "session", "/repo", signal);
+    expect(changes.map(change => change.path)).toEqual(["/repo/earlier.txt", "/repo/latest.txt"]);
+    expect(getSession).toHaveBeenNthCalledWith(3, "session", { before: undefined, limit: 100, view: "trace" }, { signal });
+  });
+
+  it("keeps the pages already read when an older page fails", async () => {
+    const signal = new AbortController().signal;
+    const progress = vi.fn();
+    const getSession = vi.fn().mockResolvedValueOnce(page("latest.txt", "next"))
+      .mockRejectedValueOnce(new Error("请求超时"));
+    await expect(loadSessionChangeHistory({ getSession, getSessionToolResult }, "session", "/repo", signal, progress))
+      .rejects.toThrow("请求超时");
+    expect(progress).toHaveBeenCalledTimes(1);
+    expect(progress).toHaveBeenCalledWith([expect.objectContaining({ path: "/repo/latest.txt" })]);
+  });
+
+  it("bounds recovery when history changes again during the retry", async () => {
+    const signal = new AbortController().signal;
+    const getSession = vi.fn().mockResolvedValueOnce(page("latest.txt", "next"))
+      .mockResolvedValueOnce(page("earlier.txt", null, "new"))
+      .mockResolvedValueOnce(page("latest.txt", "next", "new"))
+      .mockResolvedValueOnce(page("earlier.txt", null, "newer"));
     await expect(loadSessionChangeHistory({ getSession, getSessionToolResult }, "session", "/repo", signal)).rejects.toThrow("会话内容已更新");
+    expect(getSession).toHaveBeenCalledTimes(4);
   });
 
   it("hydrates a frozen turn once across its user segments", async () => {

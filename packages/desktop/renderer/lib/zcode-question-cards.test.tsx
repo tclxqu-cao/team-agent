@@ -31,6 +31,18 @@ describe("ZCode question cards through native history, pagination and renderer",
     expect(html).not.toContain("AskUserQuestion");
   });
 
+  it("restores an external pending question directly from the desktop history projection", () => {
+    const messages = decodeZCodeHistory(nativeHistory("running"), "sess-native", undefined, {
+      includePendingQuestions: true,
+      pendingInteractionIds: new Map([["call-question", "perm-question"]]),
+    });
+    const page = paginateSessionHistory(messages, [], { limit: 50 }, { includePendingQuestions: true });
+    const restored = restoreSessionHistoryPage({ agentType: "zcode", ...page });
+    expect(restored).toHaveLength(1);
+    expect(restored[0].askUser).toMatchObject({ questionId: expect.stringMatching(/^zcode-pending-question:/), question, options });
+    expect(hasPendingSessionQuestion(restored)).toBe(true);
+  });
+
   it.each(["completed", "error"])("keeps a %s question as one read-only card after refresh", status => {
     const messages = decodeZCodeHistory(nativeHistory(status), "sess-native");
     const page = paginateSessionHistory(messages, [], { limit: 50 }, { includePendingQuestions: true });

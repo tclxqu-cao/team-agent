@@ -13,7 +13,7 @@ afterEach(() => vi.unstubAllGlobals());
 describe("all sessions cache presentation", () => {
   it("hides deleted rows even while an old snapshot still contains them", () => {
     vi.stubGlobal("window", { localStorage: { getItem: (key: string) => key === ALL_SESSIONS_CACHE_KEY ? JSON.stringify({
-      version: 1, total: 2,
+      version: 2, total: 2,
       data: ["deleted", "kept"].map(id => ({ id, agentType: "zcode", title: id, cwd: "/project", updated: "2026-11-09", status: "failed", canResume: true })),
     }) : null } });
     const html = renderToStaticMarkup(createElement(AllSessionsSidebar, {
@@ -26,7 +26,7 @@ describe("all sessions cache presentation", () => {
   });
 
   it("shows a newly created running session immediately over an older local cache", () => {
-    vi.stubGlobal("window", { localStorage: { getItem: () => JSON.stringify({ version: 1, total: 1,
+    vi.stubGlobal("window", { localStorage: { getItem: () => JSON.stringify({ version: 2, total: 1,
       data: [{ id: "old", agentType: "codex", title: "旧任务", cwd: "/project", updated: "2026-11-01", status: "idle", canResume: true }],
     }) } });
     const html = renderToStaticMarkup(createElement(AllSessionsSidebar, {
@@ -41,7 +41,7 @@ describe("all sessions cache presentation", () => {
 
   it("renders cached summaries and total synchronously before any request completes", () => {
     vi.stubGlobal("window", { localStorage: { getItem: (key: string) => key === ALL_SESSIONS_CACHE_KEY ? JSON.stringify({
-      version: 1, total: 2620,
+      version: 2, total: 2620,
       data: [{ id: "cached", agentType: "codex", title: "缓存中的任务", cwd: "/project", updated: "2026-11-09", status: "idle", canResume: true }],
     }) : null } });
     const html = renderToStaticMarkup(createElement(AllSessionsSidebar, {
@@ -53,5 +53,26 @@ describe("all sessions cache presentation", () => {
     expect(html).toContain("当前显示缓存");
     expect(html).not.toContain("正在加载所有会话…");
     expect(html).not.toContain("加载更早的会话");
+  });
+
+  it("keeps even a selected, running grandchild collapsed on first render", () => {
+    vi.stubGlobal("window", { localStorage: { getItem: () => JSON.stringify({
+      version: 2, total: 5,
+      data: [
+        { id: "grandchild", title: "执行步骤", parentSessionId: "child", status: "running" },
+        { id: "child", title: "子任务", parentSessionId: "parent" },
+        { id: "parent", title: "主任务" },
+        { id: "other", title: "其他任务" },
+        { id: "orphan", title: "缺少父会话", parentSessionId: "missing" },
+      ].map(row => ({ agentType: "codex", cwd: "/project", updated: "2026-11-09", status: "idle", canResume: true, ...row })),
+    }) } });
+    const html = renderToStaticMarkup(createElement(AllSessionsSidebar, {
+      selectedSessionId: "grandchild", runningSessionId: "grandchild", needsInput: ["grandchild"], pinnedIds: [], revision: 0,
+      onSelect: () => {}, onPin: () => {}, onDelete: () => {},
+    }));
+    expect(html).toMatch(/>主任务<.*?aria-label="展开子会话：主任务"[^>]*aria-expanded="false".*?>其他任务</s);
+    expect(html).not.toContain(">子任务<");
+    expect(html).not.toContain(">执行步骤<");
+    expect(html).not.toContain("缺少父会话");
   });
 });

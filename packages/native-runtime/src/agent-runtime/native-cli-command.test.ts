@@ -13,6 +13,14 @@ describe("native CLI command discovery", () => {
     expect(command).toEqual({ command: "/home/test/.local/bin/qodercli", args: ["--acp"], env: {} });
   });
 
+  it.each([
+    ["grok", ["--no-auto-update", "agent", "stdio"]],
+    ["agy", ["acp"]],
+  ] as const)("discovers %s for ACP even when the desktop PATH omits ~/.local/bin", async (agent, args) => {
+    const path = `/home/test/.local/bin/${agent}`;
+    await expect(resolveNativeCliCommand(agent, fixture([path]))).resolves.toEqual({ command: path, args, env: {} });
+  });
+
   it("uses overrides as one executable path, including paths with spaces", async () => {
     const path = "/custom app/zcode.cjs";
     const command = await resolveNativeCliCommand("zcode", fixture([path], { AGENT_ZCODE_BIN: path }));

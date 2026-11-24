@@ -17,6 +17,10 @@ export function getSidebarSessionVisualState(activity: SessionActivity): Sidebar
   return activity;
 }
 
+export function sessionCompletedAt(session: { status?: string; updated?: string; completedAt?: string }): string | undefined {
+  return session.completedAt ?? (session.status === "completed" ? session.updated : undefined);
+}
+
 export const SIDEBAR_SESSION_STATUS_LABELS: Record<SidebarSessionVisualState, string> = {
   "needs-input": "需要输入",
   running: "运行中",

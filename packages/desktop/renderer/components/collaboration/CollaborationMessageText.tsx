@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { postWebArtifactOpen, resolveWebArtifactPath } from "../../lib/artifact-links";
+import { postWebArtifactOpen, resolveWebArtifactPath } from "../../../../shared/src/browser/artifact-links";
 import { parseRichInlineTokens, type RichInlineToken } from "../../lib/markdown-links";
 import { isPlainWebLinkClick, requestTaskPaneWebLink } from "../../lib/task-pane-web-links";
 

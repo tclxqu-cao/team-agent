@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { LocalSettingsRepository } from "./local-settings-repository";
+import { LocalSettingsRepository } from "../../../../shared/src/infrastructure/local/local-settings-repository";
 
 const originalLocalStorage = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
 

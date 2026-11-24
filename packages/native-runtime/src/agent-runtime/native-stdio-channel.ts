@@ -17,6 +17,7 @@ interface Options extends NativeStdioCommand {
   onFailure?(error: RuntimeSessionError): void;
   requestTimeoutMs?: number;
   maxLineBytes?: number;
+  maxOutputLineBytes?: number;
   maxPendingRequests?: number;
   shutdownGraceMs?: number;
 }
@@ -35,7 +36,8 @@ export class NativeStdioChannel {
   private disposePromise: Promise<void> | null = null;
   private readonly pending = new Map<string, PendingReply>();
   private readonly decoder = new StringDecoder("utf8");
-  private buffer = "";
+  private readonly lineParts: string[] = [];
+  private lineBytes = 0;
   private failure: RuntimeSessionError | null = null;
   private closed = false;
 
@@ -72,8 +74,7 @@ export class NativeStdioChannel {
       child.stdout.on("end", () => {
         if (this.closed) return;
         this.consume(this.decoder.end());
-        if (this.buffer.trim()) this.readPacket(this.buffer);
-        this.buffer = "";
+        if (this.lineParts.length) this.finishLine();
       });
       // Always drain stderr, but never attach native account/config output to errors.
       child.stderr.resume();
@@ -130,21 +131,31 @@ export class NativeStdioChannel {
   private get maxLineBytes(): number { return this.options.maxLineBytes ?? 16 * 1024 * 1024; }
 
   private consume(chunk: string): void {
-    this.buffer += chunk;
-    let newline: number;
-    while (!this.closed && (newline = this.buffer.indexOf("\n")) >= 0) {
-      const line = this.buffer.slice(0, newline);
-      this.buffer = this.buffer.slice(newline + 1);
-      this.readPacket(line);
+    let start = 0;
+    while (!this.closed && start < chunk.length) {
+      const newline = chunk.indexOf("\n", start);
+      const part = newline < 0 ? chunk.slice(start) : chunk.slice(start, newline);
+      this.lineBytes += Buffer.byteLength(part);
+      if (this.lineBytes > (this.options.maxOutputLineBytes ?? this.maxLineBytes)) {
+        this.fail(this.protocolError("Native CLI output exceeds the line limit"));
+        return;
+      }
+      if (part) this.lineParts.push(part);
+      if (newline < 0) return;
+      this.finishLine();
+      start = newline + 1;
     }
-    if (!this.closed && Buffer.byteLength(this.buffer) > this.maxLineBytes) {
-      this.fail(this.protocolError("Native CLI output exceeds the line limit"));
-    }
+  }
+
+  private finishLine(): void {
+    const line = this.lineParts.join("");
+    this.lineParts.length = 0;
+    this.lineBytes = 0;
+    this.readPacket(line);
   }
 
   private readPacket(line: string): void {
     if (!line.trim()) return;
-    if (Buffer.byteLength(line) > this.maxLineBytes) { this.fail(this.protocolError("Native CLI output exceeds the line limit")); return; }
     let packet: NativeJsonPacket;
     try {
       const value: unknown = JSON.parse(line);
@@ -173,7 +184,8 @@ export class NativeStdioChannel {
     if (this.closed) return;
     this.closed = true;
     this.failure = error;
-    this.buffer = "";
+    this.lineParts.length = 0;
+    this.lineBytes = 0;
     for (const pending of this.pending.values()) {
       clearTimeout(pending.timer);
       pending.reject(error);

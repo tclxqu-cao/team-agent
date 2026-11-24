@@ -1,7 +1,7 @@
 import { isAgentType } from "../../../../core/src/domain/agent/agent-type";
 import type { CatalogSession } from "../../../../core/src/domain/supervision/types";
-import type { AgentType, AgentWorkspace, UnifiedSessionSummary } from "../../global";
-import type { SessionHistoryDetail, SessionHistorySeed } from "../../lib/session-history";
+import type { AgentType, AgentWorkspace, UnifiedSessionSummary } from "../../../../shared/src/contracts/agent-api";
+import { LATEST_SESSION_HISTORY_PAGE_SIZE, type SessionHistoryDetail, type SessionHistorySeed } from "../../lib/session-history";
 import { appendTaskColumn, fourColumnTaskLayout, insertTaskPane, readTaskLayout, removeTaskPane, taskPaneIds, type TaskSplitNode } from "../../lib/desktop-task-layout";
 
 export interface TaskPaneDraft {
@@ -153,8 +153,14 @@ export function catalogTaskSession(target: CatalogSession): UnifiedSessionSummar
 
 export async function loadTaskSession(target: { id: string; agentType?: UnifiedSessionSummary["agentType"] }): Promise<Pick<TaskPane, "session" | "initialHistory">> {
   const detail = await window.agentApi.getSession(target.id, target.agentType === "codex" || target.id.startsWith("runtime:codex:")
-    ? { view: "core", limit: 1 } : { limit: 30 }) as UnifiedSessionSummary & SessionHistoryDetail;
-  if (detail?.id !== target.id || !isAgentType(detail.agentType) || (target.agentType && detail.agentType !== target.agentType)) throw new Error("会话身份已变化，请重新选择任务");
+    ? { view: "core", limit: LATEST_SESSION_HISTORY_PAGE_SIZE }
+    : { limit: LATEST_SESSION_HISTORY_PAGE_SIZE }) as UnifiedSessionSummary & SessionHistoryDetail;
+  if (!detail?.id || !isAgentType(detail.agentType)) throw new Error("会话身份已变化，请重新选择任务");
+  const matchesTarget = detail.id === target.id && (!target.agentType || detail.agentType === target.agentType);
+  // History requests for a previous engine can return the current session of the same thread.
+  const followsEngineSwitch = !!detail.threadKey && detail.activeSessionId === detail.id
+    && detail.segments?.some(segment => segment.sessionId === target.id && (!target.agentType || segment.agentType === target.agentType));
+  if (!matchesTarget && !followsEngineSwitch) throw new Error("会话身份已变化，请重新选择任务");
   const { messages: _messages, events: _events, history: _history, ...session } = detail;
   return { session, initialHistory: { sessionId: session.id, detail } };
 }

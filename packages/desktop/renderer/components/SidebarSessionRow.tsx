@@ -1,7 +1,9 @@
-import { CircleAlert, CircleHelp, ChevronRight, LockKeyhole, Pin, Trash2 } from "lucide-react";
+import { CircleAlert, CircleHelp, LockKeyhole, Pin, Trash2 } from "lucide-react";
 import type { SidebarSessionVisualState } from "../lib/sidebar-session-status";
-import type { AgentType, SessionCompatibility } from "../global";
+import type { AgentType, SessionCompatibility } from "../../../shared/src/contracts/agent-api";
 import AgentBrandIcon from "./AgentBrandIcon";
+import SessionDisclosureButton from "./SessionDisclosureButton";
+import SessionStatusDot from "./SessionStatusDot";
 import { AGENT_LABELS } from "../lib/agent-catalog";
 
 export interface SidebarSessionRowModel {
@@ -13,12 +15,12 @@ export interface SidebarSessionRowModel {
   canDelete: boolean;
   active: boolean;
   child?: boolean;
-  hasChildren?: boolean;
   expanded?: boolean;
   compatibility?: SessionCompatibility;
   pinned?: boolean;
   agentType?: AgentType;
   workspacePath?: string;
+  completedAt?: string;
 }
 
 export interface SidebarDeleteAnchor {
@@ -32,6 +34,7 @@ interface SidebarSessionRowProps {
   session: SidebarSessionRowModel;
   deleteLabel?: string;
   onSelect(): void;
+  onToggleChildren?(): void;
   onPin?(): void;
   onDelete?(anchor: SidebarDeleteAnchor): void;
 }
@@ -40,6 +43,7 @@ export default function SidebarSessionRow({
   session,
   deleteLabel = "删除会话",
   onSelect,
+  onToggleChildren,
   onPin,
   onDelete,
 }: SidebarSessionRowProps) {
@@ -52,14 +56,9 @@ export default function SidebarSessionRow({
         className="sidebar-session-button"
         onClick={onSelect}
         aria-pressed={session.active}
-        aria-expanded={session.hasChildren ? Boolean(session.expanded) : undefined}
         title={[session.title, session.workspacePath].filter(Boolean).join("\n")}
       >
-        <span
-          className={`sidebar-status-dot is-${session.visualState}`}
-          title={session.statusLabel}
-          aria-label={session.statusLabel}
-        />
+        <SessionStatusDot session={session} visualState={session.visualState} statusLabel={session.statusLabel} active={session.active} />
         <span className="sidebar-session-title">{session.title}</span>
         {session.agentType && <span className="sidebar-session-agent" role="img" aria-label={AGENT_LABELS[session.agentType]} title={AGENT_LABELS[session.agentType]}>
           <AgentBrandIcon agentType={session.agentType} size={18} />
@@ -91,14 +90,10 @@ export default function SidebarSessionRow({
             <LockKeyhole size={13} aria-hidden="true" />
           </span>
         )}
-        {session.hasChildren && (
-          <ChevronRight
-            size={13}
-            className={`sidebar-session-disclosure${session.expanded ? " is-expanded" : ""}`}
-            aria-hidden="true"
-          />
-        )}
       </button>
+      {onToggleChildren && (
+        <SessionDisclosureButton title={session.title} expanded={Boolean(session.expanded)} onToggle={onToggleChildren} />
+      )}
       {onPin && !session.child && (
         <button
           type="button"

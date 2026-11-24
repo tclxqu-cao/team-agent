@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AgentHttpGateway } from "./agent-http-gateway";
-import { HttpClient } from "./http-client";
+import { AgentHttpGateway } from "../../../../shared/src/infrastructure/http/agent-http-gateway";
+import { HttpClient } from "../../../../shared/src/infrastructure/http/http-client";
 
 class FailedEventSource {
   static readonly CLOSED = 2;
@@ -1847,5 +1847,30 @@ describe("AgentHttpGateway", () => {
       name: "customer-agent",
       path: project.description,
     });
+  });
+
+  it("forwards ACP attachments and run options both for direct sends and for queued sends", async () => {
+    globalThis.EventSource = ObservableEventSource as unknown as typeof EventSource;
+    const state = { active: null, queued: [], history: [] };
+    const post = vi.fn().mockImplementation((url: string) => url === "/api/agent/run"
+      ? Promise.reject(new Error("Stop after recording the request"))
+      : Promise.resolve({ state }));
+    const gateway = new AgentHttpGateway({ post } as never, {} as never);
+    const attachments = [{ name: "fixture.pdf", mimeType: "application/pdf", data: "UERG" }];
+    const runOptions = { model: { id: "model" }, reasoningEffort: "low" as const, attachments };
+    const id = "runtime:agy:c2Vzc2lvbg";
+
+    await gateway.run("Read file", id, undefined, undefined, undefined, runOptions);
+    expect(post).toHaveBeenCalledWith("/api/agent/run", {
+      input: "Read file", sessionId: id, nativeModel: runOptions.model,
+      nativeReasoningEffort: "low", attachments,
+    });
+
+    const request = gateway.enqueueSessionMessage(id, { sourceMessageId: "second", content: "Read it again", runOptions });
+    ObservableEventSource.instances.at(-1)?.onopen?.();
+    await expect(request).resolves.toEqual(state);
+    expect(post).toHaveBeenCalledWith("/api/sessions/runtime%3Aagy%3Ac2Vzc2lvbg/goals", expect.objectContaining({
+      messagePayload: expect.objectContaining({ runOptions }),
+    }));
   });
 });

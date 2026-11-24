@@ -12,7 +12,7 @@ import {
   reconcileWorkspacePage,
   writeAgentWorkspaceCache,
 } from "./agent-workspace-cache";
-import type { AgentType, AgentWorkspace, UnifiedSessionSummary } from "../global";
+import type { AgentType, AgentWorkspace, UnifiedSessionSummary } from "../../../shared/src/contracts/agent-api";
 
 function workspace(agentType: AgentType, workspaceId: string, name = workspaceId): AgentWorkspace {
   return { agentType, workspaceId, name, roots: [`/${workspaceId}`], order: 0, source: "native" };

@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { ModelProfile } from "../global.d.ts";
+import type { ModelProfile } from "../../../shared/src/contracts/agent-api.d.ts";
 import {
   DEFAULT_TASK_NOTIFICATION_PREFERENCES,
   resolveTaskNotificationPreferences,

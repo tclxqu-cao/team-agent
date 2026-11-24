@@ -3,7 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Palette } from "lucide-react";
-import { WEB_THEMES, type WebThemeId } from "./themes";
+import { WEB_THEMES, type WebThemeId } from "../../../shared/src/console/themes";
 import { popoverTop } from "./popover-position";
 
 interface Props {

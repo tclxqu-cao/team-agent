@@ -12,6 +12,7 @@
     "packages/server",
     "packages/desktop",
     "packages/webapp",
+    "packages/shared",
     "packages/mobile",
     "packages/sdk",
     "packages/tui",

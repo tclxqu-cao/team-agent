@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { parseArgs } from "../args.js";
 import { TunnelController } from "./tunnel-controller.js";
-import type { TunnelStatus } from "../../../server/lib/tunnel-control.mjs";
+import type { TunnelStatus } from "../../../shared/src/contracts/tunnel-status";
 import type { TunnelHandle } from "./tunnel-provider.js";
 
 const controllers: TunnelController[] = [];

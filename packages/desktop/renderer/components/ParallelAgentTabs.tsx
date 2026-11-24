@@ -1,9 +1,10 @@
-import type { AgentType } from "../global";
+import type { AgentType } from "../../../shared/src/contracts/agent-api";
 import { AGENT_LABELS } from "../lib/agent-catalog";
 import AgentBrandIcon from "./AgentBrandIcon";
+import SessionStatusDot from "./SessionStatusDot";
 
 export type ParallelAgentStatus = "idle" | "running" | "needs-input" | "completed" | "failed";
-export interface ParallelAgentTab { id: string; agentType: AgentType; status: ParallelAgentStatus }
+export interface ParallelAgentTab { id: string; agentType: AgentType; status: ParallelAgentStatus; completedAt?: string }
 const STATUS_LABELS: Record<ParallelAgentStatus, string> = {
   idle: "待发送", running: "执行中", "needs-input": "待确认", completed: "已完成", failed: "失败",
 };
@@ -30,7 +31,8 @@ export default function ParallelAgentTabs({ members, selectedId, onSelect }: {
         aria-label={label} title={label} aria-selected={member.id === selectedId}
         onClick={() => onSelect(member.id)}>
         <AgentBrandIcon agentType={member.agentType} size={18} />
-        <span className={`parallel-agent-status is-${member.status}`} aria-hidden="true" />
+        <SessionStatusDot session={member} active={member.id === selectedId} statusLabel={STATUS_LABELS[member.status]}
+          className={`parallel-agent-status is-${member.status}`} />
       </button>;
     })}
   </div>;

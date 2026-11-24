@@ -1,4 +1,4 @@
-import type { AgentApi, SessionMessageRunOptions, UnifiedSessionSummary } from "../global";
+import type { AgentApi, SessionMessageRunOptions, UnifiedSessionSummary } from "../../../shared/src/contracts/agent-api";
 
 export interface ParallelMessage {
   sourceMessageId: string;
@@ -7,6 +7,7 @@ export interface ParallelMessage {
   agentIds?: string[];
   agentName?: string;
   runOptions?: SessionMessageRunOptions;
+  attachments?: SessionMessageRunOptions["attachments"];
 }
 export interface FailedParallelMessage { member: UnifiedSessionSummary; message: ParallelMessage; error: string; blocked?: boolean }
 

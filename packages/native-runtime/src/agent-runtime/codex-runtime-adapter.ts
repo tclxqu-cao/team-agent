@@ -1373,9 +1373,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       const skillPath = skillInvocation
         ? await this.resolveSkillPath(detail.cwd, skillInvocation.name)
         : null;
-      const text = skillInvocation
-        ? `$${skillInvocation.name}${skillInvocation.rest ? ` ${skillInvocation.rest}` : ""}`
-        : input;
+      const text = skillInvocation ? codexSkillPrompt(skillInvocation) : input;
       const runUsage: CodexRunUsage = {
         completedTurnIds: new Set(),
         startedTurnIds: new Set(),
@@ -1838,7 +1836,8 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     }
 
     const progressEvent = codexProgressNotificationToEvent(message);
-    if (progressEvent) queue.push(progressEvent);
+    if (progressEvent) queue.push(message.method === "turn/started" && eventTurnId
+      ? { ...progressEvent, turnId: eventTurnId } : progressEvent);
     const notificationItem = params.item as CodexItem | undefined;
     if (
       (message.method === "item/started" || message.method === "item/completed")
@@ -2372,6 +2371,10 @@ export function parseExplicitSkillInvocation(input: string): { name: string; res
   return { name: match[1], rest: match[2]?.trim() ?? "" };
 }
 
+export function codexSkillPrompt({ name, rest }: NonNullable<ReturnType<typeof parseExplicitSkillInvocation>>): string {
+  return rest ? `$${name} ${rest}` : `$${name}`;
+}
+
 function findSkillPath(value: unknown, name: string): string | null {
   if (!value || typeof value !== "object") return null;
   if (Array.isArray(value)) {
@@ -2750,20 +2753,15 @@ export async function codexTurnsToMessages(
           const normalized = normalizeCodexUserText(sourceText);
           const imagePaths = codexUserImagePaths(entries);
           const attachments = await Promise.all(imagePaths.map(loadCodexImageAttachment));
-          const presentation = normalized.rawContent || attachments.length > 0 || turn.completionDurationMs !== undefined
-            ? {
-                ...(turn.completionDurationMs !== undefined ? {
-                  executionTrace: { turnId: turn.id, segmentIndex },
-                  completionDurationMs: turn.completionDurationMs,
-                } : {}),
-                ...(normalized.rawContent ? { rawContent: normalized.rawContent } : {}),
-                ...(attachments.length > 0 ? { attachments } : {}),
-              }
-            : undefined;
           messages.push({
             role: "user",
             content: normalized.content,
-            ...(presentation ? { presentation } : {}),
+            presentation: {
+              executionTrace: { turnId: turn.id, segmentIndex },
+              ...(turn.completionDurationMs !== undefined ? { completionDurationMs: turn.completionDurationMs } : {}),
+              ...(normalized.rawContent ? { rawContent: normalized.rawContent } : {}),
+              ...(attachments.length > 0 ? { attachments } : {}),
+            },
           });
         }
       } else if (item.id && questionHistory.has(item.id)) {
@@ -3000,7 +2998,7 @@ export function codexReasoningNotificationToEvent(
   };
 }
 
-export function codexProgressNotificationToEvent(message: RpcNotification): AgentEvent | null {
+export function codexProgressNotificationToEvent(message: RpcNotification): Extract<AgentEvent, { type: "runtime_progress" }> | null {
   const item = asRecord(asRecord(message.params).item);
   if (item.type === "contextCompaction" && (message.method === "item/started" || message.method === "item/completed")) {
     const completed = message.method === "item/completed";

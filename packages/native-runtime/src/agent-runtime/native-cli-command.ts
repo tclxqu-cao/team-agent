@@ -6,7 +6,7 @@ import type { NativeStdioCommand } from "./native-stdio-channel.js";
 import { RuntimeSessionError } from "./types.js";
 import { discoverWorkBuddyDesktopProductConfig } from "./workbuddy-desktop-config.js";
 
-export type BridgedNativeAgentType = Extract<NativeAgentType, "qoder" | "zcode" | "workbuddy">;
+export type BridgedNativeAgentType = Extract<NativeAgentType, "qoder" | "zcode" | "workbuddy" | "grok" | "agy">;
 
 interface Options {
   env?: NodeJS.ProcessEnv;
@@ -17,7 +17,14 @@ interface Options {
   workBuddyDesktopConfig?(options: { configDir: string; platform: NodeJS.Platform }): Promise<string | null>;
 }
 
-const OVERRIDES = { qoder: "AGENT_QODER_BIN", zcode: "AGENT_ZCODE_BIN", workbuddy: "AGENT_WORKBUDDY_BIN" } as const;
+const CLI = {
+  qoder: { override: "AGENT_QODER_BIN", names: ["qodercli"], args: ["--acp"], localBin: true },
+  zcode: { override: "AGENT_ZCODE_BIN", names: ["zcode"], args: ["app-server"] },
+  workbuddy: { override: "AGENT_WORKBUDDY_BIN", names: ["workbuddy", "codebuddy"],
+    args: ["--print", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--include-partial-messages"] },
+  grok: { override: "AGENT_GROK_BIN", names: ["grok"], args: ["--no-auto-update", "agent", "stdio"], localBin: true },
+  agy: { override: "AGENT_AGY_BIN", names: ["agy"], args: ["acp"], localBin: true },
+} satisfies Record<BridgedNativeAgentType, { override: string; names: string[]; args: string[]; localBin?: boolean }>;
 
 async function fileExists(path: string): Promise<boolean> {
   try { return (await stat(path)).isFile(); }
@@ -41,11 +48,12 @@ export async function resolveNativeCliCommand(agent: BridgedNativeAgentType, opt
     }
     return null;
   };
-  const override = env[OVERRIDES[agent]]?.trim();
+  const config = CLI[agent];
+  const override = env[config.override]?.trim();
   let executable: string | null = null;
   if (override) {
     executable = /[\\/]/.test(override) ? (await exists(override) ? override : null) : await inPath(override);
-    if (!executable) throw new RuntimeSessionError(`${OVERRIDES[agent]} does not identify an installed runtime`, "RUNTIME_UNAVAILABLE");
+    if (!executable) throw new RuntimeSessionError(`${config.override} does not identify an installed runtime`, "RUNTIME_UNAVAILABLE");
   }
   const bundles: string[] = [];
   if (platform === "darwin") {
@@ -63,16 +71,16 @@ export async function resolveNativeCliCommand(agent: BridgedNativeAgentType, opt
     if (!executable && await exists(candidate)) executable = candidate;
   }
   if (!executable) {
-    for (const name of agent === "qoder" ? ["qodercli"] : agent === "zcode" ? ["zcode"] : ["workbuddy", "codebuddy"]) {
+    for (const name of config.names) {
       executable = await inPath(name);
       if (executable) break;
     }
   }
-  if (!executable && agent === "qoder") {
-    const candidate = paths.join(home, ".local/bin", platform === "win32" ? "qodercli.exe" : "qodercli");
+  if (!executable && "localBin" in config && config.localBin) {
+    const candidate = paths.join(home, ".local/bin", config.names[0] + (platform === "win32" ? ".exe" : ""));
     if (await exists(candidate)) executable = candidate;
   }
-  if (!executable) throw new RuntimeSessionError(`${agent} runtime is not installed; set ${OVERRIDES[agent]} to its entrypoint`, "RUNTIME_UNAVAILABLE");
+  if (!executable) throw new RuntimeSessionError(`${agent} runtime is not installed; set ${config.override} to its entrypoint`, "RUNTIME_UNAVAILABLE");
 
   const childEnv: NodeJS.ProcessEnv = {};
   if (agent === "zcode") {
@@ -99,8 +107,7 @@ export async function resolveNativeCliCommand(agent: BridgedNativeAgentType, opt
       throw new RuntimeSessionError("Open WorkBuddy desktop and wait for its model configuration to load", "RUNTIME_UNAVAILABLE");
     }
   }
-  const args = agent === "qoder" ? ["--acp"] : agent === "zcode" ? ["app-server"]
-    : ["--print", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--include-partial-messages"];
+  const args = [...config.args];
   const nodeEntrypoint = /\.[cm]?js$/i.test(executable) || /[\\/]cli[\\/]bin[\\/]codebuddy$/.test(executable);
   let nodeExecutable = options.nodeExecutable ?? env.AGENT_NATIVE_NODE_BIN;
   if (nodeEntrypoint && !nodeExecutable) {

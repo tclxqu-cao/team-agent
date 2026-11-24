@@ -15,7 +15,7 @@
 //   - handoff material is historical context, never a new instruction.
 //   - a switch only happens at a turn boundary (no in-flight turn).
 
-import type { AgentType } from "../../domain/agent/agent-type.js";
+import { isNativeAgentType, type AgentType } from "../../domain/agent/agent-type.js";
 import { cleanEngineHistory, engineThreadPhases } from "../../domain/engine-switch/thread-history.js";
 import { renderContextHandoff } from "../../domain/engine-switch/handoff-renderer.js";
 import type {
@@ -69,17 +69,6 @@ export interface SwitchEngineDeps {
   newId?: () => string;
 }
 
-const NATIVE_ONLY: ReadonlySet<AgentType> = new Set<AgentType>([
-  "codex",
-  "claude-code",
-  "opencode",
-  "deepseek-harness",
-  "qoder",
-  "zcode",
-  "workbuddy",
-  "copilot",
-]);
-
 export class SwitchEngineUseCase {
   private readonly now: () => string;
   private readonly newId: () => string;
@@ -92,7 +81,7 @@ export class SwitchEngineUseCase {
   async execute(command: SwitchEngineCommand): Promise<SwitchEngineResult> {
     const { runtime, repository } = this.deps;
     const { sourceSessionId, targetAgentType } = command;
-    if (!NATIVE_ONLY.has(targetAgentType)) throw new EngineSwitchError("TARGET_NOT_NATIVE", "目标必须是原生引擎");
+    if (!isNativeAgentType(targetAgentType)) throw new EngineSwitchError("TARGET_NOT_NATIVE", "目标必须是原生引擎");
     const existingKey = repository.records.threadOfSession(sourceSessionId);
     const threadKey = existingKey || `engine-thread:${sourceSessionId}`;
     if (command.threadKey && command.threadKey !== threadKey) throw new EngineSwitchError("INVALID_SESSION_ID", "会话不属于指定线程");

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { ToolExecutionPolicyView, ToolPolicyProgramRuleView } from "../global.d.ts";
+import type { ToolExecutionPolicyView, ToolPolicyProgramRuleView } from "../../../shared/src/contracts/agent-api.d.ts";
 
 type Policy = ToolExecutionPolicyView;
 type Program = ToolPolicyProgramRuleView;

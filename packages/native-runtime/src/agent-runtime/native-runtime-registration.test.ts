@@ -24,10 +24,10 @@ describe("broker host native runtime registration", () => {
     try {
       const health = await runtime.health();
       expect(health.map(entry => entry.agentType).sort()).toEqual([...NATIVE_AGENT_TYPES].sort());
-      for (const agent of ["qoder", "zcode", "workbuddy", "copilot"] as const) {
+      for (const agent of ["qoder", "zcode", "workbuddy", "copilot", "grok", "agy"] as const) {
         await expect(runtime.listModels(agent)).resolves.toEqual([{ id: `${agent}-native-model`, providerID: agent }]);
       }
-      expect(models).toHaveBeenCalledTimes(4);
+      expect(models).toHaveBeenCalledTimes(6);
       await expect(runtime.listModels("customer-agent")).rejects.toMatchObject({ code: "OPERATION_NOT_SUPPORTED" });
     } finally {
       await runtime.dispose();

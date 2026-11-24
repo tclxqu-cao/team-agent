@@ -9,7 +9,17 @@ import {
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json() as { input?: string; sessionId?: string; messageId?: string };
+    const body = await request.json() as { input?: string; sessionId?: string; messageId?: string; goalId?: unknown };
+    if (body.goalId !== undefined) {
+      if (typeof body.sessionId !== "string" || !body.sessionId || typeof body.goalId !== "string" || !body.goalId.trim()
+        || body.messageId !== undefined || body.input !== undefined) {
+        return NextResponse.json({ error: "sessionId and goalId are required for a queued goal" }, { status: 400 });
+      }
+      const result = isNativeSessionId(body.sessionId)
+        ? await getNativeRuntimeService().steerMessage(body.sessionId, body.goalId, "goal")
+        : { steered: true, state: await getCustomerGoalCoordinator().steer(body.sessionId, body.goalId, "goal") };
+      return NextResponse.json(result);
+    }
     if (!body.sessionId || (!body.input && !body.messageId)) {
       return NextResponse.json({ error: "sessionId and input or messageId are required" }, { status: 400 });
     }

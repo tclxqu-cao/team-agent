@@ -1288,9 +1288,8 @@ select:focus {
   white-space: nowrap;
 }
 
-.sidebar-child-sessions {
-  overflow: hidden;
-  transition: max-height 0.3s var(--ease-out), opacity 0.2s var(--ease-out);
+.sidebar-session-children .sidebar-session-children {
+  margin-inline-start: 14px;
 }
 
 .sidebar-session-row--child {
@@ -1331,6 +1330,11 @@ select:focus {
   transform: rotate(90deg);
 }
 
+.sidebar-session-toggle {
+  flex: none;
+  color: var(--text-secondary);
+}
+
 @media (hover: none) {
   .sidebar-project-add-action,
   .sidebar-session-pin,
@@ -1363,6 +1367,10 @@ select:focus {
 
 .sidebar-status-dot.is-completed {
   --sidebar-status-color: var(--accent);
+}
+
+.sidebar-status-dot.is-unread-completion {
+  --sidebar-status-color: color-mix(in srgb, var(--warning) 85%, var(--text-primary));
 }
 
 .sidebar-status-dot.is-running {
@@ -2075,6 +2083,8 @@ select:focus {
   cursor: grabbing;
 }
 
+.queued-message-grip.session-goal-marker { color: var(--accent); cursor: default; touch-action: auto; }
+
 @media (hover: hover) {
   .queued-message-row:hover { background: var(--control-hover); }
   .queued-message-grip:hover { color: var(--text-primary); }
@@ -2773,6 +2783,11 @@ input:focus, select:focus, textarea:focus {
   margin-top: 8px;
 }
 
+.chat-message-image {
+  min-width: 0;
+  max-width: 100%;
+}
+
 .chat-message-image-button {
   display: block;
   min-width: 0;
@@ -2798,6 +2813,7 @@ input:focus, select:focus, textarea:focus {
   border: 1px solid var(--border-subtle);
   border-radius: 6px;
   cursor: zoom-in;
+  -webkit-touch-callout: default;
 }
 
 .chat-message-attachment-unavailable {
@@ -2870,6 +2886,7 @@ input:focus, select:focus, textarea:focus {
   object-fit: contain;
   user-select: none;
   -webkit-user-drag: none;
+  -webkit-touch-callout: default;
 }
 
 .chat-message-image-placeholder {

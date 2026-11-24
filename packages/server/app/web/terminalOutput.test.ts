@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { Terminal } from "@xterm/xterm";
-import { createTerminalOutput } from "./terminalOutput";
+import { createTerminalOutput } from "../../../shared/src/console/terminalOutput";
 
 const encode = (text: string) => new TextEncoder().encode(text);
 

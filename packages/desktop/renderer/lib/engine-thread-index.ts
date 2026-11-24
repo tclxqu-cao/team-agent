@@ -1,4 +1,4 @@
-import type { AgentType, UnifiedSessionSummary } from "../global";
+import type { AgentType, UnifiedSessionSummary } from "../../../shared/src/contracts/agent-api";
 
 /** Sidebar view-model for one logical engine thread (T3-style AppThread). */
 export interface EngineThreadSummary {

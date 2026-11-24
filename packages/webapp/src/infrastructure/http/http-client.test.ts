@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiError, HttpClient, RequestTimeoutError } from "./http-client";
+import { ApiError, HttpClient, RequestTimeoutError } from "../../../../shared/src/infrastructure/http/http-client";
 
 describe("HttpClient", () => {
   afterEach(() => {

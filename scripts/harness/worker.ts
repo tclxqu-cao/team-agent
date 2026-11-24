@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+import { access, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { FileRunCheckpointStore } from '../../packages/core/src/infrastructure/RunCheckpointStore.js';
@@ -10,7 +10,10 @@ const [versionRoot, taskFile, runDirectory] = process.argv.slice(2);
 const task = JSON.parse(await readFile(taskFile, 'utf8'));
 const emit = (event: unknown) => process.stdout.write(JSON.stringify(event) + '\n');
 try {
-  const { AgentBuilder } = await import(pathToFileURL(join(versionRoot, 'packages/core/src/domain/agent/AgentBuilder.ts')).href);
+  const currentBuilder = join(versionRoot, 'packages/core/src/bootstrap/AgentBuilder.ts');
+  const builderSource = await access(currentBuilder).then(() => currentBuilder,
+    () => join(versionRoot, 'packages/core/src/domain/agent/AgentBuilder.ts'));
+  const { AgentBuilder } = await import(pathToFileURL(builderSource).href);
   const builder = new AgentBuilder()
     .withWorkingDirectory(task.workingDirectory)
     .withModel(process.env.AGENT_PROVIDER || 'openai', {

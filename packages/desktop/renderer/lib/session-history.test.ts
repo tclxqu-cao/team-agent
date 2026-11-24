@@ -1173,6 +1173,25 @@ describe("loadProgressiveSessionHistoryPage", () => {
 });
 
 describe("mergeProgressiveSessionHistoryPage", () => {
+  it("replaces a live answer fragment with the full completed answer when history embeds reasoning", () => {
+    const user = message("history-message.v1.1.user", "检查边界");
+    const suffix = "-hub-platform-boundaries.md)";
+    const fragment = assistant("live-fragment", suffix);
+    const reasoning = [{ itemId: "thought-1", sectionIndex: 0, text: "核对边界" }];
+    const answer = {
+      ...assistant("history-message.v1.2.answer", `检查完成。详见 [边界文档](message${suffix}`),
+      presentation: { forkPoint: { turnId: "turn-1" }, reasoning },
+    };
+    const thought = { ...assistant("reasoning-only", ""), presentation: { reasoning } };
+    const merged = mergeProgressiveSessionHistoryPage([user, fragment], [user, thought, answer],
+      "core", { delivery: "core", revision: "next" });
+
+    expect(merged.map(({ id, content }) => ({ id, content }))).toEqual([
+      { id: user.id, content: user.content }, { id: answer.id, content: answer.content },
+    ]);
+    expect(merged[1].presentation).toEqual(answer.presentation);
+  });
+
   it.each(["pending", "failed"] as const)("clears a confirmed %s send during a Codex core refresh and retains live tools", (sendState) => {
     const user = { ...message("live-user", "completed?"), sendState, images: ["data:image/png;base64,attachment"] };
     const tool = assistant("live-tool", "", [{ id: "call-1", name: "shell", arguments: {}, result: "ok" }]);

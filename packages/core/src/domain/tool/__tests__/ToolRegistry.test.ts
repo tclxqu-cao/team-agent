@@ -1,10 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { ToolRegistry } from '../ToolRegistry.js';
-import { ReadFileTool } from '../builtin/ReadFileTool.js';
-import { WriteFileTool } from '../builtin/WriteFileTool.js';
-import { BashTool } from '../builtin/BashTool.js';
-import { WebFetchTool } from '../builtin/WebFetchTool.js';
-import { WebSearchTool } from '../builtin/WebSearchTool.js';
+import { ReadFileTool } from '../../../infrastructure/tools/builtin/ReadFileTool.js';
+import { WriteFileTool } from '../../../infrastructure/tools/builtin/WriteFileTool.js';
+import { BashTool } from '../../../infrastructure/tools/builtin/BashTool.js';
+import { WebFetchTool } from '../../../infrastructure/tools/builtin/WebFetchTool.js';
+import { WebSearchTool } from '../../../infrastructure/tools/builtin/WebSearchTool.js';
 
 describe("ToolRegistry", () => {
   it("should register and retrieve a tool", () => {

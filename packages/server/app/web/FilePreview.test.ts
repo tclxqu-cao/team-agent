@@ -12,10 +12,10 @@ import {
   readFileForClientDownload,
   shareFileWithNativePicker,
 } from "./FilePreview";
-import { WEB_THEMES } from "./themes";
+import { WEB_THEMES } from "../../../shared/src/console/themes";
 
 const filePreviewSource = readFileSync(
-  new URL("../../../desktop/renderer/components/file-workspace/FilePreview.tsx", import.meta.url),
+  new URL("../../../shared/src/file-workspace/FilePreview.tsx", import.meta.url),
   "utf8",
 );
 

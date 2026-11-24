@@ -1,6 +1,6 @@
 import { WEBAPP_ARTIFACT_OPEN_TYPE } from "../../../core/src/domain/web-console/WebArtifactBridge";
 import { describe, expect, it, vi } from "vitest";
-import { postWebArtifactOpen, resolveWebArtifactPath } from "./artifact-links";
+import { postWebArtifactOpen, resolveWebArtifactPath } from "../../../shared/src/browser/artifact-links";
 
 describe("postWebArtifactOpen", () => {
   it("posts a same-origin request to the parent shell", () => {
@@ -23,6 +23,15 @@ describe("postWebArtifactOpen", () => {
     context.parent = context;
 
     expect(postWebArtifactOpen("/tmp/report.pdf", context as never)).toBe(false);
+  });
+
+  it("requests file tree selection without opening the inline preview", () => {
+    const parent = { postMessage: vi.fn() };
+    const context = { location: { origin: "https://agent.test" }, parent };
+    expect(postWebArtifactOpen("/tmp/report.pdf", context as never, true)).toBe(true);
+    expect(parent.postMessage).toHaveBeenCalledWith(expect.objectContaining({
+      path: "/tmp/report.pdf", revealOnly: true,
+    }), "https://agent.test");
   });
 });
 
