@@ -1,7 +1,7 @@
 import type { MobilePairingInvitation } from "../../main/mobile-pairing";
 import type { RuntimeBootstrapStatus } from "../../main/runtime-bootstrap";
 import type { DesktopLiveCliStatus } from "../../main/desktop-live-cli-proxy";
-import type { TunnelStatus } from "../../../server/lib/tunnel-control.mjs";
+import type { TunnelStatus } from "../../../shared/src/contracts/tunnel-status";
 
 export interface LiteApi {
   refresh(): Promise<MobilePairingInvitation>;

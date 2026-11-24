@@ -34,8 +34,8 @@ describe("terminal readiness lifecycle contract", () => {
   it("marks replay frames explicitly for clients that support silent replay", () => {
     expect(wsServerSource).toContain("frame[1] = replay ? 6 : 2");
     expect(wsServerSource).toContain("conn.sendTerminal(id, new Uint8Array(snap), msg.replayFrames === true)");
-    const gatewaySource = readFileSync(new URL("../app/web/useGateway.ts", import.meta.url), "utf8");
-    const paneSource = readFileSync(new URL("../app/web/TerminalPane.tsx", import.meta.url), "utf8");
+    const gatewaySource = readFileSync(new URL("../../shared/src/console/useGateway.ts", import.meta.url), "utf8");
+    const paneSource = readFileSync(new URL("../../shared/src/console/TerminalPane.tsx", import.meta.url), "utf8");
     expect(gatewaySource).toContain("handler(frame.subarray(6), frame[1] === 6)");
     expect(gatewaySource).not.toContain("frame[1] === 4");
     expect(paneSource).toContain("replayFrames: true");

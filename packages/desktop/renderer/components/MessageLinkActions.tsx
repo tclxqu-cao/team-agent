@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type MouseEvent, type PointerEvent } from "react";
 import { createPortal } from "react-dom";
 import { Check, Copy, X } from "lucide-react";
-import { copyTextToClipboard } from "../lib/clipboard";
+import { copyTextToClipboard } from "../../../shared/src/browser/clipboard";
 
 export function useMessageLinkActions<T extends HTMLElement>() {
   const trigger = useRef<T>(null);

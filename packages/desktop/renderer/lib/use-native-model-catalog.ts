@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import type { AgentType, RuntimeModelInfo } from "../global";
+import type { AgentType, RuntimeModelInfo } from "../../../shared/src/contracts/agent-api";
 
 export type NativeModelCatalogStatus = "loading" | "ready" | "empty" | "unsupported" | "error";
 
@@ -12,8 +12,12 @@ export interface NativeModelCatalogState {
 
 type LoadModels = (agentType: AgentType) => Promise<{ models: RuntimeModelInfo[]; supported?: boolean }>;
 
+function catalogRequiresSession(agentType: AgentType): boolean {
+  return agentType === "qoder" || agentType === "zcode" || agentType === "agy";
+}
+
 export function nativeModelCatalogScope(agentType: AgentType, sessionId: string | null): string {
-  return JSON.stringify([agentType, agentType === "qoder" || agentType === "zcode" ? sessionId : null]);
+  return JSON.stringify([agentType, catalogRequiresSession(agentType) ? sessionId : null]);
 }
 
 function loadingCatalog(scope: string): NativeModelCatalogState {
@@ -22,7 +26,7 @@ function loadingCatalog(scope: string): NativeModelCatalogState {
 
 /** These runtimes can return an empty catalog before session initialization. */
 export function isNativeModelCatalogReady(agentType: AgentType, state: NativeModelCatalogState): boolean {
-  return state.status === "ready" || (agentType !== "qoder" && agentType !== "zcode" && (state.status === "empty" || state.status === "unsupported"));
+  return state.status === "ready" || (!catalogRequiresSession(agentType) && (state.status === "empty" || state.status === "unsupported"));
 }
 
 /** Each request has its own lifetime, including when an Agent is selected again. */

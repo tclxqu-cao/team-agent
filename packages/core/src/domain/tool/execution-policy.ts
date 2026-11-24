@@ -1,4 +1,3 @@
-import { existsSync } from "node:fs";
 import { isAbsolute } from "node:path";
 
 export type ToolPolicyCommandMode = "deny" | "allowlist" | "unrestricted";
@@ -70,7 +69,7 @@ export class ToolExecutionPolicyError extends Error {
 
 export interface ToolExecutionPolicyValidationOptions {
   knownTools?: Iterable<string>;
-  requireExecutables?: boolean;
+  executableExists?: (absolutePath: string) => boolean;
 }
 
 const POLICY_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$/;
@@ -104,7 +103,7 @@ export function validateToolExecutionPolicy(
   if (typeof commands.mode !== "string" || !COMMAND_MODES.has(commands.mode as ToolPolicyCommandMode)) {
     invalid("commands.mode must be deny, allowlist, or unrestricted");
   }
-  const programs = programRules(commands.programs, options.requireExecutables === true);
+  const programs = programRules(commands.programs, options.executableExists);
   if (commands.mode === "allowlist" && programs.length === 0) {
     invalid("commands.programs must not be empty in allowlist mode");
   }
@@ -147,7 +146,7 @@ export function toolExecutionPolicySummary(policy: ToolExecutionPolicy): ToolExe
   return { id: policy.id, name: policy.name };
 }
 
-function programRules(value: unknown, requireExecutables: boolean): ToolPolicyProgramRule[] {
+function programRules(value: unknown, executableExists?: (absolutePath: string) => boolean): ToolPolicyProgramRule[] {
   if (!Array.isArray(value) || value.length > 200) invalid("commands.programs must be an array with at most 200 entries");
   const seen = new Set<string>();
   return value.map((item, index) => {
@@ -156,7 +155,7 @@ function programRules(value: unknown, requireExecutables: boolean): ToolPolicyPr
     if (executable.includes("\0")) invalid("command executable contains an invalid character");
     if (seen.has(executable)) invalid(`duplicate command executable: ${executable}`);
     seen.add(executable);
-    if (requireExecutables && isAbsolute(executable) && !existsSync(executable)) {
+    if (executableExists && isAbsolute(executable) && !executableExists(executable)) {
       invalid(`command executable does not exist: ${executable}`);
     }
     const subcommands = optionalUniqueStrings(rule.subcommands, `commands.programs[${index}].subcommands`);

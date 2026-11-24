@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { UnifiedSessionSummary } from "../../global";
+import type { UnifiedSessionSummary } from "../../../../shared/src/contracts/agent-api";
 import { equalTaskLayout } from "../../lib/desktop-task-layout";
 import { closeTaskWorkspacePane, pushTaskPaneNotification, readTaskWorkspace, serializeTaskWorkspace,
   updateTaskPaneContent, updateTaskPaneDraft, updateTaskPaneSession, type TaskPane, type TaskWorkspaceSnapshot } from "./session-state";

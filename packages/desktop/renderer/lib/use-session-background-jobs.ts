@@ -1,6 +1,6 @@
 import { isPageActive } from "./page-activity";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { RuntimeBackgroundJob } from "../global";
+import type { RuntimeBackgroundJob } from "../../../shared/src/contracts/agent-api";
 
 export function useSessionBackgroundJobs(sessionId: string) {
   const [jobs, setJobs] = useState<RuntimeBackgroundJob[]>([]);

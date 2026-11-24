@@ -3,10 +3,10 @@ import { provisionedTodoTools } from "../../native-runtime/src/todo-mcp/provisio
 import { promises as fsp } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { HarnessServiceClient } from "../../core/src/infrastructure/HarnessServiceClient.js";
-import { AgentBuilder } from "../../core/src/domain/agent/AgentBuilder.js";
+import { AgentBuilder } from "../../core/src/bootstrap/AgentBuilder.js";
 import type { AgentEvent, IAgentLoop } from "../../core/src/domain/agent/entities.js";
 import type { SessionCompaction } from "../../core/src/domain/agent/entities.js";
-import { FileSystemSessionStore } from "../../core/src/domain/session/SessionStore.js";
+import { FileSystemSessionStore } from "../../core/src/infrastructure/persistence/SessionStore.js";
 import type { ISessionStore, Session } from "../../core/src/domain/session/entities.js";
 import type { SkillMeta } from "../../core/src/domain/skill/entities.js";
 import { estimateTextTokens } from "../../core/src/domain/model/tokenBudget.js";
@@ -20,14 +20,14 @@ import {
   type AskUserRequest,
   type AskUserResponse,
   type DispatchResult,
-} from "../../core/src/domain/tool/builtin/index.js";
+} from "../../core/src/infrastructure/tools/builtin/index.js";
 import {
   CheckpointAwareToolExecutor,
   InMemoryFileCheckpointJournal,
   type IFileCheckpointJournal,
-} from "../../core/src/domain/tool/checkpoints.js";
+} from "../../core/src/infrastructure/tools/checkpoints.js";
 import { ToolPermissionGate } from "../../core/src/domain/tool/permissions.js";
-import { MCPManager } from "../../core/src/domain/mcp/MCPManager.js";
+import { MCPManager } from "../../core/src/infrastructure/mcp/MCPManager.js";
 import type { MCPServerConfig } from "../../core/src/domain/mcp/entities.js";
 import type { ToolApprovalDecision, ToolPermissionMode, ToolPermissionRequest } from "@agent/core";
 import { DEFAULT_PERMISSION_MODE, type McpServerEntry, type ModelSelection } from "./model-config.js";

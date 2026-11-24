@@ -10,7 +10,7 @@ import type {
   HubConfig,
   HubEvent,
   HubSite,
-} from "../global";
+} from "../../../shared/src/contracts/agent-api";
 
 const TOP_BAR_HEIGHT = 52;
 const PANE_HEADER_HEIGHT = 30;

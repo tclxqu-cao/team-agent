@@ -1,6 +1,6 @@
 {
   "name": "agentroam",
-  "version": "0.2.0-preview.77",
+  "version": "0.2.0-preview.78",
   "description": "Zero-install mobile remote terminal and file console",
   "type": "module",
   "bin": {
@@ -27,14 +27,14 @@
     "ws": "^8.21.3"
   },
   "optionalDependencies": {
-    "agentroam-runtime-darwin-arm64": "0.2.0-preview.77",
-    "agentroam-runtime-win32-x64": "0.2.0-preview.77",
-    "agentroam-cloudflared-darwin-arm64": "0.2.0-preview.76",
-    "agentroam-cloudflared-win32-x64": "0.2.0-preview.76",
+    "agentroam-runtime-darwin-arm64": "0.2.0-preview.78",
+    "agentroam-runtime-win32-x64": "0.2.0-preview.78",
+    "agentroam-cloudflared-darwin-arm64": "0.2.0-preview.78",
+    "agentroam-cloudflared-win32-x64": "0.2.0-preview.78",
     "agentroam-tailscale-darwin-arm64": "0.2.0-preview.77",
     "agentroam-tailscale-win32-x64": "0.2.0-preview.77",
-    "agentroam-tui-darwin-arm64": "0.2.0-preview.77",
-    "@caoqu/agentroam-tui-win32-x64": "0.2.0-preview.77"
+    "agentroam-tui-darwin-arm64": "0.2.0-preview.78",
+    "@caoqu/agentroam-tui-win32-x64": "0.2.0-preview.78"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

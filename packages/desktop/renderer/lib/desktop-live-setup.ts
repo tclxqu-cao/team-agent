@@ -1,4 +1,4 @@
-import type { DesktopLiveStatus } from "../global";
+import type { DesktopLiveStatus } from "../../../shared/src/contracts/agent-api";
 
 export interface DesktopLiveSetupInfo {
   supported: boolean;

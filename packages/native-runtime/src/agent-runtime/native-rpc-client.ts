@@ -31,7 +31,11 @@ export class NativeRpcClient implements NativeRpcConnection {
   private requestHandler: ((method: string, params: NativeJsonPacket) => Promise<unknown>) | null = null;
   private disposed = false;
 
-  constructor(private readonly command: () => Promise<NativeStdioCommand>, private readonly jsonrpc = true) {}
+  constructor(
+    private readonly command: () => Promise<NativeStdioCommand>,
+    private readonly jsonrpc = true,
+    private readonly maxOutputLineBytes?: number,
+  ) {}
 
   private envelope(packet: NativeJsonPacket): NativeJsonPacket { return this.jsonrpc ? { jsonrpc: "2.0", ...packet } : packet; }
 
@@ -41,6 +45,7 @@ export class NativeRpcClient implements NativeRpcConnection {
     if (this.channel) return this.channel;
     const connection = this.command().then(command => {
       const channel = new NativeStdioChannel({ ...command,
+        maxOutputLineBytes: this.maxOutputLineBytes,
         responseKey: packet => packet.method === undefined && ("result" in packet || "error" in packet)
           && (typeof packet.id === "string" || typeof packet.id === "number") ? String(packet.id) : undefined,
         onPacket: async packet => {

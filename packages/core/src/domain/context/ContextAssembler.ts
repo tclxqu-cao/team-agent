@@ -1,4 +1,3 @@
-import os from 'os';
 import { estimateTextTokens, truncateToTokenBudget } from '../model/tokenBudget.js';
 import type {
   IContextAssembler,
@@ -53,7 +52,7 @@ const DEFAULT_SYSTEM_PROMPT = `You are an expert AI assistant with access to too
 - If a task requires many steps, state your plan first, then execute.`;
 
 export class ContextAssembler implements IContextAssembler {
-  constructor(private readonly contextLoader: IContextLoader) {}
+  constructor(private readonly contextLoader: IContextLoader, private readonly operatingSystem = 'unknown') {}
 
   async assemble(input: AssembleInput): Promise<AssembledContext> {
     const maxTokens = input.maxTokens ?? 100_000;
@@ -160,7 +159,7 @@ export class ContextAssembler implements IContextAssembler {
   private buildEnvSection(rootDir: string): string {
     const envInfo = [
       `- Working directory: ${rootDir}`,
-      `- OS: ${os.type()} ${os.release()} (${os.arch()})`,
+      `- OS: ${this.operatingSystem}`,
       `- Current time: ${new Date().toLocaleString('zh-CN', { hour12: false })}`,
     ].join('\n');
     return `## Environment\n${envInfo}`;

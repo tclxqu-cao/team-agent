@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { RemoteProjectActionTool } from "../RemoteProjectActionTool.js";
+import { RemoteProjectActionTool } from "../../../../infrastructure/tools/builtin/RemoteProjectActionTool.js";
 
 describe("RemoteProjectActionTool default constructor", () => {
   it("does not execute remote actions without a configured registry store", async () => {

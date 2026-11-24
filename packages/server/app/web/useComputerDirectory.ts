@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { validateComputerConnections, type SavedComputerConnection } from "../../../core/src/domain/web-console/computer-directory";
 import { readComputers, rememberComputer, saveComputers } from "../../public/pwa/computer-directory.js";
-import { consoleOrigin } from "./console-environment";
+import { consoleOrigin } from "../../../shared/src/console/console-environment";
 
 async function requestDirectory(csrfToken: string, method = "GET", body?: unknown): Promise<SavedComputerConnection[]> {
   const response = await fetch("/api/web-console/computers", {

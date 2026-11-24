@@ -1,3 +1,5 @@
+import { readPromptAttachments, type PromptAttachment } from "./PromptAttachment.js";
+
 export type SessionGoalStatus = "queued" | "active" | "completed" | "failed" | "cancelled";
 export type SessionQueueItemKind = "goal" | "message";
 
@@ -5,6 +7,7 @@ export interface SessionMessageRunOptions {
   model?: { id: string; providerID?: string };
   reasoningEffort?: "low" | "medium" | "high" | "xhigh" | "max";
   profileId?: string;
+  attachments?: PromptAttachment[];
 }
 
 export interface SessionMessagePayload {
@@ -19,12 +22,14 @@ export function normalizeSessionMessageRunOptions(value: unknown): SessionMessag
   const raw = value as Record<string, unknown>;
   const model = raw.model && typeof raw.model === "object" ? raw.model as Record<string, unknown> : null;
   const effort = ["low", "medium", "high", "xhigh", "max"].find(item => item === raw.reasoningEffort) as SessionMessageRunOptions["reasoningEffort"];
+  const attachments = readPromptAttachments(raw.attachments);
   const result: SessionMessageRunOptions = {
     ...(model && typeof model.id === "string" && model.id.trim() ? {
       model: { id: model.id, ...(typeof model.providerID === "string" && model.providerID ? { providerID: model.providerID } : {}) },
     } : {}),
     ...(effort ? { reasoningEffort: effort } : {}),
     ...(typeof raw.profileId === "string" && raw.profileId.trim() ? { profileId: raw.profileId } : {}),
+    ...(attachments?.length ? { attachments } : {}),
   };
   return Object.keys(result).length ? result : undefined;
 }
@@ -93,6 +98,7 @@ export function enqueueSessionGoal(
     objective: string;
     sourceMessageId?: string;
     now: number;
+    activate?: boolean;
   },
 ): SessionGoalState {
   return enqueueSessionQueueItem(state, { ...input, kind: "goal" });
@@ -157,6 +163,30 @@ function enqueueSessionQueueItem(
   return !next.active && input.activate !== false
     ? promoteNextSessionQueueItem(next, input.now)
     : next;
+}
+
+export function updateSessionGoal(
+  state: SessionGoalState, goalId: string, objective: string, now: number,
+): SessionGoalState {
+  const content = objective.trim();
+  if (!content || content.length > 4_000) throw new Error("目标内容需为 1 到 4000 个字符");
+  const matches = (item: SessionGoal) => item.id === goalId && sessionQueueItemKind(item) === "goal";
+  if (state.active && matches(state.active)) {
+    return normalizeGoalState({ ...state, active: { ...state.active, objective: content, updatedAt: now } });
+  }
+  if (!state.queued.some(matches)) throw new Error("目标已结束或不在队列中");
+  return normalizeGoalState({ ...state, queued: state.queued.map(item => matches(item)
+    ? { ...item, objective: content, updatedAt: now } : item) });
+}
+
+export function completeSteeredSessionGoal(state: SessionGoalState, goalId: string, now: number): SessionGoalState {
+  const target = state.queued.find(item => item.id === goalId && sessionQueueItemKind(item) === "goal");
+  if (!target) return state;
+  return normalizeGoalState({
+    ...state,
+    queued: state.queued.filter(item => item.id !== goalId),
+    history: [...state.history, { ...target, status: "completed" as const, updatedAt: now, lastReason: "steered" }].slice(-100),
+  });
 }
 
 export function reorderQueuedSessionGoals(state: SessionGoalState, orderedIds: readonly string[]): SessionGoalState {

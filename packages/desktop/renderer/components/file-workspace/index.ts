@@ -1,7 +1,7 @@
-export { default as FileTree } from "./FileTree";
-export { default as FilePreview } from "./FilePreview";
+export { default as FileTree } from "../../../../shared/src/file-workspace/FileTree";
+export { default as FilePreview } from "../../../../shared/src/file-workspace/FilePreview";
 export { default as FileWorkspaceDrawer } from "./FileWorkspaceDrawer";
 export type { FileWorkspaceDrawerTab } from "./FileWorkspaceDrawer";
-export * from "./FilePreview";
-export * from "./fileDiff";
-export * from "./fileTreeReveal";
+export * from "../../../../shared/src/file-workspace/FilePreview";
+export * from "../../../../shared/src/file-workspace/fileDiff";
+export * from "../../../../shared/src/file-workspace/fileTreeReveal";

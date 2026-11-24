@@ -1,9 +1,9 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-const toolbar = readFileSync(new URL("./ResponsiveToolbar.tsx", import.meta.url), "utf8");
+const toolbar = readFileSync(new URL("../../../shared/src/console/ResponsiveToolbar.tsx", import.meta.url), "utf8");
 const page = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
-const css = readFileSync(new URL("./neural-boot.css", import.meta.url), "utf8");
+const css = readFileSync(new URL("../../../shared/src/console/neural-boot.css", import.meta.url), "utf8");
 const themePicker = readFileSync(new URL("./ThemePicker.tsx", import.meta.url), "utf8");
 
 describe("shared glass toolbar layout", () => {

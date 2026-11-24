@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { loadAgentRailSessions } from "./agent-rail-sessions";
-import type { AgentApi, AgentWorkspace, UnifiedSessionSummary, WorkspacePage } from "../global";
+import type { AgentApi, AgentWorkspace, UnifiedSessionSummary, WorkspacePage } from "../../../shared/src/contracts/agent-api";
 
 const page = <T>(data: T[], nextCursor: string | null = null): WorkspacePage<T> => ({ data, nextCursor, watermark: null });
 const workspace = (id: string): AgentWorkspace => ({ agentType: "codex", workspaceId: id, name: id, roots: [], order: 0, source: "native" });

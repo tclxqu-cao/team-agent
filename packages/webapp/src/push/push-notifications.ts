@@ -1,4 +1,4 @@
-import type { HttpClient } from "../infrastructure/http/http-client.js";
+import type { HttpClient } from "../../../shared/src/infrastructure/http/http-client.js";
 
 const SERVICE_WORKER_URL = "/service-worker.js";
 

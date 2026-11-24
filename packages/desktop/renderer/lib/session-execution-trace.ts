@@ -68,9 +68,11 @@ export function groupSessionExecutionMessages(
       index = end;
       continue;
     }
-    const durationMs = (anchored ? [user, ...turn] : turn).reduce<number | undefined>((duration, message) => (
-      validCompletionDurationMs(message.presentation?.completionDurationMs)
-      ?? validCompletionDurationMs(message.presentation?.runResult?.durationMs) ?? duration
+    const turnMessages = anchored ? [user, ...turn] : turn;
+    const durationMs = turnMessages.reduceRight<number | undefined>((duration, message) => (
+      duration ?? validCompletionDurationMs(message.presentation?.completionDurationMs)
+    ), undefined) ?? turnMessages.reduceRight<number | undefined>((duration, message) => (
+      duration ?? validCompletionDurationMs(message.presentation?.runResult?.durationMs)
     ), undefined);
     const running = isRunning && end === messages.length && durationMs === undefined;
     const isAnswer = (message: ChatMessage) => (

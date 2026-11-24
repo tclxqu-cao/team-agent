@@ -1,4 +1,4 @@
-import type { AgentEvent, Message } from "@agent/core";
+import type { AgentEvent, Message, RuntimeCapabilities } from "@agent/core";
 import { basename } from "node:path";
 import { normalizeAgentWorkspacePath, paginateByOffset } from "./agent-workspace-index.js";
 import { encodeUnifiedSessionId } from "./session-id.js";
@@ -23,6 +23,7 @@ export interface NativeProtocolSession {
 
 export interface NativeSessionProtocol {
   available(): Promise<void>;
+  getCapabilities?(): Promise<RuntimeCapabilities>;
   list(): Promise<NativeProtocolSession[]>;
   read(id: string): Promise<{ session: NativeProtocolSession; messages: Message[]; events?: AgentEvent[] }>;
   create(options: CreateRuntimeSessionOptions): Promise<NativeProtocolSession>;
@@ -43,8 +44,11 @@ export class StdioNativeRuntimeAdapter implements AgentRuntimeAdapter {
   constructor(readonly agentType: NativeAgentType, private readonly label: string, private readonly client: NativeSessionProtocol) {}
 
   async health(): Promise<RuntimeHealth> {
-    try { await this.client.available(); return { agentType: this.agentType, label: this.label, available: true }; }
-    catch (error) { return { agentType: this.agentType, label: this.label, available: false, error: error instanceof Error ? error.message : "Native runtime unavailable" }; }
+    try {
+      await this.client.available();
+      const capabilities = await this.client.getCapabilities?.();
+      return { agentType: this.agentType, label: this.label, available: true, ...(capabilities ? { capabilities } : {}) };
+    } catch (error) { return { agentType: this.agentType, label: this.label, available: false, error: error instanceof Error ? error.message : "Native runtime unavailable" }; }
   }
 
   protected summary(session: NativeProtocolSession): UnifiedSessionSummary {

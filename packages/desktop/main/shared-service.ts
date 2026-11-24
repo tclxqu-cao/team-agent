@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { WebSocket } from "ws";
 import { createMobilePairingInvitation } from "./mobile-pairing.js";
-import type { TunnelStatus } from "../../server/lib/tunnel-control.mjs";
+import type { TunnelStatus } from "../../shared/src/contracts/tunnel-status";
 
 export interface ServiceDescriptor {
   protocol: 1; instanceId: string; pid: number; url: string; dataDir: string; token: string;

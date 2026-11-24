@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { InMemorySessionStore } from "./SessionStore";
+import { InMemorySessionStore } from "../../infrastructure/persistence/SessionStore";
 import { SessionGoalCoordinator } from "./SessionGoalCoordinator";
 
 describe("SessionGoalCoordinator", () => {

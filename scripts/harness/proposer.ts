@@ -1,6 +1,6 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { ModelRegistry, type ProviderType } from '../../packages/core/src/domain/model/ModelRegistry.js';
+import { ModelRegistry, type ProviderType } from '../../packages/core/src/bootstrap/ModelRegistry.js';
 
 // Separate known-good process. No tools, shell, or autonomous write access are exposed to the model.
 const [requestFile, outputFile] = process.argv.slice(2);

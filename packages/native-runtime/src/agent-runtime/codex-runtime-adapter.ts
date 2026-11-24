@@ -634,7 +634,10 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
         refreshTurnId: ascTurns.at(-1)?.id === turn.id ? turn.id : undefined,
         preserveRefreshedItems: summary.status === "running",
       });
-      let hydratedItems = this.pagedTurnItems.get(nativeSessionId)?.turns.get(turn.id) ?? turn.items ?? [];
+      let hydratedItems = mergeCodexGoalInput(
+        this.pagedTurnItems.get(nativeSessionId)?.turns.get(turn.id) ?? turn.items ?? [],
+        turn.items?.find(item => item.isGoal === true),
+      );
       if (meta.thread.path) {
         const commentary = await this.rolloutCommentaryReader.read(meta.thread.path, turn.id);
         hydratedItems = mergeCodexRolloutCommentary(hydratedItems, commentary);
@@ -702,19 +705,15 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     }
 
     const state = this.pagedTurnItems.get(nativeSessionId);
-    const windowTurns = idxA >= 0 && idxB >= idxA
-      ? ascTurns.slice(idxA, idxB + 1).map((turn) => ({
-          ...turn,
-          items: state?.turns.get(turn.id) ?? turn.items ?? [],
-        }))
-      : [];
-    // Full hydration has no user item for native goal-triggered turns.
-    const turnsWithGoals = windowTurns.map((turn) => {
-      const goals = ascTurns.find((summary) => summary.id === turn.id)?.items
-        ?.filter((item) => item.type === "userMessage" && item.id?.startsWith("codex-goal:")) ?? [];
-      return goals.length ? { ...turn, items: [...goals, ...(turn.items ?? [])] } : turn;
-    });
-    const messages = await codexTurnsToMessages(turnsWithGoals, {
+    // Older Codex versions omit the goal input from full hydration.
+    const windowTurns = selectedSummaryTurns.map((turn) => ({
+      ...turn,
+      items: mergeCodexGoalInput(
+        state?.turns.get(turn.id) ?? turn.items ?? [],
+        turn.items?.find(item => item.isGoal === true),
+      ),
+    }));
+    const messages = await codexTurnsToMessages(windowTurns, {
       nativeSessionId, questionHistory,
       ...(query.view === "trace" ? {
         toolResultMode: "lazy",
@@ -1373,9 +1372,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       const skillPath = skillInvocation
         ? await this.resolveSkillPath(detail.cwd, skillInvocation.name)
         : null;
-      const text = skillInvocation
-        ? `$${skillInvocation.name}${skillInvocation.rest ? ` ${skillInvocation.rest}` : ""}`
-        : input;
+      const text = skillInvocation ? codexSkillPrompt(skillInvocation) : input;
       const runUsage: CodexRunUsage = {
         completedTurnIds: new Set(),
         startedTurnIds: new Set(),
@@ -1838,7 +1835,8 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     }
 
     const progressEvent = codexProgressNotificationToEvent(message);
-    if (progressEvent) queue.push(progressEvent);
+    if (progressEvent) queue.push(message.method === "turn/started" && eventTurnId
+      ? { ...progressEvent, turnId: eventTurnId } : progressEvent);
     const notificationItem = params.item as CodexItem | undefined;
     if (
       (message.method === "item/started" || message.method === "item/completed")
@@ -2372,6 +2370,10 @@ export function parseExplicitSkillInvocation(input: string): { name: string; res
   return { name: match[1], rest: match[2]?.trim() ?? "" };
 }
 
+export function codexSkillPrompt({ name, rest }: NonNullable<ReturnType<typeof parseExplicitSkillInvocation>>): string {
+  return rest ? `$${name} ${rest}` : `$${name}`;
+}
+
 function findSkillPath(value: unknown, name: string): string | null {
   if (!value || typeof value !== "object") return null;
   if (Array.isArray(value)) {
@@ -2588,7 +2590,8 @@ function mergeCodexSummaryUserMessages(
     const durable = rolloutMessages.get(turn.id);
     if (!durable?.length) return turn;
     const summaryUsers = (turn.items ?? []).filter((item) => item.type === "userMessage");
-    const users: CodexItem[] = durable.map((message) => ({
+    const goal = durable.find((message) => message.itemId === `codex-goal:${turn.id}`);
+    const users: CodexItem[] = durable.filter((message) => message !== goal).map((message) => ({
       type: "userMessage",
       ...(message.itemId ? { id: message.itemId } : {}),
       content: message.content,
@@ -2602,12 +2605,32 @@ function mergeCodexSummaryUserMessages(
     }
     return {
       ...turn,
-      items: [
+      items: mergeCodexGoalInput([
         ...users,
         ...(turn.items ?? []).filter((item) => item.type !== "userMessage"),
-      ],
+      ], goal && { type: "userMessage", id: goal.itemId, content: goal.content }),
     };
   });
+}
+
+function codexUserMessageText(entries: Array<Record<string, unknown>> | undefined): string {
+  return entries?.filter((entry) => entry.type === "text" && typeof entry.text === "string")
+    .map((entry) => String(entry.text))
+    .join("\n")
+    .trim() ?? "";
+}
+
+function mergeCodexGoalInput(items: CodexItem[], goal?: CodexItem): CodexItem[] {
+  if (!goal) return items;
+  const inputIndex = items.findIndex((item) => item.type === "userMessage");
+  const input = items[inputIndex];
+  const goalText = codexUserMessageText(goal.content as Array<Record<string, unknown>> | undefined);
+  if (input && goalText === codexUserMessageText(input.content as Array<Record<string, unknown>> | undefined)) {
+    // Only the initial native input can replace the projected objective.
+    // Equal follow-up inputs in the same turn retain their own positions.
+    return items.map((item, index) => index === inputIndex ? { ...item, isGoal: true } : item);
+  }
+  return [{ ...goal, isGoal: true }, ...items];
 }
 
 function codexSummaryTurnsToMessages(
@@ -2623,11 +2646,7 @@ function codexSummaryTurnsToMessages(
     for (const item of turn.items ?? []) {
       if (item.type === "userMessage") {
         const entries = item.content as Array<Record<string, unknown>> | undefined;
-        const sourceText = entries
-          ?.filter((entry) => entry.type === "text" && typeof entry.text === "string")
-          .map((entry) => String(entry.text))
-          .join("\n")
-          .trim();
+        const sourceText = codexUserMessageText(entries);
         if (!sourceText) continue;
         const normalized = normalizeCodexUserText(sourceText);
         const imagePaths = codexUserImagePaths(entries);
@@ -2636,6 +2655,7 @@ function codexSummaryTurnsToMessages(
           content: normalized.content,
           presentation: {
             executionTrace: { turnId: turn.id, segmentIndex },
+            ...(item.isGoal === true ? { isGoal: true } : {}),
             ...(turn.completionDurationMs !== undefined ? { completionDurationMs: turn.completionDurationMs } : {}),
             ...(normalized.rawContent ? { rawContent: normalized.rawContent } : {}),
             ...(imagePaths.length > 0 ? {
@@ -2654,7 +2674,7 @@ function codexSummaryTurnsToMessages(
         && item.text.trim()
       ) {
         const presentation = {
-          ...codexAgentMessagePresentation(item),
+          ...codexAgentMessagePresentation(item, turn.id),
           ...(turn.status === "completed" ? { forkPoint: { turnId: turn.id } } : {}),
         };
         messages.push({
@@ -2741,29 +2761,21 @@ export async function codexTurnsToMessages(
       if (item.type === "userMessage") {
         segmentIndex += 1;
         const entries = item.content as Array<Record<string, unknown>> | undefined;
-        const sourceText = entries
-          ?.filter((entry) => entry.type === "text" && typeof entry.text === "string")
-          .map((entry) => String(entry.text))
-          .join("\n")
-          .trim();
+        const sourceText = codexUserMessageText(entries);
         if (sourceText) {
           const normalized = normalizeCodexUserText(sourceText);
           const imagePaths = codexUserImagePaths(entries);
           const attachments = await Promise.all(imagePaths.map(loadCodexImageAttachment));
-          const presentation = normalized.rawContent || attachments.length > 0 || turn.completionDurationMs !== undefined
-            ? {
-                ...(turn.completionDurationMs !== undefined ? {
-                  executionTrace: { turnId: turn.id, segmentIndex },
-                  completionDurationMs: turn.completionDurationMs,
-                } : {}),
-                ...(normalized.rawContent ? { rawContent: normalized.rawContent } : {}),
-                ...(attachments.length > 0 ? { attachments } : {}),
-              }
-            : undefined;
           messages.push({
             role: "user",
             content: normalized.content,
-            ...(presentation ? { presentation } : {}),
+            presentation: {
+              executionTrace: { turnId: turn.id, segmentIndex },
+              ...(item.isGoal === true ? { isGoal: true } : {}),
+              ...(turn.completionDurationMs !== undefined ? { completionDurationMs: turn.completionDurationMs } : {}),
+              ...(normalized.rawContent ? { rawContent: normalized.rawContent } : {}),
+              ...(attachments.length > 0 ? { attachments } : {}),
+            },
           });
         }
       } else if (item.id && questionHistory.has(item.id)) {
@@ -2772,7 +2784,7 @@ export async function codexTurnsToMessages(
         // Older runtimes can omit the structured questions. Keep their fallback
         // text out of an in-progress final answer.
         if (item.delivery === "async" && turn.status === "inProgress") continue;
-        const nativePresentation = codexAgentMessagePresentation(item);
+        const nativePresentation = codexAgentMessagePresentation(item, turn.id);
         const presentation = nativePresentation?.agentMessagePhase === "commentary" && options.toolResultMode
           ? {
               ...nativePresentation,
@@ -2910,11 +2922,15 @@ function isCodexCoreAgentMessage(
 
 function codexAgentMessagePresentation(
   item: CodexItem,
+  turnId: string,
 ): Message["presentation"] | undefined {
   const phase = item.delivery === "async" ? "commentary" : codexAgentMessagePhase(item.phase);
-  return phase
-    ? { agentMessagePhase: phase }
-    : undefined;
+  const nativeMessageId = phase !== "commentary" ? codexTraceHistoryId(turnId, "agent", item.id) : undefined;
+  if (!phase && !nativeMessageId) return undefined;
+  return {
+    ...(phase ? { agentMessagePhase: phase } : {}),
+    ...(nativeMessageId ? { nativeMessageId } : {}),
+  };
 }
 
 function codexAgentMessagePhase(value: unknown): "commentary" | "final_answer" | undefined {
@@ -3000,7 +3016,7 @@ export function codexReasoningNotificationToEvent(
   };
 }
 
-export function codexProgressNotificationToEvent(message: RpcNotification): AgentEvent | null {
+export function codexProgressNotificationToEvent(message: RpcNotification): Extract<AgentEvent, { type: "runtime_progress" }> | null {
   const item = asRecord(asRecord(message.params).item);
   if (item.type === "contextCompaction" && (message.method === "item/started" || message.method === "item/completed")) {
     const completed = message.method === "item/completed";

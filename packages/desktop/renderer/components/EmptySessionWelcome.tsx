@@ -1,6 +1,6 @@
 import { AGENT_LABELS } from "../lib/agent-catalog";
 import { BookOpen, Lightbulb, Wrench } from "lucide-react";
-import type { AgentType } from "../global";
+import type { AgentType } from "../../../shared/src/contracts/agent-api";
 
 export const EMPTY_SESSION_STARTERS = [
   { prompt: "带我熟悉这个项目", Icon: BookOpen },

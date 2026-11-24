@@ -3,7 +3,7 @@ import { AGENT_TYPES, NATIVE_AGENT_TYPES, isAgentType, isNativeAgentType } from 
 
 describe("Agent type registry", () => {
   it("keeps all independent Agents in stable order", () => {
-    expect(AGENT_TYPES).toEqual(["customer-agent", "codex", "claude-code", "opencode", "deepseek-harness", "qoder", "zcode", "workbuddy", "copilot"]);
+    expect(AGENT_TYPES).toEqual(["customer-agent", "codex", "claude-code", "opencode", "deepseek-harness", "qoder", "zcode", "workbuddy", "copilot", "grok", "agy"]);
     expect(new Set(AGENT_TYPES).size).toBe(AGENT_TYPES.length);
     expect(NATIVE_AGENT_TYPES).toEqual(AGENT_TYPES.filter(type => type !== "customer-agent"));
   });

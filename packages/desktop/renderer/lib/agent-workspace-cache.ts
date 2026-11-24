@@ -3,7 +3,7 @@ import type {
   AgentWorkspace,
   UnifiedSessionSummary,
   WorkspacePage,
-} from "../global";
+} from "../../../shared/src/contracts/agent-api";
 import { AGENT_TYPES } from "../../../core/src/domain/agent/agent-type";
 
 export const AGENT_WORKSPACE_CACHE_KEY = "agentroam.agent-workspaces.v2";

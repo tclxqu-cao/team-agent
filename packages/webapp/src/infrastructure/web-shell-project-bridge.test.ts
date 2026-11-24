@@ -2,7 +2,7 @@ import {
   WEBAPP_PROJECT_RESPONSE_TYPE,
 } from "../../../core/src/domain/web-console/WebProjectBridge";
 import { describe, expect, it, vi } from "vitest";
-import { WebShellProjectBridge } from "./web-shell-project-bridge";
+import { WebShellProjectBridge } from "../../../shared/src/infrastructure/web-shell-project-bridge";
 
 function fakeBridgeWindow(standalone = false) {
   const listeners: Array<(event: MessageEvent) => void> = [];

@@ -10,7 +10,7 @@ import type {
   TokenUsage,
   SessionToolResultRef,
 } from "@agent/core";
-import type { CronTask } from "../global";
+import type { CronTask } from "../../../shared/src/contracts/agent-api";
 import {
   applyCodexLiveExecutionEvent,
   type CodexLiveExecutionEvent,
@@ -71,10 +71,13 @@ export interface StreamEvent {
   total?: number;
   /** For ask_user events */
   questionId?: string;
+  resolvedQuestion?: MessagePresentation["question"];
   question?: string;
   options?: Array<{ label: string; description: string }>;
   fields?: AskUserField[];
   multiSelect?: boolean;
+  cancellable?: boolean;
+  allowFreeText?: boolean;
   /** For show_widget events */
   widgetId?: string;
   widgetType?: string;
@@ -170,6 +173,8 @@ export interface ChatMessage {
     options?: Array<{ label: string; description: string }>;
     fields?: AskUserField[];
     multiSelect?: boolean;
+    cancellable?: boolean;
+    allowFreeText?: boolean;
     answered?: boolean;
     cancelled?: boolean;
     answer?: string;
@@ -279,10 +284,12 @@ function addMessageToList(messages: ChatMessage[], msg: ChatMessage): ChatMessag
 
 function appendTextToList(messages: ChatMessage[], text: string): ChatMessage[] {
   if (!text) return messages;
-  const lastMsg = messages[messages.length - 1];
+  let lastIndex = messages.length - 1;
+  while (messages[lastIndex]?.isGoal && messages[lastIndex]?.isQueued) lastIndex -= 1;
+  const lastMsg = messages[lastIndex];
   if (canAppendAssistantOutput(lastMsg)) {
     const updated = [...messages];
-    updated[updated.length - 1] = { ...lastMsg, content: lastMsg.content + text };
+    updated[lastIndex] = { ...lastMsg, content: lastMsg.content + text };
     return updated;
   }
   return [

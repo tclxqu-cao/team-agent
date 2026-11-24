@@ -5,6 +5,7 @@ const app = readFileSync(new URL("../App.tsx", import.meta.url), "utf8");
 const css = readFileSync(new URL("../styles/global.css", import.meta.url), "utf8");
 const uiStore = readFileSync(new URL("../stores/uiStore.ts", import.meta.url), "utf8");
 const sessionRow = readFileSync(new URL("./SidebarSessionRow.tsx", import.meta.url), "utf8");
+const sessionDisclosure = readFileSync(new URL("./SessionDisclosureButton.tsx", import.meta.url), "utf8");
 const deleteConfirmation = readFileSync(new URL("./SidebarDeleteConfirmation.tsx", import.meta.url), "utf8");
 const sessionDeletion = readFileSync(new URL("../lib/session-deletion.ts", import.meta.url), "utf8");
 
@@ -58,7 +59,7 @@ describe("AgentRoam reference sidebar", () => {
       toolbarStart,
       app.indexOf("{/* Project + session list */}"),
     );
-    const collapse = toolbar.indexOf('aria-label={allProjectsCollapsed ? "展开全部会话" : "折叠全部会话"}');
+    const collapse = toolbar.indexOf('aria-label={allProjectsCollapsed ? "展开全部目录" : "折叠全部目录"}');
     const sorting = toolbar.indexOf('aria-label={runningFirst ? "按新建时间排序" : "进行中会话优先"}');
     const importProject = toolbar.indexOf('aria-label="导入目录"');
     expect(search).toBeGreaterThan(-1);
@@ -79,19 +80,17 @@ describe("AgentRoam reference sidebar", () => {
   it("keeps session selection stable across repeated clicks and project disclosure", () => {
     expect(app).toContain("applySidebarSelection(selectProject(projectId))");
     expect(app).toContain("applySidebarSelection(selectSession(projectId, session.id))");
-    expect(app).toContain("applySidebarSelection(selectSession(projectId, child.id))");
+    expect(app).toContain("children.map(item => renderProjectSession(item, projectId))");
     expect(app).not.toContain("toggleProjectSelection(");
     expect(app).not.toContain("toggleSessionSelection(");
     expect(app).not.toContain("const nextSelection = active");
     expect(app).toContain("aria-pressed={isSelected}");
     expect(app).toContain("active: isActiveSession");
-    expect(app).toContain("active: selectedSessionId === child.id");
     expect(sessionRow).toContain("aria-pressed={session.active}");
   });
 
   it("shows Codex compatibility state in every sidebar session path", () => {
     expect(app.match(/compatibility: session\.compatibility/g)).toHaveLength(2);
-    expect(app).toContain("compatibility: child.compatibility");
     expect(sessionRow).toContain('session.compatibility?.status === "checking"');
     expect(sessionRow).toContain('session.compatibility?.status === "incompatible"');
     expect(sessionRow).toContain('aria-label="Codex 版本不兼容"');
@@ -180,20 +179,27 @@ describe("AgentRoam reference sidebar", () => {
     expect(app).toContain("project.canCreateSession === false");
     expect(app).toContain("<History size={13}");
     expect(app).toContain("project.canCreateSession !== false && (");
-    expect(app).toContain("mobileDrawer ? 100_000 : manySession ? 300 : 800");
     expect(app).toContain("manySession && !mobileDrawer");
     expect(app).toContain('data-sidebar-project-id={project.id}');
     expect(app).toContain("if (mobileDrawer) {");
     expect(app).toContain("loadSessions(projectId, { cursor: nextCursor })");
   });
 
-  it("collapses and expands the complete project and session hierarchy", () => {
+  it("lets expanded session trees grow vertically while keeping row actions within the sidebar", () => {
+    const disclosure = app.slice(app.indexOf("{/* Sessions under this project"), app.indexOf('className="sidebar-project-sessions"'));
+    expect(disclosure).toContain('gridTemplateColumns: "minmax(0, 1fr)"');
+    expect(disclosure).toContain('gridTemplateRows: isExpanded ? "minmax(0, 1fr)" : "minmax(0, 0fr)"');
+    expect(disclosure).toContain('overflow: "clip"');
+    expect(disclosure).not.toContain("maxHeight");
+  });
+
+  it("expands all projects without expanding their child sessions", () => {
     expect(app).toContain("const handleCollapseAllSessions = () =>");
     expect(app).toContain("setExpandedProjects(new Set())");
-    expect(app).toContain("setCollapsedParents(new Set(Object.keys(childSessionsByParent)))");
+    expect(app).toContain("projectSessionDisclosure.collapseAll()");
     expect(app).toContain("const handleExpandAllSessions = () =>");
-    expect(app).toContain("setCollapsedParents(new Set())");
-    expect(app).toContain('title={allProjectsCollapsed ? "展开全部会话" : "折叠全部会话"}');
+    expect(app).toContain("setExpandedProjects(new Set(projectIds))");
+    expect(app).toContain('title={allProjectsCollapsed ? "展开全部目录" : "折叠全部目录"}');
     expect(app).toContain("disabled={collapsibleProjectIds.length === 0}");
     expect(app).toContain("aria-expanded={isExpanded}");
     expect(app).toContain('d="m17 11-5-5-5 5"');
@@ -222,12 +228,12 @@ describe("AgentRoam reference sidebar", () => {
     expect(sessionRow).toContain("<Pin");
     expect(sessionRow).toContain("<Trash2");
     expect(app.match(/onPin=/g)).toHaveLength(3);
-    expect(app).toContain("onPin={() => togglePinnedSession(session.id)}");
+    expect(app).toContain("onPin={child ? undefined : () => togglePinnedSession(session.id)}");
     expect(app).toContain("onPin={session.parentSessionId ? undefined : () => togglePinnedSession(session.id)}");
     expect(app.indexOf('className="sidebar-pinned-section"')).toBeLessThan(app.indexOf("{orderedSidebarProjects.map((project) =>"));
-    expect(app).toContain("pinnedRootSessions.map(({ projectId, session }) => renderRootSession(session, projectId))");
+    expect(app).toContain("pinnedRootSessions.map(({ projectId, session }) => renderProjectSession(session, projectId))");
     expect(app).toContain("(session) => !pinnedSessionIdSet.has(session.id)");
-    expect(app).toContain("projSessions.map((session) => renderRootSession(session, project.id))");
+    expect(app).toContain("projSessions.map((session) => renderProjectSession(session, project.id))");
     expect(app).toContain("sortPinnedSessionsFirst(");
     expect(app).toContain("removePinnedSessions(removal.removedIds)");
     expect(app).not.toContain("window.confirm(");
@@ -240,7 +246,7 @@ describe("AgentRoam reference sidebar", () => {
     expect(app).toContain("projectSessionRequestIds.current.set(");
     expect(app).toContain("writeAgentWorkspaceCache(cache)");
     expect(app).toContain("requestDeleteSession(session, anchor)");
-    expect(app).toContain("requestDeleteSession(child, anchor)");
+    expect(app).toContain('deleteLabel={child ? "删除子会话" : undefined}');
     expect(app).toContain("<SidebarDeleteConfirmation");
     expect(deleteConfirmation).toContain('role="alertdialog"');
     expect(css).toContain(".sidebar-session-pin,");
@@ -286,7 +292,7 @@ describe("AgentRoam reference sidebar", () => {
     expect(app).not.toContain(">外部占用</span>");
     expect(app).toContain("message.askUser && !message.askUser.answered");
     expect(app).toContain("getSidebarSessionVisualState");
-    expect(sessionRow).toContain('className={`sidebar-status-dot is-${session.visualState}`}');
+    expect(sessionRow).toContain("<SessionStatusDot session={session}");
     expect(css).toContain(".sidebar-status-dot.is-needs-input");
     expect(css).toContain(".sidebar-status-dot.is-running");
     expect(css).toContain(".sidebar-status-dot.is-completed");
@@ -309,8 +315,8 @@ describe("AgentRoam reference sidebar", () => {
     expect(projectButton).toContain('d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20');
     expect(projectButton).toContain('d="M22 19a2 2 0 0 1-2 2H4');
     expect(app).not.toContain('className="sidebar-agent-group"');
-    expect(sessionRow).toContain("sidebar-session-disclosure");
-    expect(sessionRow).toContain("<ChevronRight");
+    expect(sessionRow).toContain("SessionDisclosureButton");
+    expect(sessionDisclosure).toContain("<ChevronRight");
     expect(app).not.toContain('<line x1="9" y1="14" x2="15" y2="14"/>');
     expect(css).toContain(".sidebar-session-disclosure.is-expanded");
   });

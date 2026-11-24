@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AgentHttpGateway } from "./agent-http-gateway";
+import { AgentHttpGateway } from "../../../../shared/src/infrastructure/http/agent-http-gateway";
 
 class ObservedEventSource {
   static readonly CLOSED = 2;

@@ -1,8 +1,8 @@
 import type { CSSProperties, ReactNode } from "react";
 import type { Viewport } from "next";
 import { anonymousPrincipal, webConsoleStore } from "../../lib/web-auth/anonymous";
-import { resolveWebTheme } from "./themes";
-import "./neural-boot.css";
+import { resolveWebTheme } from "../../../shared/src/console/themes";
+import "../../../shared/src/console/neural-boot.css";
 
 export const dynamic = "force-dynamic";
 

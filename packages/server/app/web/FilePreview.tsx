@@ -1,2 +1,2 @@
-export { default } from "../../../desktop/renderer/components/file-workspace/FilePreview";
-export * from "../../../desktop/renderer/components/file-workspace/FilePreview";
+export { default } from "../../../shared/src/file-workspace/FilePreview";
+export * from "../../../shared/src/file-workspace/FilePreview";

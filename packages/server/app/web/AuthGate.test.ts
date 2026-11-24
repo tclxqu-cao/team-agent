@@ -2,8 +2,8 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { connectionElapsedSeconds } from "./AuthGate";
 
-const source = readFileSync(new URL("./AuthGate.tsx", import.meta.url), "utf8") + readFileSync(new URL("./WorkspaceBoot.tsx", import.meta.url), "utf8");
-const bootCss = readFileSync(new URL("./neural-boot.css", import.meta.url), "utf8");
+const source = readFileSync(new URL("./AuthGate.tsx", import.meta.url), "utf8") + readFileSync(new URL("../../../shared/src/console/WorkspaceBoot.tsx", import.meta.url), "utf8");
+const bootCss = readFileSync(new URL("../../../shared/src/console/neural-boot.css", import.meta.url), "utf8");
 
 describe("remote console auth gate", () => {
   it("keeps one digital-human boot surface across auth and workspace hydration", () => {

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { FileRunCheckpointStore } from './RunCheckpointStore.js';
-import { AgentBuilder } from '../domain/agent/AgentBuilder.js';
+import { AgentBuilder } from '../bootstrap/AgentBuilder.js';
 import type { IModelProvider } from '../domain/model/entities.js';
 import type { RunCheckpoint } from '../domain/agent/run-checkpoint.js';
 

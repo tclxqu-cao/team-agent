@@ -1,1 +1,1 @@
-export * from "../../../desktop/renderer/components/file-workspace/fileDiff";
+export * from "../../../shared/src/file-workspace/fileDiff";

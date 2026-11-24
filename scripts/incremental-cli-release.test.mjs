@@ -19,6 +19,8 @@ test("CLI-only change builds only launcher and keeps six previous versions", () 
 });
 
 test("shared Web change builds both runtimes and launcher but no TUI or cloudflared", () => {
+  const expected = [names[0], names[1], "agentroam"];
+  assert.deepEqual(changed(plan(["packages/shared/src/console/TerminalPane.tsx"])), expected);
   const result = plan(["packages/webapp/src/main.tsx"]);
   assert.deepEqual(changed(result), [names[0], names[1], "agentroam"]);
   assert.equal(buildCommands(result).filter(([, args]) => args[0] === "scripts/stage-cli-runtime.mjs").length, 2);

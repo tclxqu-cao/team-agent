@@ -2,6 +2,7 @@
 import type { ISessionStore, Session } from '../domain/session/entities.js';
 import type { Message } from '../domain/model/entities.js';
 import type { AgentEvent } from '../domain/agent/entities.js';
+import { SESSION_GOAL_METADATA_KEY, type SessionGoalState } from '../domain/session/SessionGoals.js';
 import { consumePendingAutoTitle } from '../domain/session/SessionTitle.js';
 import { getDatabase } from './SQLiteDatabase.js';
 import type Database from "better-sqlite3";
@@ -12,6 +13,19 @@ export class SQLiteSessionStore implements ISessionStore {
   constructor(baseDir: string, private readonly eventCommit?: (db: Database.Database, sessionId: string, event: AgentEvent, at: number) => void) {
     this.baseDir = baseDir;
     getDatabase(baseDir);
+  }
+
+  saveGoalQueue(id: string, state: SessionGoalState, updated: string): void {
+    getDatabase(this.baseDir).db.prepare("UPDATE sessions SET metadata = json_set(metadata, ?, json(?)), updated = ? WHERE id = ?")
+      .run(`$.${SESSION_GOAL_METADATA_KEY}`, JSON.stringify(state), updated, id);
+  }
+
+  listSessionsWithGoalQueue(): string[] {
+    const path = `$.${SESSION_GOAL_METADATA_KEY}`;
+    const rows = getDatabase(this.baseDir).db.prepare(
+      "SELECT id FROM sessions WHERE json_type(metadata, ?) = 'object' OR json_array_length(metadata, ?) > 0",
+    ).all(`${path}.active`, `${path}.queued`) as Array<{ id: string }>;
+    return rows.map(({ id }) => id);
   }
 
   async create(session: Session): Promise<Session> {

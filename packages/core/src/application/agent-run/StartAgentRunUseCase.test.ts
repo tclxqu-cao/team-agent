@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { InMemorySessionStore } from "../../domain/session/SessionStore.js";
+import { InMemorySessionStore } from "../../infrastructure/persistence/SessionStore.js";
 import type { AgentDefinition } from "../../domain/agent/entities.js";
 import type { SkillDefinition } from "../../domain/skill/entities.js";
 import {

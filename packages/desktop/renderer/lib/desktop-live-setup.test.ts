@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { isDesktopLiveSetupPending } from "./desktop-live-setup";
-import type { DesktopLiveStatus } from "../global";
+import type { DesktopLiveStatus } from "../../../shared/src/contracts/agent-api";
 
 const granted: DesktopLiveStatus = {
   enabled: true,

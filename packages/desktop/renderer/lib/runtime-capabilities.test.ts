@@ -21,6 +21,8 @@ describe("runtime capabilities", () => {
     expect(supportsMidTurnSteering("zcode")).toBe(true);
     expect(supportsMidTurnSteering("qoder")).toBe(false);
     expect(supportsMidTurnSteering("workbuddy")).toBe(false);
+    expect(supportsMidTurnSteering("grok")).toBe(false);
+    expect(supportsMidTurnSteering("agy")).toBe(false);
     expect(supportsMidTurnSteering(undefined)).toBe(false);
   });
 

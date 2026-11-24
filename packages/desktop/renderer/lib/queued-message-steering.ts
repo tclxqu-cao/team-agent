@@ -1,4 +1,4 @@
-import type { AgentApi, SessionGoalState } from "../global";
+import type { AgentApi, SessionGoalState } from "../../../shared/src/contracts/agent-api";
 import type { DurableQueuedMessageLike } from "./queued-message-order";
 
 export function canSteerQueuedMessage(

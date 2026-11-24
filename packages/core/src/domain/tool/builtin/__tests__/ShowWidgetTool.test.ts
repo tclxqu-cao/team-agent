@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { ShowWidgetTool } from "../ShowWidgetTool.js";
+import { ShowWidgetTool } from "../../../../infrastructure/tools/builtin/ShowWidgetTool.js";
 
 describe("ShowWidgetTool", () => {
   const tool = new ShowWidgetTool();

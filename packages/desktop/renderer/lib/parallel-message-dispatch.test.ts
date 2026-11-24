@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { UnifiedSessionSummary } from "../global";
+import type { UnifiedSessionSummary } from "../../../shared/src/contracts/agent-api";
 import { dispatchParallelMessages } from "./parallel-message-dispatch";
 
 describe("parallel per-message routing", () => {

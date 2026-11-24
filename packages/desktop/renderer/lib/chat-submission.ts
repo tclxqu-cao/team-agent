@@ -1,3 +1,5 @@
+import type { PromptAttachment } from "../../../core/src/domain/session/PromptAttachment";
+
 export interface ChatSubmission {
   text: string;
   origin: "composer" | "suggestion";
@@ -7,6 +9,7 @@ export interface ChatSubmission {
   agentIds?: string[];
   agentName?: string;
   images?: string[];
+  attachments?: PromptAttachment[];
 }
 
 export interface ComposerSubmissionInput {
@@ -14,6 +17,7 @@ export interface ComposerSubmissionInput {
   agentIds?: string[];
   agentName?: string;
   images?: string[];
+  attachments?: PromptAttachment[];
 }
 
 function cloneNonEmpty(values: string[] | undefined): string[] | undefined {
@@ -24,7 +28,7 @@ export function createComposerSubmission(input: ComposerSubmissionInput): ChatSu
   const agentIds = cloneNonEmpty(input.agentIds);
   const images = cloneNonEmpty(input.images);
   return {
-    text: input.text.trim() || (images ? "请查看图片。" : ""),
+    text: input.text.trim() || (input.attachments?.length ? "请查看附件。" : images ? "请查看图片。" : ""),
     origin: "composer",
     applyGoalMode: true,
     clearComposer: true,
@@ -32,6 +36,7 @@ export function createComposerSubmission(input: ComposerSubmissionInput): ChatSu
     ...(agentIds ? { agentIds } : {}),
     ...(input.agentName ? { agentName: input.agentName } : {}),
     ...(images ? { images } : {}),
+    ...(input.attachments?.length ? { attachments: input.attachments } : {}),
   };
 }
 

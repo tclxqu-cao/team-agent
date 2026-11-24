@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import {
   SQLiteToolExecutionPolicyStore,
   toolExecutionPolicySummary,
@@ -30,7 +31,7 @@ export class ToolExecutionPolicyService {
   }
 
   save(value: unknown, knownTools?: Iterable<string>): Promise<StoredToolExecutionPolicy> {
-    const policy = validateToolExecutionPolicy(value, { knownTools, requireExecutables: true });
+    const policy = validateToolExecutionPolicy(value, { knownTools, executableExists: existsSync });
     return this.store.save(policy);
   }
 

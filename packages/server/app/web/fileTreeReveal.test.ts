@@ -26,4 +26,11 @@ describe("file tree reveal paths", () => {
     expect(ancestorDirectories("/work/project", "/work/project/README.md")).toEqual(["/work/project"]);
     expect(ancestorDirectories("/work/project", "/work/other/file.ts")).toEqual([]);
   });
+
+  it("preserves drive roots and Windows file shares when revealing files", () => {
+    expect(parentDirectory("C:\\report.pdf")).toBe("C:/");
+    expect(ancestorDirectories("C:\\", "C:\\reports\\report.pdf")).toEqual(["C:/", "C:/reports"]);
+    expect(parentDirectory("\\\\host\\share\\report.pdf")).toBe("//host/share");
+    expect(isPathInsideRoot("\\\\host\\share-old\\report.pdf", "//host/share")).toBe(false);
+  });
 });

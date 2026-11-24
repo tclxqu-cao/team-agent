@@ -1,10 +1,10 @@
-import { AgentHttpGateway } from "../../../webapp/src/infrastructure/http/agent-http-gateway";
-import { HttpClient } from "../../../webapp/src/infrastructure/http/http-client";
-import { LocalSettingsRepository } from "../../../webapp/src/infrastructure/local/local-settings-repository";
-import type { AgentApi } from "../global";
+import { AgentHttpGateway } from "../../../shared/src/infrastructure/http/agent-http-gateway";
+import { HttpClient } from "../../../shared/src/infrastructure/http/http-client";
+import { LocalSettingsRepository } from "../../../shared/src/infrastructure/local/local-settings-repository";
+import type { AgentApi } from "../../../shared/src/contracts/agent-api";
 import type { MobilePairingInvitation } from "../../main/mobile-pairing";
 import type { TerminalSocketFrame } from "../../main/shared-service";
-import type { TunnelStatus } from "../../../server/lib/tunnel-control.mjs";
+import type { TunnelStatus } from "../../../shared/src/contracts/tunnel-status";
 
 export interface SharedServiceStatus {
   connected: boolean;
@@ -98,6 +98,7 @@ export function createSharedAgentApi(api: SharedServiceApi, device: AgentApi): A
     "openFileDialog",
     "showDirectoryContextMenu",
     "showFileContextMenu",
+    "artifactFileAction",
     "notificationRead",
     "fileWorkspaceRequest",
     "onFileWorkspaceEvent",
@@ -120,7 +121,7 @@ export function createSharedAgentApi(api: SharedServiceApi, device: AgentApi): A
   return new Proxy(gateway, {
     get(target, key) {
       if (typeof key !== "string") return Reflect.get(target, key);
-      const local = localNames.has(key) || /^(hub|flowStudio|taskPage|desktopLive|wake|dictation|onWake|onDictation|onHub|onFlowStudio|onDesktop|onApp)/.test(key);
+      const local = localNames.has(key) || /^(hub|taskPage|desktopLive|wake|dictation|onWake|onDictation|onHub|onDesktop|onApp)/.test(key);
       const owner = local ? device : target;
       const value = Reflect.get(owner, key);
       return typeof value === "function" ? value.bind(owner) : value;

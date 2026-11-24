@@ -30,7 +30,7 @@ import {
   type CreateRuntimeSessionOptions,
   type EngineThreadSessionSummary,
   type ImportAgentWorkspaceResult,
-  type NativeReasoningEffort,
+  type NativeRunOverrides,
   type NativeGoalMutation,
   type NativeSessionGoal,
   type NativeRuntimeBrokerSnapshot,
@@ -38,7 +38,6 @@ import {
   type NativeRuntimeAbortOptions,
   type RuntimeHealth,
   type RuntimeModelInfo,
-  type RuntimeModelSelection,
   type RuntimeQuestionAnswer,
   type RuntimeTodoContext,
   type UnifiedSessionDetail,
@@ -75,11 +74,7 @@ function ensureNativeCliPath(): void {
   }
 }
 
-/** Model/effort the UI pins onto one native run (per agent type, persisted client-side). */
-export interface NativeRunOverrides {
-  model?: RuntimeModelSelection;
-  reasoningEffort?: NativeReasoningEffort;
-}
+export type { NativeRunOverrides } from "@agent/native-runtime";
 
 /** Operations the web application needs from a native runtime host. */
 export interface NativeRuntimePort {
@@ -148,6 +143,7 @@ export interface NativeRuntimePort {
     sourceMessageId?: string,
     controller?: NativeRuntimeController,
   ): Promise<{ state: SessionGoalState; started?: BrokerRunStart }>;
+  updateGoal?(id: string, goalId: string, objective: string): Promise<SessionGoalState>;
   reorderGoals?(id: string, orderedIds: readonly string[]): Promise<SessionGoalState>;
   cancelGoal?(id: string, goalId: string, controller?: NativeRuntimeController): Promise<SessionGoalState>;
   enqueueMessage?(
@@ -166,6 +162,7 @@ export interface NativeRuntimePort {
   steerMessage?(
     id: string,
     messageId: string,
+    kind?: "goal",
   ): Promise<{ steered: boolean; state: SessionGoalState }>;
 }
 
@@ -491,6 +488,11 @@ export class NativeRuntimeService implements NativeRuntimePort {
     return this.runtime.enqueueGoal(id, objective, sourceMessageId, controller);
   }
 
+  async updateGoal(id: string, goalId: string, objective: string): Promise<SessionGoalState> {
+    if (!this.runtime.updateGoal) throw new RuntimeSessionError("Goal editing is unavailable", "OPERATION_NOT_SUPPORTED");
+    return this.runtime.updateGoal(id, goalId, objective);
+  }
+
   async reorderGoals(id: string, orderedIds: readonly string[]): Promise<SessionGoalState> {
     if (!this.runtime.reorderGoals) throw new RuntimeSessionError("Goal mode is unavailable", "OPERATION_NOT_SUPPORTED");
     return this.runtime.reorderGoals(id, orderedIds);
@@ -559,11 +561,12 @@ export class NativeRuntimeService implements NativeRuntimePort {
   async steerMessage(
     id: string,
     messageId: string,
+    kind?: "goal",
   ): Promise<{ steered: boolean; state: SessionGoalState }> {
     if (!this.runtime.steerMessage) {
       throw new RuntimeSessionError("Message queue is unavailable", "OPERATION_NOT_SUPPORTED");
     }
-    return this.runtime.steerMessage(id, messageId);
+    return kind ? this.runtime.steerMessage(id, messageId, kind) : this.runtime.steerMessage(id, messageId);
   }
 
   private withPendingCreations(

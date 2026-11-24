@@ -1,8 +1,8 @@
 "use client";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useWebAuth } from "./useWebAuth";
-import WorkspaceBoot from "./WorkspaceBoot";
-export { connectionElapsedSeconds } from "./WorkspaceBoot";
+import WorkspaceBoot from "../../../shared/src/console/WorkspaceBoot";
+export { connectionElapsedSeconds } from "../../../shared/src/console/WorkspaceBoot";
 export type WebAuthController = ReturnType<typeof useWebAuth>;
 
 interface AuthGateProps {

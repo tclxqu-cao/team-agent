@@ -2,7 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { reduceRuntimeProgress, SQLiteDatabase, SQLiteEngineSwitchRepository, type AgentEvent } from "@agent/core";
+import { NATIVE_AGENT_TYPES, reduceRuntimeProgress, SQLiteDatabase, SQLiteEngineSwitchRepository, type AgentEvent } from "@agent/core";
 import { encodeUnifiedSessionId } from "./session-id";
 import type { CodexDiskSessionCatalogEntry, CodexSessionCatalogRepository } from "./codex-session-disk-catalog";
 import {
@@ -404,11 +404,13 @@ describe("NativeRuntimeBrokerHost", () => {
     }
   });
 
-  it("publishes admitted and finished runs without waiting for global native discovery", async () => {
+  it("publishes admitted runs and distinguishes cancellation from completion without global discovery", async () => {
     const runtime = new FakeNativeRuntime();
     const live = vi.fn(async () => ({ sessions: [] as UnifiedSessionSummary[], agentTypes: [] as AgentType[] }));
     Object.assign(runtime, { liveSessions: live });
-    const host = new NativeRuntimeBrokerHost(await directory(), runtime as unknown as UnifiedSessionService);
+    const dataDir = await directory();
+    const host = new NativeRuntimeBrokerHost(dataDir, runtime as unknown as UnifiedSessionService);
+    let completedAt: string | undefined;
     try {
       await host.startRun(sessionId, "new task");
       const active = await host.liveSessions();
@@ -418,10 +420,31 @@ describe("NativeRuntimeBrokerHost", () => {
       expect(active.sessions[0]).not.toHaveProperty("goalState");
       await host.abort(sessionId);
       await waitFor(() => expect(host.snapshot(sessionId).controller).toBeNull());
-      expect((await host.liveSessions()).sessions.find(row => row.id === sessionId)?.status).toBe("completed");
+      expect((await host.liveSessions()).sessions.find(row => row.id === sessionId)).toMatchObject({ status: "idle" });
+      expect((await host.list())[0].completedAt).toBeUndefined();
+      runtime.immediateTerminal = true;
+      await host.startRun(sessionId, "finish task");
+      await waitFor(async () => expect((await host.liveSessions()).sessions.find(row => row.id === sessionId)?.status).toBe("completed"));
+      const [catalogRow] = await host.list();
+      expect(catalogRow.status).toBe("idle");
+      expect(catalogRow.completedAt).toEqual(expect.any(String));
+      completedAt = catalogRow.completedAt;
+      runtime.workspaceSessions = [summary()];
+      expect((await host.listWorkspaceSessions("codex", "workspace")).data[0]).toMatchObject({ status: "idle", completedAt });
       live.mockResolvedValue({ sessions: [summary("owned-externally", "running")], agentTypes: ["codex"] });
       expect((await host.liveSessions()).sessions.find(row => row.id === sessionId)?.status).toBe("running");
     } finally { await host.stop(); }
+
+    // Legacy completion rows have a terminal event but no structured result.
+    const legacy = new SQLiteDatabase(dataDir);
+    try {
+      legacy.db.prepare("UPDATE native_runtime_turn_completion SET result = NULL WHERE session_id = ? AND completed_at = ?")
+        .run(sessionId, Date.parse(completedAt!));
+    } finally { legacy.close(); }
+    const restarted = new NativeRuntimeBrokerHost(dataDir, runtime as unknown as UnifiedSessionService);
+    try {
+      expect((await restarted.list())[0]).toMatchObject({ status: "idle", completedAt });
+    } finally { await restarted.stop(); }
   });
 
   it.each(["deepseek-harness", "codex", "zcode"] as const)(
@@ -713,54 +736,61 @@ describe("NativeRuntimeBrokerHost", () => {
     }
   });
 
-  it("keeps completed-turn duration after broker restart and event pruning", async () => {
-    const path = await directory();
-    let now = 1_000;
-    const runtime = new FakeNativeRuntime();
-    const host = new NativeRuntimeBrokerHost(path, runtime as unknown as UnifiedSessionService, () => now);
-    await host.startRun(sessionId, "measure");
-    await waitFor(() => expect(host.snapshot(sessionId).events).toHaveLength(1));
-    const question = host.snapshot(sessionId).events[0].event;
-    now = 4_500;
-    await host.answerQuestion(question.type === "ask_user" ? question.questionId : "", { answer: "允许一次" });
-    await waitFor(() => expect(host.snapshot(sessionId).events.some(({ event }) => event.type === "done")).toBe(true));
-    runtime.messages = [
-      { role: "user", content: "measure" },
-      { role: "assistant", content: "completed" },
-    ];
-    expect(host.snapshot(sessionId).events.find(({ event }) => event.type === "done")?.event).toMatchObject({
-      type: "done",
-      durationMs: 3_500,
-    });
-    await expect(host.get(sessionId)).resolves.toMatchObject({
-      messages: [
+  it.each(["codex", "deepseek-harness", "qoder", "workbuddy", "grok", "agy"] as const)(
+    "keeps the measured %s duration after broker restart and event pruning",
+    async (agentType) => {
+      const path = await directory();
+      const id = encodeUnifiedSessionId(agentType, "thread-1");
+      const nativeSummary = { ...summary(), id, agentType };
+      let now = 1_000;
+      const runtime = new FakeNativeRuntime();
+      runtime.get = async () => ({ ...nativeSummary, messages: runtime.messages, events: [] });
+      const host = new NativeRuntimeBrokerHost(path, runtime as unknown as UnifiedSessionService, () => now);
+      await host.startRun(id, "measure");
+      await waitFor(() => expect(host.snapshot(id).events).toHaveLength(1));
+      const question = host.snapshot(id).events[0].event;
+      now = 4_500;
+      await host.answerQuestion(question.type === "ask_user" ? question.questionId : "", { answer: "允许一次" });
+      await waitFor(() => expect(host.snapshot(id).events.some(({ event }) => event.type === "done")).toBe(true));
+      runtime.messages = [
         { role: "user", content: "measure" },
-        { role: "assistant", content: "completed", presentation: { completionDurationMs: 3_500 } },
-      ],
-    });
-    await host.stop();
-
-    now += 10 * 60 * 1_000 + 1;
-    const replacementRuntime = new FakeNativeRuntime();
-    replacementRuntime.messages = runtime.messages;
-    const replacementHost = new NativeRuntimeBrokerHost(
-      path,
-      replacementRuntime as unknown as UnifiedSessionService,
-      () => now,
-    );
-    try {
-      await replacementHost.start();
-      expect(replacementHost.snapshot(sessionId).events).toEqual([]);
-      await expect(replacementHost.get(sessionId)).resolves.toMatchObject({
+        { role: "assistant", content: "completed" },
+      ];
+      expect(host.snapshot(id).events.find(({ event }) => event.type === "done")?.event).toMatchObject({
+        type: "done",
+        durationMs: 3_500,
+      });
+      await expect(host.get(id)).resolves.toMatchObject({
         messages: [
           { role: "user", content: "measure" },
           { role: "assistant", content: "completed", presentation: { completionDurationMs: 3_500 } },
         ],
       });
-    } finally {
-      await replacementHost.stop();
-    }
-  });
+      await host.stop();
+
+      now += 10 * 60 * 1_000 + 1;
+      const replacementRuntime = new FakeNativeRuntime();
+      replacementRuntime.messages = runtime.messages;
+      replacementRuntime.get = async () => ({ ...nativeSummary, messages: replacementRuntime.messages, events: [] });
+      const replacementHost = new NativeRuntimeBrokerHost(
+        path,
+        replacementRuntime as unknown as UnifiedSessionService,
+        () => now,
+      );
+      try {
+        await replacementHost.start();
+        expect(replacementHost.snapshot(id).events).toEqual([]);
+        await expect(replacementHost.get(id)).resolves.toMatchObject({
+          messages: [
+            { role: "user", content: "measure" },
+            { role: "assistant", content: "completed", presentation: { completionDurationMs: 3_500 } },
+          ],
+        });
+      } finally {
+        await replacementHost.stop();
+      }
+    },
+  );
 
   it.each([
     [{ type: "error", code: "INSUFFICIENT_QUOTA", message: "private quota detail" }, "failed", "quota_exceeded"],
@@ -858,6 +888,38 @@ describe("NativeRuntimeBrokerHost", () => {
       expect((await host.get(sessionId, { limit: 2 })).messages).toEqual(messages);
     } finally { await host.stop(); }
   });
+
+  it.each(["claude-code", "opencode"] as const)(
+    "restores native duration from a stable %s answer ID on a paged history read",
+    async (agentType) => {
+      const id = encodeUnifiedSessionId(agentType, "native-1");
+      const nativeSummary = { ...summary(), id, agentType, nativeSessionId: "native-1" };
+      const runtime = new FakeNativeRuntime();
+      runtime.immediateTerminal = true;
+      runtime.terminalEvent = { type: "done", finalText: "completed", durationMs: 65_000, forkPoint: { messageId: "native-answer" } };
+      runtime.get = async () => ({ ...nativeSummary, messages: [], events: [] });
+      const host = new NativeRuntimeBrokerHost(await directory(), runtime as unknown as UnifiedSessionService, () => 1_000);
+      try {
+        await host.startRun(id, "repeat");
+        await waitFor(() => expect(host.snapshot(id).events.at(-1)?.event).toMatchObject({ type: "done", durationMs: 65_000 }));
+        const paged = (messageId: string) => async () => ({
+          ...nativeSummary,
+          messages: [
+            { role: "user" as const, content: "repeat" },
+            { role: "assistant" as const, content: "completed", presentation: { forkPoint: { messageId } } },
+          ],
+          events: [],
+          history: { nextCursor: null, hasMore: true, pageSize: 2, totalItems: 8, newerCursor: "later", kind: "anchored" as const },
+        });
+        Object.assign(runtime, { getPagedDetail: paged("other-answer") });
+        const otherPage = await host.get(id, { limit: 2 });
+        expect(otherPage.messages[1].presentation?.completionDurationMs).toBeUndefined();
+        Object.assign(runtime, { getPagedDetail: paged("native-answer") });
+        const page = await host.get(id, { limit: 2 });
+        expect(page.messages[1].presentation?.completionDurationMs).toBe(65_000);
+      } finally { await host.stop(); }
+    },
+  );
 
   it("restores only the accepted user input for a failed startup after retention pruning", async () => {
     const path = await directory();
@@ -1626,6 +1688,102 @@ describe("NativeRuntimeBrokerHost", () => {
       expect(runtime.runOptions[1].goal).toMatchObject({ objective: "third" });
       expect((await host.getGoals(sessionId)).active?.objective).toBe("third");
     } finally {
+      await host.stop();
+    }
+  });
+
+  it("runs the edited active objective after the current run and keeps the edited queued goal in order", async () => {
+    const runtime = new FakeNativeRuntime();
+    const host = new NativeRuntimeBrokerHost(await directory(), runtime as unknown as UnifiedSessionService);
+    try {
+      const first = await host.enqueueGoal(sessionId, "original");
+      const tail = await host.enqueueGoal(sessionId, "tail");
+      const tailId = tail.state.queued[0].id;
+      host.updateGoal(sessionId, first.state.active!.id, "revised active");
+      host.updateGoal(sessionId, tailId, "revised tail");
+      const finish = async () => {
+        await waitFor(() => expect(host.snapshot(sessionId).events[0]?.event.type).toBe("ask_user"));
+        const event = host.snapshot(sessionId).events[0].event;
+        if (event.type !== "ask_user") throw new Error("Missing approval");
+        await host.answerQuestion(event.questionId, { answer: "允许一次" });
+      };
+      await finish();
+      await waitFor(() => expect(runtime.runInputs.map(item => item.input)).toEqual(["original", "revised active"]));
+      expect((await host.getGoals(sessionId)).queued.map(item => item.objective)).toEqual(["revised tail"]);
+      await finish();
+      await waitFor(() => expect(runtime.runInputs.map(item => item.input)).toEqual(["original", "revised active", "revised tail"]));
+    } finally { await host.stop(); }
+  });
+
+  it.each(NATIVE_AGENT_TYPES)("keeps goals editable and reorderable during a %s message turn", async (agentType) => {
+    const nativeSessionId = "queued-goals";
+    const id = encodeUnifiedSessionId(agentType, nativeSessionId);
+    const runtime = new FakeNativeRuntime();
+    runtime.get = async () => ({ ...summary(), id, agentType, nativeSessionId, messages: [], events: [] });
+    const host = new NativeRuntimeBrokerHost(await directory(), runtime as unknown as UnifiedSessionService);
+    try {
+      await host.startRun(id, "current message");
+      const first = await host.enqueueGoal(id, "first goal");
+      expect(first.state.active).toBeNull();
+      expect(first.state.queued.map(goal => goal.objective)).toEqual(["first goal"]);
+      const second = await host.enqueueGoal(id, "second goal");
+      const third = await host.enqueueGoal(id, "third goal");
+      const [firstGoal, secondGoal, thirdGoal] = third.state.queued;
+      expect(firstGoal.id).toBe(first.state.queued[0].id);
+      expect(secondGoal.id).toBe(second.state.queued[1].id);
+      host.updateGoal(id, secondGoal.id, "edited second goal");
+      await host.cancelGoal(id, thirdGoal.id);
+      const reordered = host.reorderGoals(id, [secondGoal.id, firstGoal.id]);
+      expect(reordered.queued.map(goal => goal.objective)).toEqual(["edited second goal", "first goal"]);
+      expect(runtime.runInputs.map(run => run.input)).toEqual(["current message"]);
+      await waitFor(() => expect(host.snapshot(id).events[0]?.event.type).toBe("ask_user"));
+      const approval = host.snapshot(id).events[0].event;
+      if (approval.type !== "ask_user") throw new Error("Missing approval");
+      await host.answerQuestion(approval.questionId, { answer: "允许一次" });
+      await waitFor(() => expect(runtime.runInputs.map(run => run.input)).toEqual(["current message", "edited second goal"]));
+      expect((await host.getGoals(id, "web", false)).queued.map(goal => goal.objective)).toEqual(["first goal"]);
+    } finally {
+      await host.stop();
+    }
+  });
+
+  it("consumes a queued ZCode goal only after the insertion is acknowledged", async () => {
+    const path = await directory();
+    const id = encodeUnifiedSessionId("zcode", "steer-queued-goal");
+    const runtime = new FakeNativeRuntime();
+    runtime.get = async () => ({ ...summary(), id, agentType: "zcode", nativeSessionId: "steer-queued-goal", messages: [], events: [] });
+    const host = new NativeRuntimeBrokerHost(path, runtime as unknown as UnifiedSessionService);
+    const client = new NativeRuntimeBrokerClient({ directory: path });
+    let acknowledge: ((accepted: boolean) => void) | undefined;
+    try {
+      await host.start();
+      await client.enqueueGoal(id, "active task", "active-source");
+      const queued = await client.enqueueGoal(id, "supplement current task", "queued-source");
+      const goalId = queued.state.queued[0].id;
+      await client.enqueueGoal(id, "next task", "next-source");
+      runtime.steerResult = false;
+      const rejected = await client.steerMessage(id, goalId, "goal");
+      expect(rejected.steered).toBe(false);
+      expect(rejected.state.queued.map(goal => goal.objective)).toEqual(["supplement current task", "next task"]);
+      const steer = vi.fn(() => new Promise<boolean>(resolve => { acknowledge = resolve; }));
+      runtime.steer = steer;
+      const accepting = client.steerMessage(id, goalId, "goal");
+      await waitFor(() => expect(steer).toHaveBeenCalledWith(id, "supplement current task", goalId));
+      const repeat = client.steerMessage(id, goalId, "goal");
+      await waitFor(() => expect(host.snapshot(id).events[0]?.event.type).toBe("ask_user"));
+      const approval = host.snapshot(id).events[0].event;
+      if (approval.type !== "ask_user") throw new Error("Missing approval");
+      await host.answerQuestion(approval.questionId, { answer: "允许一次" });
+      await waitFor(() => expect(host.snapshot(id).controller).toBeNull());
+      expect(runtime.runInputs.map(run => run.input)).toEqual(["active task"]);
+      acknowledge!(true);
+      const result = await accepting;
+      expect(result.state.history.find(goal => goal.id === goalId)).toMatchObject({ status: "completed", lastReason: "steered" });
+      await expect(repeat).resolves.toMatchObject({ steered: true });
+      expect(steer).toHaveBeenCalledTimes(1);
+      await waitFor(() => expect(runtime.runInputs.map(run => run.input)).toEqual(["active task", "next task"]));
+    } finally {
+      acknowledge?.(false);
       await host.stop();
     }
   });
@@ -3339,6 +3497,54 @@ describe("NativeRuntimeBrokerHost native paged get", () => {
     expect(detail.goalState).toBeDefined();
     expect((detail as unknown as Record<string, unknown>).pagedQuery).toEqual({ limit: 50 });
     await host.stop();
+  });
+
+  it("reconciles a slash skill with its native turn in full, core and trace history", async () => {
+    const runtime = new FakeNativeRuntime();
+    const input = "/create-branch  draft changes\nKeep this line.";
+    const nativeInput = "$create-branch draft changes\nKeep this line.";
+    const turnId = "skill-turn";
+    const previous = {
+      role: "user" as const, content: nativeInput, historyId: "older-skill",
+      presentation: { executionTrace: { turnId: "earlier-turn", segmentIndex: 0 } },
+    };
+    const accepted = {
+      role: "user" as const, content: nativeInput, historyId: "accepted-skill",
+      presentation: { executionTrace: { turnId, segmentIndex: 0 }, attachments: [{ name: "example.png", type: "image" as const }] },
+    };
+    const followup = {
+      role: "user" as const, content: nativeInput, historyId: "follow-up",
+      presentation: { executionTrace: { turnId, segmentIndex: 1 } },
+    };
+    runtime.messages = [previous];
+    runtime.eventsBeforeApproval = [
+      { type: "runtime_progress", phase: "status", progressId: "codex:status", label: "Started", turnId },
+    ];
+    Object.assign(runtime, {
+      getPagedDetail: async (_id: string, query: { view?: "core" | "trace" }) => ({
+        ...pagedSummary(),
+        messages: runtime.messages,
+        events: [],
+        history: { ...pagedSummary().history, delivery: query.view ?? "legacy-full" },
+      }),
+    });
+    const host = new NativeRuntimeBrokerHost(await directory(), runtime as unknown as UnifiedSessionService);
+    try {
+      await host.startRun(sessionId, input);
+      await waitFor(() => expect(host.snapshot(sessionId).events.some(({ event }) => "turnId" in event && event.turnId === turnId)).toBe(true));
+      expect((await host.get(sessionId)).messages.filter(message => message.role === "user")).toEqual([
+        previous, expect.objectContaining({ content: input, name: expect.stringMatching(/^__native_run:/) }),
+      ]);
+      runtime.messages = [previous, accepted, followup];
+      for (const query of [undefined, { limit: 10 }, { view: "core" }, { view: "trace" }] as const) {
+        const detail = await host.get(sessionId, query);
+        expect(detail.messages.filter(message => message.role === "user")).toEqual([
+          previous, { ...accepted, content: input }, followup,
+        ]);
+      }
+    } finally {
+      await host.stop();
+    }
   });
 
   it("does not inject the live turn into an older native page", async () => {

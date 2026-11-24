@@ -48,6 +48,25 @@ describe("shared session catalog", () => {
     const response = await GET(new Request("http://localhost/api/sessions"));
     const body = await response.json(); expect(Array.isArray(body)).toBe(true); expect(body.map((session: { id: string }) => session.id)).toEqual(["codex:1"]);
   });
+
+  it("includes a child's ancestor chain across a page boundary and when only the child matches search", async () => {
+    const parent = { ...session(17), title: "主任务", status: "idle" as const };
+    const child = { ...session(18), title: "子任务", parentSessionId: parent.id, status: "idle" as const };
+    const grandchild = { ...session(19), title: "测试唯一关键词", parentSessionId: child.id, status: "running" as const };
+    mocks.refresh.mockResolvedValue([parent, child, grandchild]);
+
+    const first = await querySessionCatalog({ limit: 1 });
+    expect(first.data.map(row => [row.id, row.parentSessionId])).toEqual([[grandchild.id, child.id]]);
+    expect(first.ancestors?.map(row => [row.id, row.parentSessionId])).toEqual([[child.id, parent.id], [parent.id, undefined]]);
+    expect(first.total).toBe(3);
+    const second = await querySessionCatalog({ cursor: first.nextCursor!, limit: 1 });
+    expect(second.data.map(row => row.id)).toEqual([parent.id]);
+
+    const search = await querySessionCatalog({ query: "唯一关键词" });
+    expect(search.data.map(row => row.id)).toEqual([grandchild.id]);
+    expect(search.ancestors?.map(row => row.id)).toEqual([child.id, parent.id]);
+    expect(search.total).toBe(1);
+  });
   it("applies newly running sessions on the first poll after the cache expires", async () => {
     vi.useFakeTimers();
     const stale = [{ ...session(0), status: "running" as const }, { ...session(1), status: "running" as const }, { ...session(2), status: "idle" as const }];

@@ -1,6 +1,6 @@
 import { isPageActive } from "./page-activity";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { NativeGoalMutation, NativeSessionGoal } from "../global";
+import type { NativeGoalMutation, NativeSessionGoal } from "../../../shared/src/contracts/agent-api";
 
 /** Selected-session projection; native Host owns persistence, scheduling and activation. */
 export function useNativeSessionGoal(sessionId: string | null, enabled: boolean) {

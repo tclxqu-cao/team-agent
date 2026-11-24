@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { constants } from "node:fs";
 import { access, chmod, mkdir, mkdtemp, open, rename, rm, stat } from "node:fs/promises";
+import { homedir } from "node:os";
 import { delimiter, isAbsolute, relative, resolve, win32 } from "node:path";
 import { promisify } from "node:util";
 import { resolveNpmExecutor } from "./codex-runtime-manager.js";
@@ -22,6 +23,7 @@ export interface OpenCodeRuntimeResolution {
 }
 
 interface Dependencies {
+  accessible(path: string, executable?: boolean): Promise<boolean>;
   run(command: string, args: string[], timeoutMs: number, signal?: AbortSignal): Promise<{ stdout: string; stderr: string }>;
   sleep(ms: number): Promise<void>;
   now(): number;
@@ -42,6 +44,7 @@ export interface ResolveOpenCodeRuntimeOptions {
 }
 
 const defaults: Dependencies = {
+  accessible,
   async run(command, args, timeoutMs, signal) {
     try {
       const { stdout, stderr } = await execFileAsync(command, args, {
@@ -85,10 +88,17 @@ async function resolveRuntime(options: ResolveOpenCodeRuntimeOptions): Promise<O
   if (explicit) {
     const absolute = platform === "win32" ? win32.isAbsolute(explicit) : isAbsolute(explicit);
     if (!absolute) throw new Error("AGENT_OPENCODE_BIN must be an absolute path");
-    return validate(explicit, "explicit", platform, dependencies);
+    if (platform === "win32" && /^opencode\.(?:cmd|bat)$/i.test(win32.basename(explicit))) {
+      const bundled = await firstCompatible(
+        windowsOpenCodeNpmCandidates(windowsNpmModules(win32.dirname(explicit)), win32.resolve), "explicit", dependencies,
+      );
+      if (bundled) return bundled;
+      throw new Error("AGENT_OPENCODE_BIN points to a Windows launcher without a compatible OpenCode executable");
+    }
+    return validate(explicit, "explicit", dependencies);
   }
 
-  const global = await findGlobal(environment.PATH, platform, dependencies);
+  const global = await findGlobal(environment, platform, dependencies);
   if (global) return global;
 
   const managedRoot = resolve(options.dataDir, "runtimes", "opencode", OPENCODE_RUNTIME_VERSION);
@@ -107,8 +117,7 @@ export function parseOpenCodeVersion(output: string): string | null {
 export function managedOpenCodeBinaryCandidates(root: string, platform: NodeJS.Platform): string[] {
   return platform === "win32"
     ? [
-        resolve(root, "node_modules", "opencode-ai", "bin", "opencode.exe"),
-        resolve(root, "node_modules", ".bin", "opencode.cmd"),
+        ...windowsOpenCodeNpmCandidates(resolve(root, "node_modules"), resolve),
         resolve(root, "node_modules", ".bin", "opencode.exe"),
       ]
     : [
@@ -117,23 +126,39 @@ export function managedOpenCodeBinaryCandidates(root: string, platform: NodeJS.P
       ];
 }
 
+function windowsNpmModules(prefix: string): string {
+  return win32.resolve(prefix, win32.basename(prefix).toLowerCase() === ".bin" ? ".." : "node_modules");
+}
+
+function windowsOpenCodeNpmCandidates(modules: string, resolvePath: typeof resolve): string[] {
+  return ["opencode-ai", "opencode-windows-x64-baseline", "opencode-windows-x64"]
+    .map(name => resolvePath(modules, name, "bin", "opencode.exe"));
+}
+
 async function findGlobal(
-  pathValue: string | undefined,
+  environment: NodeJS.ProcessEnv,
   platform: NodeJS.Platform,
   dependencies: Dependencies,
 ): Promise<OpenCodeRuntimeResolution | null> {
-  const names = platform === "win32" ? ["opencode.exe", "opencode.cmd", "opencode"] : ["opencode"];
-  const separator = platform === "win32" ? ";" : delimiter;
-  for (const directory of (pathValue ?? "").split(separator).filter(Boolean)) {
-    for (const name of names) {
-      const candidate = platform === "win32" ? win32.resolve(directory, name) : resolve(directory, name);
-      if (!(await accessible(candidate, platform !== "win32"))) continue;
-      try {
-        return await validate(candidate, "global", platform, dependencies);
-      } catch {
-        // Leave incompatible user installations untouched and use managed OpenCode.
-      }
-    }
+  const windows = platform === "win32";
+  const directories = (environment.PATH ?? environment.Path ?? "").split(windows ? ";" : delimiter).filter(Boolean);
+  if (!windows) {
+    return firstCompatible(directories.map(dir => resolve(dir, "opencode")), "global", dependencies, true);
+  }
+  const pathDirs = directories.map(dir => dir.trim().replace(/^"(.*)"$/, "$1")).filter(Boolean);
+  const roaming = environment.APPDATA || win32.join(homedir(), "AppData", "Roaming");
+  const prefixes = [environment.npm_config_prefix || environment.NPM_CONFIG_PREFIX, win32.join(roaming, "npm")];
+  return firstCompatible([
+    ...pathDirs.flatMap(dir => [win32.resolve(dir, "opencode.exe"), ...windowsOpenCodeNpmCandidates(windowsNpmModules(dir), win32.resolve)]),
+    ...prefixes.filter((dir): dir is string => Boolean(dir)).flatMap(dir => windowsOpenCodeNpmCandidates(windowsNpmModules(dir), win32.resolve)),
+  ], "global", dependencies);
+}
+
+async function firstCompatible(candidates: string[], source: OpenCodeRuntimeSource, dependencies: Dependencies, executable = false): Promise<OpenCodeRuntimeResolution | null> {
+  for (const candidate of new Set(candidates)) {
+    if (!await dependencies.accessible(candidate, executable)) continue;
+    try { return await validate(candidate, source, dependencies); }
+    catch { /* Keep looking for a compatible install. */ }
   }
   return null;
 }
@@ -237,12 +262,12 @@ async function validateManaged(
   dependencies: Dependencies,
 ): Promise<OpenCodeRuntimeResolution | null> {
   for (const executable of managedOpenCodeBinaryCandidates(root, platform)) {
-    if (!within(root, executable) || !(await accessible(executable))) continue;
+    if (!within(root, executable) || !(await dependencies.accessible(executable))) continue;
     try {
       if (platform !== "win32") await chmod(executable, 0o755);
-      return await validate(executable, "managed", platform, dependencies);
+      return await validate(executable, "managed", dependencies);
     } catch {
-      return null;
+      // An unusable launcher may coexist with a working platform binary.
     }
   }
   return null;
@@ -251,10 +276,9 @@ async function validateManaged(
 async function validate(
   executable: string,
   source: OpenCodeRuntimeSource,
-  _platform: NodeJS.Platform,
   dependencies: Dependencies,
 ): Promise<OpenCodeRuntimeResolution> {
-  if (!(await accessible(executable))) throw new Error(`OpenCode executable not found: ${executable}`);
+  if (!(await dependencies.accessible(executable))) throw new Error(`OpenCode executable not found: ${executable}`);
   const result = await dependencies.run(executable, ["--version"], 5_000);
   const version = parseOpenCodeVersion(`${result.stdout}\n${result.stderr}`);
   if (!version) throw new Error(`Unable to parse OpenCode version from ${executable}`);

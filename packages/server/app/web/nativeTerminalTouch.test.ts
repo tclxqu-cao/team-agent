@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
-import { handleNativeTerminalPaste, joinNativeTerminalSelection } from "./nativeTerminalTouch";
+import { handleNativeTerminalPaste, joinNativeTerminalSelection } from "../../../shared/src/console/nativeTerminalTouch";
 
 describe("native terminal selection text", () => {
   it("joins soft-wrapped commands while retaining actual line breaks", () => {
@@ -75,8 +75,8 @@ describe("native terminal paste", () => {
 });
 
 describe("native terminal touch integration", () => {
-  const pane = readFileSync(new URL("./TerminalPane.tsx", import.meta.url), "utf8");
-  const adapter = readFileSync(new URL("./nativeTerminalTouch.ts", import.meta.url), "utf8");
+  const pane = readFileSync(new URL("../../../shared/src/console/TerminalPane.tsx", import.meta.url), "utf8");
+  const adapter = readFileSync(new URL("../../../shared/src/console/nativeTerminalTouch.ts", import.meta.url), "utf8");
 
   it("removes the permanent clipboard buttons and the manual paste dialog", () => {
     expect(pane).not.toContain("terminal-clipboard-tools");

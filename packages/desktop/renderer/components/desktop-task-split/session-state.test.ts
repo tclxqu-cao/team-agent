@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { UnifiedSessionSummary } from "../../global";
+import type { UnifiedSessionSummary } from "../../../../shared/src/contracts/agent-api";
 import { equalTaskLayout, resizeTaskSplit, taskSplitGeometry } from "../../lib/desktop-task-layout";
 import { addTaskWorkspaceColumn, addTaskWorkspaceSession, closeTaskWorkspacePane, fourColumnTaskWorkspace, loadTaskSession, openTaskWorkspaceWebPage, readTaskWorkspace, serializeTaskWorkspace, taskPaneHistorySeed, updateTaskPaneContent, updateTaskPaneDraft, updateTaskPaneSession } from "./session-state";
 
@@ -221,6 +221,24 @@ describe("desktop workspace persistence and session hydration", () => {
       expect(result.initialHistory?.sessionId).toBe(session.id);
       getSession.mockResolvedValue({ ...session, id: "wrong-session" });
       await expect(loadTaskSession(session)).rejects.toThrow("会话身份已变化");
+    } finally { vi.unstubAllGlobals(); }
+  });
+
+  it("follows a saved ZCode pane to the current Codex session only within its own thread", async () => {
+    const saved = { ...session, id: "runtime:zcode:original", agentType: "zcode" as const, nativeSessionId: "original" };
+    const detail = {
+      ...session, threadKey: "switched-thread", activeSessionId: session.id, messages: [], events: [],
+      segments: [{ sessionId: saved.id, agentType: saved.agentType }, { sessionId: session.id, agentType: session.agentType }],
+    };
+    const getSession = vi.fn().mockResolvedValue(detail);
+    vi.stubGlobal("window", { agentApi: { getSession } });
+    try {
+      const result = await loadTaskSession(saved);
+      expect(getSession).toHaveBeenCalledWith(saved.id, { limit: 1 });
+      expect(result.session).toMatchObject({ id: session.id, agentType: "codex" });
+      expect(result.initialHistory).toEqual({ sessionId: session.id, detail });
+      getSession.mockResolvedValue({ ...detail, segments: detail.segments.slice(1) });
+      await expect(loadTaskSession(saved)).rejects.toThrow("会话身份已变化");
     } finally { vi.unstubAllGlobals(); }
   });
 });

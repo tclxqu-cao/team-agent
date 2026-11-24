@@ -7,7 +7,7 @@ import type {
   SessionToolResultRef,
 } from "@agent/core";
 import type { ChatMessage, ContextUsageSnapshot, SessionHistoryWindow } from "../stores/agentStore";
-import type { SessionGoalState, UnifiedSessionSummary } from "../global";
+import type { SessionGoalState, UnifiedSessionSummary } from "../../../shared/src/contracts/agent-api";
 import { uniqueSessionMessages } from "./session-message-identity";
 import { mergeRunResultPresentation } from "./run-result";
 import type { NativeSessionViewState } from "./native-session-view-state";
@@ -45,11 +45,16 @@ export interface PersistedHistoryEvent {
   options?: Array<{ label: string; description: string }>;
   fields?: Array<{ name: string; label: string; description?: string; type?: "text" | "secret" }>;
   multiSelect?: boolean;
+  cancellable?: boolean;
+  allowFreeText?: boolean;
   todos?: unknown;
 }
 
 export interface SessionHistoryDetail extends NativeSessionViewState {
   id?: string;
+  threadKey?: string;
+  activeSessionId?: string;
+  segments?: Array<{ sessionId: string; agentType: string }>;
   nativePermissions?: UnifiedSessionSummary["nativePermissions"];
   messages?: Array<{
     historyId?: string;
@@ -215,9 +220,34 @@ export function mergeProgressiveSessionHistoryPage(
     && Boolean(history?.revision);
   const hasVisibleHistory = current.some((message) => !message.isQueued);
   if (traceWillFollow && hasVisibleHistory) {
-    return retainAnsweredSessionQuestions(current, mergeCoreSessionHistory(current, refreshed));
+    const retained = removeMisplacedCodexAnswers(current, refreshed);
+    return retainAnsweredSessionQuestions(current, uniqueSessionMessages(mergeCoreSessionHistory(retained, refreshed)));
   }
   return mergeRefreshedSessionHistory(current, refreshed);
+}
+
+function removeMisplacedCodexAnswers(current: ChatMessage[], refreshed: ChatMessage[]): ChatMessage[] {
+  const answerOwners = new Map<string, ChatMessage>();
+  let owner: ChatMessage | undefined;
+  for (const message of refreshed) {
+    if (message.role === "user" && !message.isCompactionSummary) owner = message;
+    const nativeId = message.presentation?.nativeMessageId;
+    if (owner && nativeId && isCoreAssistantMessage(message)) answerOwners.set(nativeId, owner);
+  }
+  if (answerOwners.size === 0) return current;
+
+  owner = undefined;
+  return current.filter((message) => {
+    if (message.role === "user" && !message.isQueued && !message.isCompactionSummary) owner = message;
+    const expected = answerOwners.get(message.id);
+    if (!expected) return true;
+    if (!owner) return false;
+    const segment = owner.presentation?.executionTrace;
+    const expectedSegment = expected.presentation?.executionTrace;
+    return segment && expectedSegment
+      ? segment.turnId === expectedSegment.turnId && (segment.segmentIndex ?? 0) === (expectedSegment.segmentIndex ?? 0)
+      : sessionHistoryUserBoundaryKey(owner) === sessionHistoryUserBoundaryKey(expected);
+  });
 }
 
 /** Keep a retained history window's oldest boundary when refreshing its tail. */
@@ -283,12 +313,20 @@ function mergeCoreSessionHistory(
   if (refreshedTurnStart < 0) return current;
 
   const refreshedUser = refreshed[refreshedTurnStart];
-  const persistedUserIndex = currentHistory.findIndex((message) => (
-    message.role === "user" && message.id === refreshedUser.id
-  ));
+  const refreshedSegment = refreshedUser.presentation?.executionTrace;
+  const persistedUserIndex = currentHistory.findIndex((message) => {
+    if (message.role !== "user") return false;
+    const segment = message.presentation?.executionTrace;
+    return refreshedSegment && segment
+      ? segment.turnId === refreshedSegment.turnId
+        && (segment.segmentIndex ?? 0) === (refreshedSegment.segmentIndex ?? 0)
+      : message.id === refreshedUser.id;
+  });
   let currentTurnStart = persistedUserIndex >= 0 ? persistedUserIndex : currentHistory.findLastIndex((message) => (
     message.role === "user"
     && !message.isCompactionSummary
+    && !(refreshedSegment && message.presentation?.executionTrace)
+    && !(message.isGoal && refreshedSegment && !refreshedUser.presentation?.isGoal && !message.isSteered)
     && sessionHistoryUserBoundaryKey(message) === sessionHistoryUserBoundaryKey(refreshedUser)
   ));
 
@@ -334,6 +372,7 @@ function mergeCoreSessionHistory(
     : message);
   merged[currentTurnStart] = {
     ...merged[currentTurnStart],
+    ...(persistedUserIndex >= 0 && refreshedSegment ? { id: refreshedUser.id } : {}),
     presentation: mergeRunResultPresentation(merged[currentTurnStart].presentation, refreshedUser.presentation),
   };
   if (confirmsSend) {
@@ -376,7 +415,7 @@ function mergeCoreSessionHistory(
     merged[currentIndex] = {
       ...previous,
       ...next,
-      id: next.id.startsWith("history-message.v1.") ? next.id : previous.id,
+      id: next.presentation?.nativeMessageId ?? (next.id.startsWith("history-message.v1.") ? next.id : previous.id),
       timestamp: previous.timestamp,
       images: next.images ?? previous.images,
       presentation: mergeRunResultPresentation(previous.presentation, next.presentation),
@@ -390,12 +429,18 @@ function mergeCoreSessionHistory(
 }
 
 function isCoreAssistantMessage(message: ChatMessage): boolean {
+  const presentation = message.presentation;
+  // Legacy native history can store the completed answer and its reasoning on
+  // one row. Keep that answer in the merge so it can replace a live fragment.
+  const completedAnswer = Boolean(message.content.trim()
+    && (presentation?.agentMessagePhase === "final_answer" || presentation?.forkPoint));
   return message.role === "assistant"
     && !message.executionTrace
     && !message.toolCalls?.length
     && !message.askUser
     && !message.isCompactionSummary
-    && !message.presentation?.reasoning?.length;
+    && presentation?.agentMessagePhase !== "commentary"
+    && (!presentation?.reasoning?.length || completedAnswer);
 }
 
 export function restoreSessionHistoryPage(detail: SessionHistoryDetail | null): ChatMessage[] {
@@ -542,6 +587,8 @@ function restoreSessionMessages(
         options: event.options,
         fields: event.fields,
         multiSelect: event.multiSelect,
+        cancellable: event.cancellable,
+        allowFreeText: event.allowFreeText,
       },
       timestamp: Date.now(),
     });

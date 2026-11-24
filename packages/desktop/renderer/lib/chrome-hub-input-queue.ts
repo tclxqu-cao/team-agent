@@ -1,4 +1,4 @@
-import type { ChromeHubInput } from "../../main/ai-hub/chrome-bridge-protocol";
+import type { ChromeHubInput } from "../../../shared/src/contracts/chrome-bridge-types";
 
 /** Keep clicks/text ordered while replacing unsent motion with the latest position. */
 export function createChromeInputQueue(dispatch: (input: ChromeHubInput) => Promise<unknown>, onError: (error: unknown) => void, onSuccess: () => void) {

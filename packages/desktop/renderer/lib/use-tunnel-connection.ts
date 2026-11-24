@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { TunnelStatus } from "../../../server/lib/tunnel-control.mjs";
+import type { TunnelStatus } from "../../../shared/src/contracts/tunnel-status";
 
 export interface TunnelApi {
   tunnelStatus(): Promise<TunnelStatus>;

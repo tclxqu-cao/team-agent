@@ -1,0 +1,1534 @@
+import type { CreateParallelSessionsInput, ParallelSessionGroup, SessionForkPoint, SessionMessageRunOptions } from "@agent/core";
+import type { CollaborationCommand } from "@agent/core/domain/collaboration/types";
+import type { CatalogSession } from "@agent/core/domain/supervision/types";
+import { isAgentType } from "../../../../core/src/domain/agent/agent-type";
+import { normalizeOutgoingComposerImages } from "../../browser/browser-image-normalization";
+import type {
+  AgentApi,
+  AgentDefinition,
+  CronTask,
+  LSPServerConfig,
+  MCPServer,
+  SessionGoalState,
+  SessionQueryIndex,
+  ThreadGoalInfo,
+  NativeGoalMutation,
+  NativeSessionGoal,
+  RuntimeBackgroundJob,
+  RuntimeBackgroundJobOutput,
+  RuntimeBackgroundJobStopResult,
+  UnifiedSessionSummary,
+} from "../../domain/ports/agent-port";
+import type { DictationPort } from "../../domain/ports/dictation-port";
+import { ApiError, HttpClient, RequestTimeoutError, listOf } from "./http-client";
+
+import type { LocalSettingsRepository } from "../local/local-settings-repository";
+import { StreamingThinkFilter, stripThinkBlocks } from "./think-filter";
+import type { WebProjectBridge } from "../web-shell-project-bridge";
+
+type EventListener = (event: unknown) => void;
+type Unsubscribe = () => void;
+
+interface NativeStreamCursor {
+  runId?: string;
+  sequence: number;
+}
+
+interface NativeFinalAnswerSnapshot {
+  runId: string;
+  sequence: number;
+}
+
+interface BufferedStreamText {
+  event: Record<string, unknown>;
+  timer: ReturnType<typeof setTimeout>;
+}
+
+interface NativeRunRecovery {
+  runId?: string;
+  awaitingAdmission: boolean;
+  inFlight: boolean;
+  timer?: ReturnType<typeof setInterval>;
+}
+
+const TRANSPORT_FAILURE = /^(?:load failed|failed to fetch|network request failed|networkerror when attempting to fetch resource\.?|the network connection was lost\.?|fetch failed)$/i;
+const CODEX_COMMENTARY_FRAME_MS = 50;
+const ORDINARY_RUN_RECOVERY_INTERVAL_MS = 1_000;
+const NATIVE_RUN_RECOVERY_INTERVAL_MS = 2_000;
+const NATIVE_TEXT_RUN_TIMEOUT_MS = 8_000;
+
+function isTransportFailure(error: unknown): boolean {
+  return error instanceof RequestTimeoutError || error instanceof Error
+    && error.name !== "AbortError"
+    && TRANSPORT_FAILURE.test(error.message.trim());
+}
+
+/** Subset of the port the web gateway intentionally leaves to browser fallbacks. */
+type BrowserHandled = "wakeStart";
+
+export interface AgentHttpGatewayOptions {
+  historyObservation?: "sse" | "polling";
+}
+
+/**
+ * Browser adapter for the AgentApi port (DDD ports & adapters).
+ *
+ * Reuses the server's capabilities over HTTP/SSE:
+ *   /api/agent/{run,stream,abort,steer,answer}  — runs, streaming, steering
+ *   /api/sessions                               — session persistence
+ *   /api/memory, /api/skills, /api/mcp/*        — memory/skills/MCP catalogs
+ *
+ * Desktop IPC semantics reproduced for the shared UI:
+ *   - run() resolves only when the whole run settles;
+ *   - events are fanned out through the persistent onEvent bus, stamped with
+ *     the `_sid` session tag the renderer routes by;
+ *   - ordinary runs open SSE before admission; native runs admit first and
+ *     replay from their persisted pre-run cursor, avoiding mobile connection
+ *     limits without losing early events.
+ *
+ * Dictation delegates capture to the browser and recognition to the local
+ * voice service through the authenticated gateway. Wake remains browser-handled.
+ */
+export class AgentHttpGateway {
+  readonly sessionHistoryObservationMode: "sse" | "polling";
+  private readonly streams = new Map<string, EventSource>();
+  private readonly nativeStreamCursors = new Map<string, NativeStreamCursor>();
+  private readonly nativeFinalAnswerSnapshots = new Map<string, NativeFinalAnswerSnapshot>();
+  private readonly pendingRuns = new Map<string, () => void>();
+  private readonly listeners = new Set<EventListener>();
+  private readonly thinkFilters = new Map<string, StreamingThinkFilter>();
+  private readonly bufferedStreamText = new Map<string, BufferedStreamText>();
+  private readonly ordinaryRunRecoveryTimers = new Map<string, ReturnType<typeof setInterval>>();
+  private readonly ordinaryRunStreamText = new Map<string, string>();
+  private readonly nativeRunRecoveries = new Map<string, NativeRunRecovery>();
+  private readonly nativeRunIdentities = new Map<string, { current: string; retired: Set<string> }>();
+
+
+
+  constructor(
+    private readonly http: HttpClient,
+    private readonly settings: LocalSettingsRepository,
+    private readonly projectBridge?: WebProjectBridge,
+    private readonly createEventSource: (url: string) => EventSource = (url) => new EventSource(url),
+    private readonly dictation?: DictationPort,
+    options: AgentHttpGatewayOptions = {},
+  ) {
+    this.sessionHistoryObservationMode = options.historyObservation ?? "sse";
+  }
+
+  dictationStart(): Promise<{ ok: boolean; reason?: string }> {
+    return this.dictation?.dictationStart() ?? Promise.resolve({ ok: false, reason: "语音输入尚未初始化" });
+  }
+
+  dictationStop(): Promise<{ ok: boolean }> {
+    return this.dictation?.dictationStop() ?? Promise.resolve({ ok: true });
+  }
+
+  onDictation(callback: (payload: { text: string; isFinal: boolean }) => void): Unsubscribe {
+    return this.dictation?.onDictation(callback) ?? (() => undefined);
+  }
+
+  onDictationError(callback: (message: string) => void): Unsubscribe {
+    return this.dictation?.onDictationError(callback) ?? (() => undefined);
+  }
+
+  fileWorkspaceRequest<T>(method: string, params: Record<string, unknown> = {}): Promise<T> {
+    if (method !== "fs:preview-open" && method !== "fs:preview-close") {
+      return Promise.reject(new Error("消息区仅支持媒体预览操作"));
+    }
+    return this.requireProjectBridge().request<T>(method, params);
+  }
+
+  private requireProjectBridge(): WebProjectBridge {
+    if (this.projectBridge) return this.projectBridge;
+    throw Object.assign(
+      new Error("请从 AgentRoam Web 控制台打开项目"),
+      { code: "WEB_SHELL_REQUIRED" },
+    );
+  }
+
+  // ── Agent control ──────────────────────────────────────────────────────
+
+  async syncSessionViews(request: import("@agent/core").SessionViewSyncRequest): Promise<import("@agent/core").SessionViewPage> {
+    try {
+      return await this.http.post("/api/session-views", request);
+    } catch (error) {
+      if (!(error instanceof ApiError) || error.status !== 404) throw error;
+      return this.http.post("/api/collaboration", { action: "sessionViews", ...request });
+    }
+  }
+
+  async collaboration(command: CollaborationCommand, options?: { signal?: AbortSignal }): Promise<unknown> {
+    return this.http.post("/api/collaboration", command, options);
+  }
+
+  async calendarOverview(input: { from: string; to: string }): Promise<import("@agent/core").CalendarOverview> {
+    const params = new URLSearchParams({ from: input.from, to: input.to });
+    return this.http.get(`/api/calendar?${params.toString()}`);
+  }
+  todoList(query: import("@agent/core").TodoListQuery = {}) { return this.http.get<{ items: import("@agent/core").TodoDetail[]; cursor?: string }>(`/api/todos?${new URLSearchParams(Object.entries(query).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)]))}`); }
+  todoGet(id: string) { return this.http.get<import("@agent/core").TodoDetail>(`/api/todos/${encodeURIComponent(id)}`); }
+  todoCommand(command: import("@agent/core").TodoCommand, requestId: string) { return this.http.post<import("@agent/core").TodoDetail>(command.type === "create" ? "/api/todos" : `/api/todos/${encodeURIComponent(command.taskId)}/commands`, { command, requestId }); }
+  notificationList() { return this.http.get<{ items: import("@agent/core").PersistentNotification[] }>("/api/notifications"); }
+  notificationRead(id: string) { return this.http.post(`/api/notifications/${encodeURIComponent(id)}/ack`, { read: true }); }
+
+  onEvent(callback: EventListener): Unsubscribe {
+    this.listeners.add(callback);
+    return () => {
+      this.listeners.delete(callback);
+    };
+  }
+
+  async run(
+    input: string,
+    sessionId: string,
+    _agentIds?: string[],
+    _agentName?: string,
+    images?: string[],
+    nativeOptions?: import("../../contracts/agent-api").NativeRunOptions,
+  ): Promise<unknown[]> {
+    const isNativeSession = sessionId.startsWith("runtime:");
+    const hadStream = this.streams.has(sessionId);
+    const hadPendingRun = this.pendingRuns.has(sessionId);
+    const nativeCursorBeforeRun = this.nativeStreamCursors.get(sessionId);
+    if (isNativeSession && !hadPendingRun) this.beginNativeRunRecovery(sessionId, undefined, true);
+    let pendingResolve: (() => void) | null = null;
+    let finished: Promise<void> | null = null;
+    try {
+      if (!isNativeSession) {
+        await this.openStream(sessionId, this.nativeStreamCursors.get(sessionId));
+      }
+      finished = hadPendingRun
+        ? null
+        : new Promise<void>((resolve) => {
+            pendingResolve = resolve;
+            this.pendingRuns.set(sessionId, resolve);
+          });
+      if (!isNativeSession) this.ordinaryRunStreamText.set(sessionId, "");
+      // A user-configured model profile travels with the run; without one the
+      // server keeps using its own env configuration.
+      const outgoingImages = images?.length ? await normalizeOutgoingComposerImages(images) : undefined;
+      const payload = {
+        input,
+        sessionId,
+        ...(outgoingImages ? { images: outgoingImages } : {}),
+        ...(_agentIds?.length ? { agentIds: _agentIds } : {}),
+        ...(!isNativeSession && nativeOptions?.profileId ? { profileId: nativeOptions.profileId } : {}),
+        ...(nativeOptions?.model?.id ? { nativeModel: nativeOptions.model } : {}),
+        ...(nativeOptions?.reasoningEffort ? { nativeReasoningEffort: nativeOptions.reasoningEffort } : {}),
+        ...(nativeOptions?.attachments?.length ? { attachments: nativeOptions.attachments } : {}),
+      };
+      // The request deadline also covers uploading the image payload.
+      const started = isNativeSession && !images?.length && !nativeOptions?.attachments?.length
+        ? await this.http.post<{ runId?: string; snapshotRevision?: number }>("/api/agent/run", payload, { timeoutMs: NATIVE_TEXT_RUN_TIMEOUT_MS })
+        : await this.http.post<{ runId?: string; snapshotRevision?: number }>("/api/agent/run", payload);
+      if (!isNativeSession) this.startOrdinaryRunRecovery(sessionId);
+      if (isNativeSession) {
+        const recovery = this.nativeRunRecoveries.get(sessionId);
+        if (recovery) {
+          recovery.awaitingAdmission = false;
+          recovery.runId = typeof started.runId === "string" ? started.runId : undefined;
+        }
+        const streamCursor = typeof started.runId === "string"
+          && nativeCursorBeforeRun?.runId !== started.runId
+          ? { sequence: 0, runId: started.runId }
+          : nativeCursorBeforeRun ?? {
+              sequence: 0,
+              ...(typeof started.runId === "string" ? { runId: started.runId } : {}),
+            };
+        await this.openStream(
+          sessionId,
+          streamCursor,
+          { waitForOpen: false },
+        );
+      }
+      this.dispatch(sessionId, {
+        type: "run_admitted",
+        ...(typeof started.runId === "string" ? { _nativeRunId: started.runId } : {}),
+      });
+      if (finished) await finished;
+    } catch (err) {
+      const recoveredCursor = !hadPendingRun && isNativeSession && isTransportFailure(err)
+        ? await this.recoverNativeAdmission(sessionId, nativeCursorBeforeRun)
+        : null;
+      if (
+        recoveredCursor
+      ) {
+        const recovery = this.nativeRunRecoveries.get(sessionId);
+        if (recovery) {
+          recovery.awaitingAdmission = false;
+          recovery.runId = recoveredCursor.runId;
+        }
+        await this.openStream(
+          sessionId,
+          recoveredCursor,
+          { waitForOpen: false },
+        );
+        if (finished) await finished;
+        return [];
+      }
+      const reportedCode = (err as { code?: unknown }).code;
+      const code = typeof reportedCode === "string"
+        ? reportedCode
+        : (err as { status?: number }).status === 409
+          ? "SESSION_OCCUPIED"
+          : undefined;
+      if (isNativeSession && code === "SESSION_ALREADY_RUNNING") {
+        await this.openStream(
+          sessionId,
+          nativeCursorBeforeRun ?? { sequence: 0 },
+          { waitForOpen: false },
+        );
+      }
+      const preserveActiveRun = hadStream || hadPendingRun || code === "SESSION_ALREADY_RUNNING";
+      if (isNativeSession && preserveActiveRun) {
+        const recovery = this.nativeRunRecoveries.get(sessionId);
+        if (recovery) recovery.awaitingAdmission = false;
+        this.startNativeRunRecovery(sessionId, this.nativeStreamCursors.get(sessionId)?.runId);
+      }
+      this.dispatch(sessionId, {
+        type: "error",
+        message: isTransportFailure(err)
+          ? "网络连接中断，消息未确认发送，请重试"
+          : err instanceof Error ? err.message : "无法启动运行",
+        ...(code ? { code } : {}),
+        ...(preserveActiveRun ? { _preserveActiveRun: true } : {}),
+      });
+      // A refresh can already be following the active run when the user
+      // retries a send. Keep that stream and its original completion promise
+      // intact; admission has failed, but the prior turn is still valid.
+      if (!preserveActiveRun) {
+        this.closeStream(sessionId);
+        this.settle(sessionId);
+      } else if (pendingResolve && this.pendingRuns.get(sessionId) === pendingResolve) {
+        // This attempt created no native run, so it must not replace or leave
+        // behind a completion promise for the already-followed turn.
+        this.pendingRuns.delete(sessionId);
+      }
+    }
+    return [];
+  }
+
+  private async recoverNativeAdmission(
+    sessionId: string,
+    previousCursor?: NativeStreamCursor,
+  ): Promise<NativeStreamCursor | null> {
+    const observedCursor = this.nativeStreamCursors.get(sessionId);
+    if (observedCursor?.runId && observedCursor.runId !== previousCursor?.runId) {
+      this.dispatchRecoveredAdmission(sessionId, observedCursor);
+      return observedCursor;
+    }
+    try {
+      const detail = await this.http.get<{
+        status?: string;
+        snapshotRevision?: number;
+        snapshotRunId?: string | null;
+      }>(`/api/sessions/${encodeURIComponent(sessionId)}?limit=1&view=core`, { timeoutMs: 4_000 });
+      const runId = typeof detail.snapshotRunId === "string" ? detail.snapshotRunId : undefined;
+      const sequence = typeof detail.snapshotRevision === "number" ? detail.snapshotRevision : 0;
+      const isNewRun = Boolean(runId && previousCursor?.runId && runId !== previousCursor.runId);
+      const isFirstObservedActiveRun = Boolean(
+        runId && !previousCursor?.runId && detail.status === "running",
+      );
+      if (!isNewRun && !isFirstObservedActiveRun) return null;
+
+      this.dispatchRecoveredAdmission(sessionId, { runId, sequence });
+      return { runId: runId!, sequence: 0 };
+    } catch {
+      return null;
+    }
+  }
+
+  private dispatchRecoveredAdmission(sessionId: string, cursor: NativeStreamCursor): void {
+    this.dispatch(sessionId, {
+      type: "run_admitted",
+      ...(cursor.runId ? { _nativeRunId: cursor.runId } : {}),
+    });
+  }
+
+  async steer(input: string, sessionId: string, _agentName?: string): Promise<boolean> {
+    const res = await this.http.post<{ steered: boolean }>("/api/agent/steer", { input, sessionId });
+    return res.steered;
+  }
+
+  async steerSessionMessage(id: string, messageId: string): Promise<SessionGoalState> {
+    const result = await this.http.post<{ steered: boolean; state: SessionGoalState }>("/api/agent/steer", {
+      sessionId: id,
+      messageId,
+    });
+    if (!result.steered) throw new Error("当前运行不支持插队消息");
+    return result.state;
+  }
+
+  async steerSessionGoal(id: string, goalId: string): Promise<SessionGoalState> {
+    const result = await this.http.post<{ steered: boolean; state: SessionGoalState }>("/api/agent/steer", { sessionId: id, goalId });
+    if (!result.steered) throw new Error("当前会话无法插入目标，已保留在队列中");
+    return result.state;
+  }
+
+  async abort(sessionId?: string, trigger?: "button" | "keyboard", expectedRunId?: string): Promise<void> {
+    // Polling can observe a broker run before this client has any stream cursor.
+    const targetRunId = sessionId?.startsWith("runtime:")
+      ? expectedRunId || (this.nativeRunRecoveries.get(sessionId)?.runId ?? this.nativeStreamCursors.get(sessionId)?.runId)
+      : undefined;
+    const targets = sessionId ? [sessionId] : [...new Set([
+      ...this.pendingRuns.keys(), ...this.streams.keys(), ...this.nativeRunRecoveries.keys(),
+    ])].filter(id => !id.startsWith("runtime:"));
+    await this.http.post("/api/agent/abort", {
+      ...(sessionId ? { sessionId } : {}),
+      ...(targetRunId ? { expectedRunId: targetRunId } : {}),
+      ...(trigger ? { trigger } : {}),
+    });
+    // A failed stop must leave its stream alive. A successful stop only settles
+    // the targeted turn; its delayed ACK must not close a newer native run.
+    for (const id of targets) {
+      const currentRunId = this.nativeRunRecoveries.get(id)?.runId ?? this.nativeStreamCursors.get(id)?.runId;
+      if (targetRunId && currentRunId !== targetRunId) continue;
+      this.settle(id);
+      this.closeStream(id);
+    }
+  }
+
+  async answerQuestion(questionId: string, answer: string, selectedIndices?: number[]): Promise<boolean> {
+    try {
+      await this.http.post("/api/agent/answer", { questionId, answer, selectedIndices });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // ── Sessions ───────────────────────────────────────────────────────────
+
+  async listSessions(projectId?: string): Promise<unknown[]> {
+    const query = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
+    return this.http.get<unknown[]>(`/api/sessions${query}`);
+  }
+
+  async listAgentWorkspaces(
+    agentType: string,
+    query: { cursor?: string | null; limit?: number; refresh?: boolean; since?: string | null } = {},
+  ): Promise<unknown> {
+    const params = new URLSearchParams({ agentType });
+    if (query.cursor) params.set("cursor", query.cursor);
+    if (query.limit !== undefined) params.set("limit", String(query.limit));
+    if (query.refresh) params.set("refresh", "1");
+    if (query.since) params.set("since", query.since);
+    return this.http.get(`/api/agent-workspaces?${params.toString()}`);
+  }
+
+  async importAgentWorkspace(agentType: string, path: string, name?: string): Promise<unknown> {
+    return this.http.post("/api/agent-workspaces", {
+      agentType,
+      path,
+      ...(name ? { name } : {}),
+    });
+  }
+
+  async removeInvalidAgentWorkspace(agentType: string, workspaceId: string): Promise<void> {
+    const params = new URLSearchParams({ agentType, workspaceId });
+    await this.http.delete(`/api/agent-workspaces?${params.toString()}`);
+  }
+
+  async listAgentWorkspaceSessions(
+    agentType: string,
+    workspaceId: string,
+    query: { cursor?: string | null; limit?: number; refresh?: boolean } = {},
+  ): Promise<unknown> {
+    const params = new URLSearchParams({ agentType });
+    if (query.cursor) params.set("cursor", query.cursor);
+    if (query.limit !== undefined) params.set("limit", String(query.limit));
+    if (query.refresh) params.set("refresh", "1");
+    return this.http.get(`/api/agent-workspaces/${encodeURIComponent(workspaceId)}/sessions?${params.toString()}`);
+  }
+
+  async refreshSessions(projectId?: string): Promise<unknown[]> {
+    // Forces native runtime rediscovery (occupancy / status freshness).
+    const query = projectId
+      ? `?refresh=1&projectId=${encodeURIComponent(projectId)}`
+      : "?refresh=1";
+    return this.http.get<unknown[]>(`/api/sessions${query}`);
+  }
+
+  async listChildSessions(_parentId: string): Promise<unknown[]> {
+    // The server host builds no sub-agents — no child sessions exist.
+    return [];
+  }
+
+  async getSession(
+    id: string,
+    query?: { before?: string; after?: string; anchor?: string; limit?: number; view?: "core" | "trace"; revision?: string; turnId?: string },
+    options: { lifecycleOnly?: boolean; signal?: AbortSignal } = {},
+  ): Promise<unknown> {
+    const nativeRecovery = this.nativeRunRecoveries.get(id);
+    const requestedRunId = nativeRecovery?.runId;
+    try {
+      const params = new URLSearchParams();
+      if (query?.before) params.set("before", query.before);
+      if (query?.after) params.set("after", query.after);
+      if (query?.anchor) params.set("anchor", query.anchor);
+      if (query?.limit !== undefined) params.set("limit", String(query.limit));
+      if (query?.view) params.set("view", query.view);
+      if (query?.revision) params.set("revision", query.revision);
+      if (query?.turnId) params.set("turnId", query.turnId);
+      const suffix = params.size > 0 ? `?${params.toString()}` : "";
+      const session = await this.http.get<Record<string, unknown>>(
+        `/api/sessions/${encodeURIComponent(id)}${suffix}`,
+        options.signal ? { signal: options.signal } : undefined,
+      );
+      // Stored history may contain reasoning tags — strip before display.
+      if (Array.isArray(session.messages)) {
+        session.messages = (session.messages as Array<Record<string, unknown>>).map((m) =>
+          typeof m.content === "string" ? { ...m, content: stripThinkBlocks(m.content) } : m,
+        );
+      }
+      if (Array.isArray(session.events)) {
+        session.events = (session.events as Array<Record<string, unknown>>).map((e) => {
+          if (typeof e.text === "string" && e.text.includes("<think>")) return { ...e, text: stripThinkBlocks(e.text) };
+          if (typeof e.finalText === "string" && e.finalText.includes("<think>")) return { ...e, finalText: stripThinkBlocks(e.finalText) };
+          return e;
+        });
+      }
+      const currentNativeResponse = nativeRecovery === this.nativeRunRecoveries.get(id)
+        && requestedRunId === nativeRecovery?.runId;
+      const observesLatestRun = !query?.before && !query?.after && !query?.anchor && query?.view !== "trace";
+      if (id.startsWith("runtime:") && currentNativeResponse && observesLatestRun && typeof session.snapshotRevision === "number") {
+        const snapshotRunId = typeof session.snapshotRunId === "string"
+          ? session.snapshotRunId
+          : undefined;
+        if (snapshotRunId && this.nativeRunIdentities.get(id)?.retired.has(snapshotRunId)) return session;
+        const history = session.history as { delivery?: unknown } | undefined;
+        const progressive = history?.delivery === "core" || history?.delivery === "trace";
+        const snapshotMatchesTurn = this.snapshotRunMatchesHistoryTurn(session);
+        if (
+          history?.delivery === "core"
+          && !options.lifecycleOnly
+          && snapshotRunId
+          && snapshotMatchesTurn
+          && this.coreSnapshotContainsTailFinalAnswer(session.messages)
+        ) {
+          this.rememberNativeFinalAnswerSnapshot(id, session.snapshotRevision, snapshotRunId);
+        }
+        if (!progressive) {
+          this.rememberNativeStreamCursor(id, session.snapshotRevision, snapshotRunId);
+        }
+        // Native editors can start another turn after this retained broker run
+        // finishes. A terminal run cannot supply that turn's live event stream.
+        if (session.status === "running" && session.snapshotRunStatus !== "terminal" && session.occupancy !== "owned-externally"
+          && (!progressive || snapshotMatchesTurn)) {
+          const rememberedCursor = this.nativeStreamCursors.get(id);
+          const cursor = progressive && snapshotRunId && rememberedCursor?.runId !== snapshotRunId
+            ? { sequence: 0, runId: snapshotRunId }
+            : rememberedCursor
+              ?? (progressive ? { sequence: 0, ...(snapshotRunId ? { runId: snapshotRunId } : {}) } : undefined);
+          void this.openStream(id, cursor).catch(() => undefined);
+        }
+        if (nativeRecovery) {
+          if (snapshotMatchesTurn) {
+            await this.reconcileNativeRun(id, nativeRecovery, requestedRunId, session);
+          } else if (!nativeRecovery.awaitingAdmission && session.snapshotRunStatus === "terminal"
+            && snapshotRunId === requestedRunId) {
+            // Settle our finished run without applying its terminal text or
+            // duration to the newer turn now owned by an external client.
+            this.closeStream(id);
+            this.settle(id);
+          }
+        }
+      } else if (!id.startsWith("runtime:") && session.status === "active") {
+        const activeRun = session.activeRun as { eventId?: unknown; running?: unknown } | undefined;
+        if (activeRun?.running === true && typeof activeRun.eventId === "number") {
+          void this.openStream(id, { sequence: activeRun.eventId }).catch(() => undefined);
+        }
+      }
+      return session;
+    } catch (err) {
+      if ((err as { status?: number }).status === 404) return null;
+      throw err;
+    }
+  }
+
+  async getSessionImage(id: string, variant: "preview" | "original"): Promise<string> {
+    const result = await this.http.get<{ dataUrl: string }>(
+      `/api/session-images/${encodeURIComponent(id)}?variant=${variant}`,
+    );
+    return result.dataUrl;
+  }
+
+  async getSessionToolResult(
+    id: string,
+    ref: { turnId: string; itemId: string; revision: string },
+  ): Promise<unknown> {
+    const params = new URLSearchParams(ref);
+    return this.http.get(
+      `/api/sessions/${encodeURIComponent(id)}/tool-result?${params.toString()}`,
+    );
+  }
+
+  async getSessionQueryIndex(id: string): Promise<SessionQueryIndex> {
+    return this.http.get<SessionQueryIndex>(
+      `/api/sessions/${encodeURIComponent(id)}/query-index`,
+    );
+  }
+
+  observeSession(
+    id: string,
+    callback: (change: { type: "session_history_changed"; revision: number }) => void,
+    onError?: () => void,
+  ): Unsubscribe {
+    const source = this.createEventSource(`/api/sessions/${encodeURIComponent(id)}/changes`);
+    let closed = false;
+    source.onmessage = (message) => {
+      if (!message.data) return;
+      try {
+        const change = JSON.parse(message.data) as { type?: string; revision?: unknown };
+        if (change.type === "session_history_changed" && typeof change.revision === "number") {
+          callback({ type: change.type, revision: change.revision });
+        }
+      } catch {
+        // Ignore malformed events; a later valid revision will refresh the tail.
+      }
+    };
+    source.onerror = () => {
+      if (closed) return;
+      closed = true;
+      source.close();
+      onError?.();
+    };
+    return () => {
+      if (closed) return;
+      closed = true;
+      source.close();
+    };
+  }
+
+  async setSessionPermissionMode(
+    id: string,
+    mode: "request-approval" | "auto-approval" | "full-access",
+  ): Promise<unknown> {
+    return this.http.patch(`/api/sessions/${encodeURIComponent(id)}`, { permissionMode: mode });
+  }
+
+  async setSessionNativeMode(id: string, preset: string): Promise<UnifiedSessionSummary> {
+    return this.http.patch(`/api/sessions/${encodeURIComponent(id)}`, { nativeMode: preset });
+  }
+
+  async setSessionNativePermissionPreset(id: string, preset: string): Promise<UnifiedSessionSummary> {
+    return this.http.patch(`/api/sessions/${encodeURIComponent(id)}`, { nativePermissionPreset: preset });
+  }
+
+  async getSessionNativeGoal(id: string): Promise<NativeSessionGoal | null> {
+    const result = await this.http.get<{ goal: NativeSessionGoal | null }>(`/api/sessions/${encodeURIComponent(id)}/native-goal`);
+    return result.goal;
+  }
+
+  async listSessionBackgroundJobs(id: string): Promise<RuntimeBackgroundJob[]> {
+    const result = await this.http.get<{ jobs: RuntimeBackgroundJob[] }>(`/api/sessions/${encodeURIComponent(id)}/background-jobs`);
+    return result.jobs;
+  }
+
+  async getSessionBackgroundJobOutput(id: string, jobId: string): Promise<RuntimeBackgroundJobOutput> {
+    return this.http.get(`/api/sessions/${encodeURIComponent(id)}/background-jobs/${encodeURIComponent(jobId)}`);
+  }
+
+  async stopSessionBackgroundJob(id: string, jobId: string): Promise<RuntimeBackgroundJobStopResult> {
+    return this.http.post(`/api/sessions/${encodeURIComponent(id)}/background-jobs/${encodeURIComponent(jobId)}/stop`, {});
+  }
+
+  async mutateSessionNativeGoal(id: string, mutation: NativeGoalMutation): Promise<NativeSessionGoal | null> {
+    const result = await this.http.post<{ goal: NativeSessionGoal | null }>(`/api/sessions/${encodeURIComponent(id)}/native-goal`, mutation);
+    return result.goal;
+  }
+
+  async getSessionGoals(id: string): Promise<SessionGoalState> {
+    const state = await this.http.get<SessionGoalState>(`/api/sessions/${encodeURIComponent(id)}/goals`);
+    if (state.active) void this.openStream(id, this.nativeStreamCursors.get(id)).catch(() => undefined);
+    return state;
+  }
+
+  async enqueueSessionGoal(id: string, objective: string, sourceMessageId?: string): Promise<SessionGoalState> {
+    await this.openStream(id, this.nativeStreamCursors.get(id));
+    const result = await this.http.post<{
+      state: SessionGoalState;
+      started?: { runId?: string; snapshotRevision?: number };
+    }>(`/api/sessions/${encodeURIComponent(id)}/goals`, { objective, sourceMessageId });
+    if (typeof result.started?.snapshotRevision === "number") {
+      this.dispatch(id, {
+        type: "run_admitted",
+        ...(result.started.runId ? { _nativeRunId: result.started.runId } : {}),
+      });
+    }
+    return result.state;
+  }
+
+  async reorderSessionGoals(id: string, orderedIds: string[]): Promise<SessionGoalState> {
+    return this.http.patch(`/api/sessions/${encodeURIComponent(id)}/goals`, { orderedIds });
+  }
+
+  async updateSessionGoal(id: string, goalId: string, objective: string): Promise<SessionGoalState> {
+    return this.http.patch(`/api/sessions/${encodeURIComponent(id)}/goals`, { goalId, objective });
+  }
+
+  async cancelSessionGoal(id: string, goalId: string): Promise<SessionGoalState> {
+    return this.http.delete(`/api/sessions/${encodeURIComponent(id)}/goals?goalId=${encodeURIComponent(goalId)}`);
+  }
+
+  async getThreadGoal(id: string): Promise<ThreadGoalInfo | null> {
+    const result = await this.http.get<{ goal: ThreadGoalInfo | null }>(
+      `/api/sessions/${encodeURIComponent(id)}/thread-goal`,
+    );
+    return result.goal ?? null;
+  }
+
+  async setThreadGoal(id: string, objective: string, tokenBudget?: number | null): Promise<ThreadGoalInfo> {
+    const result = await this.http.put<{ goal: ThreadGoalInfo }>(
+      `/api/sessions/${encodeURIComponent(id)}/thread-goal`,
+      { objective, tokenBudget: tokenBudget ?? null },
+    );
+    void this.openStream(id, this.nativeStreamCursors.get(id)).catch(() => undefined);
+    return result.goal;
+  }
+
+  async updateThreadGoal(id: string, action: "pause" | "resume"): Promise<ThreadGoalInfo> {
+    const result = await this.http.patch<{ goal: ThreadGoalInfo }>(
+      `/api/sessions/${encodeURIComponent(id)}/thread-goal`,
+      { action },
+    );
+    return result.goal;
+  }
+
+  async clearThreadGoal(id: string): Promise<boolean> {
+    const result = await this.http.delete<{ cleared: boolean }>(
+      `/api/sessions/${encodeURIComponent(id)}/thread-goal`,
+    );
+    return result.cleared;
+  }
+
+  async enqueueSessionMessage(
+    id: string,
+    message: { sourceMessageId: string; content: string; images?: string[]; agentIds?: string[]; agentName?: string; runOptions?: SessionMessageRunOptions },
+  ): Promise<SessionGoalState> {
+    await this.openStream(id, this.nativeStreamCursors.get(id));
+    const images = message.images?.length ? await normalizeOutgoingComposerImages(message.images) : message.images;
+    const result = await this.http.post<{
+      state: SessionGoalState;
+      started?: { runId?: string; snapshotRevision?: number };
+    }>(`/api/sessions/${encodeURIComponent(id)}/goals`, {
+      kind: "message",
+      objective: message.content,
+      sourceMessageId: message.sourceMessageId,
+      messagePayload: {
+        images,
+        agentIds: message.agentIds,
+        agentName: message.agentName,
+        ...(message.runOptions ? { runOptions: message.runOptions } : {}),
+      },
+    });
+    if (typeof result.started?.snapshotRevision === "number") {
+      this.dispatch(id, {
+        type: "run_admitted",
+        ...(result.started.runId ? { _nativeRunId: result.started.runId } : {}),
+      });
+    }
+    return result.state;
+  }
+
+  async updateSessionMessage(id: string, messageId: string, content: string): Promise<SessionGoalState> {
+    return this.http.patch(`/api/sessions/${encodeURIComponent(id)}/goals`, {
+      kind: "message",
+      messageId,
+      objective: content,
+    });
+  }
+
+  async reorderSessionMessages(id: string, orderedIds: string[]): Promise<SessionGoalState> {
+    return this.http.patch(`/api/sessions/${encodeURIComponent(id)}/goals`, {
+      kind: "message",
+      orderedIds,
+    });
+  }
+
+  async cancelSessionMessage(id: string, messageId: string): Promise<SessionGoalState> {
+    return this.http.delete(
+      `/api/sessions/${encodeURIComponent(id)}/goals?kind=message&goalId=${encodeURIComponent(messageId)}`,
+    );
+  }
+
+  async createSession(title: string, projectId?: string, agentType?: string, cwd?: string): Promise<unknown> {
+    const created = await this.http.post("/api/sessions", {
+      title,
+      ...(projectId ? { projectId } : {}),
+      ...(agentType && agentType !== "customer-agent" ? { agentType } : {}),
+      ...(cwd ? { cwd } : {}),
+    });
+    this.announceSession(created, { title, projectId, agentType, cwd });
+    return created;
+  }
+
+  async createParallelSessions(input: CreateParallelSessionsInput): Promise<ParallelSessionGroup<UnifiedSessionSummary>> {
+    const group = await this.http.post<ParallelSessionGroup<UnifiedSessionSummary>>("/api/sessions/parallel", input);
+    for (const session of group.members) this.announceSession(session);
+    return group;
+  }
+
+  async getParallelSessionGroup(sessionId: string): Promise<ParallelSessionGroup<UnifiedSessionSummary> | null> {
+    return this.http.get(`/api/sessions/parallel?sessionId=${encodeURIComponent(sessionId)}`);
+  }
+
+  async forkSession(id: string, point?: SessionForkPoint): Promise<unknown> {
+    const forked = await this.http.post(`/api/sessions/${encodeURIComponent(id)}/${point ? "fork-at" : "fork"}`, point ? { point } : {});
+    this.announceSession(forked);
+    return forked;
+  }
+
+  async releaseCodexSession(id: string): Promise<void> {
+    await this.http.post(`/api/sessions/${encodeURIComponent(id)}/release`, {});
+  }
+
+  async deleteSession(id: string): Promise<void> {
+    await this.http.delete(`/api/sessions/${encodeURIComponent(id)}`);
+  }
+
+  async getRuntimeHealth(): Promise<unknown[]> {
+    return this.http.get<unknown[]>("/api/agent/runtime-health");
+  }
+
+  getUpdateStatus() {
+    return this.http.get<import("../../contracts/agent-api").UpdateStatus>("/api/update/status");
+  }
+
+  checkForUpdate() {
+    return this.http.post<import("../../contracts/agent-api").UpdateStatus>("/api/update/check", {});
+  }
+
+  installUpdate() {
+    return this.http.post<import("../../contracts/agent-api").UpdateStatus>("/api/update/install", {});
+  }
+
+  onUpdateStatus(_callback: (status: import("../../contracts/agent-api").UpdateStatus) => void): Unsubscribe {
+    return () => undefined;
+  }
+
+  async listAgentModels(agentType: string): Promise<{ agentType: string; models: unknown[]; supported?: boolean }> {
+    return this.http.get(`/api/agent/models?agentType=${encodeURIComponent(agentType)}`);
+  }
+
+  // ── Host projects (brokered through the parent WebSocket) ─────────────
+
+  async listProjects(): Promise<unknown[]> {
+    if (!this.projectBridge) return this.http.get<unknown[]>("/api/projects");
+    const result = await this.requireProjectBridge().request<{ projects: unknown[] }>("project:list");
+    return result.projects ?? [];
+  }
+
+  async getProject(id: string): Promise<unknown> {
+    if (!this.projectBridge) return this.http.get(`/api/projects/${encodeURIComponent(id)}`);
+    const result = await this.requireProjectBridge().request<{ project: unknown }>("project:get", { projectId: id });
+    return result.project ?? null;
+  }
+
+  async createProject(name: string, description?: string): Promise<unknown> {
+    if (!this.projectBridge) {
+      return this.http.post("/api/projects", { name, path: description ?? "" });
+    }
+    const result = await this.requireProjectBridge().request<{ project: unknown }>("project:create", {
+      name,
+      path: description ?? "",
+    });
+    return result.project;
+  }
+
+  async updateProject(id: string, update: Record<string, unknown>): Promise<unknown> {
+    if (!this.projectBridge) {
+      return this.http.patch(`/api/projects/${encodeURIComponent(id)}`, update);
+    }
+    const result = await this.requireProjectBridge().request<{ project: unknown }>("project:rename", {
+      projectId: id,
+      name: update.name,
+    });
+    return result.project;
+  }
+
+  async deleteProject(id: string): Promise<void> {
+    if (!this.projectBridge) {
+      await this.http.delete(`/api/projects/${encodeURIComponent(id)}`);
+      return;
+    }
+    await this.requireProjectBridge().request("project:delete", { projectId: id });
+  }
+
+  async checkProjectPath(path: string): Promise<boolean> {
+    if (!this.projectBridge) {
+      const result = await this.http.get<{ valid: boolean }>(`/api/projects/check?path=${encodeURIComponent(path)}`);
+      return result.valid === true;
+    }
+    const result = await this.requireProjectBridge().request<{ valid: boolean }>("project:check", { path });
+    return result.valid === true;
+  }
+
+  async listProjectRoots(): Promise<string[]> {
+    if (!this.projectBridge) return this.http.get<string[]>("/api/projects/roots");
+    const result = await this.requireProjectBridge().request<{ roots: string[] }>("project:roots");
+    return result.roots ?? [];
+  }
+
+  async getProjectPickerLocation(): Promise<{ roots: string[]; initialPath: string }> {
+    if (!this.projectBridge) return this.http.get("/api/projects/roots?picker=1");
+    return this.requireProjectBridge().request("project:roots");
+  }
+
+  async listProjectDirectories(path: string): Promise<Array<{
+    name: string;
+    path: string;
+    kind: "directory" | "file";
+    hasChildren: boolean;
+  }>> {
+    if (!this.projectBridge) {
+      return this.http.get<Array<{
+        name: string;
+        path: string;
+        kind: "directory" | "file";
+        hasChildren: boolean;
+      }>>(`/api/projects/directories?path=${encodeURIComponent(path)}`);
+    }
+    const result = await this.requireProjectBridge().request<{ entries: Array<{
+      name: string;
+      path: string;
+      kind: "directory" | "file";
+      hasChildren: boolean;
+    }> }>("project:directories", { path });
+    return result.entries ?? [];
+  }
+
+  async setProjectWorkingDir(path: string): Promise<{ ok: boolean; path: string }> {
+    await this.saveSettings({ workingDirectory: path });
+    return { ok: true, path };
+  }
+
+  // Shared business settings and catalogs. Device storage never overrides a run.
+  async getSettings(): Promise<any> { return this.http.get("/api/settings"); }
+  async setSetting(key: string, value: string): Promise<void> {
+    const current = await this.getSettings();
+    if (!(key in current) || key === "revision" || key === "settingsSpaceId") throw new Error("Unsupported setting");
+    const parsed = typeof current[key] === "number" ? Number(value) : Array.isArray(current[key]) ? JSON.parse(value) : value;
+    await this.saveSettings({ [key]: parsed, revision: current.revision });
+  }
+  async subscribe(): Promise<void> {}
+  async handoffSession(id: string): Promise<unknown> { return this.http.post(`/api/sessions/${encodeURIComponent(id)}/handoff`, {}); }
+  async saveSettings(update: Record<string, unknown>): Promise<any> { return this.http.post("/api/settings", update); }
+  async setActiveProfile(profileId: string): Promise<any> { return this.http.post("/api/settings", { activeProfileId: profileId }); }
+  async refreshServerModel(): Promise<void> {
+    const settings = await this.getSettings();
+    // Preserve old browser records. Import missing IDs once per server data
+    // space; conflicts keep the server value and local source keys stay intact.
+    const marker = `webapp.sharedMigration.${settings.settingsSpaceId}`;
+    if (!settings.settingsSpaceId || localStorage.getItem(marker)) return;
+    const read = (key: string, fallback: unknown) => {
+      try { return JSON.parse(localStorage.getItem(key) || "null") ?? fallback; } catch { return fallback; }
+    };
+    const legacy = read("webapp.settings.v1", {}) as { profiles?: unknown[] };
+    await this.business("importLegacy", [{ profiles: legacy.profiles || [], agents: read("webapp.agentDefs", []), lsp: read("webapp.lspServers", []) }]);
+    localStorage.setItem(marker, "1");
+  }
+  private business(method: string, args: unknown[]): Promise<any> { return this.http.post("/api/business", { method, args }); }
+  async listMemories(): Promise<any> { return this.business("listMemories", []); }
+  async searchMemories(query: string): Promise<any> { return this.business("searchMemories", [query]); }
+  async getMemory(name: string): Promise<any> { return this.business("getMemory", [name]); }
+  async setMemory(entry: Record<string, unknown>): Promise<any> { return this.business("setMemory", [entry]); }
+  async deleteMemory(name: string): Promise<any> { return this.business("deleteMemory", [name]); }
+  async mcpList(): Promise<any> { return this.business("mcpList", []); }
+  async mcpSave(server: Record<string, unknown>): Promise<any> { return this.business("mcpSave", [server]); }
+  async mcpDelete(id: string): Promise<any> { return this.business("mcpDelete", [id]); }
+  async mcpSetEnabled(id: string, enabled: boolean): Promise<any> { return this.business("mcpSetEnabled", [id, enabled]); }
+  async mcpProbe(server: Record<string, unknown>): Promise<any> { return this.business("mcpProbe", [server]); }
+  async listSkills(): Promise<any> { return this.business("listSkills", []); }
+  async saveSkill(skill: Record<string, unknown>): Promise<any> { return this.business("saveSkill", [skill]); }
+  async deleteSkill(name: string): Promise<any> { return this.business("deleteSkill", [name]); }
+  async setSkillEnabled(name: string, enabled: boolean): Promise<any> { return this.business("setSkillEnabled", [name, enabled]); }
+  async listAgentDefs(): Promise<any> { return this.business("listAgentDefs", []); }
+  async getAgentDef(id: string): Promise<any> { return this.business("getAgentDef", [id]); }
+  async createAgentDef(data: Partial<AgentDefinition>): Promise<any> { return this.business("createAgentDef", [data]); }
+  async updateAgentDef(id: string, update: Partial<AgentDefinition>): Promise<any> { return this.business("updateAgentDef", [id, update]); }
+  async deleteAgentDef(id: string): Promise<any> { return this.business("deleteAgentDef", [id]); }
+  async setActiveAgentDef(id: string): Promise<any> { return this.business("setActiveAgentDef", [id]); }
+  async lspList(): Promise<any> { return this.business("lspList", []); }
+  async lspSave(config: Partial<LSPServerConfig> & { name: string }): Promise<any> { return this.business("lspSave", [config]); }
+  async lspDelete(id: string): Promise<any> { return this.business("lspDelete", [id]); }
+  async lspSetEnabled(id: string, enabled: boolean): Promise<any> { return this.business("lspSetEnabled", [id, enabled]); }
+  async listUploads(): Promise<any> { return this.business("listUploads", []); }
+  async getUpload(id: string): Promise<any> { return this.business("getUpload", [id]); }
+  async saveUpload(entry: Record<string, unknown>): Promise<any> { return this.business("saveUpload", [entry]); }
+  async deleteUpload(id: string): Promise<any> { return this.business("deleteUpload", [id]); }
+  async importSkill(): Promise<null> { return null; }
+
+  async cronCreate(cron: string, prompt: string, options?: Record<string, unknown>): Promise<CronTask> { return this.business("cronCreate", [cron, prompt, options]); }
+  async cronPause(id: string): Promise<CronTask | null> { return this.business("cronPause", [id]); }
+  async cronResume(id: string): Promise<CronTask | null> { return this.business("cronResume", [id]); }
+  async cronDelete(id: string): Promise<boolean> { return this.business("cronDelete", [id]); }
+  async cronDeleteAll(): Promise<{ ok: boolean }> { return this.business("cronDeleteAll", []); }
+  async cronList(): Promise<CronTask[]> { return this.business("cronList", []); }
+
+  // ── Files / window / voice ─────────────────────────────────────────────
+
+  async openFileDialog(): Promise<null> {
+    // No native picker on the web — project import is desktop-only for now.
+    return null;
+  }
+
+  async readFile(): Promise<string> {
+    throw new Error("Web 端不支持直接读取本地文件");
+  }
+
+  async writeFile(): Promise<boolean> {
+    throw new Error("Web 端不支持直接写入本地文件");
+  }
+
+  async hideWindow(): Promise<void> {}
+
+  async showWindow(): Promise<void> {}
+
+  async isWindowVisible(): Promise<boolean> {
+    return true;
+  }
+
+  async wakeStop(): Promise<{ ok: boolean }> {
+    return { ok: true };
+  }
+
+  async wakeConversation(on: boolean): Promise<{ ok: boolean; conversation: boolean }> {
+    return { ok: true, conversation: on };
+  }
+
+  onWake(): Unsubscribe {
+    return () => {};
+  }
+
+  onWakeCommand(): Unsubscribe {
+    return () => {};
+  }
+
+  // ── SSE plumbing ───────────────────────────────────────────────────────
+
+  private announceSession(value: unknown, defaults: { title?: string; projectId?: string; agentType?: string; cwd?: string } = {}): void {
+    if (!value || typeof value !== "object") return;
+    const row = value as Record<string, unknown>;
+    if (typeof row.id !== "string") return;
+    const agentType = row.agentType ?? defaults.agentType ?? "customer-agent";
+    if (!isAgentType(agentType)) return;
+    const status = row.status === "active" || row.status === "running" ? "running"
+      : row.status === "completed" || row.status === "failed" ? row.status : "idle";
+    const session: CatalogSession = {
+      id: row.id, agentType, status,
+      title: typeof row.title === "string" ? row.title : defaults.title ?? "未命名会话",
+      cwd: typeof row.cwd === "string" ? row.cwd : defaults.cwd ?? "",
+      projectId: typeof row.projectId === "string" ? row.projectId : defaults.projectId,
+      ...(typeof row.parentSessionId === "string" ? { parentSessionId: row.parentSessionId } : {}),
+      updated: typeof row.updated === "string" ? row.updated : new Date().toISOString(),
+      ...(typeof row.completedAt === "string" ? { completedAt: row.completedAt } : {}),
+      canResume: row.canResume !== false,
+    };
+    this.dispatch(session.id, { type: "session_summary", session });
+  }
+
+  private dispatch(sessionId: string, event: Record<string, unknown>): void {
+    const stamped = { ...event, _sid: sessionId };
+    for (const listener of this.listeners) {
+      try {
+        listener(stamped);
+      } catch {
+        /* one bad subscriber must not starve the rest */
+      }
+    }
+  }
+
+  private dispatchStreamEvent(sessionId: string, event: Record<string, unknown>): void {
+    const shouldFrameCommentary = sessionId.startsWith("runtime:codex:")
+      && event.type === "text_chunk"
+      && event.messagePhase === "commentary"
+      && typeof event.text === "string";
+    if (!shouldFrameCommentary) {
+      this.flushBufferedStreamText(sessionId);
+      this.dispatch(sessionId, event);
+      return;
+    }
+
+    const buffered = this.bufferedStreamText.get(sessionId);
+    const sameItem = buffered
+      && buffered.event._nativeRunId === event._nativeRunId
+      && buffered.event.turnId === event.turnId
+      && buffered.event.itemId === event.itemId;
+    if (sameItem) {
+      buffered.event = {
+        ...buffered.event,
+        ...event,
+        text: String(buffered.event.text ?? "") + event.text,
+      };
+      return;
+    }
+    this.flushBufferedStreamText(sessionId);
+    const timer = setTimeout(() => this.flushBufferedStreamText(sessionId), CODEX_COMMENTARY_FRAME_MS);
+    this.bufferedStreamText.set(sessionId, { event: { ...event }, timer });
+  }
+
+  private flushBufferedStreamText(sessionId: string): void {
+    const buffered = this.bufferedStreamText.get(sessionId);
+    if (!buffered) return;
+    this.bufferedStreamText.delete(sessionId);
+    clearTimeout(buffered.timer);
+    this.dispatch(sessionId, buffered.event);
+  }
+
+  private settle(sessionId: string): void {
+    this.stopOrdinaryRunRecovery(sessionId);
+    this.stopNativeRunRecovery(sessionId);
+    const resolve = this.pendingRuns.get(sessionId);
+    if (resolve) {
+      this.pendingRuns.delete(sessionId);
+      resolve();
+    }
+  }
+
+  private beginNativeRunRecovery(
+    sessionId: string,
+    runId?: string,
+    awaitingAdmission = false,
+  ): NativeRunRecovery {
+    this.stopNativeRunRecovery(sessionId);
+    const recovery: NativeRunRecovery = { runId, awaitingAdmission, inFlight: false };
+    this.nativeRunRecoveries.set(sessionId, recovery);
+    return recovery;
+  }
+
+  private startNativeRunRecovery(sessionId: string, runId?: string): void {
+    let recovery = this.nativeRunRecoveries.get(sessionId);
+    if (recovery?.awaitingAdmission) return;
+    if (runId) {
+      const identity = this.nativeRunIdentities.get(sessionId);
+      if (identity?.retired.has(runId)) return;
+      if (identity && identity.current !== runId) {
+        identity.retired.add(identity.current);
+        identity.current = runId;
+      } else if (!identity) {
+        this.nativeRunIdentities.set(sessionId, { current: runId, retired: new Set() });
+      }
+    }
+    if (!recovery || (runId && recovery.runId !== runId)) {
+      recovery = this.beginNativeRunRecovery(sessionId, runId);
+    }
+    if (recovery.timer) return;
+    const tracked = recovery;
+    recovery.timer = setInterval(() => {
+      void this.recoverNativeRun(sessionId, tracked);
+    }, NATIVE_RUN_RECOVERY_INTERVAL_MS);
+  }
+
+  private stopNativeRunRecovery(sessionId: string): void {
+    const recovery = this.nativeRunRecoveries.get(sessionId);
+    if (recovery?.timer) clearInterval(recovery.timer);
+    this.nativeRunRecoveries.delete(sessionId);
+  }
+
+  private async recoverNativeRun(sessionId: string, recovery: NativeRunRecovery): Promise<void> {
+    if (recovery.inFlight || recovery.awaitingAdmission || this.nativeRunRecoveries.get(sessionId) !== recovery) return;
+    recovery.inFlight = true;
+    try {
+      // History remains the source of reply text. Replaying its whole answer
+      // as text_chunk here would duplicate text already delivered over SSE.
+      await this.getSession(sessionId, { limit: 1, view: "core" }, { lifecycleOnly: true });
+    } catch {
+      // A mobile reconnect can fail several detail requests; keep observing.
+    } finally {
+      recovery.inFlight = false;
+    }
+  }
+
+  private async reconcileNativeRun(
+    sessionId: string,
+    recovery: NativeRunRecovery,
+    requestedRunId: string | undefined,
+    session: Record<string, unknown>,
+  ): Promise<void> {
+    if (
+      recovery.awaitingAdmission
+      || this.nativeRunRecoveries.get(sessionId) !== recovery
+      || recovery.runId !== requestedRunId
+      || (!requestedRunId && this.pendingRuns.has(sessionId))
+      || (requestedRunId && typeof session.snapshotRunId !== "string" && session.snapshotRunId !== null)
+      || !["idle", "completed", "failed", "aborted"].includes(String(session.status))
+    ) return;
+
+    let terminalRecovery = recovery;
+    let terminalRunId = requestedRunId;
+    if (typeof session.snapshotRunId === "string" && session.snapshotRunId !== requestedRunId) {
+      // A server-queued successor can start and finish between two polls.
+      // This response still belongs to the captured lifecycle, so its latest
+      // retained run is authoritative even if we never observed it running.
+      if (this.nativeRunIdentities.get(sessionId)?.retired.has(session.snapshotRunId)) return;
+      this.startNativeRunRecovery(sessionId, session.snapshotRunId);
+      const successor = this.nativeRunRecoveries.get(sessionId);
+      if (!successor || successor.runId !== session.snapshotRunId) return;
+      terminalRecovery = successor;
+      terminalRunId = session.snapshotRunId;
+    }
+
+    let events = Array.isArray(session.events) ? session.events as Array<Record<string, unknown>> : [];
+    let settledStatus = session.status;
+    let terminal = [...events].reverse().find((event) => (
+      event.type === "done" || event.type === "error" || event.type === "turn_aborted"
+    ));
+    if (!terminal && typeof session.snapshotRunId === "string") {
+      // Core history omits retained events. An idle native thread can have
+      // failed its last turn, so read that turn's actual terminal event before
+      // choosing done versus error. Do not recurse through getSession.
+      try {
+        const retained = await this.http.get<Record<string, unknown>>(
+          `/api/sessions/${encodeURIComponent(sessionId)}?limit=1`,
+        );
+        if (
+          retained.snapshotRunId !== session.snapshotRunId
+          || !["idle", "completed", "failed", "aborted"].includes(String(retained.status))
+        ) return;
+        settledStatus = retained.status;
+        events = Array.isArray(retained.events) ? retained.events as Array<Record<string, unknown>> : [];
+        terminal = [...events].reverse().find((event) => (
+          event.type === "done" || event.type === "error" || event.type === "turn_aborted"
+        ));
+      } catch {
+        return;
+      }
+    }
+    if (
+      this.nativeRunRecoveries.get(sessionId) !== terminalRecovery
+      || terminalRecovery.runId !== terminalRunId
+      || terminalRecovery.awaitingAdmission
+    ) return;
+    const type = terminal?.type
+      ?? (settledStatus === "failed" ? "error" : settledStatus === "aborted" ? "turn_aborted" : "done");
+    const { _nativeSequence: _sequence, _nativeRunId: _runId, ...terminalEvent } = terminal ?? {};
+    // Remove the lifecycle before dispatch; terminal listeners may start the
+    // next run synchronously. Old detail requests must never settle that run.
+    this.closeStream(sessionId);
+    this.settle(sessionId);
+    this.dispatch(sessionId, {
+      ...terminalEvent,
+      type,
+      ...(type === "error" ? { message: terminal?.message || "运行失败，但未记录具体错误" } : {}),
+      ...(type === "done" ? { finalText: "", ...(terminal?.durationMs === undefined ? {} : { durationMs: terminal.durationMs }) } : {}),
+      ...((terminalRunId ?? session.snapshotRunId) ? { _nativeRunId: terminalRunId ?? session.snapshotRunId } : {}),
+      ...(type === "done" && typeof session.completedAt === "string" ? { _nativeCompletedAt: session.completedAt } : {}),
+      _nativeRecoveredFromSnapshot: true,
+    });
+  }
+
+  private startOrdinaryRunRecovery(sessionId: string): void {
+    const previous = this.ordinaryRunRecoveryTimers.get(sessionId);
+    if (previous) clearInterval(previous);
+    const timer = setInterval(() => {
+      void this.recoverSettledOrdinaryRun(sessionId);
+    }, ORDINARY_RUN_RECOVERY_INTERVAL_MS);
+    this.ordinaryRunRecoveryTimers.set(sessionId, timer);
+  }
+
+  private stopOrdinaryRunRecovery(sessionId: string): void {
+    const timer = this.ordinaryRunRecoveryTimers.get(sessionId);
+    if (timer) clearInterval(timer);
+    this.ordinaryRunRecoveryTimers.delete(sessionId);
+    this.ordinaryRunStreamText.delete(sessionId);
+  }
+
+  private async recoverSettledOrdinaryRun(sessionId: string): Promise<void> {
+    if (!this.pendingRuns.has(sessionId)) {
+      this.stopOrdinaryRunRecovery(sessionId);
+      return;
+    }
+    try {
+      const session = await this.getSession(sessionId, { limit: 50 }) as {
+        status?: string;
+        messages?: Array<{ role: string; content?: string }>;
+        events?: Array<{ type?: string; message?: string }>;
+      } | null;
+      if (!session || session.status === "active" || session.status === "running") return;
+      if (session.status !== "completed" && session.status !== "failed" && session.status !== "aborted") return;
+
+      const messages = session.messages ?? [];
+      const lastUser = messages.map((message) => message.role).lastIndexOf("user");
+      const persisted = stripThinkBlocks(messages
+        .slice(lastUser + 1)
+        .filter((message) => message.role === "assistant" && (message.content ?? "").trim())
+        .map((message) => message.content!.trim())
+        .join("\n\n"));
+      const streamed = this.ordinaryRunStreamText.get(sessionId) ?? "";
+      const missing = persisted.startsWith(streamed) ? persisted.slice(streamed.length) : persisted;
+      if (missing) this.dispatch(sessionId, { type: "text_chunk", text: missing });
+      if (session.status === "completed") {
+        this.dispatch(sessionId, { type: "done", finalText: "" });
+      } else {
+        const persistedError = [...(session.events ?? [])]
+          .reverse()
+          .find((event) => event.type === "error" && event.message?.trim())?.message;
+        this.dispatch(sessionId, {
+          type: "error",
+          message: persistedError || (session.status === "aborted" ? "运行已中止" : "运行失败，但未记录具体错误"),
+        });
+      }
+      this.closeStream(sessionId);
+      this.settle(sessionId);
+    } catch {
+      // Keep polling while the run is pending; transient detail failures are recoverable.
+    }
+  }
+
+  private openStream(
+    sessionId: string,
+    cursor?: NativeStreamCursor,
+    options: { waitForOpen?: boolean } = {},
+  ): Promise<void> {
+    if (sessionId.startsWith("runtime:")) this.startNativeRunRecovery(sessionId, cursor?.runId);
+    if (this.streams.has(sessionId)) return Promise.resolve();
+    this.thinkFilters.set(sessionId, new StreamingThinkFilter());
+    const query = new URLSearchParams({ sessionId });
+    if (Number.isSafeInteger(cursor?.sequence)) {
+      query.set(sessionId.startsWith("runtime:") ? "afterSequence" : "afterEventId", String(cursor!.sequence));
+    }
+    if (sessionId.startsWith("runtime:") && cursor?.runId) query.set("afterRunId", cursor.runId);
+    const source = this.createEventSource(`/api/agent/stream?${query.toString()}`);
+    let sawTerminal = false;
+    this.streams.set(sessionId, source);
+
+    const waitForOpen = options.waitForOpen !== false;
+    let gatePending = waitForOpen;
+    let gateTimer: ReturnType<typeof setTimeout> | null = null;
+    let resolveGate: (() => void) | null = null;
+    let rejectGate: ((error: Error) => void) | null = null;
+    const opening = waitForOpen
+      ? new Promise<void>((resolve, reject) => {
+          resolveGate = resolve;
+          rejectGate = reject;
+          gateTimer = setTimeout(() => {
+            gatePending = false;
+            if (this.streams.get(sessionId) === source) this.closeStream(sessionId);
+            reject(new Error("事件流连接超时"));
+          }, 8000);
+        })
+      : Promise.resolve();
+
+    source.onopen = () => {
+      if (!gatePending) return;
+      gatePending = false;
+      if (gateTimer) clearTimeout(gateTimer);
+      resolveGate?.();
+    };
+
+    source.onmessage = (message) => {
+      if (this.streams.get(sessionId) !== source) return;
+      if (!message.data) return;
+      let event: Record<string, unknown>;
+      try {
+        event = JSON.parse(message.data) as Record<string, unknown>;
+      } catch {
+        return;
+      }
+      if (typeof event._nativeSequence === "number") {
+        const runId = typeof event._nativeRunId === "string" ? event._nativeRunId : undefined;
+        const recovery = this.nativeRunRecoveries.get(sessionId);
+        const terminal = event.type === "done" || event.type === "error" || event.type === "turn_aborted";
+        if (runId && this.nativeRunIdentities.get(sessionId)?.retired.has(runId)) return;
+        // A locally admitted run owns its promise. Another run may start from
+        // the server queue, but only a fresh running detail may transfer that
+        // ownership; a delayed old text/tool event is not authoritative.
+        if (runId && recovery?.runId && recovery.runId !== runId && this.pendingRuns.has(sessionId)) return;
+        if (terminal && runId && recovery?.runId && recovery.runId !== runId) return;
+        if (!this.acceptNativeStreamEvent(sessionId, event._nativeSequence, runId)) return;
+        // An already-open stream can finish the previous run while a new
+        // POST is still admitting. Confirm its run identity before settling
+        // the promise created for that POST; polling will recover an early
+        // terminal belonging to the newly admitted run as well.
+        if (terminal && recovery?.awaitingAdmission) return;
+        this.startNativeRunRecovery(sessionId, runId);
+        if (this.isNativeFinalAnswerCoveredBySnapshot(sessionId, event, event._nativeSequence, runId)) return;
+      }
+      // Deduplicate transport delivery before mutating the stateful filter.
+      // Otherwise a replayed partial tag can corrupt the next visible chunk.
+      if (event.type === "text_chunk" && typeof event.text === "string") {
+        event.text = this.thinkFilters.get(sessionId)!.push(event.text);
+        if (!sessionId.startsWith("runtime:") && event.text) {
+          this.ordinaryRunStreamText.set(
+            sessionId,
+            (this.ordinaryRunStreamText.get(sessionId) ?? "") + event.text,
+          );
+        }
+      }
+      if (event.type === "done" || event.type === "error" || event.type === "turn_aborted") {
+        // Flush the filter's held-back tail into the terminal event before
+        // dispatching, so no visible text is lost to the partial-tag buffer.
+        const tail = this.thinkFilters.get(sessionId)?.flush() ?? "";
+        if (tail && event.type === "done" && typeof event.finalText === "string") {
+          event.finalText = event.finalText + tail;
+        }
+        sawTerminal = true;
+      }
+      if (event.type === "text_chunk" && event.text === "") return; // fully filtered chunk
+      this.dispatchStreamEvent(sessionId, event);
+      if (event.type === "done" || event.type === "error" || event.type === "turn_aborted") {
+        this.closeStream(sessionId);
+        this.settle(sessionId);
+      }
+    };
+    source.onerror = () => {
+      if (this.streams.get(sessionId) !== source) return;
+      if (sessionId.startsWith("runtime:")) {
+        const recovery = this.nativeRunRecoveries.get(sessionId);
+        if (source.readyState === EventSource.CLOSED) {
+          if (gatePending) {
+            gatePending = false;
+            if (gateTimer) clearTimeout(gateTimer);
+            rejectGate?.(new Error("事件流连接失败"));
+          }
+          this.closeStream(sessionId);
+        }
+        if (recovery) void this.recoverNativeRun(sessionId, recovery);
+        return;
+      }
+      if (gatePending && source.readyState === EventSource.CLOSED) {
+        gatePending = false;
+        if (gateTimer) clearTimeout(gateTimer);
+        rejectGate?.(new Error("事件流连接失败"));
+        return;
+      }
+      if (source.readyState !== EventSource.CLOSED) return; // auto-reconnecting
+      // The connection died before the run settled (network drop): recover
+      // the persisted reply from the session and re-stream it as text, so a
+      // finished answer is never silently lost.
+      this.closeStream(sessionId);
+      if (sawTerminal) {
+        this.settle(sessionId);
+        return;
+      }
+      void (async () => {
+        let visible = "";
+        // Persistence is asynchronous and may complete shortly after the SSE
+        // socket closes. Poll briefly instead of declaring failure too early.
+        for (let attempt = 0; attempt < 8 && !visible; attempt++) {
+          if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 750));
+          try {
+            const session = (await this.getSession(sessionId, { limit: 50 })) as {
+              messages?: Array<{ role: string; content?: string }>;
+            } | null;
+            const messages = session?.messages ?? [];
+            const lastUser = messages.map((m) => m.role).lastIndexOf("user");
+            const recovery = messages
+              .slice(lastUser + 1)
+              .filter((m) => m.role === "assistant" && (m.content ?? "").trim())
+              .map((m) => (m.content as string).trim())
+              .join("\n\n");
+            visible = stripThinkBlocks(recovery).trim();
+          } catch {
+            // retry while the session projection settles
+          }
+        }
+        if (visible) {
+          this.dispatch(sessionId, { type: "text_chunk", text: visible });
+        } else {
+          this.dispatch(sessionId, { type: "error", message: "连接中断，回复未能恢复，请重试" });
+        }
+        this.dispatch(sessionId, { type: "done", finalText: "" });
+        this.settle(sessionId);
+      })();
+    };
+    return opening;
+  }
+
+  private rememberNativeStreamCursor(sessionId: string, sequence: number, runId?: string): void {
+    const previous = this.nativeStreamCursors.get(sessionId);
+    const sameRun = previous && (
+      previous.runId === runId
+      || !runId
+    );
+    if (sameRun && sequence < previous.sequence) return;
+    const resolvedRunId = runId ?? previous?.runId;
+    this.nativeStreamCursors.set(sessionId, {
+      sequence,
+      ...(resolvedRunId ? { runId: resolvedRunId } : {}),
+    });
+  }
+
+  private acceptNativeStreamEvent(sessionId: string, sequence: number, runId?: string): boolean {
+    const previous = this.nativeStreamCursors.get(sessionId);
+    const sameRun = previous && (
+      previous.runId === runId
+      || !runId
+    );
+    if (sameRun && sequence <= previous.sequence) return false;
+    this.rememberNativeStreamCursor(sessionId, sequence, runId);
+    return true;
+  }
+
+  private snapshotRunMatchesHistoryTurn(session: Record<string, unknown>): boolean {
+    if (typeof session.snapshotTurnId !== "string" || !session.snapshotTurnId || !Array.isArray(session.messages)) return true;
+    const latestUser = (session.messages as Array<{
+      role?: unknown;
+      presentation?: { executionTrace?: { turnId?: unknown } };
+    }>).slice().reverse().find((message) => message?.role === "user");
+    const turnId = latestUser?.presentation?.executionTrace?.turnId;
+    // A retained broker run can be terminal while Codex Desktop is already
+    // running another turn. Its replay cursor belongs only to its native turn.
+    return typeof turnId !== "string" || turnId === session.snapshotTurnId;
+  }
+
+  private coreSnapshotContainsTailFinalAnswer(messages: unknown): boolean {
+    if (!Array.isArray(messages)) return false;
+    let lastUserIndex = -1;
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const message = messages[index];
+      if (
+        typeof message === "object"
+        && message !== null
+        && (message as { role?: unknown }).role === "user"
+      ) {
+        lastUserIndex = index;
+        break;
+      }
+    }
+    return messages.slice(lastUserIndex + 1).some((message) => {
+      if (typeof message !== "object" || message === null) return false;
+      const candidate = message as {
+        role?: unknown;
+        presentation?: { agentMessagePhase?: unknown };
+      };
+      return candidate.role === "assistant"
+        && candidate.presentation?.agentMessagePhase === "final_answer";
+    });
+  }
+
+  private rememberNativeFinalAnswerSnapshot(sessionId: string, sequence: number, runId: string): void {
+    const previous = this.nativeFinalAnswerSnapshots.get(sessionId);
+    if (previous?.runId === runId && previous.sequence >= sequence) return;
+    this.nativeFinalAnswerSnapshots.set(sessionId, { runId, sequence });
+  }
+
+  private isNativeFinalAnswerCoveredBySnapshot(
+    sessionId: string,
+    event: Record<string, unknown>,
+    sequence: number,
+    runId?: string,
+  ): boolean {
+    const snapshot = this.nativeFinalAnswerSnapshots.get(sessionId);
+    if (!snapshot || !runId) return false;
+    return event.type === "text_chunk"
+      && event.messagePhase === "final_answer"
+      && snapshot.runId === runId
+      && sequence <= snapshot.sequence;
+  }
+
+  private closeStream(sessionId: string): void {
+    this.flushBufferedStreamText(sessionId);
+    const source = this.streams.get(sessionId);
+    if (source) {
+      source.close();
+      this.streams.delete(sessionId);
+      this.thinkFilters.delete(sessionId);
+    }
+  }
+}
+
+/** The gateway implements every port member except browser-handled voice. */
+export type WebAgentGateway = Omit<AgentApi, BrowserHandled>;

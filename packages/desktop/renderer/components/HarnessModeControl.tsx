@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { SlidersHorizontal } from "lucide-react";
-import type { UnifiedSessionSummary } from "../global";
+import type { UnifiedSessionSummary } from "../../../shared/src/contracts/agent-api";
 
 type Mode = NonNullable<UnifiedSessionSummary["nativeMode"]>;
 

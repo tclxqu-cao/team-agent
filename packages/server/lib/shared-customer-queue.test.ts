@@ -6,6 +6,32 @@ import { describe, it, expect, vi } from "vitest";
 import { SharedCustomerQueue } from "./shared-customer-queue";
 
 describe("server-owned Customer message queue", () => {
+  it("lets an ordinary run receive the first queued goal immediately", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "shared-goals-"));
+    const store = new SQLiteSessionStore(dir);
+    const now = new Date().toISOString();
+    await store.create({ id: "s", title: "goals", projectId: "", status: "active", messages: [], events: [], metadata: {}, created: now, updated: now });
+    let busy = true;
+    const run = vi.fn(async () => "completed" as const);
+    const steer = vi.fn(async () => true);
+    const queue = new SharedCustomerQueue(store, () => busy, run, () => {}, steer);
+    try {
+      const state = await queue.enqueue("s", "first queued goal");
+      expect(state.active).toBeNull();
+      expect(state.queued.map(goal => goal.objective)).toEqual(["first queued goal"]);
+      const result = await queue.steer("s", state.queued[0].id, "goal");
+      expect(steer).toHaveBeenCalledWith("s", "first queued goal");
+      expect(result.queued).toEqual([]);
+      expect(result.history[0].lastReason).toBe("steered");
+      expect(run).not.toHaveBeenCalled();
+    } finally {
+      busy = false;
+      // Let the coordinator's in-flight busy wait finish before removing its store.
+      await new Promise(resolve => setTimeout(resolve, 120));
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("shares pending messages, preserves payloads, edits/reorders, and drains after the client leaves", async () => {
     const dir = mkdtempSync(join(tmpdir(), "shared-queue-"));
     const store = new SQLiteSessionStore(dir);

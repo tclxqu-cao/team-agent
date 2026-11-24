@@ -47,12 +47,14 @@ export default function MessageImageAttachment({ attachment, onPreview }: {
     throw new Error("原图已失效");
   };
 
-  return <button ref={button} type="button" className="chat-message-image-button"
-    aria-label={`放大查看图片：${name}`} onClick={() => onPreview({ src: src ?? "", alt: name, loadOriginal })}>
-    {src ? <img className="chat-message-attachment-image" src={src} alt={name} title={name} loading="lazy" />
-      : <span className="chat-message-image-placeholder" role="status">
-        {!failed && <LoaderCircle className="message-image-spinner" size={18} aria-hidden="true" />}
-        {failed ? "预览加载失败，点击查看原图" : "正在加载图片…"}
-      </span>}
-  </button>;
+  return <div className="chat-message-image">
+    <button ref={button} type="button" className="chat-message-image-button"
+      aria-label={`放大查看图片：${name}`} onClick={() => onPreview({ src: src ?? "", alt: name, loadOriginal })}>
+      {src ? <img className="chat-message-attachment-image" src={src} alt={name} title={name} loading="lazy" />
+        : <span className="chat-message-image-placeholder" role="status">
+          {!failed && <LoaderCircle className="message-image-spinner" size={18} aria-hidden="true" />}
+          {failed ? "预览加载失败，点击查看原图" : "正在加载图片…"}
+        </span>}
+    </button>
+  </div>;
 }

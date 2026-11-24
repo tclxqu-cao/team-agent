@@ -1,7 +1,7 @@
 import { StrictMode } from "react";
 import type { Root } from "react-dom/client";
-import { configureNativeConsole } from "../../../../server/app/web/console-environment";
-import WorkspaceBoot from "../../../../server/app/web/WorkspaceBoot";
+import { configureNativeConsole } from "../../../../shared/src/console/console-environment";
+import WorkspaceBoot from "../../../../shared/src/console/WorkspaceBoot";
 import { readComputers, rememberComputer, saveComputers } from "../../../../server/public/pwa/computer-directory.js";
 import { LocalEndpointStorage } from "../infrastructure/local-endpoint-storage";
 import { NativeCredentialStorage, NativePairingClient, scanPairingQr } from "../infrastructure/native-pairing";

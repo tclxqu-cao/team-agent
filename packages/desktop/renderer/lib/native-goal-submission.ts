@@ -1,4 +1,4 @@
-import type { NativeGoalMutation, NativeSessionGoal } from "../global";
+import type { NativeGoalMutation, NativeSessionGoal } from "../../../shared/src/contracts/agent-api";
 
 /** Only explicit slash commands interpret control words; ordinary goals keep their text. */
 export function nativeGoalSubmission(text: string, current: NativeSessionGoal | null): NativeGoalMutation | "show" {

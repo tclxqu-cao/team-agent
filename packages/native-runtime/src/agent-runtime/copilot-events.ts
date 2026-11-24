@@ -39,7 +39,13 @@ export function copilotHistory(chat: ChatState): Message[] {
   for (const turn of turns.values()) {
     const images = turn.message.attachments?.flatMap(attachment => attachment.type === "embeddedResource" && attachment.contentType.startsWith("image/")
       ? [`data:${attachment.contentType};base64,${attachment.data}`] : []);
-    messages.push({ role: "user", content: turn.message.text, historyId: `${turn.id}:user`, ...(images?.length ? { images } : {}) });
+    const duration = "state" in turn && turn.state === "complete" ? turn.duration : undefined;
+    messages.push({
+      role: "user", content: turn.message.text, historyId: `${turn.id}:user`,
+      ...(images?.length ? { images } : {}),
+      ...(typeof duration === "number" && Number.isFinite(duration) && duration >= 0
+        ? { presentation: { completionDurationMs: duration } } : {}),
+    });
     const parts = new Map(turn.responseParts.map((part, index) => [
       part.kind === "toolCall" ? `tool:${part.toolCall.toolCallId}` : "id" in part ? `${part.kind}:${part.id}` : `${part.kind}:${index}`,
       part,

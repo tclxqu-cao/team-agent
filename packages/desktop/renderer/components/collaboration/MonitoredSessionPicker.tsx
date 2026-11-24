@@ -2,7 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import { Search, X } from "lucide-react";
 import type { CatalogSession, MonitoredSession, SessionCatalogPage } from "../../../../core/src/domain/supervision/types";
 import AgentBrandIcon from "../AgentBrandIcon";
+import SessionDisclosureButton from "../SessionDisclosureButton";
+import SessionStatusDot from "../SessionStatusDot";
 import { AGENT_NAMES, collaborationRequest } from "./client";
+import { catalogPageSessions } from "../../lib/all-sessions";
+import { buildSessionTree, type SessionTreeNode } from "../../lib/session-tree";
+import { useSessionDisclosure } from "../../lib/use-session-disclosure";
 
 export function mergeCatalogPage(previous: CatalogSession[], next: CatalogSession[]): CatalogSession[] {
   return [...new Map([...previous, ...next].map(session => [session.id, session])).values()];
@@ -13,6 +18,7 @@ export default function MonitoredSessionPicker({ value, onChange }: {
   onChange: (sessions: MonitoredSession[]) => void;
 }) {
   const [query, setQuery] = useState("");
+  const disclosure = useSessionDisclosure();
   const [page, setPage] = useState<SessionCatalogPage>({ data: [], nextCursor: null, total: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -26,7 +32,7 @@ export default function MonitoredSessionPicker({ value, onChange }: {
     setPage({ data: [], nextCursor: null, total: 0 });
     const timer = setTimeout(() => {
       void collaborationRequest<SessionCatalogPage>({ action: "sessionCatalog", query, limit: 20 }).then(result => {
-        if (live && current === version.current) setPage(result);
+        if (live && current === version.current) setPage({ ...result, data: catalogPageSessions(result) });
       }).catch(error => {
         if (live && current === version.current) setError(error instanceof Error ? error.message : "无法加载会话");
       }).finally(() => {
@@ -41,7 +47,7 @@ export default function MonitoredSessionPicker({ value, onChange }: {
     pending.current = true; setLoading(true); setError("");
     try {
       const result = await collaborationRequest<SessionCatalogPage>({ action: "sessionCatalog", query, limit: 20, cursor: page.nextCursor });
-      if (current === version.current) setPage(old => ({ ...result, data: mergeCatalogPage(old.data, result.data) }));
+      if (current === version.current) setPage(old => ({ ...result, data: mergeCatalogPage(old.data, catalogPageSessions(result)) }));
     } catch (error) {
       if (current === version.current) setError(error instanceof Error ? error.message : "加载更多失败");
     } finally {
@@ -49,11 +55,32 @@ export default function MonitoredSessionPicker({ value, onChange }: {
     }
   };
   const selected = new Set(value.map(session => session.id));
+  const tree = buildSessionTree(page.data);
+  const byId = new Map(page.data.map(session => [session.id, session]));
+  const renderSession = ({ session, children }: SessionTreeNode<CatalogSession>): React.ReactNode => {
+    const expanded = disclosure.expandedIds.has(session.id);
+    return <div key={session.id}>
+      <div className="collab-monitor-entry">
+        <label className="collab-monitor-row">
+          <input type="checkbox" aria-label={`关联${session.title}`} checked={selected.has(session.id)} disabled={!selected.has(session.id) && value.length >= 200} onChange={event => onChange(event.target.checked ? [...value, { id: session.id, agentType: session.agentType, title: session.title, cwd: session.cwd, projectId: session.projectId }] : value.filter(item => item.id !== session.id))} />
+          <AgentBrandIcon agentType={session.agentType} size={18}/>
+          <SessionStatusDot session={session} />
+          <span className="collab-monitor-row-text"><strong>{session.title}</strong><small>{AGENT_NAMES[session.agentType]} · {session.cwd}</small></span>
+          <em className={session.status === "running" ? "is-running" : ""}>{session.status === "running" ? "运行中" : session.status === "failed" ? "异常" : session.status === "completed" ? "已完成" : "空闲"}</em>
+        </label>
+        {children.length > 0 && <SessionDisclosureButton title={session.title} expanded={expanded}
+          onToggle={() => disclosure.toggle(session.id)} />}
+      </div>
+      {expanded && children.length > 0 && <div className="collab-monitor-children" role="group" aria-label={`${session.title}的子会话`}>
+        {children.map(renderSession)}
+      </div>}
+    </div>;
+  };
   return <section className="collab-monitor-picker" aria-label="关联原始会话">
     <div className="collab-monitor-heading"><strong>关联原始会话 <small>选填 · 已选 {value.length}</small></strong></div>
     <p className="collab-muted">运行中的在前。关联后作为监控对象，恢复或交接时才介入。</p>
     {value.length > 0 && <div className="collab-monitor-selected" aria-label="已选会话">{value.map(session => <span key={session.id} title={`${AGENT_NAMES[session.agentType]} · ${session.cwd}`}>
-      <AgentBrandIcon agentType={session.agentType} size={14} /><span>{session.title}</span>
+      <AgentBrandIcon agentType={session.agentType} size={14} /><SessionStatusDot session={byId.get(session.id) ?? session} /><span>{session.title}</span>
       <button type="button" aria-label={`取消关联${session.title}`} onClick={() => onChange(value.filter(item => item.id !== session.id))}><X size={13}/></button>
     </span>)}</div>}
     <label className="collab-monitor-search"><Search size={15}/><input aria-label="搜索所有原始会话" placeholder="搜索所有会话的标题、目录或 Agent" value={query} onChange={event => setQuery(event.target.value)} /></label>
@@ -61,15 +88,10 @@ export default function MonitoredSessionPicker({ value, onChange }: {
       const element = event.currentTarget;
       if (element.scrollHeight - element.scrollTop - element.clientHeight < 64) void more();
     }}>
-      {page.data.map(session => <label className="collab-monitor-row" key={session.id}>
-        <input type="checkbox" aria-label={`关联${session.title}`} checked={selected.has(session.id)} disabled={!selected.has(session.id) && value.length >= 200} onChange={event => onChange(event.target.checked ? [...value, { id: session.id, agentType: session.agentType, title: session.title, cwd: session.cwd, projectId: session.projectId }] : value.filter(item => item.id !== session.id))} />
-        <AgentBrandIcon agentType={session.agentType} size={18}/>
-        <span><strong>{session.title}</strong><small>{AGENT_NAMES[session.agentType]} · {session.cwd}</small></span>
-        <em className={session.status === "running" ? "is-running" : ""}>{session.status === "running" ? "运行中" : session.status === "failed" ? "异常" : session.status === "completed" ? "已完成" : "空闲"}</em>
-      </label>)}
-      {!loading && !error && !page.data.length && <p className="collab-muted">{query ? "没有匹配的会话" : "暂无可接入会话"}</p>}
+      {tree.map(renderSession)}
+      {!loading && !error && !tree.length && <p className="collab-muted">{query ? "没有匹配的会话" : "暂无可接入会话"}</p>}
       {loading && <p className="collab-muted" role="status">正在加载会话…</p>}
-      {page.nextCursor && !error && <button type="button" className="collab-monitor-more" disabled={loading} onClick={() => void more()}>加载更多（已显示 {page.data.length} / {page.total}）</button>}
+      {page.nextCursor && !error && <button type="button" className="collab-monitor-more" disabled={loading} onClick={() => void more()}>加载更多会话</button>}
     </div>
     {error && <p className="collab-error" role="alert">{error} <button type="button" onClick={() => setReload(current => current + 1)}>重新加载</button></p>}
   </section>;

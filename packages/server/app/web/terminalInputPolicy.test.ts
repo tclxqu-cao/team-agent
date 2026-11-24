@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { shouldSuppressTouchScrollInput, terminalClipboardShortcut } from "./terminalInputPolicy";
+import { shouldSuppressTouchScrollInput, terminalClipboardShortcut } from "../../../shared/src/console/terminalInputPolicy";
 
 describe("shouldSuppressTouchScrollInput", () => {
   it.each(["a", "l", "\x7f", "echo echo"])("allows repeated terminal data %j", (data) => {

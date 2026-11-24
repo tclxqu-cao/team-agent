@@ -89,7 +89,7 @@ export type AgentEvent =
   | { type: "agent_done"; agentName: string; subSessionId: string; status: "completed" | "failed"; summary?: string; error?: string; code?: string; agentId?: string; parentSessionId?: string; durationMs?: number }
   | { type: "agent_progress"; agentName: string; subSessionId: string; text: string; agentId?: string; parentSessionId?: string; phase?: "thinking" | "assistant" | "tool"; toolName?: string }
   | { type: "reasoning_summary_delta"; itemId: string; sectionIndex: number; delta: string; turnId?: string }
-  | ({ type: "runtime_progress" } & RuntimeProgress)
+  | ({ type: "runtime_progress"; turnId?: string } & RuntimeProgress)
   | { type: "native_subagent_update"; activity: NativeSubagentActivity }
   | { type: "cron_update"; tasks: CronTask[] }
   | {
@@ -99,8 +99,10 @@ export type AgentEvent =
       options?: Array<{ label: string; description: string }>;
       fields?: Array<{ name: string; label: string; description?: string; type?: "text" | "secret" }>;
       multiSelect?: boolean;
+      cancellable?: boolean;
+      allowFreeText?: boolean;
     }
-  | { type: "approval_resolved"; questionId: string }
+  | { type: "approval_resolved"; questionId: string; resolvedQuestion?: NonNullable<import("../model/entities.js").MessagePresentation["question"]>; toolCallId?: string; userTurnIndex?: number }
   | { type: "show_widget"; widgetType: string; data: Record<string, unknown>; widgetId: string }
   | { type: "goal_updated"; goal: ThreadGoal }
   | { type: "goal_cleared"; sessionId: string };

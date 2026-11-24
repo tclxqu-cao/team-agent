@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type { SessionMessagePayload } from "@agent/core";
-import { normalizeSessionMessageRunOptions } from "@agent/core";
+import { InvalidPromptAttachmentError, normalizeSessionMessageRunOptions } from "@agent/core";
 import { getCustomerGoalCoordinator } from "../../../../../lib/customer-goal-service";
 import {
   getNativeRuntimeService,
@@ -36,6 +36,7 @@ export async function POST(
     if (typeof body.objective !== "string" || !body.objective.trim()) {
       return NextResponse.json({ error: "objective is required" }, { status: 400 });
     }
+    const messagePayload = body.kind === "message" ? normalizeMessagePayload(body.messagePayload) : undefined;
     if (isNativeSessionId(params.id)) {
       const result = body.kind === "message"
         ? await getNativeRuntimeService().enqueueMessage(
@@ -45,7 +46,7 @@ export async function POST(
                 ? body.sourceMessageId
                 : crypto.randomUUID(),
               content: body.objective,
-              messagePayload: normalizeMessagePayload(body.messagePayload),
+              messagePayload,
             },
             "web",
           )
@@ -58,7 +59,10 @@ export async function POST(
       return NextResponse.json(result);
     }
     if (body.kind === "message") {
-      return NextResponse.json({ state: await getCustomerGoalCoordinator().enqueueMessage(params.id, body.objective, typeof body.sourceMessageId === "string" ? body.sourceMessageId : crypto.randomUUID(), normalizeMessagePayload(body.messagePayload)) });
+      if (messagePayload?.runOptions?.attachments?.length) {
+        return NextResponse.json({ error: "当前 Agent 不支持普通文件附件" }, { status: 400 });
+      }
+      return NextResponse.json({ state: await getCustomerGoalCoordinator().enqueueMessage(params.id, body.objective, typeof body.sourceMessageId === "string" ? body.sourceMessageId : crypto.randomUUID(), messagePayload) });
     }
     const state = await getCustomerGoalCoordinator().enqueue(
       params.id,
@@ -80,9 +84,20 @@ export async function PATCH(
       orderedIds?: unknown;
       kind?: unknown;
       messageId?: unknown;
+      goalId?: unknown;
       objective?: unknown;
       messagePayload?: unknown;
     };
+    if (body.goalId !== undefined) {
+      if (body.kind === "message" || typeof body.goalId !== "string" || !body.goalId.trim()
+        || typeof body.objective !== "string" || !body.objective.trim() || body.objective.trim().length > 4_000) {
+        return NextResponse.json({ error: "goalId and a valid objective are required" }, { status: 400 });
+      }
+      const state = isNativeSessionId(params.id)
+        ? await getNativeRuntimeService().updateGoal(params.id, body.goalId, body.objective)
+        : await getCustomerGoalCoordinator().updateGoal(params.id, body.goalId, body.objective);
+      return NextResponse.json(state);
+    }
     if (body.kind === "message" && typeof body.messageId === "string") {
       if (typeof body.objective !== "string" || !body.objective.trim()) {
         return NextResponse.json({ error: "objective is required" }, { status: 400 });
@@ -149,6 +164,6 @@ function normalizeMessagePayload(value: unknown): SessionMessagePayload | undefi
 function goalError(error: unknown) {
   return NextResponse.json(
     { error: error instanceof Error ? error.message : "Goal operation failed" },
-    { status: runtimeErrorStatus(error) },
+    { status: error instanceof InvalidPromptAttachmentError ? 400 : runtimeErrorStatus(error) },
   );
 }

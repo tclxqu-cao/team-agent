@@ -4,7 +4,7 @@ import type { PinnedCommand } from "../../../core/src/domain/web-console/entitie
 import { Copy, Pin, RefreshCw, TextCursorInput, Trash2 } from "lucide-react";
 import PinnedCommandList from "./PinnedCommandList";
 import { createPinnedCommand } from "./pinnedCommands";
-import { copyTextToClipboard } from "../../../desktop/renderer/lib/clipboard";
+import { copyTextToClipboard } from "../../../shared/src/browser/clipboard";
 
 interface HistoryItem { id:number; terminalId:string; command:string; cwd:string; executedAt:string }
 export default function HistoryPanel({csrfToken,terminalId,pinnedCommands,onPinnedCommandsChange,onFill,onExecute}:{csrfToken:string;terminalId:string|null;pinnedCommands:PinnedCommand[];onPinnedCommandsChange:(commands:PinnedCommand[])=>void;onFill:(command:string)=>void;onExecute:(command:string)=>void}){

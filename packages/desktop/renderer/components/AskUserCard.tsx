@@ -9,6 +9,8 @@ interface AskUserCardProps {
   options?: Array<{ label: string; description: string }>;
   fields?: AskUserField[];
   multiSelect?: boolean;
+  cancellable?: boolean;
+  allowFreeText?: boolean;
   answered?: boolean;
   cancelled?: boolean;
   answer?: string;
@@ -21,6 +23,8 @@ export default function AskUserCard({
   options,
   fields,
   multiSelect,
+  cancellable,
+  allowFreeText = true,
   answered,
   cancelled,
   answer,
@@ -162,7 +166,7 @@ export default function AskUserCard({
 
           {submitError && <div className="ask-user-card__error" role="alert">{submitError}</div>}
           <div className="ask-user-card__footer">
-            {!hasFields && (
+            {!hasFields && allowFreeText && (
               <label className="ask-user-card__custom-answer">
                 <Pencil size={14} aria-hidden="true" />
                 <input
@@ -181,6 +185,7 @@ export default function AskUserCard({
                 />
               </label>
             )}
+            {cancellable && <button type="button" className="ask-user-card__send" disabled={submitting} onClick={() => { void submit("取消提问", [-1]); }}>取消</button>}
             <button className="ask-user-card__send" type="button" disabled={submitting || !hasAnswer} onClick={handleSubmit}>
               {submitting ? "正在发送…" : hasFields ? "确认配置" : "发送"}
             </button>

@@ -2,7 +2,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { NativeGoalBar } from "./NativeGoalBar";
-import type { NativeSessionGoal } from "../global";
+import type { NativeSessionGoal } from "../../../shared/src/contracts/agent-api";
 
 const goal: NativeSessionGoal = { id: "g", revision: 1, objective: "finish", phase: "active", activation: "armed", roundsStarted: 2, maxGoalRounds: 8, createdAt: 1, updatedAt: 1 };
 const render = (overrides: Partial<NativeSessionGoal> = {}) => renderToStaticMarkup(createElement(NativeGoalBar, { goal: { ...goal, ...overrides }, pending: false, error: null, onMutate: async () => undefined }));

@@ -21,7 +21,7 @@ import { useScopedAgentStore as useAgentStore } from "../stores/AgentStoreContex
 import { hasToolCallResult } from "../lib/tool-call-status";
 import { canonicalToolName, toolActivityLabel, toolActivityPreview, toolFamily, toolPhrase, toolPreview } from "../lib/tool-call-presentation";
 import RuntimeProgressRow from "./RuntimeProgressRow";
-import { resolveWebArtifactPath } from "../lib/artifact-links";
+import { resolveWebArtifactPath } from "../../../shared/src/browser/artifact-links";
 import { editLineStats, multiEditLineStats, patchActivityLabel, patchChanges, patchSummary, writeLineCount } from "../lib/file-tool-presentation";
 
 export interface ToolCallData {

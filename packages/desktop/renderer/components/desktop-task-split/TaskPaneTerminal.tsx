@@ -1,7 +1,7 @@
 import { useState } from "react";
-import TerminalPane from "../../../../server/app/web/TerminalPane";
-import { resolveWebTheme } from "../../../../server/app/web/themes";
-import { useGateway, type GatewaySocket } from "../../../../server/app/web/useGateway";
+import TerminalPane from "../../../../shared/src/console/TerminalPane";
+import { resolveWebTheme } from "../../../../shared/src/console/themes";
+import { useGateway, type GatewaySocket } from "../../../../shared/src/console/useGateway";
 import { useUIStore } from "../../stores/uiStore";
 import type { SharedServiceApi } from "../../lib/shared-service";
 

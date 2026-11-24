@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { activeThreadSession, historyThreadRedirect, fetchEngineThreadIndex, foldEngineThreadSessions } from "./engine-thread-index";
-import type { UnifiedSessionSummary } from "../global";
+import type { UnifiedSessionSummary } from "../../../shared/src/contracts/agent-api";
 
 const session = (id: string, agentType: UnifiedSessionSummary["agentType"]): UnifiedSessionSummary => ({
   id, agentType, nativeSessionId: id, title: id, cwd: "/tmp/project", status: "idle", occupancy: "available",

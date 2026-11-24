@@ -3,6 +3,7 @@ import type { SessionActivitySnapshot } from "../../../core/src/domain/supervisi
 import { collaborationRequest } from "../components/collaboration/client";
 import { usePageActive } from "./page-activity";
 import { createSessionActivityStore } from "./session-activity";
+import { useSessionViewSync } from "./use-session-view-sync";
 
 const store = createSessionActivityStore(
   () => collaborationRequest<SessionActivitySnapshot>({ action: "sessionActivity" }),
@@ -11,6 +12,7 @@ const store = createSessionActivityStore(
 
 export function useSessionActivity(): SessionActivitySnapshot | null {
   const active = usePageActive();
+  useSessionViewSync(active);
   const subscribe = useCallback((notify: () => void) => store.subscribe(notify, active), [active]);
   return useSyncExternalStore(subscribe, store.getSnapshot, () => null);
 }

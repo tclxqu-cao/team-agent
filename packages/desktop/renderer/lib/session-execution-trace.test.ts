@@ -79,6 +79,17 @@ describe("Session execution display projection", () => {
     expect(projected.at(-1)?.content).toBe(final.content);
   });
 
+  it("shows the native turn duration across a steering message and a later broker receipt", () => {
+    const projected = groupSessionExecutionMessages([
+      { ...user(), presentation: { completionDurationMs: 65_000 } },
+      tool,
+      { ...user("guided"), isSteered: true },
+      { ...final, presentation: { runResult: { status: "completed", reason: "completed", durationMs: 70_000 } } },
+    ], false);
+    expect(projected.flatMap(entry => entry.executionGroup ? [entry.executionGroup.durationMs] : []))
+      .toEqual([65_000]);
+  });
+
   it("leaves pending questions, widgets and compaction outside the disclosure in order", () => {
     const question = message("question", { askUser: { questionId: "q", question: "选择方案" } });
     const widget = message("widget", { widget: { widgetId: "w", widgetType: "show", data: {} } });

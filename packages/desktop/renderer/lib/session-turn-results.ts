@@ -1,7 +1,7 @@
 import { fileChangeLineStats, fileChangeOperation, type FileChangeOperation, type FileLineStats } from "../../../core/src/domain/tool/file-change-summary";
 import type { ChatMessage } from "../stores/agentStore";
 import type { SessionToolResultBody, SessionToolResultRef } from "@agent/core";
-import { resolveWebArtifactPath } from "./artifact-links";
+import { resolveWebArtifactPath } from "../../../shared/src/browser/artifact-links";
 import { codexExecutionSegmentMessages, mergeCodexExecutionMessages } from "./codex-execution-trace";
 import { editLineStats, multiEditLineStats, patchChanges, patchSummary, textPatchChanges } from "./file-tool-presentation";
 import { normalizeMessageLinks, parseRichInlineTokens } from "./markdown-links";
