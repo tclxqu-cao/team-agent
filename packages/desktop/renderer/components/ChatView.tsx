@@ -6049,7 +6049,7 @@ export default function ChatView({
               <div className="web-native-permission-wrap" ref={permissionMenuRef}>
                   <button
                     type="button"
-                    className={`web-native-runtime-status web-native-permission-button mode-${permissionMode}`}
+                    className={`web-native-runtime-status web-native-permission-button${usesNativePermissions ? "" : ` mode-${permissionMode}`}`}
                     aria-label={`会话权限：${permissionLabel}`}
                     aria-haspopup="menu"
                     aria-expanded={permissionMenuOpen}
@@ -6143,7 +6143,7 @@ export default function ChatView({
                       <span className="web-native-model-agent-name">{NATIVE_AGENT_LABELS[composerAgentType]}</span>
                     </span>}
                     {!supportsNativeModelSelection && <span title="子会话沿用原生模型设置">原生模型</span>}
-                    {supportsNativeModelSelection && (composerAgentType === "qoder" || composerAgentType === "zcode" || composerAgentType === "opencode") && (
+                    {supportsNativeModelSelection && (composerAgentType === "qoder" || composerAgentType === "zcode" || composerAgentType === "opencode" || composerAgentType === "agy") && (
                       <NativeModelCatalogNotice status={nativeModelCatalog.status} error={nativeModelCatalog.error} onRetry={nativeModelCatalog.retry} />
                     )}
                     {supportsNativeModelSelection && nativeModelPickerReady && (

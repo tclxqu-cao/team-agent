@@ -13,5 +13,5 @@ export function supportsMidTurnSteering(agentType: AgentType | undefined): boole
 
 export function usesNativeSessionPermissions(agentType: AgentType | undefined, health?: readonly RuntimeHealth[]): boolean {
   const capability = health?.find(runtime => runtime.agentType === agentType)?.capabilities?.nativePermissionPresets;
-  return capability ?? (agentType === "deepseek-harness" || agentType === "copilot");
+  return capability ?? (agentType === "deepseek-harness" || agentType === "copilot" || agentType === "grok" || agentType === "agy");
 }

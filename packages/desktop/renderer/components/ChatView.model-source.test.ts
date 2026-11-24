@@ -28,9 +28,11 @@ describe("ChatView model source boundaries", () => {
     )).toBe(true);
   });
 
-  it("refreshes Qoder models with the session scope and exposes retry feedback", () => {
+  it("refreshes session-scoped models and exposes retry feedback for Qoder and Antigravity", () => {
     expect(chatView).toContain("useNativeModelCatalog(composerAgentType, isNativeRuntime, viewSessionId)");
-    expect(chatView).toContain('supportsNativeModelSelection && composerAgentType === "qoder"');
+    const notice = chatView.match(/supportsNativeModelSelection && \(([^\n]+)\) && \(\n\s*<NativeModelCatalogNotice/);
+    expect(notice?.[1]).toContain('composerAgentType === "qoder"');
+    expect(notice?.[1]).toContain('composerAgentType === "agy"');
     expect(chatView).toContain("onRetry={nativeModelCatalog.retry}");
     expect(modelCatalog).toContain("requestNativeModelCatalog(scope, agentType");
     expect(modelCatalog).toContain("[agentType, enabled, scope, revision]");

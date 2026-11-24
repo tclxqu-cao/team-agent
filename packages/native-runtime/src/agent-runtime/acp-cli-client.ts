@@ -17,6 +17,10 @@ export const ACP_CLI_LABELS = { grok: "Grok CLI", agy: "Antigravity CLI" } as co
 export type AcpCliAgentType = keyof typeof ACP_CLI_LABELS;
 const SESSION_TIMEOUT_MS = 45_000;
 const CATALOG_TIMEOUT_MS = 8_000;
+const GROK_SESSION_MODES = [
+  { value: "default", label: "默认", description: "工具审批遵循 Grok CLI 当前规则" },
+  { value: "plan", label: "计划", description: "使用 Grok 的原生计划模式" },
+];
 
 interface ResidentSession {
   projection: AcpSessionProjection;
@@ -77,6 +81,8 @@ export class AcpCliClient implements NativeSessionProtocol {
   private readonly questions = new Map<string, PendingAcpQuestion>();
   private readonly unsubscribe: Array<() => void>;
   private models: RuntimeModelInfo[] = [];
+  private modelCatalogRequest?: Promise<RuntimeModelInfo[]>;
+  private sessionCloseSupported = false;
   private imageSupported = false;
   private embeddedContextSupported = false;
   private disposed = false;
@@ -134,6 +140,7 @@ export class AcpCliClient implements NativeSessionProtocol {
       }
       const capabilities = nativeRecord(result.agentCapabilities);
       const catalog = nativeRecord(capabilities.sessionCapabilities);
+      this.sessionCloseSupported = "close" in catalog;
       const prompt = nativeRecord(capabilities.promptCapabilities);
       this.imageSupported = prompt.image === true;
       this.embeddedContextSupported = prompt.embeddedContext === true;
@@ -201,11 +208,20 @@ export class AcpCliClient implements NativeSessionProtocol {
     const session = this.sessions.get(id);
     if (!session?.cwd) throw new RuntimeSessionError(`${this.label} session not found`, "SESSION_NOT_FOUND");
     const projection = new AcpSessionProjection();
+    let reportedMode: string | undefined;
     const unsubscribe = this.rpc.onNotification((method, params) => {
-      if (method === "session/update" && params.sessionId === id) projection.update(nativeRecord(params.update));
+      if (method !== "session/update" || params.sessionId !== id) return;
+      const update = nativeRecord(params.update);
+      if (update.sessionUpdate === "current_mode_update" && typeof update.currentModeId === "string") {
+        reportedMode = update.currentModeId;
+      }
+      projection.update(update);
     });
     try {
       const config = await this.rpc.request("session/load", { sessionId: id, cwd: session.cwd, mcpServers: [] }, SESSION_TIMEOUT_MS);
+      if (reportedMode !== undefined) {
+        config.modes = { ...nativeRecord(config.modes), currentModeId: reportedMode };
+      }
       projection.finishTurn();
       const result = { projection, config };
       this.residents.set(id, result);
@@ -233,6 +249,20 @@ export class AcpCliClient implements NativeSessionProtocol {
 
   async listModels(): Promise<RuntimeModelInfo[]> {
     await this.connect();
+    if (this.models.length || !this.localFiles || !this.sessionCloseSupported) return this.models;
+    return this.modelCatalogRequest ??= this.loadAntigravityModelCatalog(this.localFiles).finally(() => {
+      this.modelCatalogRequest = undefined;
+    });
+  }
+
+  private async loadAntigravityModelCatalog(files: AcpAttachmentStore): Promise<RuntimeModelInfo[]> {
+    // Antigravity supplies the ACP model IDs only once a workspace session exists.
+    const config = await this.rpc.request("session/new", { cwd: await files.root(), mcpServers: [] }, SESSION_TIMEOUT_MS);
+    if (typeof config.sessionId !== "string" || !config.sessionId) {
+      throw new RuntimeSessionError(`${this.label} returned no session ID`, "NATIVE_PROTOCOL_ERROR");
+    }
+    await this.rpc.request("session/close", { sessionId: config.sessionId }, CATALOG_TIMEOUT_MS);
+    if (!this.models.length) this.models = acpModels(config);
     return this.models;
   }
 
@@ -241,13 +271,12 @@ export class AcpCliClient implements NativeSessionProtocol {
     const models = acpModels(resident.config);
     if (models.length) this.models = models;
     const session = this.sessions.get(id);
-    if (session) session.nativePermissions = modeOptions(resident.config) ?? (this.agentType === "grok" ? {
-      currentValue: session.nativePermissions?.currentValue ?? "default",
-      options: [
-        { value: "default", label: "默认", description: "工具审批遵循 Grok CLI 当前规则" },
-        { value: "plan", label: "计划", description: "先规划，使用 Grok 的原生计划模式" },
-      ],
-    } : undefined);
+    if (!session) return;
+    const permissions = modeOptions(resident.config);
+    session.nativePermissions = this.agentType === "grok" && !permissions?.options.length ? {
+      currentValue: permissions?.currentValue ?? "default",
+      options: GROK_SESSION_MODES,
+    } : permissions;
   }
 
   private async setConfig(id: string, resident: ResidentSession, category: string, value: string): Promise<boolean> {
@@ -269,7 +298,7 @@ export class AcpCliClient implements NativeSessionProtocol {
     if (!current?.options.some(option => option.value === mode)) {
       throw new RuntimeSessionError(`${this.label} does not offer permission mode ${mode}`, "OPERATION_NOT_SUPPORTED");
     }
-    if (await this.setConfig(id, resident, "mode", mode) || current.currentValue === mode) return;
+    if (await this.setConfig(id, resident, "mode", mode) || nativeRecord(resident.config.modes).currentModeId === mode) return;
     await this.rpc.request("session/set_mode", { sessionId: id, modeId: mode });
     this.captureConfig(id, resident, { modes: {
       ...nativeRecord(resident.config.modes), currentModeId: mode,
