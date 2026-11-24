@@ -14,11 +14,13 @@ describe("platform packages", () => {
     expect(requirePlatformPackages("darwin-arm64")).toEqual({
       runtime: "agentroam-runtime-darwin-arm64",
       cloudflared: "agentroam-cloudflared-darwin-arm64",
+      tailscale: "agentroam-tailscale-darwin-arm64",
       tui: "agentroam-tui-darwin-arm64",
     });
     expect(requirePlatformPackages("windows-amd64")).toEqual({
       runtime: "agentroam-runtime-win32-x64",
       cloudflared: "agentroam-cloudflared-win32-x64",
+      tailscale: "agentroam-tailscale-win32-x64",
       tui: "@caoqu/agentroam-tui-win32-x64",
     });
   });

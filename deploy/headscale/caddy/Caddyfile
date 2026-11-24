@@ -1,0 +1,8 @@
+# Caddy 反代：终止 TLS，反代到容器网络内的 headscale。
+# 部署前把 headscale.example.com 换成你的域名（A 记录指向服务器公网 IP）。
+#
+# ⚠️ 不要把域名放进 Cloudflare 橙云代理 / Cloudflare Tunnel：
+#    headscale 官方明确不支持（Cloudflare 不支持 WebSocket POST）。
+headscale.example.com {
+    reverse_proxy headscale:8080
+}

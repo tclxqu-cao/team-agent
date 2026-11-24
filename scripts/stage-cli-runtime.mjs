@@ -40,6 +40,7 @@ await mkdir(resolve(target, "lib/browser-live"), { recursive: true });
 for (const name of ["viewer-frame-flow.mjs", "viewer-video-flow.mjs"]) {
   await cp(resolve(server, "lib/browser-live", name), resolve(target, "lib/browser-live", name));
 }
+await cp(resolve(server, "lib/mesh"), resolve(target, "lib/mesh"), { recursive: true, filter: (source) => !source.endsWith(".test.ts") });
 await cp(resolve(server, "lib/remote-control"), resolve(target, "lib/remote-control"), { recursive: true, filter: (source) => !source.endsWith(".test.ts") });
 if (targetName === "darwin-arm64") {
   // Local builds on machines with a broken CLT Swift toolchain can reuse the

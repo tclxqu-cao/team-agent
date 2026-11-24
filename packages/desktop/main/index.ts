@@ -27,6 +27,7 @@ import { ElectronScreenCaptureAdapter } from "./computer-use/electron-screen-cap
 import { MacAccessibilityAdapter } from "./computer-use/mac-accessibility-adapter.js";
 import { readDesktopLiveState, writeDesktopLiveState } from "./desktop-live-state.js";
 import { DesktopLiveCliProxy } from "./desktop-live-cli-proxy.js";
+import { MeshStatusProxy } from "./mesh-status-proxy.js";
 import { SharedServiceConnection } from "./shared-service.js";
 import { DesktopRendererWindows, newSessionWindowQuery } from "./new-session-window.js";
 import { openVideoWindow } from "./video-window.js";
@@ -178,6 +179,12 @@ const desktopLiveProxy = new DesktopLiveCliProxy({
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("desktop-live:status", status);
     const controlled = status.enabled && status.controlState !== null && status.controlState !== "agent-controlled";
     if (process.platform === "darwin") app.dock?.setBadge(controlled ? "●" : "");
+  },
+});
+const meshStatusProxy = new MeshStatusProxy({
+  request: (path, method, body) => sharedService.json(path, method, body),
+  onStatus: (status) => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("mesh:status", status);
   },
 });
 const fileWorkspaceService = new DesktopFileWorkspaceService({
@@ -1179,6 +1186,7 @@ app.whenReady().then(async () => {
   await sharedService.initialize();
   notificationSubscription.start();
   desktopLiveProxy.start();
+  meshStatusProxy.start();
   protocol.handle("agentroam-preview", (request) => createDesktopPreviewResponse(fileWorkspaceService, request));
   // 暴露完整辅助功能树（AX 驱动/自动化测试依赖）
   app.setAccessibilitySupportEnabled(true);
@@ -1248,6 +1256,7 @@ app.on("before-quit", (event) => {
   if (quitCleanupStarted) return;
   quitCleanupStarted = true;
   desktopLiveProxy.close();
+  meshStatusProxy.close();
   sharedService.closeStreams();
   fileWorkspaceService.close();
   globalShortcut.unregisterAll();

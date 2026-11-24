@@ -1,3 +1,4 @@
+import { saveMeshEnvironment } from "../mesh/mesh-config.js";
 import { printLocalDesktopUrl } from '../local-desktop-url.js';
 import { delimiter, dirname, isAbsolute, resolve, win32 } from "node:path";
 import type { CliOptions } from "../args.js";
@@ -100,6 +101,7 @@ export async function runServiceCommand(options: CliOptions, context: ServiceCom
         }
         catch (error) { log(`Codex sharing setup incomplete; repair it from the computer menu: ${error instanceof Error ? error.message : error}`); }
       }
+      await saveMeshEnvironment(options.dataDir, environment);
       const { definition, state } = await withCliProgress("Starting service; Codex: up to 180s, Cloudflare: up to 30s, then LAN fallback", () => controller.install(config));
       log(`✓ AgentRoam service installed: ${definition}`);
       if (state?.status !== "ready" && state?.localUrl) printLocalDesktopUrl(state.localUrl, log, platform);

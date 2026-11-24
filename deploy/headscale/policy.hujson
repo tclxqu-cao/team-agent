@@ -1,0 +1,11 @@
+{
+  // Each installation uses a dedicated Headscale user for its own devices.
+  // Allow only each user's own devices to reach the gateway port.
+  "acls": [
+    {
+      "action": "accept",
+      "src": ["autogroup:member"],
+      "dst": ["autogroup:self:80"]
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "packageVersion": "0.2.0-preview.77",
+  "upstreamVersion": "1.104.4",
+  "target": "windows-amd64",
+  "assetFormat": "tgz",
+  "fileName": "tailscale-win32-x64.tgz",
+  "source": "https://github.com/tailscale/tailscale（scripts/build-tailscale-platform-package.mjs 从 pinned tag 源码构建）",
+  "url": "https://github.com/tailscale/tailscale",
+  "entries": ["tailscale.exe", "tailscaled.exe"],
+  "size": 0,
+  "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+}

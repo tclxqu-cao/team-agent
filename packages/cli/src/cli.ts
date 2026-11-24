@@ -27,6 +27,8 @@ import { createCliErrorLog } from "./error-log.js";
 import { runCodexDesktopCommand } from "./codex-desktop-command.js";
 import { setupCodexDesktop } from "./codex-desktop-setup.js";
 import { runDesktopCommand } from "./desktop-authorization.js";
+import { runMeshCommand } from "./mesh/mesh-command.js";
+import { attachMeshControl, createMeshRuntime } from "./mesh/mesh-runtime.js";
 import { withCliProgress } from "../bin/cli-progress.mjs";
 
 const VERSION = AGENTROAM_VERSION;
@@ -51,6 +53,11 @@ export async function main(argv: string[]): Promise<void> {
   agentroam revoke <设备ID>          移除一台设备
   agentroam revoke --all            全部退出并取消待用配对码
   agentroam service install|start|stop|restart|status|url|logs|uninstall
+  agentroam mesh status             查看组网入网状态
+  agentroam mesh onboard            加入自建 Headscale 控制面（安装后自动执行）
+  agentroam mesh qr                 生成手机加入组网的一次性二维码（15 分钟）
+  agentroam mesh nodes              查看控制面节点
+  agentroam mesh offboard           退出组网并清除本机入网状态
   agentroam desktop authorize       本机弹窗授权远程桌面，无需浏览器；可重复执行
   agentroam desktop status          重新检查远程桌面权限和共享状态
   agentroam desktop disable         关闭远程桌面共享，保留系统权限
@@ -127,6 +134,17 @@ async function executeCommand(options: ReturnType<typeof parseArgs>, argv: strin
     return;
   }
 
+  if (options.command === "mesh") {
+    if (!argv.includes("--data-dir")) options.dataDir = await installedDataDir(options.dataDir);
+    await runMeshCommand({
+      action: options.meshAction!,
+      dataDir: options.dataDir,
+      nodeName: options.meshNodeName,
+      qr: options.qr,
+    });
+    return;
+  }
+
   if (options.command === "codex-desktop") {
     if (!argv.includes("--data-dir")) options.dataDir = await installedDataDir(options.dataDir);
     if (options.desktopSetup) await setupCodexDesktop(options);
@@ -161,6 +179,8 @@ async function executeCommand(options: ReturnType<typeof parseArgs>, argv: strin
   const controller = new AbortController();
   let runtime: RuntimeHandle | null = null;
   let tunnel: TunnelController | null = null;
+  let mesh: ReturnType<typeof createMeshRuntime> | undefined;
+  let detachMesh: (() => void) | undefined;
   let detachTunnel: (() => void) | undefined;
   let closing = false;
   let releaseStartup: (() => Promise<void>) | undefined;
@@ -176,6 +196,8 @@ async function executeCommand(options: ReturnType<typeof parseArgs>, argv: strin
     controller.abort();
     closePromise = withCliProgress("Stopping local service and connections", async () => {
       detachTunnel?.();
+      detachMesh?.();
+      await mesh?.close();
       await tunnel?.close().catch(() => {});
       await runtime?.close().catch(() => {});
     });
@@ -195,6 +217,12 @@ async function executeCommand(options: ReturnType<typeof parseArgs>, argv: strin
     if (controller.signal.aborted) { await runtime.close(); return; }
     void runtime.exited.then(() => controller.abort());
     await serviceReporter?.localReady(runtime.localUrl);
+    if (!options.testNoPairing) {
+      mesh = createMeshRuntime({ dataDir: options.dataDir, localUrl: runtime.localUrl, target });
+      detachMesh = attachMeshControl(runtime.process, mesh);
+      void mesh.run("onboard", undefined, true)
+        .catch(error => { if (!closing) console.error(`⚠ 组网自动入网未完成：${error.message}`); });
+    }
     const relayRuntime = runtime;
     tunnel = new TunnelController({
       relay: {
@@ -230,6 +258,7 @@ async function executeCommand(options: ReturnType<typeof parseArgs>, argv: strin
 
     const accessUrl = relay.accessUrl!;
     await releaseStartup();
+
     if (serviceReporter) {
       console.log("✓ Background service URL written to the private state file.");
     } else {

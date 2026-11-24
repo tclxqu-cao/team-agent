@@ -22,6 +22,8 @@ for (const dependency of [
   "agentroam-runtime-win32-x64",
   "agentroam-cloudflared-darwin-arm64",
   "agentroam-cloudflared-win32-x64",
+  "agentroam-tailscale-darwin-arm64",
+  "agentroam-tailscale-win32-x64",
   "agentroam-tui-darwin-arm64",
   "@caoqu/agentroam-tui-win32-x64",
 ]) {
@@ -69,6 +71,8 @@ for (const required of [
   "package/dist/power/sleep-inhibitor.js",
   "package/dist/cloudflared/bundled-asset.js",
   "package/dist/cloudflared/installer.js",
+  "package/dist/mesh/mesh-runtime.js",
+  "package/dist/tailscale/installer.js",
   "package/dist/service/macos-launch-agent.js",
   "package/dist/service/runtime-state.js",
   "package/dist/service/service-controller.js",

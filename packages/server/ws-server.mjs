@@ -2,6 +2,7 @@
 import { RemoteAuthorization } from "./lib/remote-control/remote-authorization.mjs";
 import { parseProducerRemoteVideoSignal, shouldDropRemoteAudioEvent } from "./lib/remote-control/remote-video-signal.mjs";
 import { createDevicePairingGateway } from "./lib/device-pairing-gateway.mjs";
+import { createMeshGateway, createMeshRuntimeBridge } from "./lib/mesh/mesh-gateway.mjs";
 import { createDesktopDiscovery } from "./lib/desktop-discovery.mjs";
 import { createTunnelControlGateway } from "./lib/tunnel-control.mjs";
 import { createVoiceAsrGateway } from "./lib/voice-asr-gateway.mjs";
@@ -1301,6 +1302,12 @@ async function serveTicketedFilePreview(req, res) {
 const desktopDiscovery = createDesktopDiscovery({ dataDir: serverBaseDir });
 const tunnelControl = createTunnelControlGateway({ desktop: desktopDiscovery });
 const pairingGateway = createDevicePairingGateway({ dataDir: serverBaseDir, desktop: desktopDiscovery, owner: anonymousWebStore.getOrCreatePrincipal(), consoleStore, testNoPairing: process.argv.includes("--test-no-pairing"), resolveNativePreviewDevice: pathname => previewTickets.resolve(pathname.split("/")[4])?.nativeDeviceId ?? null });
+// Mesh（设备组网）：控制面地址/API key 只从环境读取；未配置时网关全部返回 503/未配置状态。
+const meshRuntime = createMeshRuntimeBridge();
+const meshGateway = createMeshGateway({
+  dataDir: serverBaseDir, serviceId: desktopDiscovery.serviceId, runtime: meshRuntime, authenticateDesktop: desktopDiscovery.authenticate,
+  audit: (action, actor, outcome) => { try { pairingGateway.store.audit(action, actor, null, outcome); } catch { console.error("mesh audit write failed"); } },
+});
 if (process.argv.includes("--test-no-pairing")) console.warn("[TEST MODE] 配对已跳过：能访问此端口的用户可直接操作。仅用于受控测试，移除 --test-no-pairing 后恢复认证。");
 // Child runtimes may publish live frames only using this process's local credential.
 process.env.AGENTROAM_SERVICE_ID = desktopDiscovery.serviceId;
@@ -1320,6 +1327,7 @@ const server = createServer((req, res) => {
     handle(req, res); return;
   }
   void pairingGateway.handle(req, res)
+    .then((handled) => handled || meshGateway.handle(req, res))
     .then((handled) => handled || remoteAuthorization.handle(req, res))
     .then((handled) => handled || serveTicketedFilePreview(req, res))
     .then((handled) => handled || serveWebApp(req, res))
@@ -1483,6 +1491,7 @@ function closeOwnedServices() {
     await voiceAsrGateway.close();
     await remoteAuthorization.close();
     pairingGateway.close();
+    meshRuntime.close();
     await desktopDiscovery.close();
   })();
   return ownedServicesClosePromise;

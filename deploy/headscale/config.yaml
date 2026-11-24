@@ -1,0 +1,78 @@
+# headscale v0.29.7 控制面配置骨架（基于官方 config-example.yaml 裁剪）。
+# 部署前必改：server_url、dns.base_domain、两个域名（见 README.md 第 2 步）。
+#
+# ⚠️ listen_addr 必须是 0.0.0.0:8080：容器内 127.0.0.1 只对本容器生效，
+#    Caddy 容器经 compose 网络访问的是本容器 eth0 地址，写 127.0.0.1 必然 502。
+#    对外安全由 compose 的端口策略保证（headscale 不直接对外发布端口）。
+server_url: https://headscale.example.com
+listen_addr: 0.0.0.0:8080
+metrics_listen_addr: 0.0.0.0:9090
+
+# gRPC 远程管理接口：只绑容器内回环，实际不对外（管理走 headscale API/Web UI）。
+grpc_listen_addr: 127.0.0.1:50443
+grpc_allow_insecure: false
+
+noise:
+  private_key_path: /var/lib/headscale/noise_private.key
+
+prefixes:
+  v4: 100.64.0.0/10
+  v6: fd7a:115c:a1e0::/48
+  allocation: sequential
+
+# 内嵌 DERP 中继：server_url 必须 https（官方 "DERP requires TLS"），3478/udp 必须公网可达。
+derp:
+  server:
+    enabled: true
+    region_id: 999
+    region_code: agentroam
+    region_name: "AgentRoam DERP"
+    stun_listen_addr: "0.0.0.0:3478"
+    private_key_path: /var/lib/headscale/derp_server_private.key
+  # 默认只使用自建中继。
+  urls: []
+  auto_update_enabled: false
+
+disable_check_updates: false
+node:
+  ephemeral:
+    inactivity_timeout: 30m
+
+database:
+  type: sqlite                 # 官方对 Postgres 标注 "highly discouraged"，个人/小规模用 SQLite。
+  sqlite:
+    path: /var/lib/headscale/db.sqlite
+    write_ahead_log: true      # 备份必须先停容器或用 sqlite3 .backup（WAL 直接 cp 可能不一致）。
+
+# TLS 由 Caddy 反代终止：以下两项留空。不要在容器内启用内置 Let's Encrypt。
+acme_url: https://acme-v02.api.letsencrypt.org/directory
+acme_email: ""
+tls_letsencrypt_hostname: ""
+tls_cert_path: ""
+tls_key_path: ""
+
+dns:
+  magic_dns: true
+  # ⚠️ 必须与 server_url 的域名不同（同一根域下两个不同 FQDN），否则 MagicDNS 不生效。
+  base_domain: ts.example.com
+  override_local_dns: false    # 不整体接管设备 DNS；公司设备侧 DNS 由客户端自行处理。
+  nameservers:
+    global:
+      - 223.5.5.5
+      - 119.29.29.29
+  search_domains: []
+
+# 节点密钥过期：0 = 非 tagged 节点永不过期（对齐 SaaS 默认 180 天可自行设置）。
+# 控制面宕机时既有连接继续工作，直到设备密钥过期；默认配置下不会自动失联。
+# 可在上面的 node 下设置 expiry。
+
+unix_socket: /var/run/headscale/headscale.sock
+unix_socket_permission: "0770"
+log:
+  level: info
+  format: text
+
+# 默认拒绝的 ACL 策略（见 policy.hujson）：未写明的访问一律不通。
+policy:
+  mode: file
+  path: /etc/headscale/policy.hujson

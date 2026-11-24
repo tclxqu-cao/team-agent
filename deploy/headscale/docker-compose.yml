@@ -1,0 +1,74 @@
+# AgentRoam 设备组网控制面 · docker compose 部署
+#
+# 组件（详见 README.md）：
+#   headscale — 自托管 Tailscale 控制面（SQLite + 内嵌 DERP 中继）
+#   caddy     — 反代终止 TLS（Let's Encrypt 自动签发续期，443 对外）
+#   coturn    — WebRTC TURN 媒体中继（userspace 桌面端无法绑 100.x，媒体走此中继）
+#
+# 部署步骤与安全组要求见同目录 README.md。所有端口只有 443/tcp、80/tcp、3478/udp
+# 与 TURN 中继端口段需要对外；headscale 本身仅在内网被 Caddy 反代。
+
+services:
+  headscale:
+    image: docker.io/headscale/headscale:0.29.7
+    container_name: headscale
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /var/run/headscale
+    ports:
+      - "3478:3478/udp"        # 内嵌 DERP 的 STUN，必须公网可达（反代不覆盖 UDP）
+    volumes:
+      - ./config.yaml:/etc/headscale/config.yaml:ro
+      - ./policy.hujson:/etc/headscale/policy.hujson:ro
+      - ./lib:/var/lib/headscale
+    command: serve
+    healthcheck:
+      test: ["CMD", "/ko-app/headscale", "health"]   # distroless 镜像 PATH 不一定含 /ko-app
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      - mesh
+
+  caddy:
+    image: docker.io/library/caddy:2
+    container_name: headscale-caddy
+    restart: unless-stopped
+    depends_on:
+      - headscale
+    ports:
+      - "443:443"
+      - "80:80"                # 仅 Let's Encrypt HTTP-01 需要；证书签出后可关闭
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy/data:/data
+      - ./caddy/config:/config
+    networks:
+      - mesh
+
+  coturn:
+    image: docker.io/coturn/coturn:latest
+    container_name: headscale-coturn
+    restart: unless-stopped
+    command: >
+      -n
+      --listening-port=3479
+      --external-ip=${TURN_EXTERNAL_IP:?请在 .env 中设置 TURN_EXTERNAL_IP}
+      --fingerprint
+      --use-auth-secret
+      --static-auth-secret=${TURN_SECRET:?请在 .env 中设置 TURN_SECRET}
+      --realm=agentroam
+      --min-port=49160
+      --max-port=49200
+      --no-cli
+    ports:
+      - "3479:3479/tcp"
+      - "3479:3479/udp"
+      - "49160-49200:49160-49200/udp"
+    networks:
+      - mesh
+
+networks:
+  mesh:
+    driver: bridge

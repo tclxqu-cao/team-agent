@@ -1,0 +1,26 @@
+{
+  "name": "agentroam-tailscale-darwin-arm64",
+  "version": "0.2.0-preview.77",
+  "description": "Verified tailscale/tailscaled binaries for AgentRoam mesh networking on macOS arm64",
+  "license": "BSD-3-Clause",
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "files": [
+    "README.md",
+    "manifest.json",
+    "vendor/tailscale-darwin-arm64.tgz"
+  ],
+  "exports": {
+    "./manifest.json": "./manifest.json",
+    "./archive": "./vendor/tailscale-darwin-arm64.tgz"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "tag": "preview"
+  }
+}

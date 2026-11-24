@@ -1,3 +1,4 @@
+import { loadMeshEnvironment } from "./mesh/mesh-config.js";
 import type { ChildProcess } from "node:child_process";
 import { mkdir } from "node:fs/promises";
 import { delimiter, resolve } from "node:path";
@@ -82,11 +83,16 @@ export class RuntimeManager {
     const { runtimeRoot } = resolvePlatformRuntime(target);
     await repairNativeRuntimePermissions(runtimeRoot);
     const gateway = resolve(runtimeRoot, "ws-server.mjs");
+    const meshEnvironment = await loadMeshEnvironment(dataDir, process.env).catch(error => {
+      this.report(`组网配置未加载：${error.message}`);
+      return {};
+    });
     const child = this.supervisor.spawn(process.execPath, [gateway, ...(options.testNoPairing ? ["--test-no-pairing"] : [])], {
       stdio: ["ignore", "pipe", "pipe", "ipc"],
       cwd: runtimeRoot,
       env: {
         ...childEnvironment,
+        ...meshEnvironment,
         NODE_ENV: "production",
         NEXT_DIST_DIR: ".next",
         PORT: String(port),

@@ -2,8 +2,9 @@ import { homedir } from "node:os";
 import { resolve } from "node:path";
 
 export type RelayMode = "auto" | "cloudflare" | "pinggy" | "custom";
-export type CliCommand = "start" | "doctor" | "version" | "service" | "unlock-service" | "update" | "update-worker" | "pair" | "devices" | "revoke" | "approvals" | "approve" | "deny" | "lock" | "unlock" | "audit" | "codex-desktop" | "desktop";
+export type CliCommand = "start" | "doctor" | "version" | "service" | "unlock-service" | "update" | "update-worker" | "pair" | "devices" | "revoke" | "approvals" | "approve" | "deny" | "lock" | "unlock" | "audit" | "codex-desktop" | "desktop" | "mesh";
 export type DesktopAction = "authorize" | "status" | "disable";
+export type MeshAction = "status" | "onboard" | "offboard" | "qr" | "nodes";
 export type ServiceAction = "install" | "start" | "stop" | "status" | "url" | "logs" | "restart" | "uninstall";
 export type UnlockServiceAction = "install" | "uninstall" | "status";
 
@@ -32,17 +33,27 @@ export interface CliOptions {
   desktopSharingStatus?: boolean;
   desktopRepair?: boolean;
   desktopAction?: DesktopAction;
+  meshAction?: MeshAction;
+  meshNodeName?: string;
 }
 
 export function parseArgs(argv: string[]): CliOptions {
   const values = [...argv];
   let command: CliOptions["command"] = "start";
-  if (values[0] && ["start", "doctor", "version", "service", "unlock-service", "update", "update-worker", "pair", "devices", "revoke", "approvals", "approve", "deny", "lock", "unlock", "audit", "codex-desktop", "desktop"].includes(values[0])) {
+  if (values[0] && ["start", "doctor", "version", "service", "unlock-service", "update", "update-worker", "pair", "devices", "revoke", "approvals", "approve", "deny", "lock", "unlock", "audit", "codex-desktop", "desktop", "mesh"].includes(values[0])) {
     command = values.shift() as CliOptions["command"];
   }
   let serviceAction: ServiceAction | null = null;
   let unlockServiceAction: UnlockServiceAction | null = null;
   let desktopAction: DesktopAction | undefined;
+  let meshAction: MeshAction | undefined;
+  if (command === "mesh") {
+    const action = values.shift();
+    if (!action || !["status", "onboard", "offboard", "qr", "nodes"].includes(action)) {
+      throw cliError("mesh requires status, onboard, offboard, qr, or nodes");
+    }
+    meshAction = action as MeshAction;
+  }
   if (command === "desktop") {
     const action = values.shift();
     if (!action || !["authorize", "status", "disable"].includes(action)) throw cliError("desktop requires authorize, status, or disable");
@@ -102,12 +113,16 @@ export function parseArgs(argv: string[]): CliOptions {
     updateVersion,
     updateStateFile,
     ...(desktopAction ? { desktopAction } : {}),
+    ...(meshAction ? { meshAction } : {}),
   };
 
   for (let index = 0; index < values.length && command !== "update-worker"; index++) {
     const arg = values[index];
     if (command === "desktop" && !["--data-dir", "--help", "-h"].includes(arg!)) {
       throw cliError("desktop accepts only --data-dir");
+    }
+    if (command === "mesh" && !["--data-dir", "--node-name", "--no-qr", "--help", "-h"].includes(arg!)) {
+      throw cliError("mesh accepts only --data-dir, --node-name and --no-qr");
     }
     if (command === "codex-desktop" && !["--restart", "--dry-run", "--setup", "--status", "--repair", "--data-dir", "--help", "-h"].includes(arg!)) {
       throw cliError("codex-desktop accepts only --setup, --restart, --dry-run, --status, --repair and --data-dir");
@@ -124,6 +139,11 @@ export function parseArgs(argv: string[]): CliOptions {
     else if (arg === "--setup" && command === "codex-desktop") options.desktopSetup = true;
     else if (arg === "--setup-codex-desktop" && command === "service" && serviceAction === "install") options.desktopSetup = true;
     else if (arg === "--url" && command === "pair") options.pairingUrl = next();
+    else if (arg === "--node-name" && command === "mesh") {
+      const name = next();
+      if (!/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i.test(name)) throw cliError("node name must be 1-63 letters, digits or hyphens and cannot start or end with a hyphen");
+      options.meshNodeName = name;
+    }
     else if (arg === "--root") options.roots.push(resolve(next()));
     else if (arg === "--port") {
       const port = Number(next());

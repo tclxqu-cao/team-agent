@@ -1,0 +1,26 @@
+{
+  "name": "agentroam-tailscale-win32-x64",
+  "version": "0.2.0-preview.77",
+  "description": "Verified tailscale/tailscaled binaries for AgentRoam mesh networking on Windows x64",
+  "license": "BSD-3-Clause",
+  "os": [
+    "win32"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "files": [
+    "README.md",
+    "manifest.json",
+    "vendor/tailscale-win32-x64.tgz"
+  ],
+  "exports": {
+    "./manifest.json": "./manifest.json",
+    "./archive": "./vendor/tailscale-win32-x64.tgz"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "tag": "preview"
+  }
+}

@@ -31,6 +31,8 @@
     "agentroam-runtime-win32-x64": "0.2.0-preview.77",
     "agentroam-cloudflared-darwin-arm64": "0.2.0-preview.76",
     "agentroam-cloudflared-win32-x64": "0.2.0-preview.76",
+    "agentroam-tailscale-darwin-arm64": "0.2.0-preview.77",
+    "agentroam-tailscale-win32-x64": "0.2.0-preview.77",
     "agentroam-tui-darwin-arm64": "0.2.0-preview.77",
     "@caoqu/agentroam-tui-win32-x64": "0.2.0-preview.77"
   },
