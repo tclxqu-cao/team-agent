@@ -1,0 +1,133 @@
+packages/desktop/renderer/lib/session-history.ts
+  s_d043de2265a0d7::t_d40476b85be449 223-224,229-250
+  s_d043de2265a0d7::t_a36f158e5b6d48 316-324,328-329,375,418
+  s_d043de2265a0d7::t_b9300d9983365e 251-252
+packages/desktop/renderer/components/ChatHeaderActions.test.tsx
+  s_d043de2265a0d7::t_20616ee208789b 67
+  s_d043de2265a0d7::t_dc873b6524b58c 74,79,82
+packages/desktop/renderer/components/ChatView.tsx
+  s_d043de2265a0d7::t_893e52545cd8dc 2612,3099,3672,3883,4270,4819,5734
+  s_d043de2265a0d7::t_2533379fb871e6 2797,2800-2801,2804-2808,2810-2813
+packages/core/src/domain/model/entities.ts
+  s_d043de2265a0d7::t_6b6616b0343ece 56-57
+  s_d043de2265a0d7::t_2533379fb871e6 58
+packages/desktop/main/task-pane-pages.test.ts
+  s_d043de2265a0d7::t_2cd7dc7668a9f8 7
+packages/desktop/renderer/lib/shared-service.ts
+  s_d043de2265a0d7::t_8783d6525ed7d7 124
+packages/native-runtime/src/agent-runtime/codex-runtime-adapter.test.ts
+  s_d043de2265a0d7::t_70502b06cc2e78 818-822
+  s_d043de2265a0d7::t_621d469b9a7e02 3065-3101
+packages/desktop/main/ai-hub/manager-reauth.test.ts
+  s_d043de2265a0d7::t_2cd7dc7668a9f8 113-114,117,119,130,132-133
+packages/cli/src/opencode-runtime-manager.test.ts
+  s_c2e6bfd6e522ed::t_4d9d16f94cc52e 124-136,149-151
+packages/desktop/renderer/components/ChatHeaderActions.tsx
+  s_d043de2265a0d7::t_8783d6525ed7d7 3,104
+packages/desktop/renderer/lib/shared-service.test.ts
+  s_d043de2265a0d7::t_2cd7dc7668a9f8 59,61
+packages/desktop/main/preload.ts
+  s_d043de2265a0d7::t_8783d6525ed7d7 42
+packages/server/lib/external-cli-probe.test.ts
+  s_c2e6bfd6e522ed::t_aa3a970f05dd4e 2-4,48-63
+  s_4dd3bff5b942a5::t_2ae13502ab695d 64
+packages/native-runtime/src/agent-runtime/native-cli-command.test.ts
+  s_c2e6bfd6e522ed::t_1a072bc9f3933b 17-56,124-126
+  s_c2e6bfd6e522ed::t_4d9d16f94cc52e 16,57-98,102-123
+  s_c2e6bfd6e522ed::t_70d211962e95af 99-101
+packages/desktop/renderer/lib/queued-message-order.test.ts
+  s_d043de2265a0d7::t_621d469b9a7e02 106-136
+packages/desktop/renderer/styles/global.css
+  s_1f8905d0866d1b::t_e55970fca2150d 4951-4962
+  s_1f8905d0866d1b::t_ce720fa5b3bb86 4950
+packages/desktop/renderer/components/SidebarReferenceStyle.test.ts
+  s_1f8905d0866d1b::t_ae529a3ee1a4ba 189,191-193
+  s_d043de2265a0d7::t_367014c3ee57cb 188,190
+  s_4dd3bff5b942a5::t_48648f8f5b36ba 194-195
+packages/desktop/renderer/App.tsx
+  s_d043de2265a0d7::t_cc5fa6cbf2fe66 1896,1906,1913,1954,2004,2519,2525,2563,2611
+  s_d043de2265a0d7::t_367014c3ee57cb 2261
+  s_1f8905d0866d1b::t_ae529a3ee1a4ba 2260,2262-2263,2265,2277
+packages/server/lib/external-cli-probe.ts
+  s_c2e6bfd6e522ed::t_f4182e712bf721 4,33-35,42-43,45-50,52,54-57,85,88,111
+  s_c2e6bfd6e522ed::t_eedbb84b23a146 3,41,44,51,53,58-60,91-92,96-97,102-110,112-114
+packages/native-runtime/src/agent-runtime/codex-runtime-adapter.ts
+  s_d043de2265a0d7::t_6b6616b0343ece 708,2593-2594,2608,2611,2616-2635,2649,2658,2764,2774
+  s_d043de2265a0d7::t_cad19561d1f91d 638-639,711-714,2929
+  s_d043de2265a0d7::t_2533379fb871e6 2677,2787,2925,2928,2930-2933
+  s_d043de2265a0d7::t_85d363f070eb64 637,640,709-710,715-716
+packages/desktop/renderer/stores/agentStore.test.ts
+  s_d043de2265a0d7::t_436785bb05ed4a 138-146
+packages/desktop/renderer/components/ChatComposerStyle.test.ts
+  s_d043de2265a0d7::t_70502b06cc2e78 135
+packages/desktop/renderer/stores/agentStore.ts
+  s_d043de2265a0d7::t_bb475d3f8c1088 289,292
+  s_d043de2265a0d7::t_9e900c7b93de42 287-288
+packages/desktop/renderer/lib/queued-message-order.ts
+  s_d043de2265a0d7::t_47b5d2d5647309 35,38,227-239,249,252-253
+  s_d043de2265a0d7::t_893e52545cd8dc 94,113
+  s_d043de2265a0d7::t_a36f158e5b6d48 240-246
+packages/native-runtime/src/agent-runtime/deepseek-harness-client.ts
+  s_c2e6bfd6e522ed::t_723101e3c9211d 7,130-137
+packages/native-runtime/src/agent-runtime/claude-runtime-adapter.ts
+  s_c2e6bfd6e522ed::t_723101e3c9211d 10,337,1405-1416,1419
+packages/desktop/renderer/lib/session-history.test.ts
+  s_d043de2265a0d7::t_d40476b85be449 1190,1195
+  s_d043de2265a0d7::t_bb475d3f8c1088 1191
+  s_d043de2265a0d7::t_b86fdee297c15e 1176-1189,1192-1194,1196-1212
+packages/shared/src/contracts/agent-api.d.ts
+  s_d043de2265a0d7::t_8783d6525ed7d7 274
+packages/desktop/renderer/components/DesktopAppActions.test.tsx
+  s_d043de2265a0d7::t_dc873b6524b58c 10,12,17-18
+packages/desktop/renderer/components/DesktopAppActions.tsx
+  s_d043de2265a0d7::t_cc5fa6cbf2fe66 1,4,7,10
+packages/cli/src/opencode-runtime-manager.ts
+  s_c2e6bfd6e522ed::t_1253289537c483 4,26,47,91-92,94-98,101,134,136-137,139,143-151,154-161,265,268,270,281
+  s_c2e6bfd6e522ed::t_eedbb84b23a146 93,120,129-133,135,152-153
+packages/native-runtime/src/agent-runtime/native-cli-command.ts
+  s_c2e6bfd6e522ed::t_f4182e712bf721 78-82,92,106-107,126-127,175,180
+  s_c2e6bfd6e522ed::t_723101e3c9211d 166,170-171
+  s_c2e6bfd6e522ed::t_dba2ce7fc9462d 10,22,29-38,45,59-61,63-65,70,72,74-77,83-91,98,104-105,108,110,112-113,121-125,128-133,142-143,145-148,160,164-165,167-169,172-174,176-179,181-183,212
+  s_c2e6bfd6e522ed::t_a497a4bc764669 1,18,46-58,62,66,73,93-96,111
+  s_c2e6bfd6e522ed::t_70d211962e95af 67-69,71,215-217
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0c3370edb1af2adf310ef52ccdf7a54f3af63626",
+  "prompts": {},
+  "sessions": {
+    "s_1f8905d0866d1b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a20c40-0d50-75f0-baa7-5fb62097704e",
+        "model": "gpt-6.2-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_4dd3bff5b942a5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1f7de-114a-7943-a1b8-4808cd30696d",
+        "model": "gpt-6.2-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_c2e6bfd6e522ed": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a20c8d-c6fd-7972-864f-28f95082a1cb",
+        "model": "gpt-6.2-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_d043de2265a0d7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a208ee-70bb-7192-adbb-8c11c232a2d4",
+        "model": "gpt-6.2-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
