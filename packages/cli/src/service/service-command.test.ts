@@ -27,7 +27,7 @@ describe("runServiceCommand", () => {
     expect(lines.join("\n")).not.toMatch(/\p{Script=Han}/u);
     if (action === "install") {
       expect(codexResolver).toHaveBeenCalledWith(expect.objectContaining({ installIfMissing: false }));
-      expect(pairingPrinter).toHaveBeenCalledWith(expect.anything(), log, expect.objectContaining({ accessUrl: state.accessUrl }));
+      expect(pairingPrinter).toHaveBeenCalledWith(expect.anything(), log, expect.objectContaining({ fallbackUrl: state.accessUrl }));
     }
   });
 

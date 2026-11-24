@@ -6,7 +6,7 @@ import { readMobilePairingOrigin, type MobilePairingInvitation } from "./mobile-
 export class LitePairingService {
   private pending: Promise<MobilePairingInvitation> | null = null;
   constructor(
-    private readonly service: Pick<SharedServiceConnection, "status" | "select" | "mobilePairing">,
+    private readonly service: Pick<SharedServiceConnection, "status" | "select" | "mobilePairing" | "meshPairingOrigin">,
     private readonly bootstrap: { prepare(): Promise<RuntimeBootstrapStatus> },
     private readonly readOrigin = readMobilePairingOrigin,
     private readonly prepareSharing: () => Promise<void> = async () => {},
@@ -21,7 +21,7 @@ export class LitePairingService {
     const status = await this.service.status();
     const choices = [...status.choices].sort((a, b) => Number(b.instanceId === status.selected?.instanceId) - Number(a.instanceId === status.selected?.instanceId));
     for (const choice of choices) {
-      try { await this.readOrigin(choice.dataDir); }
+      try { if (!await this.service.meshPairingOrigin(choice.instanceId)) await this.readOrigin(choice.dataDir); }
       catch { continue; }
       if (choice.instanceId !== status.selected?.instanceId) await this.service.select(choice.instanceId);
       return true;

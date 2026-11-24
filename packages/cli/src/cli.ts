@@ -53,6 +53,7 @@ export async function main(argv: string[]): Promise<void> {
   agentroam revoke <设备ID>          移除一台设备
   agentroam revoke --all            全部退出并取消待用配对码
   agentroam service install|start|stop|restart|status|url|logs|uninstall
+  首次启动时通过 AGENTROAM_MESH_ACTIVATION_CODE 提供一次性组网激活码
   agentroam mesh status             查看组网入网状态
   agentroam mesh onboard            加入自建 Headscale 控制面（安装后自动执行）
   agentroam mesh qr                 生成手机加入组网的一次性二维码（15 分钟）
@@ -180,6 +181,7 @@ async function executeCommand(options: ReturnType<typeof parseArgs>, argv: strin
   let runtime: RuntimeHandle | null = null;
   let tunnel: TunnelController | null = null;
   let mesh: ReturnType<typeof createMeshRuntime> | undefined;
+  let meshOnboarding: Promise<void> | undefined;
   let detachMesh: (() => void) | undefined;
   let detachTunnel: (() => void) | undefined;
   let closing = false;
@@ -220,7 +222,7 @@ async function executeCommand(options: ReturnType<typeof parseArgs>, argv: strin
     if (!options.testNoPairing) {
       mesh = createMeshRuntime({ dataDir: options.dataDir, localUrl: runtime.localUrl, target });
       detachMesh = attachMeshControl(runtime.process, mesh);
-      void mesh.run("onboard", undefined, true)
+      meshOnboarding = mesh.run("onboard", undefined, true)
         .catch(error => { if (!closing) console.error(`⚠ 组网自动入网未完成：${error.message}`); });
     }
     const relayRuntime = runtime;
@@ -264,7 +266,11 @@ async function executeCommand(options: ReturnType<typeof parseArgs>, argv: strin
     } else {
       console.log(`\nOpen: ${accessUrl}`);
       printLocalDesktopUrl(runtime.localUrl);
-      if (!options.testNoPairing) await printPairingCode(options.dataDir, console.log, { signal: controller.signal, accessUrl, qr: options.qr });
+      if (!options.testNoPairing) {
+        await meshOnboarding;
+        if (controller.signal.aborted) return;
+        await printPairingCode(options.dataDir, console.log, { signal: controller.signal, fallbackUrl: accessUrl, qr: options.qr });
+      }
       console.log("Ctrl+C stops the tunnel and local server.");
     }
 

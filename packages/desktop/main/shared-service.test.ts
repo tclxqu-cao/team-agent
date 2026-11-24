@@ -141,7 +141,9 @@ describe("desktop shared service", () => {
     await writeFile(join(root, "tunnel.url"), "http://192.168.1.10:3000/web");
     let grants = 0;
     let tunnel = { phase: "ready", mode: "public", provider: "cloudflare", accessUrl: "https://working.example/web" };
+    let mesh = { phase: "ready", accessUrl: null as string | null };
     const request = vi.spyOn(client, "json").mockImplementation(async path => {
+      if (path === "/api/mesh/status") return { status: 200, body: JSON.stringify(mesh) };
       if (path === "/api/desktop/tunnel") return { status: 200, body: JSON.stringify(tunnel) };
       if (path === "/api/pairing/admin/qr") return { status: 200, body: JSON.stringify({ grant: String(++grants).padStart(43, "g"), expiresAt: Date.now() + 300000 }) };
       throw new Error("Unexpected request");
@@ -153,7 +155,9 @@ describe("desktop shared service", () => {
     expect(publicQr.pairingUrl).toContain("https://working.example/pair#pair=");
     tunnel = { phase: "error", mode: "lan", provider: "lan", accessUrl: "http://192.168.1.20:3000/web" };
     expect((await client.mobilePairing()).origin).toBe("http://192.168.1.20:3000");
-    expect(grants).toBe(2);
+    mesh = { phase: "joined", accessUrl: "http://my-computer.mesh.example" };
+    expect((await client.mobilePairing()).pairingUrl).toMatch(/^http:\/\/my-computer\.mesh\.example\/pair#pair=/);
+    expect(grants).toBe(3);
     request.mockRestore();
   });
   it("keeps pairing usable with an old backend but never substitutes a service restart", async () => {
@@ -165,7 +169,7 @@ describe("desktop shared service", () => {
     expect(await client.tunnelStatus()).toMatchObject({ phase: "unsupported", error: expect.stringContaining("升级") });
     expect(await client.connectTunnel()).toMatchObject({ phase: "unsupported" });
     expect((await client.mobilePairing()).origin).toBe("http://192.168.1.10:3000");
-    expect(request.mock.calls.map(call => call[0]).every(path => path.startsWith("/api/desktop/tunnel") || path === "/api/pairing/admin/qr")).toBe(true);
+    expect(request.mock.calls.map(call => call[0]).every(path => path.startsWith("/api/desktop/tunnel") || path === "/api/pairing/admin/qr" || path === "/api/mesh/status")).toBe(true);
     request.mockRestore();
   });
 });

@@ -5,9 +5,8 @@ import { createHeadscaleClient } from "./headscale-client.mjs";
 
 /**
  * Mesh 控制面装配与节点状态：
- *  - 控制面地址/API key 只从环境读取（AGENT_HEADSCALE_URL / AGENT_HEADSCALE_API_KEY），
- *    不进 settings、不进日志、不下发到浏览器；
- *  - 每台安装实例映射一个 headscale user：agentroam-<机器指纹前 12 位>；
+ *  - 控制面凭据从环境读取，不进 settings、日志和浏览器；
+ *  - 每台安装实例使用独立的 Headscale 用户。
  *  - 节点状态落在 <dataDir>/mesh/state.json（CLI onboarding 写入，服务端只读）。
  */
 const MACHINE_ID_PATTERN = /^[a-z0-9-]{1,32}$/i;
@@ -26,19 +25,26 @@ export function createMeshService({ dataDir, env = process.env, request = fetch,
   const apiKey = typeof env.AGENT_HEADSCALE_API_KEY === "string" && env.AGENT_HEADSCALE_API_KEY.trim()
     ? env.AGENT_HEADSCALE_API_KEY.trim()
     : null;
+  const credential = env.AGENTROAM_MESH_CREDENTIAL?.trim();
   const statePath = join(dataDir, "mesh", "state.json");
   let client = null;
-  if (controlPlaneUrl && apiKey) {
+  let enrollmentId = null;
+  if (controlPlaneUrl && (apiKey || credential)) {
     try {
       const url = new URL(controlPlaneUrl);
       const local = ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname);
       if ((url.protocol === "https:" || (local && url.protocol === "http:")) &&
           url.pathname === "/" && !url.username && !url.password && !url.search && !url.hash) {
-        client = createHeadscaleClient({ baseUrl: url.origin, apiKey, request });
+        if (credential && !apiKey && url.protocol === "https:" && /^[A-Za-z0-9_-]{43}$/.test(credential)) {
+          client = createEnrollmentClient(url.origin, credential, request);
+          enrollmentId = createHash("sha256").update(credential).digest("hex");
+        } else if (apiKey && !credential) {
+          client = createHeadscaleClient({ baseUrl: url.origin, apiKey, request });
+        }
       }
     } catch { /* Invalid settings leave the mesh unavailable. */ }
   }
-  const user = meshUserFor(createHash("sha256").update(serviceId).digest("hex").slice(0, 24));
+  const manualUser = meshUserFor(createHash("sha256").update(serviceId).digest("hex").slice(0, 24));
 
   async function readState() {
     try {
@@ -58,14 +64,18 @@ export function createMeshService({ dataDir, env = process.env, request = fetch,
   /** 对外状态：绝不含 API key 或节点密钥。 */
   async function status() {
     const state = await readState();
-    const matchingState = client && state?.controlPlaneUrl === client.baseUrl ? state : null;
+    const matchingState = client && state?.controlPlaneUrl === client.baseUrl
+      && (state.enrollmentId ?? null) === enrollmentId ? state : null;
+    const dnsName = matchingState?.dnsName ?? null;
+    const phase = matchingState?.phase ?? (client ? "ready" : "unconfigured");
     return {
       configured: Boolean(client),
       controlPlaneUrl: client?.baseUrl ?? null,
-      phase: matchingState?.phase ?? (client ? "ready" : "unconfigured"),
+      phase,
       hostname: matchingState?.hostname ?? null,
       tailnetIPv4: matchingState?.tailnetIPv4 ?? null,
-      dnsName: matchingState?.dnsName ?? null,
+      dnsName,
+      accessUrl: phase === "joined" && dnsName ? `http://${dnsName}` : null,
       user: matchingState?.user ?? null,
       joinedAt: matchingState?.joinedAt ?? null,
       lastError: matchingState?.lastError ?? null,
@@ -78,29 +88,39 @@ export function createMeshService({ dataDir, env = process.env, request = fetch,
     return client;
   }
 
+  let activeUser = null;
+
   return {
     configured: Boolean(client),
     controlPlaneUrl: client?.baseUrl ?? null,
     status,
     async mintNodeKey({ nodeName }) {
       const headscale = requireClient();
-      const key = await headscale.createPreAuthKey(await headscale.getOrCreateUser(user));
-      return { loginServer: headscale.baseUrl, authkey: key.key, expiresAt: key.expiresAt, user, nodeName };
+      if (enrollmentId) {
+        const issued = await headscale.mintNodeKey();
+        activeUser = issued.user;
+        return { ...issued, nodeName };
+      }
+      const key = await headscale.createPreAuthKey(await headscale.getOrCreateUser(manualUser));
+      return { loginServer: headscale.baseUrl, authkey: key.key, expiresAt: key.expiresAt, user: manualUser, nodeName };
     },
     async listNodes() {
-      return (await requireClient().listNodes()).filter(node => node.user === user);
+      const nodes = await requireClient().listNodes();
+      return enrollmentId ? nodes : nodes.filter(node => node.user === manualUser);
     },
     async markJoined({ hostname, tailnetIPv4, dnsName }) {
       const current = await status();
-      await writeState({ phase: "joined", controlPlaneUrl: client.baseUrl, hostname, tailnetIPv4, dnsName, user,
+      let user = manualUser;
+      if (enrollmentId) user = activeUser ?? current.user ?? (await client.listNodes()).find(node => node.ipAddresses.includes(tailnetIPv4))?.user ?? null;
+      await writeState({ phase: "joined", controlPlaneUrl: client.baseUrl, ...(enrollmentId && { enrollmentId }), hostname, tailnetIPv4, dnsName, user,
         joinedAt: current.tailnetIPv4 === tailnetIPv4 && current.joinedAt || new Date(now()).toISOString(), lastError: null });
     },
     async markError(message) {
       const previous = await readState();
-      await writeState({ ...(previous ?? {}), controlPlaneUrl: client?.baseUrl, phase: "error", lastError: String(message ?? "unknown error").slice(0, 500) });
+      await writeState({ ...(previous ?? {}), controlPlaneUrl: client?.baseUrl, enrollmentId, phase: "error", lastError: String(message ?? "unknown error").slice(0, 500) });
     },
     async markOffboarded() {
-      await writeState({ phase: "offboarded", controlPlaneUrl: client?.baseUrl, lastError: null });
+      await writeState({ phase: "offboarded", controlPlaneUrl: client?.baseUrl, enrollmentId, lastError: null });
     },
     async removeDesktopNode(tailnetIPv4) {
       const nodes = await this.listNodes();
@@ -110,5 +130,29 @@ export function createMeshService({ dataDir, env = process.env, request = fetch,
         catch (error) { if (error.status !== 404) throw error; }
       }
     },
+  };
+}
+
+function createEnrollmentClient(baseUrl, credential, request) {
+  async function api(method, path) {
+    const response = await request(`${baseUrl}/agentroam-enrollment/v1/${path}`, {
+      method, headers: { authorization: `Bearer ${credential}` },
+      redirect: "error", signal: AbortSignal.timeout(30_000),
+    });
+    if (!response.ok) throw new Error(`组网服务请求失败 (HTTP ${response.status})`);
+    return response.json();
+  }
+
+  return {
+    baseUrl,
+    async mintNodeKey() {
+      const { authkey, expiresAt, user, loginServer } = await api("POST", "node-key");
+      if (loginServer !== baseUrl || typeof authkey !== "string" || !authkey || !/^agentroam-invite-[a-f0-9]{24}$/.test(user)) {
+        throw new Error("组网服务返回无效的设备凭据");
+      }
+      return { loginServer, authkey, expiresAt, user };
+    },
+    async listNodes() { return (await api("GET", "nodes")).nodes; },
+    async deleteNode(id) { await api("DELETE", `nodes/${encodeURIComponent(id)}`); },
   };
 }

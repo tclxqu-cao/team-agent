@@ -58,8 +58,9 @@ export class RuntimeManager {
     const port = await findAvailablePort(options.port);
     const dataDir = resolve(options.dataDir);
     await Promise.all(["data", "bin", "cache", "logs"].map((name) => mkdir(resolve(dataDir, name), { recursive: true })));
+    const { AGENTROAM_MESH_ACTIVATION_CODE: _, ...runtimeEnvironment } = process.env;
     const childEnvironment = await withCliProgress("正在检查 Agent 组件；缺少 Codex 时自动安装最新版，最多等待 180 秒", () => prepareAgentRuntimeEnvironment(
-      process.env,
+      runtimeEnvironment,
       { dataDir, target },
       this.codexResolver,
       this.report,
@@ -84,6 +85,7 @@ export class RuntimeManager {
     await repairNativeRuntimePermissions(runtimeRoot);
     const gateway = resolve(runtimeRoot, "ws-server.mjs");
     const meshEnvironment = await loadMeshEnvironment(dataDir, process.env).catch(error => {
+      if (process.env.AGENTROAM_MESH_ACTIVATION_CODE?.trim()) throw error;
       this.report(`组网配置未加载：${error.message}`);
       return {};
     });

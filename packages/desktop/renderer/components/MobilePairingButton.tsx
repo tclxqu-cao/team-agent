@@ -20,7 +20,7 @@ function MobilePairingDialog({ onClose }: { onClose(): void }) {
   const [now, setNow] = useState(Date.now);
   const panel = useRef<HTMLElement>(null);
   const tunnel = useTunnelConnection(window.sharedServiceApi, {
-    origin: invitation?.origin, busy: !invitation && !error,
+    origin: invitation?.origin, busy: Boolean(invitation?.viaMesh) || (!invitation && !error),
     onAddressChanged: () => { setInvitation(null); setAttempt(value => value + 1); },
   });
   useEffect(() => {
@@ -49,8 +49,8 @@ function MobilePairingDialog({ onClose }: { onClose(): void }) {
   return <div className="mobile-pairing-backdrop" onClick={event => { if (event.currentTarget === event.target) onClose(); }}>
     <section ref={panel} className="mobile-pairing-dialog" role="dialog" aria-modal="true" aria-labelledby="mobile-pairing-title">
       <header><h2 id="mobile-pairing-title">手机扫码连接</h2><button type="button" className="ui-icon-button" aria-label="关闭二维码" onClick={onClose}><X size={18} /></button></header>
-      <p>打开 AgentRoam App，点击右上角扫码按钮，扫描下方二维码。</p>
-      <TunnelConnectionControl connection={tunnel} />
+      <p>{invitation?.viaMesh ? "手机加入同一 Tailscale 组网后，用 AgentRoam App 扫码连接。" : "打开 AgentRoam App，点击右上角扫码按钮，扫描下方二维码。"}</p>
+      {!invitation?.viaMesh && <TunnelConnectionControl connection={tunnel} />}
       <div className="mobile-pairing-code" aria-busy={!invitation && !error}>
         {invitation && !expired ? <img src={`data:image/svg+xml,${encodeURIComponent(invitation.svg)}`} alt="AgentRoam 手机授权二维码" /> : error ? <p role="alert">{error}</p> : expired ? <p>二维码已过期，请刷新</p> : <LoaderCircle className="spin" size={28} aria-label="正在生成二维码" />}
       </div>

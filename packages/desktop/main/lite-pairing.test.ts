@@ -3,7 +3,7 @@ import { LitePairingService } from "./lite-pairing.js";
 
 function fixture(choices = [{ instanceId: "cli", url: "http://127.0.0.1:4000", dataDir: "/cli/data" }]) {
   const invitation = { svg: "<svg/>", origin: "https://phone.example", pairingUrl: "https://phone.example/pair#pair=grant", expiresAt: Date.now() + 300000 };
-  const service = { status: vi.fn().mockResolvedValue({ connected: true, selected: choices[0] ?? null, choices, preferredDataDir: choices[0]?.dataDir ?? null }), select: vi.fn(), mobilePairing: vi.fn().mockResolvedValue(invitation) };
+  const service = { status: vi.fn().mockResolvedValue({ connected: true, selected: choices[0] ?? null, choices, preferredDataDir: choices[0]?.dataDir ?? null }), select: vi.fn(), meshPairingOrigin: vi.fn().mockResolvedValue(null), mobilePairing: vi.fn().mockResolvedValue(invitation) };
   const bootstrap = { prepare: vi.fn().mockResolvedValue({ phase: "ready", message: "" }) };
   const readOrigin = vi.fn().mockResolvedValue("https://phone.example");
   return { service, bootstrap, readOrigin, invitation, pairing: new LitePairingService(service, bootstrap, readOrigin) };
@@ -14,6 +14,13 @@ describe("Lite CLI pairing bootstrap", () => {
     expect(await f.pairing.refresh()).toEqual(f.invitation);
     expect(f.bootstrap.prepare).not.toHaveBeenCalled();
     expect(f.service.select).not.toHaveBeenCalled();
+  });
+  it("uses a phone-ready mesh when the service has no tunnel", async () => {
+    const f = fixture();
+    f.readOrigin.mockRejectedValue(new Error("no tunnel"));
+    f.service.meshPairingOrigin.mockResolvedValue("http://computer.mesh.example");
+    await expect(f.pairing.refresh()).resolves.toEqual(f.invitation);
+    expect(f.bootstrap.prepare).not.toHaveBeenCalled();
   });
   it("selects the CLI service when the connected development server has no tunnel", async () => {
     const f = fixture([{ instanceId: "dev", url: "http://127.0.0.1:3000", dataDir: "/dev" }, { instanceId: "cli", url: "http://127.0.0.1:4000", dataDir: "/cli/data" }]);

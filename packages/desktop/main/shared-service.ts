@@ -2,7 +2,7 @@ import { readFile, readdir, mkdir, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { WebSocket } from "ws";
-import { createMobilePairingInvitation } from "./mobile-pairing.js";
+import { createMobilePairingInvitation, pairingOrigin } from "./mobile-pairing.js";
 import type { TunnelStatus } from "../../shared/src/contracts/tunnel-status";
 
 export interface ServiceDescriptor {
@@ -106,9 +106,9 @@ export class SharedServiceConnection {
     return publicChoice(found);
   }
 
-  async json(path: string, method: string, body?: string): Promise<{ status: number; body: string }> {
+  async json(path: string, method: string, body?: string, descriptor?: ServiceDescriptor): Promise<{ status: number; body: string }> {
     if (!["GET", "POST", "PATCH", "DELETE"].includes(method) || (body?.length ?? 0) > 20_000_000) throw new Error("Invalid service request");
-    const d = await this.connection();
+    const d = descriptor ?? await this.connection();
     const res = await this.request(serviceApiUrl(d.url, path), { method, ...(body === undefined ? {} : { body }), headers: { "content-type": "application/json", "x-agentroam-desktop-token": d.token }, signal: AbortSignal.timeout(path === "/api/agent/codex-sharing" ? 180_000 : 30_000), redirect: "error" });
     return { status: res.status, body: await res.text() };
   }
@@ -136,16 +136,32 @@ export class SharedServiceConnection {
     return { ok: true };
   }
 
+  async meshPairingOrigin(instanceId: string): Promise<string | null> {
+    const descriptor = (await this.discover()).find(candidate => candidate.instanceId === instanceId);
+    return descriptor ? this.readMeshPairingOrigin(descriptor) : null;
+  }
+
+  private async readMeshPairingOrigin(descriptor: ServiceDescriptor): Promise<string | null> {
+    try {
+      const response = await this.json("/api/mesh/status", "GET", undefined, descriptor);
+      const mesh = response.status === 200 ? JSON.parse(response.body) : null;
+      return mesh?.phase === "joined" && typeof mesh.accessUrl === "string" ? pairingOrigin(mesh.accessUrl) : null;
+    } catch { return null; }
+  }
+
   async mobilePairing() {
     const descriptor = await this.connection();
-    const tunnel = await this.tunnelStatus();
-    return createMobilePairingInvitation(descriptor.dataDir, () => this.json("/api/pairing/admin/qr", "POST", "{}"), tunnel.phase === "unsupported" ? undefined : tunnel.accessUrl);
+    const mesh = await this.readMeshPairingOrigin(descriptor);
+    const mint = () => this.json("/api/pairing/admin/qr", "POST", "{}", descriptor);
+    if (mesh) return { ...await createMobilePairingInvitation(descriptor.dataDir, mint, mesh), viaMesh: true };
+    const tunnel = await this.tunnelRequest("/api/desktop/tunnel", "GET", descriptor);
+    return createMobilePairingInvitation(descriptor.dataDir, mint, tunnel.phase === "unsupported" ? undefined : tunnel.accessUrl);
   }
 
   tunnelStatus(): Promise<TunnelStatus> { return this.tunnelRequest("/api/desktop/tunnel", "GET"); }
   connectTunnel(): Promise<TunnelStatus> { return this.tunnelRequest("/api/desktop/tunnel/connect", "POST"); }
-  private async tunnelRequest(path: string, method: string): Promise<TunnelStatus> {
-    const response = await this.json(path, method, method === "POST" ? "{}" : undefined);
+  private async tunnelRequest(path: string, method: string, descriptor?: ServiceDescriptor): Promise<TunnelStatus> {
+    const response = await this.json(path, method, method === "POST" ? "{}" : undefined, descriptor);
     const unsupported: TunnelStatus = { phase: "unsupported", mode: "local", provider: "lan", error: "当前后台不支持公网连接控制，请升级后台服务。" };
     if ([404, 405, 501].includes(response.status)) return unsupported;
     if (![200, 202, 503].includes(response.status)) throw new Error("无法读取公网连接状态，请检查后台服务。");
