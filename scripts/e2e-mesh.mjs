@@ -227,10 +227,13 @@ try {
     console.log("PASS mobile traffic with direct UDP disabled and DERP connected");
   }
 
-  const outsider = await startPeer("unrelated");
+  const replay = await startPeer("replayed-registration");
   await assert.rejects(
-    tailscaleUp({ ...outsider.cliOptions, timeoutMs: 8_000 }, { loginServer, authKey: issued.authkey, hostname: "replayed-key", stateDir: outsider.stateDir }),
+    tailscaleUp({ ...replay.cliOptions, timeoutMs: 8_000 }, { loginServer, authKey: issued.authkey, hostname: "replayed-key", stateDir: replay.stateDir }),
+    /authkey already used/i,
   );
+
+  const outsider = await startPeer("unrelated");
   const outsiderUser = await control.getOrCreateUser("unrelated");
   const outsiderKey = await control.createPreAuthKey(outsiderUser);
   await tailscaleUp(outsider.cliOptions, { loginServer, authKey: outsiderKey.key, hostname: "unrelated", stateDir: outsider.stateDir });

@@ -102,7 +102,8 @@ describe("mesh gateway boundaries", () => {
 
   it("mints a phone key for a paired device through /api/mesh/join", async () => {
     const service = meshServiceStub();
-    const gateway = createMeshGateway({ authenticateDesktop, dataDir: "/tmp/unused", service });
+    const audit = vi.fn();
+    const gateway = createMeshGateway({ authenticateDesktop, dataDir: "/tmp/unused", service, audit });
     const res = response();
     const req = request({ deviceId: "device-1", body: { nodeName: "phone" } });
     req.url = "/api/mesh/join";
@@ -111,6 +112,7 @@ describe("mesh gateway boundaries", () => {
     const payload = JSON.parse(res.state.body);
     expect(payload).toMatchObject({ loginServer: "https://hs.example.com", authkey: "tskey-x", accessUrl: "http://desk.mesh.test" });
     expect(service.mintNodeKey).toHaveBeenCalledWith(expect.objectContaining({ nodeName: "phone" }));
+    expect(audit).toHaveBeenCalledWith("mesh.join", "device-1", "success");
   });
 
   it("returns 503 when the control plane is not configured", async () => {
@@ -124,13 +126,15 @@ describe("mesh gateway boundaries", () => {
 
   it("lets the local CLI mint a desktop key over loopback", async () => {
     const service = meshServiceStub();
-    const gateway = createMeshGateway({ authenticateDesktop, dataDir: "/tmp/unused", service });
+    const audit = vi.fn();
+    const gateway = createMeshGateway({ authenticateDesktop, dataDir: "/tmp/unused", service, audit });
     const res = response();
     const req = request({ address: "127.0.0.1", headers: desktopHeaders, body: { device: "desktop", nodeName: "desktop" } });
     req.url = "/api/mesh/admin/key";
     await gateway.handle(req, res as never);
     expect(res.state.status).toBe(200);
     expect(service.mintNodeKey).toHaveBeenCalledWith(expect.objectContaining({ nodeName: "desktop" }));
+    expect(audit).toHaveBeenCalledWith("mesh.key", "desktop", "success");
   });
 
   it("ignores non-mesh paths", async () => {

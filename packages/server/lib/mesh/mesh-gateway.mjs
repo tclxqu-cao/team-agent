@@ -96,7 +96,7 @@ export function createMeshGateway({ dataDir, env = process.env, request = fetch,
         if (body.device !== "desktop" && body.device !== "phone") throw httpError(400, "无效设备类型");
         const name = nodeName(body.nodeName, body.device);
         const issued = body.device === "phone" ? await mintForPhone(name) : await mesh.mintNodeKey({ nodeName: name });
-        audit("mesh.key", "desktop", `device=${body.device}`);
+        audit("mesh.key", "desktop", "success");
         json(res, 200, issued);
         return;
       }
@@ -146,7 +146,7 @@ export function createMeshGateway({ dataDir, env = process.env, request = fetch,
           if (!deviceId) throw httpError(401, "请先完成设备配对");
           const body = await readJson(req);
           const issued = await mintForPhone(nodeName(body.nodeName, "phone"));
-          audit("mesh.join", String(deviceId), null);
+          audit("mesh.join", String(deviceId), "success");
           json(res, 200, issued);
         } else if (path.startsWith("/api/mesh/admin/")) {
           await handleAdmin(req, res, path.slice("/api/mesh/admin/".length));
