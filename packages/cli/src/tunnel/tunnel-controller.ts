@@ -1,5 +1,5 @@
 import type { ChildProcess } from "node:child_process";
-import type { TunnelStatus } from "../../../shared/src/contracts/tunnel-status";
+import type { TunnelStatus } from "../../../shared/src/contracts/tunnel-status.js";
 import { selectRelay, type RelayOrchestratorOptions, type RelaySelection } from "./relay-orchestrator.js";
 
 /** Owns only the public route. Server, agents and terminals have a separate lifetime. */
