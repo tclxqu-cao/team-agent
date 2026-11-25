@@ -1,0 +1,79 @@
+deploy/https-relay/Caddyfile
+  s_30a53aa7ebec40::t_e7cb4bba42a788 1-6
+deploy/https-relay/README.md
+  s_30a53aa7ebec40::t_31224d7168e089 1-18
+deploy/https-relay/package-lock.json
+  s_30a53aa7ebec40::t_8fd3fb846f6fad 1-34
+deploy/https-relay/package.json
+  s_30a53aa7ebec40::t_5c47f86cd05ce0 1-11
+deploy/https-relay/relay.mjs
+  s_30a53aa7ebec40::t_c47541edd3297e 1-203
+packages/cli/install/write-relay-default.mjs
+  s_30a53aa7ebec40::t_349d2b2fa5f8df 1-6
+packages/cli/package.json
+  s_30a53aa7ebec40::t_8354c42574d1af 20
+packages/cli/src/args.ts
+  s_30a53aa7ebec40::t_7a5f2db4aa81a1 4,19,155-156,159-160,184
+packages/cli/src/cli.ts
+  s_30a53aa7ebec40::t_1e93e97122ca90 44,358
+packages/cli/src/codex-sharing.test.ts
+  s_30a53aa7ebec40::t_85052538cf62bf 38-56
+packages/cli/src/codex-sharing.ts
+  s_30a53aa7ebec40::t_cad76da655779d 139-143,149-150
+packages/cli/src/device-pairing.test.ts
+  s_30a53aa7ebec40::t_7aaa1c9d5f54e8 3-4,15-28
+packages/cli/src/device-pairing.ts
+  s_30a53aa7ebec40::t_49418cc8adc60c 40-47,51,53-54,62-71
+packages/cli/src/service/service-command.ts
+  s_30a53aa7ebec40::t_f3a252a19448a0 81,93
+packages/cli/src/service/service-controller.ts
+  s_30a53aa7ebec40::t_1d62937379ce4d 56
+packages/cli/src/service/service-files.ts
+  s_30a53aa7ebec40::t_677c76275fbb8a 35,41
+packages/cli/src/tunnel/relay-orchestrator.ts
+  s_30a53aa7ebec40::t_d6adb9659ccaa4 6,43-45,49-62,64-79,85,88-91
+packages/cli/src/tunnel/self-hosted-provider.ts
+  s_30a53aa7ebec40::t_08e2c866936450 1-138
+packages/cli/src/tunnel/self-hosted-relay.integration.test.ts
+  s_30a53aa7ebec40::t_eb667d2fcc22e7 1-149
+packages/cli/src/tunnel/tunnel-controller.test.ts
+  s_30a53aa7ebec40::t_19437809fed6d3 10,17,20,71-80
+packages/cli/src/tunnel/tunnel-controller.ts
+  s_30a53aa7ebec40::t_4893299a2b4c13 2,88-93
+packages/cli/src/update/update-command.ts
+  s_30a53aa7ebec40::t_c7e3d6fe3ad359 14,60,71-72
+packages/cli/src/update/update-state.ts
+  s_30a53aa7ebec40::t_848585030c07d8 3,14,16
+packages/cli/src/update/update-worker.ts
+  s_30a53aa7ebec40::t_4abd0a8cde275a 50
+packages/desktop/main/shared-service.test.ts
+  s_30a53aa7ebec40::t_ae67ce9cbf6afa 160-162
+packages/desktop/main/shared-service.ts
+  s_30a53aa7ebec40::t_a4dc9f084bd3e6 155-162,164-165,178
+packages/desktop/package.json
+  s_30a53aa7ebec40::t_c1ada3cd7a71c8 3
+packages/desktop/renderer/App.tsx
+  s_30a53aa7ebec40::t_b952a4c739a4e3 1,301,1468,1472,1476-1481,1483,1485
+packages/runtime-darwin-arm64/manifest.json
+  s_30a53aa7ebec40::t_9e21e9190f053a 10
+packages/shared/src/contracts/tunnel-status.d.ts
+  s_30a53aa7ebec40::t_33fe5ffee47e1d 4
+scripts/verify-cli-install.mjs
+  s_30a53aa7ebec40::t_3968d3096373bc 99-103
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "74e8af32372eceefc33763975fc48d8b9bd5a50d",
+  "prompts": {},
+  "sessions": {
+    "s_30a53aa7ebec40": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a20c46-6028-7b10-b00a-b40d026206f2",
+        "model": "gpt-6.2-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
