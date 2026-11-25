@@ -249,6 +249,42 @@ jobs:
           } finally {
             if (!$application.HasExited) { Stop-Process -Id $application.Id -Force }
           }
+      - name: Diagnose managed Node preparation on failure
+        if: failure()
+        shell: pwsh
+        run: |
+          $worker = "$env:RUNNER_TEMP/AgentRoam/resources/bootstrap/runtime-bootstrap.mjs"
+          if (!(Test-Path $worker)) { return }
+          $source = [IO.File]::ReadAllText($worker)
+          $entry = $source.LastIndexOf('main().catch((error) => {')
+          if ($entry -lt 0) { throw 'Unexpected worker entry point' }
+          $probe = "$env:RUNNER_TEMP/managed-node-probe.mjs"
+          $probeSource = @'
+          const profile = process.env.AGENTROAM_NODE_PROBE_DIR;
+          try {
+            const result = await ensureManagedNode({ dataDir: profile, target: "windows-amd64", onProgress: message => console.log("NODE_STAGE", message) });
+            console.log("NODE_VERIFIED", result.version);
+          } catch (error) {
+            for (let cause = error; cause; cause = cause.cause) {
+              const message = String(cause.message || "").replace(/https?:\/\/\S+/gi, "[url]").replace(/[\x1b]\[[0-9;]*m/g, "").slice(0, 1100);
+              console.log("NODE_ERROR", cause.name, cause.code, message);
+            }
+            process.exitCode = 1;
+          }
+          '@
+          [IO.File]::WriteAllText($probe, $source.Substring(0,$entry) + $probeSource)
+          $env:ELECTRON_RUN_AS_NODE = '1'
+          $env:AGENTROAM_NODE_PROBE_DIR = "$env:RUNNER_TEMP/node-probe-original"
+          $env:NODE_OPTIONS = "--require=$env:RUNNER_TEMP/bootstrap-observer.cjs"
+          & "$env:RUNNER_TEMP/AgentRoam/$env:DESKTOP_EXECUTABLE" $probe 2>&1 | Out-Host
+          $env:NODE_OPTIONS = $null
+          $env:AGENTROAM_NODE_PROBE_DIR = "$env:RUNNER_TEMP/node-probe-clean"
+          & "$env:RUNNER_TEMP/AgentRoam/$env:DESKTOP_EXECUTABLE" $probe 2>&1 | Out-Host
+          $env:ELECTRON_RUN_AS_NODE = $null
+          $env:AGENTROAM_NODE_PROBE_DIR = "$env:RUNNER_TEMP/node-probe-system"
+          & node $probe 2>&1 | Out-Host
+          $req = Invoke-WebRequest -Method Head -Uri 'https://nodejs.org/dist/v22.22.0/node-v22.22.0-win-x64.zip' -SkipHttpErrorCheck
+          Write-Output "Node official ZIP HTTP $($req.StatusCode)"
       - name: First-launch diagnostics
         if: always()
         shell: pwsh
