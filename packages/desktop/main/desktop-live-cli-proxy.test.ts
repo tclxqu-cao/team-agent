@@ -48,6 +48,24 @@ describe("DesktopLiveCliProxy", () => {
     expect(onStatus).toHaveBeenCalledTimes(1);
   });
 
+  it("prepares the local desktop payload before a reused CLI checks or requests permissions", async () => {
+    const calls: string[] = [];
+    const proxy = new DesktopLiveCliProxy({
+      prepareRemoteComponent: async permission => { calls.push(`prepare ${permission ?? "component"}`); },
+      request: async (_path, method, body) => {
+        const action = body ? JSON.parse(body) : {};
+        calls.push([method, action.action, action.permission].filter(Boolean).join(" "));
+        return { status: 200, body: "{}" };
+      },
+    });
+    await proxy.refresh();
+    await proxy.action("recheck");
+    await proxy.action("authorize", "screen");
+    await proxy.action("enable");
+    await proxy.action("disable");
+    expect(calls).toEqual(["GET", "prepare component", "POST recheck", "prepare screen", "POST authorize screen", "prepare component", "POST enable", "POST disable"]);
+  });
+
   it("coalesces concurrent polls and surfaces CLI errors", async () => {
     let release!: (value: { status: number; body: string }) => void;
     const request = vi.fn(() => new Promise<{ status: number; body: string }>((resolve) => { release = resolve; }));

@@ -16,6 +16,7 @@ function fixture(initial: Partial<DesktopAuthorizationStatus> = {}) {
     enabled: false, screen: false, accessibility: false, online: false, error: null, ...initial };
   const calls: unknown[] = [];
   const context: DesktopAuthorizationContext = {
+    prepareMacComponent: vi.fn(async () => {}),
     platform: "darwin", isTTY: true, input: null,
     log: vi.fn(), confirm: vi.fn(async () => true), wait: vi.fn(async () => {}), pollAttempts: 2,
     request: vi.fn(async (_directory, body) => {
@@ -48,6 +49,7 @@ describe("optional desktop authorization wizard", () => {
     expect(f.calls).toEqual([undefined, { action: "recheck" },
       { action: "request-permission", permission: "screen" },
       { action: "request-permission", permission: "accessibility" }, { action: "enable" }]);
+    expect(vi.mocked(f.context.prepareMacComponent!).mock.calls).toEqual([[], ["screen"], ["accessibility"]]);
     expect(f.context.log).toHaveBeenCalledWith(expect.stringContaining("authorization complete"));
   });
 
@@ -56,6 +58,7 @@ describe("optional desktop authorization wizard", () => {
     f.context.confirm = vi.fn(async () => false);
     expect(await authorizeRemoteDesktop(dataDir, f.context)).toBe(false);
     expect(f.calls).toEqual([undefined]);
+    expect(f.context.prepareMacComponent).not.toHaveBeenCalled();
     expect(f.context.log).toHaveBeenCalledWith(expect.stringContaining("agentroam desktop authorize"));
   });
 
@@ -63,6 +66,7 @@ describe("optional desktop authorization wizard", () => {
     const f = fixture();
     expect(await authorizeRemoteDesktop(dataDir, { ...f.context, isTTY: false })).toBe(false);
     expect(f.calls).toEqual([]);
+    expect(f.context.prepareMacComponent).not.toHaveBeenCalled();
     expect(f.context.confirm).not.toHaveBeenCalled();
   });
 
@@ -70,6 +74,8 @@ describe("optional desktop authorization wizard", () => {
     const f = fixture({ enabled: true, screen: true, accessibility: true });
     expect(await authorizeRemoteDesktop(dataDir, f.context)).toBe(true);
     expect(f.calls).toEqual([undefined, { action: "recheck" }]);
+    expect(vi.mocked(f.context.prepareMacComponent!).mock.calls).toEqual([[]]);
+    expect(vi.mocked(f.context.prepareMacComponent!).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(f.context.request!).mock.invocationCallOrder[1]);
     expect(f.context.confirm).not.toHaveBeenCalled();
   });
 
@@ -84,6 +90,7 @@ describe("optional desktop authorization wizard", () => {
     const f = fixture({ screen: true });
     expect(await authorizeRemoteDesktop(dataDir, f.context)).toBe(true);
     expect(f.calls).not.toContainEqual({ action: "request-permission", permission: "screen" });
+    expect(vi.mocked(f.context.prepareMacComponent!).mock.calls).toEqual([[], ["accessibility"]]);
     expect(f.calls).toEqual([undefined, { action: "recheck" },
       { action: "request-permission", permission: "accessibility" }, { action: "enable" }]);
   });
@@ -215,6 +222,7 @@ describe("optional desktop authorization wizard", () => {
     const path = 'C:\\Users\\test\\AppData\\Local\\AgentRoam\\RemoteDesktop\\agentroam-remote-desktop.exe';
     const f = fixture({ platform: "win32", screen: true, accessibility: true, component: { name: 'AgentRoam Remote Desktop', path, version: '0.2.0-preview.57' } });
     expect(await authorizeRemoteDesktop(dataDir, { ...f.context, platform: "win32" })).toBe(true);
+    expect(f.context.prepareMacComponent).not.toHaveBeenCalled();
     expect(f.calls).toEqual([undefined, { action: "recheck" }, { action: "enable" }]);
     expect(f.context.log).toHaveBeenCalledWith(`Component path: ${path}`);
   });

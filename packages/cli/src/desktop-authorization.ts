@@ -1,7 +1,10 @@
 import { setTimeout as delay } from "node:timers/promises";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import type { CliOptions } from "./args.js";
 import { resolveApprovalInput, terminalText } from "./device-pairing.js";
 import { localServiceRequest } from "./local-service-request.js";
+import { resolvePlatformRuntime } from "./platform-packages.js";
 import { DesktopAuthorizationInterrupted, DesktopAuthorizationPrompt, withAuthorizationSignal } from "./desktop-authorization-prompt.js";
 import { withCliProgress, withoutCliProgress } from "../bin/cli-progress.mjs";
 
@@ -28,12 +31,20 @@ export interface DesktopAuthorizationContext {
   isTTY?: boolean;
   log?: (message: string) => void;
   confirm?: () => Promise<boolean>;
+  prepareMacComponent?: (permission?: Permission) => Promise<void>;
   request?: (dataDir: string, body?: AuthorizationBody, signal?: AbortSignal) => Promise<DesktopAuthorizationStatus>;
   wait?: (milliseconds: number) => Promise<void>;
   pollAttempts?: number;
   signal?: AbortSignal;
   timeoutMs?: number;
   input?: NodeJS.ReadableStream | null;
+}
+
+async function prepareInstalledMacComponent(permission?: Permission): Promise<void> {
+  const { runtimeRoot } = resolvePlatformRuntime("darwin-arm64");
+  const module = await import(pathToFileURL(join(runtimeRoot, "lib/remote-control/helper-manager.mjs")).href);
+  // An independently versioned older runtime can still serve its normal wizard.
+  await module.prepareMacRemoteComponent?.(undefined, permission);
 }
 
 async function requestAuthorization(dataDir: string, body?: AuthorizationBody, signal?: AbortSignal): Promise<DesktopAuthorizationStatus> {
@@ -96,11 +107,14 @@ export async function authorizeRemoteDesktop(dataDir: string, context: DesktopAu
     let status = await withCliProgress("Checking local remote desktop permissions", () => check());
     if (!status.supported) throw new Error("Remote desktop requires Apple Silicon with macOS 14 or later, or Windows 10/11 x64");
     if (!status.installed) throw new Error("This CLI does not include the authorization component. Upgrade the CLI");
+    const platform = context.platform ?? process.platform;
+    const prepare = context.prepareMacComponent ?? prepareInstalledMacComponent;
+    const alreadyEnabled = status.enabled;
     if (status.enabled) {
+      if (platform === "darwin") await run(() => prepare());
       status = await check({ action: "recheck" });
       if (complete(status)) { log("✓ Remote desktop authorized and sharing enabled."); return true; }
     }
-    const platform = context.platform ?? process.platform;
     const confirm = context.confirm ?? (() => prompt.confirm());
     const confirmed = await withoutCliProgress(() => run(confirm));
     if (!confirmed) {
@@ -108,16 +122,18 @@ export async function authorizeRemoteDesktop(dataDir: string, context: DesktopAu
       recoveryHint(log);
       return false;
     }
+    if (platform === "darwin" && !alreadyEnabled) await run(() => prepare());
     status = await check({ action: "recheck" });
     const wait = context.wait ?? ((milliseconds: number) => delay(milliseconds, undefined, { signal: prompt.signal }));
     if (platform === "darwin") {
       for (const permission of ["screen", "accessibility"] as const) {
         if (status[permission]) continue;
         const name = permission === "screen" ? "Screen Recording" : "Accessibility";
-        // TCC grants belong to the bundle ID across all installed runtimes.
-        // A false probe here must never revoke another runtime's permission.
+        // The shared helper handles signature changes before prompting. CLI
+        // polling only observes the currently installed component.
         log(`Requesting ${name} permission. Allow AgentRoam Remote Desktop in System Settings...`);
         status = await withCliProgress(`Waiting for ${name} permission; type s and Enter to skip`, async () => {
+          await run(() => prepare(permission));
           let current = await check({ action: "request-permission", permission });
           for (let attempt = 0; !current[permission] && attempt < (context.pollAttempts ?? 60); attempt++) {
             await run(() => wait(2000));

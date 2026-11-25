@@ -7,8 +7,31 @@ export interface RuntimeBootstrapStatus { phase: "idle" | "installing" | "ready"
 export class DesktopRuntimeBootstrap {
   private state: RuntimeBootstrapStatus = { phase: "idle", message: "" };
   private pending: Promise<RuntimeBootstrapStatus> | null = null;
+  private componentPreparation?: Promise<void>;
   constructor(private readonly packaged: boolean, private readonly resourcesPath: string, private readonly executable = process.execPath, private readonly spawnWorker: typeof spawn = spawn) {}
   status(): RuntimeBootstrapStatus { return { ...this.state }; }
+  async prepareRemoteComponent(permission?: "screen" | "accessibility"): Promise<void> {
+    if (!this.packaged || process.platform !== "darwin" || process.arch !== "arm64") return;
+    if (permission) {
+      await this.componentPreparation;
+      return this.runComponentWorker(permission);
+    }
+    // The settings page polls while the user is deciding on OS permissions.
+    this.componentPreparation ??= this.runComponentWorker().catch(error => {
+      this.componentPreparation = undefined;
+      throw error;
+    });
+    return this.componentPreparation;
+  }
+  private async runComponentWorker(permission?: "screen" | "accessibility"): Promise<void> {
+    const args = [join(this.resourcesPath, "bootstrap/runtime-bootstrap.mjs"), "--remote-component"];
+    if (permission) args.push(permission);
+    await new Promise<void>((resolve, reject) => {
+      const child = this.spawnWorker(this.executable, args, { env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" }, stdio: "ignore" });
+      child.once("error", reject);
+      child.once("exit", code => code === 0 ? resolve() : reject(new Error("远控组件更新未完成，请重新检查权限。")));
+    });
+  }
   prepare(): Promise<RuntimeBootstrapStatus> {
     if (this.pending) return this.pending;
     if (!this.packaged) return Promise.resolve({ phase: "idle", message: "开发模式请先启动 agentroam 服务。" });

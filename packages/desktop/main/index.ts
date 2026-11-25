@@ -178,6 +178,7 @@ const codexSharingSetup = new DesktopCodexSharingSetup({
 });
 const desktopLiveProxy = new DesktopLiveCliProxy({
   request: (path, method, body) => sharedService.json(path, method, body),
+  prepareRemoteComponent: permission => runtimeBootstrap.prepareRemoteComponent(permission),
   onStatus: (status) => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("desktop-live:status", status);
     const controlled = status.enabled && status.controlState !== null && status.controlState !== "agent-controlled";

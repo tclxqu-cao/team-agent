@@ -25,7 +25,10 @@ const sharing = new DesktopCodexSharingSetup({
   report: message => { logger.warn("Codex sharing setup incomplete", { message }); void dialog.showMessageBox({ type: "warning", message: "Codex 共享尚未完成", detail: message, buttons: ["知道了"] }); },
 });
 const pairing = new LitePairingService(service, bootstrap, undefined, () => sharing.prepare());
-const remote = new DesktopLiveCliProxy({ request: (path, method, body) => service.json(path, method, body) });
+const remote = new DesktopLiveCliProxy({
+  request: (path, method, body) => service.json(path, method, body),
+  prepareRemoteComponent: permission => bootstrap.prepareRemoteComponent(permission),
+});
 let window: import("electron").BrowserWindow | null = null;
 
 function trusted(event: import("electron").IpcMainInvokeEvent): void {

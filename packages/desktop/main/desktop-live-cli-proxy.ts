@@ -69,6 +69,7 @@ export class DesktopLiveCliProxy {
 
   constructor(private readonly options: {
     request: ServiceRequest;
+    prepareRemoteComponent?: (permission?: "screen" | "accessibility") => Promise<void>;
     onStatus?: (status: DesktopLiveCliStatus) => void;
     pollIntervalMs?: number;
   }) {}
@@ -97,7 +98,10 @@ export class DesktopLiveCliProxy {
     return this.refreshPromise;
   }
 
-  action(action: "authorize" | "enable" | "disable" | "recheck" | "restart", permission?: "screen" | "accessibility"): Promise<DesktopLiveCliStatus> {
+  async action(action: "authorize" | "enable" | "disable" | "recheck" | "restart", permission?: "screen" | "accessibility"): Promise<DesktopLiveCliStatus> {
+    if (action === "authorize" || action === "recheck" || action === "enable") {
+      await this.options.prepareRemoteComponent?.(action === "authorize" ? permission : undefined);
+    }
     return this.request("POST", JSON.stringify({ action, ...(permission ? { permission } : {}) }));
   }
 

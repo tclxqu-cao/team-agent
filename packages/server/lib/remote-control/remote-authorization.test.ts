@@ -404,9 +404,11 @@ it('authorizes through the actual private CLI discovery and pairing gateway with
   const original = f.helper.request.getMockImplementation();
   f.helper.request.mockImplementation(async (cmd:any)=>{ if(cmd.op==='authorize') f.grant(); return original(cmd); });
   const phases:any[] = [];
+  const prepareMacComponent = vi.fn(async () => {});
   try {
     const success = await authorizeRemoteDesktop(f.service.dataDir, {
       platform:'darwin',isTTY:true,confirm:async()=>true,log:vi.fn(),wait:async()=>{},
+      prepareMacComponent,
       request:async(dataDir,body)=>{
         const status:any = await localServiceRequest(dataDir,'/api/remote-authorization',{
           registry,method:body?'POST':'GET',body,
@@ -415,6 +417,7 @@ it('authorizes through the actual private CLI discovery and pairing gateway with
       },
     });
     expect(success).toBe(true);
+    expect(prepareMacComponent).toHaveBeenCalledWith('screen');
     expect(gateway.store.list()).toEqual([]);
     expect(phases.find(p=>p.body?.action==='request-permission').status.enabled).toBe(false);
     expect(phases.at(-1).status).toMatchObject({enabled:true,screen:true,accessibility:true,error:null});

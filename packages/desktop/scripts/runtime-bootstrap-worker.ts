@@ -10,6 +10,7 @@ import desktopPackage from "../package.json";
 import { verifyDesktopRuntime } from "./runtime-inventory.mjs";
 import { bundledRuntimePackages } from "./bundled-runtime.mjs";
 import { runtimeServiceArguments } from "./runtime-service-args.mjs";
+import { prepareBundledMacRemoteComponent } from "./bundled-remote-component.mjs";
 
 const execute = promisify(execFile);
 const progress = (message: string) => process.stdout.write(`${JSON.stringify({ message })}\n`);
@@ -21,9 +22,14 @@ async function main() {
   const dataDir = join(homedir(), ".agentroam");
   const runtimePackage = target === "darwin-arm64" ? "agentroam-runtime-darwin-arm64" : "agentroam-runtime-win32-x64";
   const runtimeVersion = cliPackage.optionalDependencies[runtimePackage];
+  const directory = join(dirname(fileURLToPath(import.meta.url)), "../runtime");
+  if (process.argv[2] === "--remote-component") {
+    if (target === "darwin-arm64") await prepareBundledMacRemoteComponent(directory, cliPackage.version, runtimeVersion, process.argv[3]);
+    return;
+  }
   let bundled: string[];
   try {
-    bundled = await bundledRuntimePackages(join(dirname(fileURLToPath(import.meta.url)), "../runtime"), target, cliPackage.version, runtimeVersion);
+    bundled = await bundledRuntimePackages(directory, target, cliPackage.version, runtimeVersion);
   } catch {
     throw Object.assign(new Error("Desktop runtime bundle is incompatible"), { code: "RUNTIME_INCOMPATIBLE" });
   }
