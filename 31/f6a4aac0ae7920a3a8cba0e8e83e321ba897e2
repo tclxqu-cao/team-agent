@@ -1,0 +1,21 @@
+packages/website/src/pages.mjs
+  s_30a53aa7ebec40::t_5cba09dbc30a85 27,33
+packages/website/src/website.test.mjs
+  s_30a53aa7ebec40::t_28679693c4663e 96,136
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "31f6a4aac0ae7920a3a8cba0e8e83e321ba897e2",
+  "prompts": {},
+  "sessions": {
+    "s_30a53aa7ebec40": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a20c46-6028-7b10-b00a-b40d026206f2",
+        "model": "unknown"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
