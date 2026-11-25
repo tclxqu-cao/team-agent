@@ -151,11 +151,18 @@ export class SharedServiceConnection {
 
   async mobilePairing() {
     const descriptor = await this.connection();
-    const mesh = await this.readMeshPairingOrigin(descriptor);
     const mint = () => this.json("/api/pairing/admin/qr", "POST", "{}", descriptor);
+    const [tunnel, mesh] = await Promise.all([
+      this.tunnelRequest("/api/desktop/tunnel", "GET", descriptor)
+        .then(status => ({ status }), (error: unknown) => ({ error })),
+      this.readMeshPairingOrigin(descriptor),
+    ]);
+    if ("status" in tunnel && tunnel.status.provider === "self-hosted" && tunnel.status.phase === "ready") {
+      return createMobilePairingInvitation(descriptor.dataDir, mint, tunnel.status.accessUrl);
+    }
     if (mesh) return { ...await createMobilePairingInvitation(descriptor.dataDir, mint, mesh), viaMesh: true };
-    const tunnel = await this.tunnelRequest("/api/desktop/tunnel", "GET", descriptor);
-    return createMobilePairingInvitation(descriptor.dataDir, mint, tunnel.phase === "unsupported" ? undefined : tunnel.accessUrl);
+    if ("error" in tunnel) throw tunnel.error;
+    return createMobilePairingInvitation(descriptor.dataDir, mint, tunnel.status.phase === "unsupported" ? undefined : tunnel.status.accessUrl);
   }
 
   tunnelStatus(): Promise<TunnelStatus> { return this.tunnelRequest("/api/desktop/tunnel", "GET"); }
@@ -168,7 +175,7 @@ export class SharedServiceConnection {
     let value: TunnelStatus;
     try { value = JSON.parse(response.body); } catch { return unsupported; }
     if (!value || !["idle", "connecting", "ready", "error", "unsupported"].includes(value.phase)
-      || !["local", "lan", "public"].includes(value.mode) || !["lan", "cloudflare", "pinggy", "custom"].includes(value.provider)) return unsupported;
+      || !["local", "lan", "public"].includes(value.mode) || !["lan", "cloudflare", "pinggy", "custom", "self-hosted"].includes(value.provider)) return unsupported;
     return value;
   }
 

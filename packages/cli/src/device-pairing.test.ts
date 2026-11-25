@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { parseArgs } from "./args.js";
-import { pairingQrPayload, resolveApprovalInput, watchPairingApproval, type pairingAdmin } from "./device-pairing.js";
+import { pairingQrPayload, printPairingCode, resolveApprovalInput, watchPairingApproval, type pairingAdmin } from "./device-pairing.js";
+import * as local from "./local-service-request.js";
 import { withCliProgress } from "../bin/cli-progress.mjs";
 
 describe("local approval commands", () => {
@@ -10,6 +11,20 @@ describe("local approval commands", () => {
     expect(link.origin + link.pathname).toBe("https://phone.example/pair");
     expect(link.search).toBe(""); expect(link.hash).toBe(`#pair=${"a".repeat(43)}`);
     expect(() => pairingQrPayload("https://user:password@phone.example", "a".repeat(43))).toThrow();
+  });
+  it("prints a single HTTPS pairing QR without starting manual confirmation", async () => {
+    const request = vi.spyOn(local, "localServiceRequest")
+      .mockResolvedValueOnce({ phase: "ready", provider: "self-hosted", accessUrl: "https://d1.connect.example/web" })
+      .mockResolvedValueOnce({ grant: "a".repeat(43) });
+    try {
+      const log = vi.fn();
+      await printPairingCode("/tmp/local-pairing", log, { interactive: true });
+      expect(request.mock.calls.map(call => call[1])).toEqual(["/api/desktop/tunnel", "/api/pairing/admin/qr"]);
+      expect(log.mock.calls.flat().join(" ")).toContain("Scan with your phone to connect");
+      expect(log.mock.calls.flat().join(" ")).not.toContain("Pairing code:");
+    } finally {
+      request.mockRestore();
+    }
   });
   const id = "12345678-1234-1234-1234-123456789abc";
   it("suspends the outer heartbeat while the user checks the approval phrase", async () => {

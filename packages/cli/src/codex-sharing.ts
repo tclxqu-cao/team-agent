@@ -136,14 +136,18 @@ export async function inspectCodexSharing(context: SharingContext = {}): Promise
     }
     if (!result.daemonReachable) return result;
     const socket = await realpath(paths.socketPath);
-    const pids = [desktop.pid, ...processes.filter(p => /\bapp-server\b/.test(p.command) && /\bcodex\b/.test(p.command)).map(p => p.pid)];
+    // ChatGPT can connect through a bundled helper instead of its main process.
+    const desktopPids = new Set([desktop.pid, ...processes.filter(p =>
+      p.parent === desktop.pid && p.command.startsWith(`${desktop.appPath}/Contents/`),
+    ).map(p => p.pid)]);
+    const pids = [...desktopPids, ...processes.filter(p => /\bapp-server\b/.test(p.command) && /\bcodex\b/.test(p.command)).map(p => p.pid)];
     const sockets = await execute("/usr/sbin/lsof", ["-nP", "-a", "-p", [...new Set(pids)].join(","), "-U"], commandOptions);
     const rows = String(sockets.stdout).split("\n").flatMap(line => {
       const match = /^\S+\s+(\d+)\s+\S+\s+\S+\s+unix\s+(0x[\da-f]+)\s+\S+\s+(.*)$/i.exec(line);
       return match ? [{ pid: Number(match[1]), device: match[2], name: match[3]!.trim() }] : [];
     });
-    const devices = new Set(rows.filter(row => row.pid !== desktop.pid && row.name === socket).map(row => row.device));
-    if (rows.some(row => row.pid === desktop.pid && row.name.startsWith("->") && devices.has(row.name.slice(2)))) {
+    const devices = new Set(rows.filter(row => !desktopPids.has(row.pid) && row.name === socket).map(row => row.device));
+    if (rows.some(row => desktopPids.has(row.pid) && row.name.startsWith("->") && devices.has(row.name.slice(2)))) {
       return { ...result, state: "shared", message: "Codex 已连接共享后台。" };
     }
     return { ...result, message: "共享后台可用，但尚未确认 Codex 连接。请在任务结束时退出，再用 头像菜单或 agentroam codex-desktop 启动。" };

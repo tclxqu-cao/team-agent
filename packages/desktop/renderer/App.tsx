@@ -1,4 +1,4 @@
-import { isPageActive } from "./lib/page-activity";
+import { isPageActive, usePageActive } from "./lib/page-activity";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { createPortal } from "react-dom";
 import { History, LoaderCircle, Plus, Search } from "lucide-react";
@@ -298,6 +298,7 @@ export default function App() {
   const [allSessionsRevision, setAllSessionsRevision] = useState(0);
   const [deletedSessionIds, setDeletedSessionIds] = useState<string[]>([]);
   const [runtimeHealth, setRuntimeHealth] = useState<RuntimeHealth[]>([]);
+  const pageActive = usePageActive();
   /** Child sessions keyed by parentSessionId */
   const [childSessionsByParent, setChildSessionsByParent] = useState<Record<string, Session[]>>(initialSessionState.children);
   const sessionsByProjectRef = useRef(sessionsByProject);
@@ -1464,19 +1465,24 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (!pageActive || !window.agentApi) return;
     let cancelled = false;
     let timer: number | undefined;
     const refresh = async () => {
+      let delay = 30_000;
       try {
-        if (!isPageActive()) return;
         const health = await window.agentApi.getRuntimeHealth();
         if (!cancelled) setRuntimeHealth(health);
-      } catch { /* Keep the last report during a temporary connection failure. */ }
-      finally { if (!cancelled) timer = window.setTimeout(refresh, 30_000); }
+      } catch {
+        // Keep the last report and recover promptly from a temporary connection failure.
+        delay = 3_000;
+      } finally {
+        if (!cancelled) timer = window.setTimeout(refresh, delay);
+      }
     };
-    if (window.agentApi) void refresh();
+    void refresh();
     return () => { cancelled = true; window.clearTimeout(timer); };
-  }, []);
+  }, [pageActive]);
 
   useEffect(() => {
     if (!runtimeHealth.length || selectedSessionIdRef.current || !agentUnavailableMessage(activeAgentRef.current, runtimeHealth)) return;

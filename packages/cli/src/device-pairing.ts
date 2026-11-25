@@ -37,26 +37,36 @@ export function pairingQrPayload(accessUrl: string, grant: string): string {
 }
 
 export async function printPairingCode(dataDir: string, log: (line: string) => void = console.log, options: { interactive?: boolean; signal?: AbortSignal; accessUrl?: string; fallbackUrl?: string; waitForMesh?: boolean; qr?: boolean } = {}): Promise<void> {
+  const interactiveQr = (options.qr ?? true) && (options.interactive ?? process.stdout.isTTY);
+  if (interactiveQr && options.accessUrl === undefined) {
+    const relay = await localServiceRequest<{ phase: string; provider: string; accessUrl?: string }>(dataDir, "/api/desktop/tunnel", { signal: options.signal }).catch(() => null);
+    if (relay?.phase === "ready" && relay.provider === "self-hosted" && relay.accessUrl) {
+      await printPairingQr(dataDir, relay.accessUrl, log);
+      return;
+    }
+  }
   const result = await withCliProgress("Generating device pairing code", () => pairingAdmin<PairingCode>(dataDir, "code"));
   log(`Pairing code: ${result.code.slice(0, 4)} ${result.code.slice(4)}`);
   log("Valid for 5 minutes, single use. After entering it on your phone, confirm the verification phrase on this computer.");
-  if ((options.qr ?? true) && (options.interactive ?? process.stdout.isTTY)) {
+  if (interactiveQr) {
     const accessUrl = await resolvePairingAccessUrl(dataDir, options);
-    if (accessUrl) {
-      // Validate the public address before minting an invitation. Never persist the grant.
-      pairingQrPayload(accessUrl, "a".repeat(43));
-      const qr = await withCliProgress("Generating phone connection QR code", async () => {
-        const { grant } = await pairingAdmin<{ grant: string }>(dataDir, "qr");
-        return renderQr(pairingQrPayload(accessUrl, grant));
-      });
-      log("Scan with your phone to connect (valid for 5 minutes, single use; do not share screenshots):");
-      log(qr);
-    } else log("Generate an app authorization QR code: agentroam pair --url <phone-accessible-server-url>");
+    if (accessUrl) await printPairingQr(dataDir, accessUrl, log);
+    else log("Generate an app authorization QR code: agentroam pair --url <phone-accessible-server-url>");
   }
   const approvalInput = resolveApprovalInput(options);
   if (approvalInput) {
     await withCliProgress("Waiting for your phone to scan or enter the pairing code", () => watchPairingApproval(dataDir, result.expiresAt, { log, signal: options.signal, input: approvalInput }));
   } else log("View requests: agentroam approvals; approve: agentroam approve <request-id> --phrase <phone-verification-phrase>");
+}
+
+async function printPairingQr(dataDir: string, accessUrl: string, log: (line: string) => void): Promise<void> {
+  pairingQrPayload(accessUrl, "a".repeat(43));
+  const qr = await withCliProgress("Generating phone connection QR code", async () => {
+    const { grant } = await pairingAdmin<{ grant: string }>(dataDir, "qr");
+    return renderQr(pairingQrPayload(accessUrl, grant));
+  });
+  log("Scan with your phone to connect (valid for 5 minutes, single use; do not share screenshots):");
+  log(qr);
 }
 
 export async function resolvePairingAccessUrl(dataDir: string, options: { accessUrl?: string; fallbackUrl?: string; waitForMesh?: boolean; signal?: AbortSignal } = {}): Promise<string | null> {

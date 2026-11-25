@@ -41,6 +41,7 @@ export async function main(argv: string[]): Promise<void> {
   if (argv.includes("--help") || argv.includes("-h")) {
     console.log(`AgentRoam
   agentroam [start] [--local-only] [--test-no-pairing] [--data-dir PATH]
+  agentroam start --relay self-hosted --relay-url https://connect.example.com
   agentroam pair                    生成一次性设备配对码
   agentroam pair --url <服务器地址>   生成 App 扫码直连授权（终端显示）
   agentroam approvals               查看待批准请求和核对短语
@@ -354,6 +355,7 @@ function reportDoctorFailure(error: unknown, prefix = ""): void {
 }
 
 function providerDisplayName(provider: RelaySelection["provider"]): string {
+  if (provider === "self-hosted") return "自建 HTTPS";
   if (provider === "cloudflare") return "Cloudflare";
   if (provider === "pinggy") return "Pinggy";
   return "Custom";

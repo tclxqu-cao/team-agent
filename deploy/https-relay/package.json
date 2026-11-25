@@ -1,0 +1,11 @@
+{
+  "name": "agentroam-https-relay",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node relay.mjs"
+  },
+  "dependencies": {
+    "ws": "8.21.3"
+  }
+}

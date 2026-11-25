@@ -157,7 +157,9 @@ describe("desktop shared service", () => {
     expect((await client.mobilePairing()).origin).toBe("http://192.168.1.20:3000");
     mesh = { phase: "joined", accessUrl: "http://my-computer.mesh.example" };
     expect((await client.mobilePairing()).pairingUrl).toMatch(/^http:\/\/my-computer\.mesh\.example\/pair#pair=/);
-    expect(grants).toBe(3);
+    tunnel = { phase: "ready", mode: "public", provider: "self-hosted", accessUrl: "https://desktop.connect.example/web" };
+    expect((await client.mobilePairing()).pairingUrl).toMatch(/^https:\/\/desktop\.connect\.example\/pair#pair=/);
+    expect(grants).toBe(4);
     request.mockRestore();
   });
   it("keeps pairing usable with an old backend but never substitutes a service restart", async () => {

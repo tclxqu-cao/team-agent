@@ -53,6 +53,7 @@ export function buildStartArguments(config: ServiceConfig): string[] {
   if (config.port !== null) args.push("--port", String(config.port));
   if (config.localOnly) args.push("--local-only");
   else args.push("--relay", config.relay);
+  if (config.relayUrl) args.push("--relay-url", config.relayUrl);
   if (!config.localOnly && config.tunnelCommand) args.push("--tunnel-command", config.tunnelCommand);
   args.push("--data-dir", config.dataDir, "--no-qr");
   return args;

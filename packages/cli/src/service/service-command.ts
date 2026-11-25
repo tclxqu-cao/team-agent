@@ -78,6 +78,7 @@ export async function runServiceCommand(options: CliOptions, context: ServiceCom
       } catch (error) {
         log(`Codex will be checked and installed during service startup: ${error instanceof Error ? error.message : error}`);
       }
+      const relayUrl = options.relayUrl ?? environment.AGENTROAM_HTTPS_RELAY_URL?.trim();
       const config: ServiceConfig = {
         version: context.version,
         nodePath: context.nodePath,
@@ -89,6 +90,7 @@ export async function runServiceCommand(options: CliOptions, context: ServiceCom
         port: options.port,
         relay: options.relay,
         tunnelCommand: options.tunnelCommand,
+        ...(relayUrl ? { relayUrl } : {}),
         localOnly: options.localOnly,
         dataDir: options.dataDir,
         installedAt: now.toISOString(),

@@ -11,6 +11,7 @@ import {
   type UpdateChannel,
 } from "./update-channel.js";
 import { buildCliInstallManifestUrl, validateCliInstallManifest } from "./update-install.js";
+import type { ServiceConfig } from "../service/service-files.js";
 
 const REGISTRY_BASE = "https://registry.npmjs.org/agentroam";
 
@@ -56,6 +57,7 @@ export async function startUpdate(options: StartUpdateOptions): Promise<DurableU
     port: service?.port ?? null,
     relay: service?.relay ?? "auto",
     tunnelCommand: service?.tunnelCommand ?? null,
+    ...(service?.relayUrl ? { relayUrl: service.relayUrl } : {}),
     localOnly: service?.localOnly ?? false,
     cliPath: resolve(options.cliPath),
     updatedAt: Date.now(),
@@ -66,7 +68,8 @@ export async function startUpdate(options: StartUpdateOptions): Promise<DurableU
   return state;
 }
 
-async function readServiceConfig(): Promise<{ roots?: string[]; port?: number | null; relay?: "auto" | "cloudflare" | "pinggy" | "custom"; tunnelCommand?: string | null; localOnly?: boolean } | null> {
+async function readServiceConfig(): Promise<Partial<Pick<ServiceConfig,
+  "roots" | "port" | "relay" | "relayUrl" | "tunnelCommand" | "localOnly">> | null> {
   try {
     return JSON.parse(await readFile(resolve(homedir(), ".agentroam", "service", "config.json"), "utf8"));
   } catch {}

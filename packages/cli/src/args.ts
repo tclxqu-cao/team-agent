@@ -1,7 +1,7 @@
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 
-export type RelayMode = "auto" | "cloudflare" | "pinggy" | "custom";
+export type RelayMode = "auto" | "cloudflare" | "pinggy" | "custom" | "self-hosted";
 export type CliCommand = "start" | "doctor" | "version" | "service" | "unlock-service" | "update" | "update-worker" | "pair" | "devices" | "revoke" | "approvals" | "approve" | "deny" | "lock" | "unlock" | "audit" | "codex-desktop" | "desktop" | "mesh";
 export type DesktopAction = "authorize" | "status" | "disable";
 export type MeshAction = "status" | "onboard" | "offboard" | "qr" | "nodes";
@@ -16,6 +16,7 @@ export interface CliOptions {
   port: number | null;
   relay: RelayMode;
   tunnelCommand: string | null;
+  relayUrl?: string;
   localOnly: boolean;
   testNoPairing?: boolean;
   qr: boolean;
@@ -151,11 +152,12 @@ export function parseArgs(argv: string[]): CliOptions {
       options.port = port;
     } else if (arg === "--relay") {
       const relay = next();
-      if (!(["auto", "cloudflare", "pinggy", "custom"] as string[]).includes(relay)) {
-        throw cliError("relay must be auto, cloudflare, pinggy, or custom");
+      if (!(["auto", "cloudflare", "pinggy", "custom", "self-hosted"] as string[]).includes(relay)) {
+        throw cliError("relay must be auto, cloudflare, pinggy, custom, or self-hosted");
       }
       options.relay = relay as RelayMode;
-    } else if (arg === "--tunnel-command") options.tunnelCommand = next();
+    } else if (arg === "--relay-url") options.relayUrl = next();
+    else if (arg === "--tunnel-command") options.tunnelCommand = next();
     else if (arg === "--data-dir") options.dataDir = resolve(next());
     else if (arg === "--phrase" && command === "approve") options.approvalPhrase = next();
     else if (arg === "--local-only") options.localOnly = true;
@@ -179,7 +181,7 @@ export function parseArgs(argv: string[]): CliOptions {
     throw cliError("update version must be an exact stable X.Y.Z version");
   }
 
-  if (options.testNoPairing && (command !== "start" || !options.localOnly || options.tunnelCommand || options.relay !== "auto")) throw cliError("--test-no-pairing requires start --local-only and cannot use a tunnel or background service");
+  if (options.testNoPairing && (command !== "start" || !options.localOnly || options.tunnelCommand || options.relayUrl || options.relay !== "auto")) throw cliError("--test-no-pairing requires start --local-only and cannot use a tunnel or background service");
 
   if (!options.roots.length) options.roots = [process.cwd()];
   if (options.relay === "custom" && !options.tunnelCommand) throw cliError("--relay custom requires --tunnel-command");

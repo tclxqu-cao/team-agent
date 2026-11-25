@@ -1,4 +1,5 @@
 import type { ChildProcess } from "node:child_process";
+import { setTimeout as delay } from "node:timers/promises";
 import type { TunnelStatus } from "../../../shared/src/contracts/tunnel-status.js";
 import { selectRelay, type RelayOrchestratorOptions, type RelaySelection } from "./relay-orchestrator.js";
 
@@ -84,6 +85,12 @@ export class TunnelController {
     const url = await this.currentLocalUrl();
     if (this.stopped) return;
     await this.commit({ ...this.fallback(url), phase: "error", error: "公网连接已断开，请重试连接。" });
+    if (selection.provider !== "self-hosted") return;
+    for (const wait of [1000, 2000, 5000]) {
+      await delay(wait, undefined, { signal: this.abort.signal }).catch(() => {});
+      if (this.stopped || this.state.phase === "ready") return;
+      if ((await this.connect()).phase === "ready") return;
+    }
   }
   private set(status: TunnelStatus): void {
     this.state = status;

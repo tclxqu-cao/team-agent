@@ -3,6 +3,7 @@ import type { PlatformTarget } from "../platform.js";
 import { ensureCloudflared } from "../cloudflared/installer.js";
 import { CloudflareTunnelProvider } from "./cloudflare-provider.js";
 import { CustomCommandTunnelProvider } from "./custom-command-provider.js";
+import { readDefaultRelayUrl, SelfHostedTunnelProvider } from "./self-hosted-provider.js";
 import { PinggyTunnelProvider } from "./pinggy-provider.js";
 import { waitForPublicReadiness } from "./public-readiness.js";
 import type { TunnelHandle, TunnelProvider } from "./tunnel-provider.js";
@@ -39,52 +40,55 @@ export async function selectRelay(options: RelayOrchestratorOptions): Promise<Re
   options.signal.throwIfAborted();
   if (options.cli.localOnly) return { tunnel: null, publicUrl: options.lanUrl, provider: "lan", failures: [] };
 
-  const providers: PublicProviderName[] =
-    options.cli.relay === "auto" ? ["cloudflare"] : [options.cli.relay];
+  const { relay, relayUrl: configuredUrl } = options.cli;
+  const relayUrl = configuredUrl ?? (relay === "auto" || relay === "self-hosted" ? readDefaultRelayUrl() : null);
+  const providerName = relay === "auto" ? (relayUrl ? "self-hosted" : "cloudflare") : relay;
   const failures: RelaySelection["failures"] = [];
   const readiness = options.readiness ?? waitForPublicReadiness;
 
-  for (const providerName of providers) {
-    options.onStage?.("connecting");
-    options.onAttempt?.(providerName);
-    const attempt: { tunnel: TunnelHandle | null } = { tunnel: null };
-    const deadline = new AbortController();
-    const timeoutMs = options.timeoutMs ?? RELAY_START_TIMEOUT_MS;
-    const timer = setTimeout(() => deadline.abort(new Error(`relay connection timed out after ${timeoutMs}ms`)), timeoutMs);
-    const signal = AbortSignal.any([options.signal, deadline.signal]);
-    try {
-      return await withAbortSignal(async () => {
-        const provider = await createProvider(providerName, options);
+  options.onStage?.("connecting");
+  options.onAttempt?.(providerName);
+  const attempt: { tunnel: TunnelHandle | null } = { tunnel: null };
+  const deadline = new AbortController();
+  const timeoutMs = options.timeoutMs ?? RELAY_START_TIMEOUT_MS;
+  const timer = setTimeout(() => deadline.abort(new Error(`relay connection timed out after ${timeoutMs}ms`)), timeoutMs);
+  const signal = AbortSignal.any([options.signal, deadline.signal]);
+  try {
+    return await withAbortSignal(async () => {
+      const provider = await createProvider(providerName, options, relayUrl);
+      signal.throwIfAborted();
+      const handle = await provider.start({ localUrl: options.localUrl, signal, log: options.log });
+      if (signal.aborted) {
+        void handle.close().catch(() => {});
         signal.throwIfAborted();
-        const handle = await provider.start({ localUrl: options.localUrl, signal, log: options.log });
-        if (signal.aborted) {
-          void handle.close().catch(() => {});
-          signal.throwIfAborted();
-        }
-        attempt.tunnel = handle;
-        options.onStage?.("checking");
-        await readiness(handle.publicUrl, { signal });
-        signal.throwIfAborted();
-        return { tunnel: handle, publicUrl: handle.publicUrl, provider: providerName, failures };
-      }, signal);
-    } catch (error) {
-      deadline.abort(error);
-      if (attempt.tunnel) await withAbortSignal(() => attempt.tunnel!.close(), AbortSignal.timeout(3_000)).catch(() => {});
-      options.signal.throwIfAborted();
-      const message = error instanceof Error ? error.message : String(error);
-      failures.push({ provider: providerName, message });
-      options.onFailure?.(providerName, message);
-    } finally {
-      clearTimeout(timer);
-    }
+      }
+      attempt.tunnel = handle;
+      options.onStage?.("checking");
+      await readiness(handle.publicUrl, { signal });
+      signal.throwIfAborted();
+      return { tunnel: handle, publicUrl: handle.publicUrl, provider: providerName, failures };
+    }, signal);
+  } catch (error) {
+    deadline.abort(error);
+    if (attempt.tunnel) await withAbortSignal(() => attempt.tunnel!.close(), AbortSignal.timeout(3_000)).catch(() => {});
+    options.signal.throwIfAborted();
+    const message = error instanceof Error ? error.message : String(error);
+    failures.push({ provider: providerName, message });
+    options.onFailure?.(providerName, message);
+  } finally {
+    clearTimeout(timer);
   }
 
   return { tunnel: null, publicUrl: options.lanUrl, provider: "lan", failures };
 }
 
-async function createProvider(name: PublicProviderName, options: RelayOrchestratorOptions): Promise<TunnelProvider> {
+async function createProvider(name: PublicProviderName, options: RelayOrchestratorOptions, relayUrl: string | null): Promise<TunnelProvider> {
   const override = options.providerFactories?.[name];
   if (override) return await override();
+  if (name === "self-hosted") {
+    if (!relayUrl) throw new Error("自建 HTTPS 入口地址未配置");
+    return new SelfHostedTunnelProvider(relayUrl, options.cli.dataDir);
+  }
   if (name === "cloudflare") {
     const executable = await ensureCloudflared(options.target, options.cli.dataDir);
     return new CloudflareTunnelProvider(executable);

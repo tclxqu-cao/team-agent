@@ -7,17 +7,17 @@ import type { TunnelHandle } from "./tunnel-provider.js";
 const controllers: TunnelController[] = [];
 afterEach(async () => { await Promise.all(controllers.splice(0).map(controller => controller.close())); vi.useRealTimers(); });
 
-function fixture(localOnly = false) {
+function fixture(localOnly = false, selfHosted = false) {
   let end!: () => void;
   const handle: TunnelHandle = { publicUrl: "https://working.example", close: vi.fn(async () => {}), exited: new Promise(resolve => { end = () => resolve({ code: 1, signal: null }); }) };
   const start = vi.fn(async () => handle);
   const readiness = vi.fn(async () => {});
   const published: TunnelStatus[] = [];
   const lanUrl = vi.fn(async () => "http://192.168.1.10:43210");
-  const cli = parseArgs(localOnly ? ["--local-only"] : []);
+  const cli = parseArgs(localOnly ? ["--local-only"] : selfHosted ? ["--relay", "self-hosted"] : []);
   const controller = new TunnelController({
     relay: { cli, target: "windows-amd64", localUrl: "http://127.0.0.1:43210", port: 43210, log: vi.fn(),
-      timeoutMs: 30_000, readiness, providerFactories: { cloudflare: async () => ({ start }) } },
+      timeoutMs: 30_000, readiness, providerFactories: { [selfHosted ? "self-hosted" : "cloudflare"]: async () => ({ start }) } },
     lanUrl, publish: async status => { published.push(status); },
   });
   controllers.push(controller);
@@ -67,6 +67,16 @@ describe("independent tunnel lifetime", () => {
     f.end();
     await vi.waitFor(() => expect(f.controller.status()).toMatchObject({ phase: "error", accessUrl: "http://192.168.1.20:43210/web" }));
     expect(f.start).toHaveBeenCalledOnce();
+  });
+  it("reconnects to the self-hosted provider automatically after the route drops", async () => {
+    const f = fixture(false, true);
+    f.start.mockResolvedValueOnce(f.handle).mockResolvedValue({ ...f.handle, exited: new Promise(() => {}) });
+    expect(await f.controller.connect()).toMatchObject({ provider: "self-hosted", phase: "ready" });
+    f.end();
+    await vi.waitFor(() => expect(f.start).toHaveBeenCalledTimes(2), { timeout: 2500 });
+    await vi.waitFor(() => expect(f.controller.status()).toMatchObject({
+      phase: "ready", provider: "self-hosted", accessUrl: "https://working.example/web",
+    }));
   });
   it("refreshes the fallback address when the network changes during a connection attempt", async () => {
     const f = fixture();

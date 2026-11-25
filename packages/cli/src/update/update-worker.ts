@@ -47,6 +47,7 @@ export async function runUpdateWorker(stateFile: string, fetchImpl: typeof fetch
     serviceArgs.push("--data-dir", state.dataDir, "--relay", state.relay, "--no-qr");
     if (state.port) serviceArgs.push("--port", String(state.port));
     if (state.tunnelCommand) serviceArgs.push("--tunnel-command", state.tunnelCommand);
+    if (state.relayUrl) serviceArgs.push("--relay-url", state.relayUrl);
     if (state.localOnly) serviceArgs.push("--local-only");
     await update({ phase: "reconnecting" });
     const serviceCode = await run(process.execPath, serviceArgs, process.env);
