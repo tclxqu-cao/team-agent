@@ -2,7 +2,7 @@ export const metadata = {
   title: "AgentRoam",
   manifest: "/manifest.webmanifest",
   appleWebApp: { capable: true, title: "AgentRoam", statusBarStyle: "black-translucent" },
-  icons: { icon: "/pwa/icon-192.png", apple: "/pwa/icon-192.png" },
+  icons: { icon: { url: "/pwa/icon-192.png", sizes: "192x192" }, apple: { url: "/pwa/apple-touch-icon.png", sizes: "180x180" } },
   description: "General-purpose AI agent API server",
 };
 

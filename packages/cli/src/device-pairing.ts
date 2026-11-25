@@ -8,6 +8,7 @@ import { join, resolve } from "node:path";
 import { renderQr } from "./qr.js";
 import { localServiceRequest, LocalServiceHttpError } from "./local-service-request.js";
 import { withCliProgress, withoutCliProgress } from "../bin/cli-progress.mjs";
+import type { PairingRoute } from "../../shared/src/contracts/tunnel-status.js";
 
 export interface PairedDevice { id: string; name: string; created: number; seen: number; expires: number }
 export interface PendingPairing { id: string; name: string; phrase: string; created: number; expires: number; status: string }
@@ -34,6 +35,39 @@ export function pairingQrPayload(accessUrl: string, grant: string): string {
   const url = new URL(accessUrl);
   if (!["https:", "http:"].includes(url.protocol) || url.username || url.password || url.search || url.hash || !/^[A-Za-z0-9_-]{43}$/.test(grant)) throw new Error("Invalid pairing URL or authorization grant");
   return `${url.origin}/pair#pair=${grant}`;
+}
+
+async function joinedMeshAddress(dataDir: string): Promise<string | undefined> {
+  const mesh = await localServiceRequest<{ phase: string; accessUrl?: string }>(dataDir, "/api/mesh/status").catch(() => null);
+  return mesh?.phase === "joined" ? mesh.accessUrl : undefined;
+}
+
+export async function printPairingRoutes(dataDir: string, log: (line: string) => void = console.log): Promise<void> {
+  const [{ routes }, mesh] = await Promise.all([
+    localServiceRequest<{ routes: PairingRoute[] }>(dataDir, "/api/desktop/tunnel/routes"), joinedMeshAddress(dataDir),
+  ]);
+  const labels: Record<PairingRoute["kind"], string> = {
+    "self-hosted": "自建 HTTPS", cloudflare: "Cloudflare", lan: "局域网", tailscale: "Tailscale / 组网地址", vpn: "本机网络地址", headscale: "Headscale",
+  };
+  log("agentroam pair --via <线路或 IP>");
+  for (const route of routes) log(`  ${route.id}  ${labels[route.kind]}${route.interfaceName ? ` · ${terminalText(route.interfaceName)}` : ""}`);
+  if (routes.some(route => route.kind === "lan")) log("  lan  自动选择局域网地址");
+  if (routes.some(route => route.kind === "tailscale")) log("  tailscale  自动选择 100.x 组网地址");
+  if (mesh) log(`  headscale  ${new URL(mesh).origin}`);
+}
+
+export async function printPairingVia(dataDir: string, via: string, log: (line: string) => void = console.log): Promise<void> {
+  const accessUrl = await withCliProgress("正在准备所选配对线路", async () => {
+    if (via === "headscale") {
+      const mesh = await joinedMeshAddress(dataDir);
+      if (!mesh) throw new Error("电脑尚未加入自建 Headscale 组网。");
+      return mesh;
+    }
+    const route = await localServiceRequest<{ accessUrl: string }>(dataDir, `/api/desktop/tunnel/routes?via=${encodeURIComponent(via)}`, { method: "POST", timeoutMs: 40_000 });
+    return route.accessUrl;
+  });
+  log(`Pairing route: ${new URL(accessUrl).origin}`);
+  await printPairingQr(dataDir, accessUrl, log);
 }
 
 export async function printPairingCode(dataDir: string, log: (line: string) => void = console.log, options: { interactive?: boolean; signal?: AbortSignal; accessUrl?: string; fallbackUrl?: string; waitForMesh?: boolean; qr?: boolean } = {}): Promise<void> {

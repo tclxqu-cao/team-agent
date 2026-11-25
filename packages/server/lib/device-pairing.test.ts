@@ -220,9 +220,19 @@ describe("local approval and emergency lock", () => {
     expect((await f.request("/api/settings", { headers: { cookie } })).status).toBe(200);
     expect((await f.request("/api/pairing/qr-exchange", { method: "POST", headers, body: JSON.stringify({ grant }) })).status).toBe(410);
     const page = await f.request("/pair", { headers: { accept: "text/html", cookie } });
-    expect(await page.text()).toContain("扫码直接连接");
+    const html = await page.text();
+    expect(html).toContain("扫码直接连接");
+    expect(html).toContain('rel="apple-touch-icon" sizes="180x180" href="/pwa/apple-touch-icon.png"');
+    expect(page.headers.get("content-security-policy")).toContain("img-src 'self' blob:");
     f.auth.store.lock();
     for (const path of ["/manifest.webmanifest", "/service-worker.js", "/pwa/icon-192.png", "/pwa/offline.html", "/pwa/qr-decoder.js"]) expect((await f.request(path)).status).toBe(200);
+    for (const [path, size] of [["/pwa/apple-touch-icon.png", 180], ["/apple-touch-icon.png", 180], ["/pwa/icon-maskable-512.png", 512]] as const) {
+      const asset = await f.request(path);
+      expect(asset.status).toBe(200);
+      expect(asset.headers.get("content-type")).toBe("image/png");
+      const png = Buffer.from(await asset.arrayBuffer());
+      expect([png.readUInt32BE(16), png.readUInt32BE(20), png[25]]).toEqual([size, size, 2]);
+    }
     expect((await f.request("/pwa/devices.sqlite")).status).toBe(423);
     expect((await f.request("/api/settings", { headers: { cookie } })).status).toBe(423);
   });

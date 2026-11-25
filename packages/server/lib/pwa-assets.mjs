@@ -12,6 +12,9 @@ const assets = new Map([
   ["/pwa/offline.html", ["offline.html", "text/html; charset=utf-8"]],
   ["/pwa/icon-192.png", ["icon-192.png", "image/png"]],
   ["/pwa/icon-512.png", ["icon-512.png", "image/png"]],
+  ["/pwa/icon-maskable-512.png", ["icon-maskable-512.png", "image/png"]],
+  ["/pwa/apple-touch-icon.png", ["apple-touch-icon.png", "image/png"]],
+  ["/apple-touch-icon.png", ["apple-touch-icon.png", "image/png"]],
 ]);
 
 /** Only these non-sensitive assets bypass device authorization. No arbitrary paths. */

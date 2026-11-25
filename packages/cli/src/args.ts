@@ -1,5 +1,6 @@
 import { homedir } from "node:os";
 import { resolve } from "node:path";
+import { isIPv4 } from "node:net";
 
 export type RelayMode = "auto" | "cloudflare" | "pinggy" | "custom" | "self-hosted";
 export type CliCommand = "start" | "doctor" | "version" | "service" | "unlock-service" | "update" | "update-worker" | "pair" | "devices" | "revoke" | "approvals" | "approve" | "deny" | "lock" | "unlock" | "audit" | "codex-desktop" | "desktop" | "mesh";
@@ -26,6 +27,8 @@ export interface CliOptions {
   approvalRequestId?: string;
   approvalPhrase?: string;
   pairingUrl?: string;
+  pairingVia?: string;
+  pairingListRoutes?: boolean;
   updateVersion?: string | null;
   updateStateFile?: string | null;
   desktopDryRun?: boolean;
@@ -140,6 +143,12 @@ export function parseArgs(argv: string[]): CliOptions {
     else if (arg === "--setup" && command === "codex-desktop") options.desktopSetup = true;
     else if (arg === "--setup-codex-desktop" && command === "service" && serviceAction === "install") options.desktopSetup = true;
     else if (arg === "--url" && command === "pair") options.pairingUrl = next();
+    else if (arg === "--list-routes" && command === "pair") options.pairingListRoutes = true;
+    else if (arg === "--via" && command === "pair") {
+      const via = next();
+      if (!["self-hosted", "cloudflare", "lan", "tailscale", "headscale"].includes(via) && !isIPv4(via)) throw cliError("pair --via requires self-hosted, cloudflare, lan, tailscale, headscale or a local IPv4 address");
+      options.pairingVia = via;
+    }
     else if (arg === "--node-name" && command === "mesh") {
       const name = next();
       if (!/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i.test(name)) throw cliError("node name must be 1-63 letters, digits or hyphens and cannot start or end with a hyphen");
@@ -183,6 +192,9 @@ export function parseArgs(argv: string[]): CliOptions {
 
   if (options.testNoPairing && (command !== "start" || !options.localOnly || options.tunnelCommand || options.relayUrl || options.relay !== "auto")) throw cliError("--test-no-pairing requires start --local-only and cannot use a tunnel or background service");
 
+  if ((options.pairingVia || options.pairingListRoutes) && (options.pairingUrl || !options.qr || (options.pairingVia && options.pairingListRoutes))) {
+    throw cliError("pair --via and --list-routes cannot be combined with each other, --url or --no-qr");
+  }
   if (!options.roots.length) options.roots = [process.cwd()];
   if (options.relay === "custom" && !options.tunnelCommand) throw cliError("--relay custom requires --tunnel-command");
   return options;

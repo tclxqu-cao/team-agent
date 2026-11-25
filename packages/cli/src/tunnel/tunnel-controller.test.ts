@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { parseArgs } from "../args.js";
 import { TunnelController } from "./tunnel-controller.js";
-import type { TunnelStatus } from "../../../shared/src/contracts/tunnel-status";
+import type { TunnelStatus } from "../../../shared/src/contracts/tunnel-status.js";
 import type { TunnelHandle } from "./tunnel-provider.js";
 
 const controllers: TunnelController[] = [];
@@ -25,6 +25,35 @@ function fixture(localOnly = false, selfHosted = false) {
 }
 
 describe("independent tunnel lifetime", () => {
+  it("reuses the default relay and starts an alternate once without changing the published route", async () => {
+    const initial = { publicUrl: "https://self.example", close: vi.fn(async () => {}), exited: new Promise<never>(() => {}) };
+    const alternate = { ...initial, publicUrl: "https://alternate.example", close: vi.fn(async () => {}) };
+    const startAlternate = vi.fn(async () => alternate);
+    const checkNetworkRoute = vi.fn(async () => {});
+    const publish = vi.fn(async () => {});
+    const controller = new TunnelController({
+      relay: { cli: parseArgs(["--relay", "self-hosted", "--relay-url", "https://self.example"]), target: "darwin-arm64", localUrl: "http://127.0.0.1:43000", port: 43000, log: vi.fn(), readiness: vi.fn(async () => {}),
+        providerFactories: { "self-hosted": async () => ({ start: async () => initial }), cloudflare: async () => ({ start: startAlternate }) } },
+      lanUrl: async () => "http://10.1.2.3:43000", publish, checkNetworkRoute,
+      networkRoutes: () => [{ id: "10.1.2.3", kind: "lan", address: "10.1.2.3" }, { id: "100.90.1.2", kind: "tailscale", address: "100.90.1.2" }],
+    });
+    controllers.push(controller);
+    expect((await controller.connect(false)).provider).toBe("self-hosted");
+    expect(await controller.pairingUrl("self-hosted")).toBe("https://self.example/web");
+    expect(publish).toHaveBeenCalledTimes(2);
+    await expect(Promise.all([controller.pairingUrl("cloudflare"), controller.pairingUrl("cloudflare")])).resolves.toEqual(["https://alternate.example/web", "https://alternate.example/web"]);
+    expect(startAlternate).toHaveBeenCalledOnce();
+    await expect(controller.pairingUrl("10.1.2.3")).resolves.toBe("http://10.1.2.3:43000/web");
+    await expect(controller.pairingUrl("tailscale")).resolves.toBe("http://100.90.1.2:43000/web");
+    expect(checkNetworkRoute).toHaveBeenCalledTimes(2);
+    await expect(controller.pairingUrl("10.2.3.4")).rejects.toThrow("地址当前不可用");
+    expect(controller.status().accessUrl).toBe("https://self.example/web");
+    expect(publish).toHaveBeenCalledTimes(2);
+    expect(initial.close).not.toHaveBeenCalled();
+    await controller.close();
+    expect(alternate.close).toHaveBeenCalledOnce();
+    expect(initial.close).toHaveBeenCalledOnce();
+  });
   it("shares concurrent requests, checks readiness and publishes the public address", async () => {
     const f = fixture();
     let finish!: () => void;

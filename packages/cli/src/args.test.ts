@@ -3,6 +3,13 @@ import { describe, expect, it } from "vitest";
 import { parseArgs } from "./args.js";
 
 describe("parseArgs", () => {
+  it("allows listing pairing routes or choosing one without overriding the service relay", () => {
+    expect(parseArgs(["pair", "--list-routes"])).toMatchObject({ pairingListRoutes: true, relay: "auto" });
+    expect(parseArgs(["pair", "--via", "10.22.32.45"])).toMatchObject({ pairingVia: "10.22.32.45", relay: "auto" });
+    expect(parseArgs(["pair", "--via", "tailscale"])).toMatchObject({ pairingVia: "tailscale" });
+    expect(() => parseArgs(["pair", "--via", "example.org"])).toThrow("local IPv4");
+    expect(() => parseArgs(["pair", "--via", "cloudflare", "--no-qr"])).toThrow("cannot be combined");
+  });
   it("limits local desktop authorization commands to explicit actions and data directories", () => {
     for (const action of ["authorize", "status", "disable"]) {
       expect(parseArgs(["desktop", action, "--data-dir", "/tmp/desktop"]))

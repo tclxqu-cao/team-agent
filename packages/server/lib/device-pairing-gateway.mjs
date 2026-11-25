@@ -185,7 +185,7 @@ export function createDevicePairingGateway({ dataDir, desktop, owner, consoleSto
         if (path === "/pair" || (!local && !test && !device && ((!sdk && !runService) || store.isLocked()))) {
           const document = (path === "/pair" || path === "/" || path === "/web" || path.startsWith("/web/") || path === "/app" || path.startsWith("/app/")) && (req.headers.accept || "").includes("text/html");
           if (req.method === "GET" && document) {
-            res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "referrer-policy": "no-referrer", "x-frame-options": "DENY", "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'; media-src 'self' blob:; img-src 'self'; manifest-src 'self'; worker-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'" });
+            res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "referrer-policy": "no-referrer", "x-frame-options": "DENY", "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'; media-src 'self' blob:; img-src 'self' blob:; manifest-src 'self'; worker-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'" });
             res.end(PAIRING_PAGE); return true;
           }
           throw error("请先使用电脑上的配对码授权此设备");

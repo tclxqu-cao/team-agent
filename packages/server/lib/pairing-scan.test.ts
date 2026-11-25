@@ -1,3 +1,5 @@
+import { createRequire } from "node:module";
+import jsQR from "jsqr";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createPairingScanner, decodePairingImage } from "../public/pwa/pairing-scan.js";
 
@@ -64,6 +66,51 @@ describe("shared browser pairing scanner", () => {
     Object.assign(window, { jsQR: vi.fn(() => null) });
     await expect(decodePairingImage(new File(["photo"], "camera.jpg", { type: "image/jpeg" }))).rejects.toThrow("没有识别到二维码");
     expect(revoke).toHaveBeenCalledTimes(2);
+  });
+
+  it("decodes a small real QR in a high-resolution photo when the resized frame loses it", async () => {
+    environment(false);
+    const require = createRequire(new URL("../../cli/package.json", import.meta.url));
+    const QRCode = require("qrcode-terminal/vendor/QRCode");
+    const raw = "https://test-computer.connect.example.org/pair#pair=" + "g".repeat(43);
+    const qr = new QRCode(-1, 1);
+    qr.addData(raw);
+    qr.make();
+    const decode = vi.fn(jsQR);
+    Object.assign(window, { jsQR: decode });
+    vi.stubGlobal("URL", { createObjectURL: () => "blob:photo", revokeObjectURL: vi.fn() });
+    vi.stubGlobal("Image", class {
+      naturalWidth = 4032;
+      naturalHeight = 3024;
+      onload?: () => void;
+      set src(_value: string) { queueMicrotask(() => this.onload?.()); }
+    });
+    const cells = qr.getModuleCount(), moduleSize = 3;
+    const canvas = { width: 0, height: 0, getContext: () => context };
+    let crop = { x: 0, y: 0, width: 0, height: 0 };
+    const context = {
+      drawImage(_image: unknown, x: number, y: number, width: number, height: number) {
+        crop = { x, y, width, height };
+      },
+      getImageData() {
+        const { width, height } = canvas;
+        const data = new Uint8ClampedArray(width * height * 4).fill(255);
+        for (let y = 0; y < height; y++) {
+          const row = Math.floor((crop.y + (y + 0.5) * crop.height / height - 1450) / moduleSize);
+          if (row < 0 || row >= cells) continue;
+          for (let x = 0; x < width; x++) {
+            const column = Math.floor((crop.x + (x + 0.5) * crop.width / width - 1950) / moduleSize);
+            if (column < 0 || column >= cells || !qr.isDark(row, column)) continue;
+            const index = (y * width + x) * 4;
+            data[index] = data[index + 1] = data[index + 2] = 0;
+          }
+        }
+        return { data, width, height };
+      },
+    };
+    Object.assign(document, { createElement: () => canvas });
+    expect(await decodePairingImage(new File(["photo"], "camera.jpg", { type: "image/jpeg" }))).toBe(raw);
+    expect(decode.mock.results[0].value).toBeNull();
   });
 
   it("rejects non-image and oversized photos before loading them", async () => {

@@ -36,13 +36,19 @@ export interface RelayOrchestratorOptions {
   readiness?: typeof waitForPublicReadiness;
 }
 
+export function resolveRelayProvider(cli: Pick<CliOptions, "relay" | "relayUrl">, relayUrl?: string | null): PublicProviderName {
+  if (cli.relay !== "auto") return cli.relay;
+  const url = relayUrl === undefined ? cli.relayUrl ?? readDefaultRelayUrl() : relayUrl;
+  return url ? "self-hosted" : "cloudflare";
+}
+
 export async function selectRelay(options: RelayOrchestratorOptions): Promise<RelaySelection> {
   options.signal.throwIfAborted();
   if (options.cli.localOnly) return { tunnel: null, publicUrl: options.lanUrl, provider: "lan", failures: [] };
 
   const { relay, relayUrl: configuredUrl } = options.cli;
   const relayUrl = configuredUrl ?? (relay === "auto" || relay === "self-hosted" ? readDefaultRelayUrl() : null);
-  const providerName = relay === "auto" ? (relayUrl ? "self-hosted" : "cloudflare") : relay;
+  const providerName = resolveRelayProvider(options.cli, relayUrl);
   const failures: RelaySelection["failures"] = [];
   const readiness = options.readiness ?? waitForPublicReadiness;
 

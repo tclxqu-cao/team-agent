@@ -31,14 +31,15 @@ let window: import("electron").BrowserWindow | null = null;
 function trusted(event: import("electron").IpcMainInvokeEvent): void {
   if (event.sender !== window?.webContents || event.senderFrame !== event.sender.mainFrame) throw new Error("Untrusted desktop sender");
 }
-ipcMain.handle("lite:refresh", async event => {
+ipcMain.handle("lite:refresh", async (event, route?: string) => {
   trusted(event);
-  const invitation = await pairing.refresh();
+  const invitation = await pairing.refresh(route);
   logger.info("lite QR invitation ready");
   return invitation;
 });
 ipcMain.handle("lite:progress", event => { trusted(event); return bootstrap.status(); });
 ipcMain.handle("lite:tunnel-status", event => { trusted(event); return service.tunnelStatus(); });
+ipcMain.handle("lite:pairing-routes", event => { trusted(event); return service.pairingRoutes(); });
 ipcMain.handle("lite:tunnel-connect", event => { trusted(event); return service.connectTunnel(); });
 ipcMain.handle("lite:authorization", (event, action: unknown, permission: unknown) => {
   trusted(event);

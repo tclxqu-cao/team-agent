@@ -30,8 +30,28 @@ describe("local desktop tunnel management", () => {
     for (const headers of [{}, { authorization: `Bearer ${"t".repeat(43)}` }, { "x-agentroam-desktop-token": "a".repeat(64) }]) {
       expect((await f.request("/api/desktop/tunnel", { headers })).status).toBe(401);
       expect((await f.request("/api/desktop/tunnel/connect", { method: "POST", headers })).status).toBe(401);
+      expect((await f.request("/api/desktop/tunnel/routes", { headers })).status).toBe(401);
+      expect((await f.request("/api/desktop/tunnel/routes?via=cloudflare", { method: "POST", headers })).status).toBe(401);
     }
     expect(f.parent.send).not.toHaveBeenCalled();
+  });
+  it("reads route choices and resolves an explicit route through the bound parent only", async () => {
+    const f = await fixture();
+    f.parent.send.mockImplementation((message: any, callback) => {
+      callback();
+      if (message.type !== "agentroam:pairing-route") return;
+      const result = message.route
+        ? { accessUrl: "http://10.1.2.3:3000/web" }
+        : { routes: [{ id: "10.1.2.3", kind: "lan", address: "10.1.2.3" }] };
+      f.parent.emit("message", { type: "agentroam:pairing-route-result", id: message.id, result });
+    });
+    const path = "/api/desktop/tunnel/routes";
+    const choices = await f.request(path, { headers: f.headers });
+    expect(await choices.json()).toMatchObject({ routes: [{ id: "10.1.2.3" }] });
+    const resolved = await f.request(`${path}?via=10.1.2.3`, { method: "POST", headers: f.headers });
+    expect(await resolved.json()).toEqual({ accessUrl: "http://10.1.2.3:3000/web" });
+    expect((await f.request(`${path}?via=example.org`, { method: "POST", headers: f.headers })).status).toBe(400);
+    expect(f.parent.send).toHaveBeenCalledTimes(2);
   });
   it("returns immediately, merges repeated clicks and exposes updated parent status", async () => {
     const f = await fixture();

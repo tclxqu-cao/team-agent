@@ -290,7 +290,8 @@ contextBridge.exposeInMainWorld("desktopDeviceApi", {
 // Fixed transport capability; credentials and service discovery stay in main.
 contextBridge.exposeInMainWorld("sharedServiceApi", {
   status: () => ipcRenderer.invoke("service:status"),
-  mobilePairing: () => ipcRenderer.invoke("service:mobile-pairing"),
+  mobilePairing: (route?: string) => ipcRenderer.invoke("service:mobile-pairing", route),
+  pairingRoutes: () => ipcRenderer.invoke("service:pairing-routes"),
   tunnelStatus: () => ipcRenderer.invoke("service:tunnel-status"),
   connectTunnel: () => ipcRenderer.invoke("service:tunnel-connect"),
   bootstrapStatus: () => ipcRenderer.invoke("service:bootstrap-status"),

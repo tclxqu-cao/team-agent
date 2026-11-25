@@ -204,13 +204,14 @@ const trustedServiceSender = (event: import("electron").IpcMainInvokeEvent) => {
   rendererWindows.assertSender(event);
 };
 ipcMain.handle("service:status", (event) => { trustedServiceSender(event); return sharedService.status(); });
-ipcMain.handle("service:mobile-pairing", async (event) => {
+ipcMain.handle("service:mobile-pairing", async (event, route?: string) => {
   trustedServiceSender(event);
-  const invitation = await sharedService.mobilePairing();
+  const invitation = await sharedService.mobilePairing(route);
   await codexSharingSetup.prepare();
   return invitation;
 });
 ipcMain.handle("service:tunnel-status", (event) => { trustedServiceSender(event); return sharedService.tunnelStatus(); });
+ipcMain.handle("service:pairing-routes", (event) => { trustedServiceSender(event); return sharedService.pairingRoutes(); });
 ipcMain.handle("service:tunnel-connect", (event) => { trustedServiceSender(event); return sharedService.connectTunnel(); });
 ipcMain.handle("service:bootstrap-status", (event) => { trustedServiceSender(event); return runtimeBootstrap.status(); });
 ipcMain.handle("service:bootstrap", async (event) => {

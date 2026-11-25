@@ -8,7 +8,7 @@ import { ensureCloudflared } from "./cloudflared/installer.js";
 import { resolveCodexRuntime } from "./codex-runtime-manager.js";
 import { probeSQLiteRuntime, probeTerminalRuntime, repairNativeRuntimePermissions } from "./native-runtime.js";
 import { findRoutedLanUrl } from "./network.js";
-import { installedDataDir, pairingAdmin, printPairingCode, type PairedDevice, type PendingPairing, terminalText } from "./device-pairing.js";
+import { installedDataDir, pairingAdmin, printPairingCode, printPairingRoutes, printPairingVia, type PairedDevice, type PendingPairing, terminalText } from "./device-pairing.js";
 import { detectPlatform, type PlatformTarget } from "./platform.js";
 import { AGENTROAM_VERSION, resolvePlatformRuntime, resolvePlatformTui } from "./platform-packages.js";
 import { acquireSleepInhibitor } from "./power/sleep-inhibitor.js";
@@ -42,7 +42,10 @@ export async function main(argv: string[]): Promise<void> {
     console.log(`AgentRoam
   agentroam [start] [--local-only] [--test-no-pairing] [--data-dir PATH]
   agentroam start --relay self-hosted --relay-url https://connect.example.com
-  agentroam pair                    生成一次性设备配对码
+  agentroam pair                    生成设备授权，公网连接可用时显示二维码
+  agentroam pair --no-qr            生成需由电脑批准的数字配对码
+  agentroam pair --list-routes      查看可选配对线路和本机 IP
+  agentroam pair --via <线路或 IP>   按所选地址生成扫码授权
   agentroam pair --url <服务器地址>   生成 App 扫码直连授权（终端显示）
   agentroam approvals               查看待批准请求和核对短语
   agentroam approve <请求ID> --phrase <核对短语>
@@ -94,7 +97,11 @@ async function executeCommand(options: ReturnType<typeof parseArgs>, argv: strin
   cliErrorLog.installGlobalErrorHandlers();
   if (["pair", "devices", "revoke", "approvals", "approve", "deny", "lock", "unlock", "audit"].includes(options.command)) {
     const dataDir = argv.includes("--data-dir") ? options.dataDir : await installedDataDir(options.dataDir);
-    if (options.command === "pair") await printPairingCode(dataDir, console.log, { accessUrl: options.pairingUrl, qr: options.qr });
+    if (options.command === "pair") {
+      if (options.pairingListRoutes) await printPairingRoutes(dataDir);
+      else if (options.pairingVia) await printPairingVia(dataDir, options.pairingVia);
+      else await printPairingCode(dataDir, console.log, { accessUrl: options.pairingUrl, qr: options.qr });
+    }
     else if (options.command === "approvals") {
       const { requests, locked } = await pairingAdmin<{ requests: PendingPairing[]; locked: boolean }>(dataDir, "requests");
       console.log(locked ? "远程访问已锁定" : requests.length ? requests.map((r) => `${r.id}  ${terminalText(r.name)}  核对短语：${r.phrase}  到期 ${new Date(r.expires).toLocaleString()}`).join("\n") : "暂无待授权请求");

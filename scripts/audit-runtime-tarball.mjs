@@ -67,6 +67,8 @@ for (const required of [
   "package/runtime/public/pwa/offline.html",
   "package/runtime/public/pwa/icon-192.png",
   "package/runtime/public/pwa/icon-512.png",
+  "package/runtime/public/pwa/icon-maskable-512.png",
+  "package/runtime/public/pwa/apple-touch-icon.png",
   "package/runtime/shell-integration.mjs",
   "package/runtime/lib/file-preview-service.mjs",
   "package/runtime/lib/markdown-preview.mjs",

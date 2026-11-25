@@ -67,7 +67,7 @@ if (nativeWorkspace) document.body.dataset.nativeApp = "1";
 installNativeStatusBarBridge();
 if (!nativeEnvironment.isNativeApp() && window.parent === window) {
   const manifest = document.createElement("link"); manifest.rel = "manifest"; manifest.href = "/manifest.webmanifest"; document.head.append(manifest);
-  const icon = document.querySelector<HTMLLinkElement>('link[rel="apple-touch-icon"]'); if (icon) icon.href = "/pwa/icon-192.png";
+  const icon = document.querySelector<HTMLLinkElement>('link[rel="apple-touch-icon"]'); if (icon) icon.href = "/pwa/apple-touch-icon.png";
   const install = document.createElement("script"); install.src = "/pwa/install.js"; document.head.append(install);
 }
 // Standalone document (home-screen PWA opened directly, not in the /web

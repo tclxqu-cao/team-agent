@@ -6,3 +6,10 @@ export interface TunnelStatus {
   stage?: "connecting" | "checking";
   error?: string;
 }
+
+export interface PairingRoute {
+  id: string;
+  kind: "self-hosted" | "cloudflare" | "lan" | "tailscale" | "vpn" | "headscale";
+  address?: string;
+  interfaceName?: string;
+}

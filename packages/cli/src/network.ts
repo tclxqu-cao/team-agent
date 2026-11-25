@@ -1,7 +1,22 @@
 import { networkInterfaces, type NetworkInterfaceInfo } from "node:os";
 import { createSocket } from "node:dgram";
+import type { PairingRoute } from "../../shared/src/contracts/tunnel-status.js";
 
 type InterfaceMap = NodeJS.Dict<NetworkInterfaceInfo[]>;
+
+export function pairingNetworkRoutes(interfaces: InterfaceMap = networkInterfaces()): PairingRoute[] {
+  const choices = new Map<string, PairingRoute>();
+  for (const [interfaceName, entries] of Object.entries(interfaces)) {
+    for (const entry of entries ?? []) {
+      if (entry.family !== "IPv4" || entry.internal || choices.has(entry.address)) continue;
+      const { address } = entry;
+      const [first, second] = address.split(".").map(Number);
+      const kind = first === 100 && second >= 64 && second <= 127 ? "tailscale" : isPrivateIpv4(address) ? "lan" : "vpn";
+      choices.set(address, { id: address, kind, address, interfaceName });
+    }
+  }
+  return [...choices.values()];
+}
 
 export function findLanUrl(port: number, interfaces: InterfaceMap = networkInterfaces(), routedAddress?: string | null): string | null {
   const addresses = Object.values(interfaces)

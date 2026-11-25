@@ -3,7 +3,9 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { WebSocket } from "ws";
 import { createMobilePairingInvitation, pairingOrigin } from "./mobile-pairing.js";
-import type { TunnelStatus } from "../../shared/src/contracts/tunnel-status";
+import type { PairingRoute, TunnelStatus } from "../../shared/src/contracts/tunnel-status";
+
+const pairingRoutesPath = "/api/desktop/tunnel/routes";
 
 export interface ServiceDescriptor {
   protocol: 1; instanceId: string; pid: number; url: string; dataDir: string; token: string;
@@ -109,7 +111,8 @@ export class SharedServiceConnection {
   async json(path: string, method: string, body?: string, descriptor?: ServiceDescriptor): Promise<{ status: number; body: string }> {
     if (!["GET", "POST", "PATCH", "DELETE"].includes(method) || (body?.length ?? 0) > 20_000_000) throw new Error("Invalid service request");
     const d = descriptor ?? await this.connection();
-    const res = await this.request(serviceApiUrl(d.url, path), { method, ...(body === undefined ? {} : { body }), headers: { "content-type": "application/json", "x-agentroam-desktop-token": d.token }, signal: AbortSignal.timeout(path === "/api/agent/codex-sharing" ? 180_000 : 30_000), redirect: "error" });
+    const timeout = path === "/api/agent/codex-sharing" ? 180_000 : path.startsWith(`${pairingRoutesPath}?`) ? 40_000 : 30_000;
+    const res = await this.request(serviceApiUrl(d.url, path), { method, ...(body === undefined ? {} : { body }), headers: { "content-type": "application/json", "x-agentroam-desktop-token": d.token }, signal: AbortSignal.timeout(timeout), redirect: "error" });
     return { status: res.status, body: await res.text() };
   }
 
@@ -149,9 +152,30 @@ export class SharedServiceConnection {
     } catch { return null; }
   }
 
-  async mobilePairing() {
+  async pairingRoutes(): Promise<PairingRoute[]> {
+    const descriptor = await this.connection();
+    const [reply, mesh] = await Promise.all([this.json(pairingRoutesPath, "GET", undefined, descriptor), this.readMeshPairingOrigin(descriptor)]);
+    const routes: PairingRoute[] = reply.status === 200 ? JSON.parse(reply.body).routes : [];
+    if (mesh) routes.push({ id: "headscale", kind: "headscale", address: new URL(mesh).hostname });
+    return routes;
+  }
+
+  async mobilePairing(route?: string) {
     const descriptor = await this.connection();
     const mint = () => this.json("/api/pairing/admin/qr", "POST", "{}", descriptor);
+    if (route === "headscale") {
+      const mesh = await this.readMeshPairingOrigin(descriptor);
+      if (!mesh) throw new Error("电脑尚未加入自建 Headscale 组网。");
+      return { ...await createMobilePairingInvitation(descriptor.dataDir, mint, mesh), viaMesh: true };
+    }
+    if (route !== undefined) {
+      if (typeof route !== "string" || route.length > 64) throw new Error("配对线路无效。");
+      const reply = await this.json(`${pairingRoutesPath}?via=${encodeURIComponent(route)}`, "POST", "{}", descriptor);
+      let result: { accessUrl?: string; error?: string };
+      try { result = JSON.parse(reply.body); } catch { result = {}; }
+      if (reply.status !== 200 || typeof result.accessUrl !== "string") throw new Error(result.error || "当前后台不支持这条线路，请升级或选择其他线路。");
+      return createMobilePairingInvitation(descriptor.dataDir, mint, result.accessUrl);
+    }
     const [tunnel, mesh] = await Promise.all([
       this.tunnelRequest("/api/desktop/tunnel", "GET", descriptor)
         .then(status => ({ status }), (error: unknown) => ({ error })),
