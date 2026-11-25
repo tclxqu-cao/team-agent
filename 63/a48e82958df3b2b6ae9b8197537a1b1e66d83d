@@ -1,0 +1,19 @@
+scripts/incremental-cli-release.mjs
+  s_30a53aa7ebec40::t_529117520d5f41 41
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "63a48e82958df3b2b6ae9b8197537a1b1e66d83d",
+  "prompts": {},
+  "sessions": {
+    "s_30a53aa7ebec40": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a20c46-6028-7b10-b00a-b40d026206f2",
+        "model": "gpt-6.2-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
