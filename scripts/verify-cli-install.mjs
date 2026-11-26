@@ -96,7 +96,11 @@ try {
   child = spawn(
     nodeBin,
     [launcher, "start", "--local-only", "--no-qr", "--data-dir", dataDir, "--root", workdir],
-    { cwd: workdir, stdio: ["ignore", "pipe", "pipe"], env: commandEnv },
+    { cwd: workdir, stdio: ["ignore", "pipe", "pipe"], env: {
+      ...commandEnv,
+      // The detached broker has a separate directory from the gateway's data.
+      AGENT_NATIVE_RUNTIME_DIR: resolve(workdir, "native-runtime"),
+    } },
   );
   let output = "";
   const append = (chunk) => {

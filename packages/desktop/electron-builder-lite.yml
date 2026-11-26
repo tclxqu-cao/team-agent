@@ -18,6 +18,8 @@ files:
   - dist/main/mobile-pairing.js
   - dist/main/runtime-bootstrap.js
   - dist/main/desktop-live-cli-proxy.js
+  - dist/main/update-service.js
+  - dist/main/desktop-installer.js
   - renderer-lite-dist/**/*
   - package.json
   - node_modules/**/*

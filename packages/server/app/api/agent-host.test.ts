@@ -32,6 +32,7 @@ vi.mock("../../lib/computer-use", () => ({
 
 import { agentHost } from "./agent-host";
 import { businessCatalog } from "../../lib/business-catalog";
+import { POST as answerAgent } from "./agent/answer/route";
 import { POST as runAgent } from "./agent/run/route";
 import { POST as registerRemoteTools } from "./remote-tools/register/route";
 import { GET as listSessions, POST as createSession } from "./sessions/route";
@@ -703,6 +704,77 @@ describe("agentHost singleton", () => {
       { role: "user", content: "second question" },
       { role: "assistant", content: "second answer", presentation: { completionDurationMs: expect.any(Number), runResult: expect.objectContaining({ status: "completed", runId: expect.any(String), durationMs: expect.any(Number) }) } },
     ]);
+  });
+
+  it("rehydrates a live CA question after refresh and accepts a reply from the restored card", async () => {
+    const question = "Which option?";
+    const options = [{ label: "First", description: "First option" }];
+    const fields = [{ name: "name", label: "Name", type: "text" as const }];
+    const provider = new CapturingModelProvider();
+    provider.eventBatches = [
+      [{ type: "tool_call", toolCall: { id: "ask-call", name: "ask_user", arguments: { question, options, fields, multiSelect: true } } }, { type: "text_done" }],
+      [{ type: "text_chunk", text: "Question answered" }, { type: "text_done" }],
+    ];
+    agentHost.setBuilder(new AgentBuilder().withModelProvider(provider).withSemanticSkillMatching(false));
+    const session = await agentHost.createSession("question recovery");
+    const args = { params: { id: session.id } };
+    const request = () => new Request(`http://test/api/sessions/${session.id}?view=core&limit=1`);
+    let stop = () => {};
+    const emittedQuestion = new Promise<Extract<AgentEvent, { type: "ask_user" }>>((resolve) => {
+      stop = agentHost.subscribe(session.id, (event) => {
+        if (event.type === "ask_user") resolve(event);
+      });
+    });
+    const { completion } = agentHost.startRun("ask before continuing", session.id);
+    try {
+      const event = await Promise.race([
+        emittedQuestion,
+        completion.then(() => { throw new Error("Run ended before asking"); }),
+      ]);
+      const active = await (await getSession(request(), args)).json();
+      const cards = (active.messages as Message[]).flatMap(message => message.presentation?.question ?? []);
+      expect(active.activeRun.running).toBe(true);
+      expect(cards).toEqual([expect.objectContaining({
+        questionId: event.questionId, question, options, fields, multiSelect: true, status: "pending",
+      })]);
+
+      const answer = await answerAgent(new Request("http://test/api/agent/answer", {
+        method: "POST",
+        body: JSON.stringify({ questionId: cards[0].questionId, answer: "First", selectedIndices: [0] }),
+      }));
+      expect(answer.status).toBe(200);
+      await completion;
+      const settled = await (await getSession(request(), args)).json();
+      expect(settled.status).toBe("completed");
+      expect((settled.messages as Message[]).flatMap(message => message.presentation?.question ?? []))
+        .toEqual([expect.objectContaining({ questionId: event.questionId, status: "answered" })]);
+      expect(settled.messages).toContainEqual(expect.objectContaining({ content: "Question answered" }));
+    } finally {
+      stop();
+      if (agentHost.isSessionRunning(session.id)) agentHost.abort(session.id);
+      await completion;
+    }
+  });
+
+  it("renders a question from an interrupted CA run without reopening it for answers", async () => {
+    const session = await agentHost.createSession("interrupted question recovery");
+    const store = agentHost.getSessionStore();
+    await store.addMessage(session.id, { role: "user", content: "please investigate" });
+    await store.addEvent(session.id, { type: "text_chunk", text: "I need some detail." });
+    await store.addEvent(session.id, { type: "ask_user", questionId: "interrupted-question", question: "What happened?" });
+    await store.update(session.id, {
+      status: "active",
+      metadata: {
+        ...session.metadata,
+        customerAgentActiveRun: { runId: "interrupted-question-run", eventStart: 0, startedAt: "2026-11-24T15:35:31Z" },
+      },
+    });
+
+    const response = await getSession(new Request(`http://test/api/sessions/${session.id}?view=core&limit=1`), { params: { id: session.id } });
+    const detail = await response.json();
+    expect(detail).toMatchObject({ status: "failed", activeRun: { running: false } });
+    expect((detail.messages as Message[]).flatMap(message => message.presentation?.question ?? []))
+      .toEqual([expect.objectContaining({ questionId: "interrupted-question", question: "What happened?", status: "cancelled" })]);
   });
 
   it("commits a stale interrupted run before starting the next customer-agent turn", async () => {

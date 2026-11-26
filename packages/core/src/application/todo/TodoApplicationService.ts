@@ -3,6 +3,7 @@ import { assertVersion, isTodoTerminal, TodoError, validateTimestamp, type TodoT
 import type { ITodoUnitOfWork, TodoTransaction } from "../../domain/todo/ports";
 import { ReminderScheduleCalculator } from "../../domain/todo/ReminderScheduleCalculator";
 import type { TodoCommand, TodoCommandContext, TodoListQuery } from "./contracts";
+import { normalizedTodoTitle } from "./completed-work";
 import { dismissTaskReminders } from "../notification/NotificationService";
 const canonical = (v: unknown): string => v && typeof v === "object" ? Array.isArray(v) ? `[${v.map(canonical).join(",")}]` : `{${Object.entries(v).filter(([, x]) => x !== undefined).sort(([a], [b]) => a.localeCompare(b)).map(([k, x]) => `${JSON.stringify(k)}:${canonical(x)}`).join(",")}}` : JSON.stringify(v);
 export function todoDetail(tx: TodoTransaction, ownerId: string, id: string): TodoDetail {
@@ -14,6 +15,26 @@ export function todoDetail(tx: TodoTransaction, ownerId: string, id: string): To
 export class TodoApplicationService {
   constructor(readonly uow: ITodoUnitOfWork, private readonly clock = Date.now, private readonly calculator = new ReminderScheduleCalculator()) {}
   get(id: string, ownerId: string): TodoDetail { return this.uow.run(tx => todoDetail(tx, ownerId, id)); }
+  completeReportedWork(titles: readonly string[], startedAt: number, context: { ownerId: string; sessionId: string; runId: string }): void {
+    if (!titles.length || !Number.isFinite(startedAt) || !context.runId) return;
+    const reported = new Set(titles.map(normalizedTodoTitle).filter(Boolean));
+    this.uow.run(tx => {
+      const matches = new Map<string, TodoTask | null>();
+      for (const task of tx.todo_tasks.list(context.ownerId)) {
+        if (task.kind !== "normal" || task.createdAt > startedAt) continue;
+        if (task.updatedAt < startedAt && task.status !== "pending" && task.status !== "in_progress") continue;
+        const title = normalizedTodoTitle(task.title);
+        if (reported.has(title)) matches.set(title, matches.has(title) ? null : task);
+      }
+      for (const task of matches.values()) {
+        if (!task || task.updatedAt > startedAt || (task.updatedAt === startedAt && task.version > 1)) continue;
+        if (task.status !== "pending" && task.status !== "in_progress") continue;
+        this.execute({ type: "complete", taskId: task.id, expectedVersion: task.version }, {
+          ownerId: context.ownerId, sourceSessionRef: context.sessionId, requestId: `run-complete:${context.runId}:${task.id}`,
+        });
+      }
+    });
+  }
   list(query: TodoListQuery, ownerId: string) {
     return this.uow.run(tx => {
       let tasks = tx.todo_tasks.list(ownerId).filter(t => (!query.status || t.status === query.status) && (!query.kind || t.kind === query.kind)).sort((a, b) => b.createdAt - a.createdAt || b.id.localeCompare(a.id));

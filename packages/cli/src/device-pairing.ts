@@ -8,6 +8,7 @@ import { join, resolve } from "node:path";
 import { renderQr } from "./qr.js";
 import { localServiceRequest, LocalServiceHttpError } from "./local-service-request.js";
 import { withCliProgress, withoutCliProgress } from "../bin/cli-progress.mjs";
+import type { PairingRoute } from "../../shared/src/contracts/tunnel-status.js";
 
 export interface PairedDevice { id: string; name: string; created: number; seen: number; expires: number }
 export interface PendingPairing { id: string; name: string; phrase: string; created: number; expires: number; status: string }
@@ -36,27 +37,71 @@ export function pairingQrPayload(accessUrl: string, grant: string): string {
   return `${url.origin}/pair#pair=${grant}`;
 }
 
+async function joinedMeshAddress(dataDir: string): Promise<string | undefined> {
+  const mesh = await localServiceRequest<{ phase: string; accessUrl?: string }>(dataDir, "/api/mesh/status").catch(() => null);
+  return mesh?.phase === "joined" ? mesh.accessUrl : undefined;
+}
+
+export async function printPairingRoutes(dataDir: string, log: (line: string) => void = console.log): Promise<void> {
+  const [{ routes }, mesh] = await Promise.all([
+    localServiceRequest<{ routes: PairingRoute[] }>(dataDir, "/api/desktop/tunnel/routes"), joinedMeshAddress(dataDir),
+  ]);
+  const labels: Record<PairingRoute["kind"], string> = {
+    "self-hosted": "自建 HTTPS", cloudflare: "Cloudflare", lan: "局域网", tailscale: "Tailscale / 组网地址", vpn: "自建 VPN / 本机网络地址", headscale: "自建 VPN / Headscale",
+  };
+  log("agentroam pair --via <线路或 IP>");
+  for (const route of routes) log(`  ${route.id}  ${labels[route.kind]}${route.interfaceName ? ` · ${terminalText(route.interfaceName)}` : ""}`);
+  if (routes.some(route => route.kind === "lan")) log("  lan  自动选择局域网地址");
+  if (routes.some(route => route.kind === "tailscale")) log("  tailscale  自动选择 100.x 组网地址");
+  if (routes.filter(route => route.kind === "vpn").length === 1) log("  vpn  自动选择自建 VPN 地址");
+  if (mesh) log(`  headscale  ${new URL(mesh).origin}`);
+}
+
+export async function printPairingVia(dataDir: string, via: string, log: (line: string) => void = console.log): Promise<void> {
+  const accessUrl = await withCliProgress("正在准备所选配对线路", async () => {
+    if (via === "headscale") {
+      const mesh = await joinedMeshAddress(dataDir);
+      if (!mesh) throw new Error("电脑尚未加入自建 Headscale 组网。");
+      return mesh;
+    }
+    const route = await localServiceRequest<{ accessUrl: string }>(dataDir, `/api/desktop/tunnel/routes?via=${encodeURIComponent(via)}`, { method: "POST", timeoutMs: 40_000 });
+    return route.accessUrl;
+  });
+  log(`Pairing route: ${new URL(accessUrl).origin}`);
+  await printPairingQr(dataDir, accessUrl, log);
+}
+
 export async function printPairingCode(dataDir: string, log: (line: string) => void = console.log, options: { interactive?: boolean; signal?: AbortSignal; accessUrl?: string; fallbackUrl?: string; waitForMesh?: boolean; qr?: boolean } = {}): Promise<void> {
+  const interactiveQr = (options.qr ?? true) && (options.interactive ?? process.stdout.isTTY);
+  if (interactiveQr && options.accessUrl === undefined) {
+    const relay = await localServiceRequest<{ phase: string; provider: string; accessUrl?: string }>(dataDir, "/api/desktop/tunnel", { signal: options.signal }).catch(() => null);
+    if (relay?.phase === "ready" && relay.provider === "self-hosted" && relay.accessUrl) {
+      await printPairingQr(dataDir, relay.accessUrl, log);
+      return;
+    }
+  }
   const result = await withCliProgress("Generating device pairing code", () => pairingAdmin<PairingCode>(dataDir, "code"));
   log(`Pairing code: ${result.code.slice(0, 4)} ${result.code.slice(4)}`);
   log("Valid for 5 minutes, single use. After entering it on your phone, confirm the verification phrase on this computer.");
-  if ((options.qr ?? true) && (options.interactive ?? process.stdout.isTTY)) {
+  if (interactiveQr) {
     const accessUrl = await resolvePairingAccessUrl(dataDir, options);
-    if (accessUrl) {
-      // Validate the public address before minting an invitation. Never persist the grant.
-      pairingQrPayload(accessUrl, "a".repeat(43));
-      const qr = await withCliProgress("Generating phone connection QR code", async () => {
-        const { grant } = await pairingAdmin<{ grant: string }>(dataDir, "qr");
-        return renderQr(pairingQrPayload(accessUrl, grant));
-      });
-      log("Scan with your phone to connect (valid for 5 minutes, single use; do not share screenshots):");
-      log(qr);
-    } else log("Generate an app authorization QR code: agentroam pair --url <phone-accessible-server-url>");
+    if (accessUrl) await printPairingQr(dataDir, accessUrl, log);
+    else log("Generate an app authorization QR code: agentroam pair --url <phone-accessible-server-url>");
   }
   const approvalInput = resolveApprovalInput(options);
   if (approvalInput) {
     await withCliProgress("Waiting for your phone to scan or enter the pairing code", () => watchPairingApproval(dataDir, result.expiresAt, { log, signal: options.signal, input: approvalInput }));
   } else log("View requests: agentroam approvals; approve: agentroam approve <request-id> --phrase <phone-verification-phrase>");
+}
+
+async function printPairingQr(dataDir: string, accessUrl: string, log: (line: string) => void): Promise<void> {
+  pairingQrPayload(accessUrl, "a".repeat(43));
+  const qr = await withCliProgress("Generating phone connection QR code", async () => {
+    const { grant } = await pairingAdmin<{ grant: string }>(dataDir, "qr");
+    return renderQr(pairingQrPayload(accessUrl, grant));
+  });
+  log("Scan with your phone to connect (valid for 5 minutes, single use; do not share screenshots):");
+  log(qr);
 }
 
 export async function resolvePairingAccessUrl(dataDir: string, options: { accessUrl?: string; fallbackUrl?: string; waitForMesh?: boolean; signal?: AbortSignal } = {}): Promise<string | null> {

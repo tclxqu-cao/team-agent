@@ -68,12 +68,15 @@ export interface MessagePresentation {
   completionDurationMs?: number;
   runResult?: import('../agent/run-result.js').RunResult;
   forkPoint?: SessionForkPoint;
-  /** A native question restored from history, including external pending input. */
+  /** A question restored from session history, including pending input. */
   question?: {
     questionId: string;
     question: string;
     options: Array<{ label: string; description: string }>;
+    fields?: Array<{ name: string; label: string; description?: string; type?: "text" | "secret" }>;
     multiSelect: boolean;
+    cancellable?: boolean;
+    allowFreeText?: boolean;
     status: "pending" | "answered" | "cancelled";
     answer?: string;
   };

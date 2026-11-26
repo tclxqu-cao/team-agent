@@ -535,7 +535,7 @@ export class RemoteAuthorization {
       // background keeps the queue free (a full werift close takes seconds).
       if (event.data.kind === 'stop') {
         this.video.playbackHealthy = false;
-        void this.mediaChain.then(() => this.video.stop()).catch(() => {});
+        this.mediaChain = this.mediaChain.then(() => this.video.stop()).catch(() => {});
         return;
       }
       // answer/ice handlers block inside werift until the offer's ICE gathering
@@ -575,7 +575,7 @@ export class RemoteAuthorization {
       // confirm or input hit-test would otherwise stall behind it. Chaining
       // behind pending signaling keeps the teardown ordered after any start.
       await this.releaseInput().catch(() => {});
-      void this.mediaChain.then(() => this.video.stop()).catch(() => {});
+      this.mediaChain = this.mediaChain.then(() => this.video.stop()).catch(() => {});
       void this.stopAudio();
       this.registry.producerState(this.peer, this.sessionId, 'agent-controlled');
       this.controlState = 'agent-controlled';

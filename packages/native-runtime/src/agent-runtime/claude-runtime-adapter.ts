@@ -1453,10 +1453,15 @@ export function claudeHistoryToMessages(history: SessionMessage[], includeReason
     const text = textFromContent(content);
     const attachments = claudeImageAttachments(blocks);
     if (text || attachments.length > 0) {
+      // The SDK persists the slash command while the broker tracks its objective.
+      const goal = text.match(/^\/goal\s+([\s\S]+)$/i)?.[1].trim();
       result.push({
         role: "user",
-        content: text,
-        ...(attachments.length > 0 ? { presentation: { attachments } } : {}),
+        content: goal || text,
+        ...(goal || attachments.length ? { presentation: {
+          ...(goal ? { isGoal: true } : {}),
+          ...(attachments.length ? { attachments } : {}),
+        } } : {}),
       });
     }
     for (const block of blocks) {

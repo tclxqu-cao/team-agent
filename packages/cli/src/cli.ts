@@ -8,7 +8,7 @@ import { ensureCloudflared } from "./cloudflared/installer.js";
 import { resolveCodexRuntime } from "./codex-runtime-manager.js";
 import { probeSQLiteRuntime, probeTerminalRuntime, repairNativeRuntimePermissions } from "./native-runtime.js";
 import { findRoutedLanUrl } from "./network.js";
-import { installedDataDir, pairingAdmin, printPairingCode, type PairedDevice, type PendingPairing, terminalText } from "./device-pairing.js";
+import { installedDataDir, pairingAdmin, printPairingCode, printPairingRoutes, printPairingVia, type PairedDevice, type PendingPairing, terminalText } from "./device-pairing.js";
 import { detectPlatform, type PlatformTarget } from "./platform.js";
 import { AGENTROAM_VERSION, resolvePlatformRuntime, resolvePlatformTui } from "./platform-packages.js";
 import { acquireSleepInhibitor } from "./power/sleep-inhibitor.js";
@@ -19,7 +19,7 @@ import { runServiceCommand } from "./service/service-command.js";
 import { resolveServicePaths, writePrivateText } from "./service/service-files.js";
 import { TunnelController, attachTunnelControl } from "./tunnel/tunnel-controller.js";
 import type { RelaySelection } from "./tunnel/relay-orchestrator.js";
-import { currentCliPath, startUpdate } from "./update/update-command.js";
+import { currentCliPath, getAvailableUpdateVersion, startUpdate } from "./update/update-command.js";
 import { runUpdateWorker } from "./update/update-worker.js";
 import { lockInstanceStartup, stopPreviousInstances } from "./instance-takeover.js";
 import { runUnlockServiceCommand } from "./unlock-service.js";
@@ -41,7 +41,11 @@ export async function main(argv: string[]): Promise<void> {
   if (argv.includes("--help") || argv.includes("-h")) {
     console.log(`AgentRoam
   agentroam [start] [--local-only] [--test-no-pairing] [--data-dir PATH]
-  agentroam pair                    生成一次性设备配对码
+  agentroam start --relay self-hosted --relay-url https://connect.example.com
+  agentroam pair                    生成设备授权，公网连接可用时显示二维码
+  agentroam pair --no-qr            生成需由电脑批准的数字配对码
+  agentroam pair --list-routes      查看可选配对线路和本机 IP
+  agentroam pair --via <线路或 IP>   按所选地址生成扫码授权
   agentroam pair --url <服务器地址>   生成 App 扫码直连授权（终端显示）
   agentroam approvals               查看待批准请求和核对短语
   agentroam approve <请求ID> --phrase <核对短语>
@@ -53,6 +57,7 @@ export async function main(argv: string[]): Promise<void> {
   agentroam revoke <设备ID>          移除一台设备
   agentroam revoke --all            全部退出并取消待用配对码
   agentroam service install|start|stop|restart|status|url|logs|uninstall
+  agentroam update [--check | <版本>]  检查或安装 CLI 更新（支持预览版）
   首次启动时通过 AGENTROAM_MESH_ACTIVATION_CODE 提供一次性组网激活码
   agentroam mesh status             查看组网入网状态
   agentroam mesh onboard            加入自建 Headscale 控制面（安装后自动执行）
@@ -93,7 +98,11 @@ async function executeCommand(options: ReturnType<typeof parseArgs>, argv: strin
   cliErrorLog.installGlobalErrorHandlers();
   if (["pair", "devices", "revoke", "approvals", "approve", "deny", "lock", "unlock", "audit"].includes(options.command)) {
     const dataDir = argv.includes("--data-dir") ? options.dataDir : await installedDataDir(options.dataDir);
-    if (options.command === "pair") await printPairingCode(dataDir, console.log, { accessUrl: options.pairingUrl, qr: options.qr });
+    if (options.command === "pair") {
+      if (options.pairingListRoutes) await printPairingRoutes(dataDir);
+      else if (options.pairingVia) await printPairingVia(dataDir, options.pairingVia);
+      else await printPairingCode(dataDir, console.log, { accessUrl: options.pairingUrl, qr: options.qr });
+    }
     else if (options.command === "approvals") {
       const { requests, locked } = await pairingAdmin<{ requests: PendingPairing[]; locked: boolean }>(dataDir, "requests");
       console.log(locked ? "远程访问已锁定" : requests.length ? requests.map((r) => `${r.id}  ${terminalText(r.name)}  核对短语：${r.phrase}  到期 ${new Date(r.expires).toLocaleString()}`).join("\n") : "暂无待授权请求");
@@ -161,7 +170,13 @@ async function executeCommand(options: ReturnType<typeof parseArgs>, argv: strin
 
   if (options.command === "update") {
     if (target !== "darwin-arm64" && target !== "windows-amd64") throw new Error(`updates are unavailable for ${target}`);
-    const state = await startUpdate({ currentVersion: VERSION, requestedVersion: options.updateVersion ?? null, dataDir: options.dataDir, target, cliPath: currentCliPath() });
+    if (options.updateCheckOnly) {
+      const available = await getAvailableUpdateVersion(VERSION);
+      console.log(available ? `AgentRoam CLI ${available} 可更新 · agentroam update` : `AgentRoam CLI ${VERSION} 已是最新版本`);
+      return;
+    }
+    const dataDir = argv.includes("--data-dir") ? options.dataDir : await installedDataDir(options.dataDir);
+    const state = await startUpdate({ currentVersion: VERSION, requestedVersion: options.updateVersion ?? null, dataDir, target, cliPath: currentCliPath() });
     console.log(`AgentRoam ${state.targetVersion} update started in the background.`);
     return;
   }
@@ -219,6 +234,11 @@ async function executeCommand(options: ReturnType<typeof parseArgs>, argv: strin
     if (controller.signal.aborted) { await runtime.close(); return; }
     void runtime.exited.then(() => controller.abort());
     await serviceReporter?.localReady(runtime.localUrl);
+    if (!serviceReporter && process.stderr.isTTY && (target === "darwin-arm64" || target === "windows-amd64")) {
+      void getAvailableUpdateVersion(VERSION).then(version => {
+        if (version && !controller.signal.aborted) console.error(`AgentRoam CLI ${version} 可更新 · agentroam update`);
+      }).catch(() => undefined);
+    }
     if (!options.testNoPairing) {
       mesh = createMeshRuntime({ dataDir: options.dataDir, localUrl: runtime.localUrl, target });
       detachMesh = attachMeshControl(runtime.process, mesh);
@@ -354,6 +374,7 @@ function reportDoctorFailure(error: unknown, prefix = ""): void {
 }
 
 function providerDisplayName(provider: RelaySelection["provider"]): string {
+  if (provider === "self-hosted") return "自建 HTTPS";
   if (provider === "cloudflare") return "Cloudflare";
   if (provider === "pinggy") return "Pinggy";
   return "Custom";

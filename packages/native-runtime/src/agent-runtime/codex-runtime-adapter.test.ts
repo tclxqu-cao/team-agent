@@ -3,6 +3,7 @@ import * as filesystem from "node:fs/promises";
 import { appendFile, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { cleanEngineHistory, HANDOFF_INPUT_SEPARATOR } from "@agent/core";
 import {
   CodexRuntimeAdapter,
   codexProgressNotificationToEvent,
@@ -56,6 +57,9 @@ describe("Codex explicit skills", () => {
     });
     expect(parseExplicitSkillInvocation("/goal finish it")).toBeNull();
     expect(parseExplicitSkillInvocation("plain text")).toBeNull();
+    expect(parseExplicitSkillInvocation("$frontend-design build it")).toEqual({
+      name: "frontend-design", rest: "build it",
+    });
   });
 });
 
@@ -1016,11 +1020,11 @@ describe("Codex terminal token usage", () => {
       path: null, cwd: "/repo", source: { custom: "customer-agent" }, turns: [],
     };
     const request = vi.fn(async (method: string) => {
-      if (method === "thread/read" || method === "thread/resume") return { thread };
-      if (method === "turn/start") {
+      if (method === "thread/read" || method === "thread/resume") return { thread, model: "native-default", reasoningEffort: "medium" };
+      if (["turn/start", "review/start", "thread/compact/start"].includes(method)) {
         const id = `usage-turn-${++turnIndex}`;
         if (emit) queueMicrotask(() => emit(notify, id));
-        return { turn: { id } };
+        return method === "thread/compact/start" ? {} : { turn: { id } };
       }
       return {};
     });
@@ -1030,6 +1034,38 @@ describe("Codex terminal token usage", () => {
     };
     return { adapter: new CodexRuntimeAdapter({ client: client as never, sessionRoot: "/tmp" }), notify, threadId: thread.id, request };
   }
+
+  it("sends the selected Codex plan mode with the active model and renders the native plan text", async () => {
+    const { adapter, threadId, request } = setup((notify, id) => {
+      notify({ method: "turn/started", params: { threadId: "cx-usage", turn: { id } } });
+      notify({ method: "item/plan/delta", params: { threadId: "cx-usage", turnId: id, itemId: "proposal", delta: "拟定方案" } });
+      notify({ method: "item/completed", params: { threadId: "cx-usage", turnId: id, item: { type: "plan", id: "proposal", text: "拟定方案" } } });
+      notify({ method: "turn/completed", params: { threadId: "cx-usage", turn: { id, status: "completed", items: [] } } });
+    });
+    const events = await drain(adapter.run(threadId, "先给出方案", undefined, undefined, undefined, { codexMode: "plan" }));
+    expect(request).toHaveBeenCalledWith("turn/start", expect.objectContaining({
+      collaborationMode: { mode: "plan", settings: { model: "native-default", reasoning_effort: "medium", developer_instructions: null } },
+    }));
+    expect(events).toContainEqual(expect.objectContaining({ type: "text_chunk", text: "拟定方案" }));
+    expect(events.at(-1)).toMatchObject({ type: "done", finalText: "拟定方案" });
+  });
+
+  it("runs review and compaction through app-server commands instead of sending plain messages", async () => {
+    const { adapter, threadId, request } = setup((notify, id) => {
+      notify({ method: "turn/started", params: { threadId: "cx-usage", turn: { id } } });
+      notify({ method: "turn/completed", params: { threadId: "cx-usage", turn: { id, status: "completed", items: [] } } });
+    });
+    expect((await drain(adapter.run(threadId, "/review --base main"))).at(-1)?.type).toBe("done");
+    expect((await drain(adapter.run(threadId, "/compact"))).at(-1)?.type).toBe("done");
+    expect(request).toHaveBeenCalledWith("review/start", { threadId, target: { type: "baseBranch", branch: "main" }, delivery: "inline" });
+    expect(request).toHaveBeenCalledWith("thread/compact/start", { threadId });
+    expect(request.mock.calls.some(([method]) => method === "turn/start")).toBe(false);
+    const history = await codexTurnsToMessages([{ id: "review", status: "completed", items: [
+      { type: "exitedReviewMode", id: "review-exit", review: "无问题" },
+      { type: "agentMessage", id: "review-answer", text: "无问题" },
+    ] }]);
+    expect(history.map(message => message.content)).toEqual(["无问题"]);
+  });
 
   it("projects native plan notifications and ignores updates from another turn", async () => {
     const { adapter, threadId } = setup((notify, id) => {
@@ -3097,6 +3133,40 @@ describe("Codex native paged history", () => {
     }
     expect(visible(full.messages).map(message => message.historyId))
       .toEqual(visible(core.messages).map(message => message.historyId));
+  });
+
+  it.each([true, false])("pairs only a recorded handoff with the first goal input before paging and indexing (recorded=%s)", async recorded => {
+    const directory = await mkdtemp(join(tmpdir(), "codex-handoff-goal-"));
+    temporaryDirectories.push(directory);
+    const path = join(directory, "rollout.jsonl");
+    const goalTurn = turn("switched", 1);
+    const objective = "继续完成目标";
+    const summaryText = "[引擎切换上下文交接 · ZCode → codex]\n历史内容";
+    const first = { type: "userMessage", id: "handoff-input",
+      content: [{ type: "text", text: summaryText + HANDOFF_INPUT_SEPARATOR + objective, text_elements: [] }] };
+    const followUp = { type: "userMessage", id: "explicit-follow-up", content: [{ type: "text", text: objective, text_elements: [] }] };
+    goalTurn.items = [first, followUp, ...goalTurn.items.filter(item => item.type !== "userMessage")];
+    await writeFile(path, [
+      { type: "thread_goal_updated", goal: { objective, status: "active", createdAt: 10 } },
+      { type: "task_started", turn_id: goalTurn.id, turn_attribution: { turn_trigger: "goal" } },
+      ...[first, followUp].map(item => ({ type: "item_completed", turn_id: goalTurn.id, item })),
+    ].map(payload => JSON.stringify({ type: "event_msg", payload })).join("\n") + "\n");
+    const adapter = new CodexRuntimeAdapter({
+      client: pagingClientFor([], { sourceTurns: [goalTurn], threadPath: path }) as never,
+      threadHandoffs: () => recorded ? [{ summaryText }] : [],
+    });
+    const core = await adapter.getSessionPaged("cx-paged", { view: "core", limit: 10 });
+    const full = await adapter.getSessionPaged("cx-paged", { limit: 10 });
+    const index = await adapter.getQueryIndex("cx-paged");
+    for (const page of [core, full]) {
+      const users = cleanEngineHistory(page.messages, recorded ? [{ summaryText }] : []).filter(message => message.role === "user");
+      expect(users.map(message => [message.content, message.presentation?.isGoal, message.presentation?.executionTrace?.segmentIndex]))
+        .toEqual(recorded ? [[objective, true, 0], [objective, undefined, 1]] : [
+          [objective, true, 0], [first.content[0].text, undefined, 1], [objective, undefined, 2],
+        ]);
+      expect(index?.entries.map(entry => entry.messageId)).toEqual(users.map(message => message.historyId));
+      expect(page.history?.totalItems).toBe(recorded ? 3 : 4);
+    }
   });
 
   it("restores every durable user message when Codex steers input into one turn", async () => {

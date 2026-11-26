@@ -6,12 +6,26 @@ type Receiver = { track: { kind: string }; jitterBufferTarget?: number | null; p
 /** Writes only genuinely exposed controls and restores the receiver's previous setting. */
 export class BrowserRemoteVideoPlayout {
   private policy = new RemoteVideoPlayoutPolicy();
+  private lowLatency = false;
   private applied = new Map<Receiver, { key: 'jitterBufferTarget' | 'playoutDelayHint'; original: number | null | undefined; value: number }>();
   private unsupported = new WeakSet<Receiver>();
   constructor(private readonly peer: Pick<RTCPeerConnection, 'getReceivers'>) {}
+  setLowLatency(enabled: boolean): void {
+    if (enabled) {
+      this.applyTarget(20);
+    } else if (this.lowLatency) {
+      this.restore();
+      this.policy = new RemoteVideoPlayoutPolicy();
+    }
+    this.lowLatency = enabled;
+  }
+
   apply(sample: RemoteVideoReceiverStats, now: number): { playoutControl: boolean; playoutTargetMs?: number } {
     if (!sample.receiver?.visible) { this.restore(); return { playoutControl: false }; }
-    const target = this.policy.observe(sample.receiver, sample.jitterMs, now);
+    return this.applyTarget(this.lowLatency ? 20 : this.policy.observe(sample.receiver, sample.jitterMs, now));
+  }
+
+  private applyTarget(target: number | undefined): { playoutControl: boolean; playoutTargetMs?: number } {
     const receiver = this.peer.getReceivers().find(receiver => receiver.track?.kind === 'video') as Receiver | undefined;
     if (!receiver || this.unsupported.has(receiver)) return { playoutControl: false };
     const key = 'jitterBufferTarget' in receiver ? 'jitterBufferTarget' : 'playoutDelayHint' in receiver ? 'playoutDelayHint' : undefined;
@@ -20,7 +34,7 @@ export class BrowserRemoteVideoPlayout {
       const value = key === 'jitterBufferTarget' ? target : target / 1000;
       const original = this.applied.has(receiver) ? this.applied.get(receiver)!.original : receiver[key];
       try {
-        receiver[key] = value;
+        if (receiver[key] !== value) receiver[key] = value;
         if (!Number.isFinite(receiver[key]) || Math.abs(receiver[key]! - value) > .001) throw new Error('Receiver ignored playout target');
         this.applied.set(receiver, { key, original, value });
       } catch { this.unsupported.add(receiver); this.restoreReceiver(receiver); return { playoutControl: false }; }

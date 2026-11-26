@@ -5,12 +5,14 @@ export interface ComposerSlashToken {
 }
 
 /** Find the slash command being edited at the caret, without treating paths as commands. */
-export function readComposerSlashToken(value: string, caret: number): ComposerSlashToken | null {
-  const before = value.slice(0, caret).match(/(?:^|\s)\/([-\w\u4e00-\u9fff]*)$/);
+export function readComposerSlashToken(value: string, caret: number, prefix: "/" | "$" = "/"): ComposerSlashToken | null {
+  const before = value.slice(0, caret).match(prefix === "/"
+    ? /(?:^|\s)\/([-\p{L}\p{N}_]*)$/u
+    : /(?:^|\s)\$([-\p{L}\p{N}_]*)$/u);
   if (!before) return null;
 
   const query = before[1];
-  const after = value.slice(caret).match(/^[-\w\u4e00-\u9fff]*(?=\s|$)/);
+  const after = value.slice(caret).match(/^[-\p{L}\p{N}_]*(?=\s|$)/u);
   if (!after || (!query && after[0])) return null;
 
   return { start: caret - query.length - 1, end: caret + after[0].length, query };
@@ -18,6 +20,6 @@ export function readComposerSlashToken(value: string, caret: number): ComposerSl
 
 export function completeComposerSlashToken(value: string, token: ComposerSlashToken, name: string) {
   const suffix = value.slice(token.end);
-  const prefix = value.slice(0, token.start) + "/" + name;
+  const prefix = value.slice(0, token.start + 1) + name;
   return { value: prefix + (suffix || " "), caret: prefix.length + 1 };
 }

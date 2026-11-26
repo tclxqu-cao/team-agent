@@ -1,7 +1,11 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { ChatMessage } from "../stores/agentStore";
 import { hideAnsweredQuestionEchoes, presentQuestionAnswers } from "./ask-user-answer-display";
 import { mergeProgressiveSessionHistoryPage, restoreSessionHistoryPage } from "./session-history";
+import { rebuildMessagesFromEvents } from "../../../server/lib/session-history-source";
+import AskUserCard from "../components/AskUserCard";
 
 const question = "Mac mini 是什么配置？";
 const answer = "100.109.198.10 就这个，你自己看下";
@@ -24,6 +28,23 @@ function desktopReply(entries = [{ itemId: "item", index: 0, question, answer }]
     question: entry.question, answer: entry.answer,
   })))}\n</send_user_message_question_reply>`;
 }
+
+describe("Customer Agent questions restored from session history", () => {
+  it.each([true, false])("restores a CA question when answerable is %s", (answerable) => {
+    const questionId = "ca-question";
+    const fields = [{ name: "name", label: "Your name", type: "text" as const }];
+    const messages = rebuildMessagesFromEvents([{ type: "ask_user", questionId, question, fields }], {
+      pendingQuestionIds: new Set(answerable ? [questionId] : []),
+    });
+    const restored = restoreSessionHistoryPage({ agentType: "customer-agent", messages });
+    expect(restored).toHaveLength(1);
+    expect(restored[0].askUser).toMatchObject({ questionId, question, fields, answered: false, cancelled: !answerable });
+    const html = renderToStaticMarkup(createElement(AskUserCard, { ...restored[0].askUser!, onAnswer: () => {} }));
+    expect(html).toContain(question);
+    expect(html).toContain(answerable ? "向你提问" : "已中断的问题");
+    expect(html.includes("<button")).toBe(answerable);
+  });
+});
 
 describe("hideAnsweredQuestionEchoes", () => {
   it("shows the submitted answer only in its card without changing stored history", () => {

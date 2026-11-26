@@ -1,10 +1,12 @@
 import type { MobilePairingInvitation } from "../../main/mobile-pairing";
 import type { RuntimeBootstrapStatus } from "../../main/runtime-bootstrap";
 import type { DesktopLiveCliStatus } from "../../main/desktop-live-cli-proxy";
-import type { TunnelStatus } from "../../../shared/src/contracts/tunnel-status";
+import type { PairingRoute, TunnelStatus } from "../../../shared/src/contracts/tunnel-status";
+import type { UpdateNoticeApi } from "../components/UpdateNotice";
 
-export interface LiteApi {
-  refresh(): Promise<MobilePairingInvitation>;
+export interface LiteApi extends UpdateNoticeApi {
+  refresh(route?: string): Promise<MobilePairingInvitation>;
+  pairingRoutes(): Promise<PairingRoute[]>;
   progress(): Promise<RuntimeBootstrapStatus>;
   tunnelStatus(): Promise<TunnelStatus>;
   connectTunnel(): Promise<TunnelStatus>;

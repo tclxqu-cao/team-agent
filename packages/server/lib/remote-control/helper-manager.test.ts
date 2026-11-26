@@ -6,6 +6,37 @@ function connectHelperSockets(controlPath:string, videoPath:string) {
   return { control: connect(controlPath), video: connect(videoPath) };
 }
 
+it('uses the connected managed app to check permissions before forwarding the native prompt', async () => {
+  const events: string[] = [], appPath = '/fixed/AgentRoam Remote Desktop.app';
+  const application = {
+    appPath, available: async () => true,
+    withPreparedApp: (use: (path: string, hash: string) => Promise<void>) => use(appPath, 'installed-bundle'),
+    beforePermissionPrompt: async (hash: string, permission: string, probe: () => Promise<{screen: boolean}>) => {
+      expect(hash).toBe('installed-bundle');
+      expect((await probe()).screen).toBe(false);
+      events.push('reset-' + permission);
+      return true;
+    },
+  };
+  let clients: ReturnType<typeof connectHelperSockets>;
+  const helper = new RemoteHelper({ application, launch: async (control: string, video: string) => {
+    clients = connectHelperSockets(control, video);
+    clients.control.setEncoding('utf8');
+    clients.control.on('data', (chunk: string) => {
+      for (const line of chunk.trim().split('\n')) {
+        const cmd = JSON.parse(line); events.push(cmd.op);
+        clients.control.write(JSON.stringify({ id: cmd.id, ok: true, screen: false, locked: false }) + '\n');
+      }
+    });
+  }});
+  try {
+    await helper.start();
+    await helper.request({ op: 'status' });
+    await helper.request({ op: 'authorize', permission: 'screen' });
+    expect(events).toEqual(['status', 'status', 'reset-screen', 'authorize']);
+  } finally { clients!.control.destroy(); clients!.video.destroy(); await helper.stop(); }
+});
+
 it('launches the installed component while holding its update lock until sockets connect', async () => {
   const phases: string[] = [];
   let clients: ReturnType<typeof connectHelperSockets>;

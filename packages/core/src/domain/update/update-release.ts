@@ -27,6 +27,7 @@ export type UpdatePhase =
 export interface UpdateAsset {
   fileName: string;
   sha256: string;
+  url?: string;
   size?: number;
   signed?: boolean;
 }

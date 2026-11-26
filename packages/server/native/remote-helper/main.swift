@@ -257,25 +257,54 @@ final class RemoteCaptureStream: NSObject, SCStreamOutput, SCStreamDelegate {
     var audioSequence = 0
     var jpegMaxEdge = 1280.0
     var jpegBudget = 128 * 1024
+    private let screenQueue = DispatchQueue(label: "com.agentroam.remote.screen", qos: .userInteractive)
+    private var screenOutput: RemoteScreenOutput?
     var configuration: SCStreamConfiguration?
+    private var captureFps = 30
+    private var preferNV12 = false
+    private var nv12Unavailable = false
     var independentCursor = false
+    private var cursorRequests: [(Bool, (Error?) -> Void)] = []
+
+    func setVideoMode(fps: Int, videoOnly: Bool) {
+        captureFps = fps
+        if preferNV12 != videoOnly { nv12Unavailable = false }
+        preferNV12 = videoOnly
+        updateInteractiveResolution()
+    }
+
+    var mediaStats: [String: Any] {
+        guard let config = configuration else { return [:] }
+        let pixelFormat = latestVideoFrame.map { CVPixelBufferGetPixelFormatType($0) }
+        return ["captureMaxFps": Int(config.minimumFrameInterval.timescale),
+                "capturePixelFormat": pixelFormat.map { $0 == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange ? "NV12" : "BGRA" } ?? "pending"]
+    }
+
     func setIndependentCursor(_ enabled: Bool, completion: @escaping (Error?) -> Void) {
-        guard let config = configuration, let stream else {
+        guard stream != nil, configuration != nil else {
             if !enabled { independentCursor = false; remoteCursorStream.configure(false); completion(nil) }
             else { completion(NSError(domain: "RemoteCursor", code: 1, userInfo: [NSLocalizedDescriptionKey: "Capture stream unavailable"])) }
             return
         }
-        config.showsCursor = !enabled
-        stream.updateConfiguration(config) { error in
-            DispatchQueue.main.async {
-                if error == nil {
-                    self.independentCursor = enabled; self.latestVideoFrame = nil
-                    remoteVideoEncoder.reset(); remoteCompoundCapture.reset()
-                    remoteCursorStream.configure(enabled)
-                } else { config.showsCursor = !self.independentCursor }
-                completion(error)
-            }
+        independentCursor = enabled
+        cursorRequests.append((enabled, completion))
+        updateInteractiveResolution()
+    }
+
+    private func finishCursorRequests(_ error: Error? = nil) {
+        let requests = cursorRequests
+        cursorRequests.removeAll()
+        for (wanted, completion) in requests {
+            let matched = configuration?.showsCursor == !wanted
+            completion(matched ? nil : error ?? NSError(domain: "RemoteCursor", code: 2, userInfo: [NSLocalizedDescriptionKey: "Capture configuration changed"]))
         }
+    }
+
+    private func clearConfiguration() {
+        configuration = nil
+        screenOutput = nil
+        resolutionUpdating = false
+        finishCursorRequests()
     }
     var sourceDimensions = (0, 0)
     var receiverMaxEdge = 0
@@ -297,20 +326,53 @@ final class RemoteCaptureStream: NSObject, SCStreamOutput, SCStreamDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 4.1, execute: work)
     }
 
-    func updateInteractiveResolution() {
-        guard !resolutionUpdating, let stream, let config = configuration else { return }
+    private func streamConfiguration(initial: Bool = false) -> SCStreamConfiguration {
         let target = quality == .hd && Date() < interactiveUntil ? RemoteVideoQuality.smooth : quality
-        let dimensions = target.dimensions(width: sourceDimensions.0, height: sourceDimensions.1, receiverMaxEdge: receiverMaxEdge)
-        guard config.width != dimensions.0 || config.height != dimensions.1 else { return }
-        let oldWidth = config.width, oldHeight = config.height
-        config.width = dimensions.0; config.height = dimensions.1
+        let size = target.dimensions(width: sourceDimensions.0, height: sourceDimensions.1, receiverMaxEdge: receiverMaxEdge)
+        let config = SCStreamConfiguration()
+        config.width = size.0; config.height = size.1
+        config.showsCursor = !independentCursor
+        config.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(captureFps))
+        config.queueDepth = 3
+        let nv12 = !initial && preferNV12 && !nv12Unavailable && !remoteCompoundCapture.enabled
+        config.pixelFormat = nv12 ? kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange : kCVPixelFormatType_32BGRA
+        config.capturesAudio = audioEnabled
+        config.excludesCurrentProcessAudio = true
+        config.sampleRate = 48_000
+        config.channelCount = 2
+        return config
+    }
+
+    func updateInteractiveResolution() {
+        guard !starting, !resolutionUpdating, let stream, let applied = configuration else { return }
+        let next = streamConfiguration()
+        guard next.width != applied.width || next.height != applied.height || next.showsCursor != applied.showsCursor
+                || next.pixelFormat != applied.pixelFormat || next.minimumFrameInterval != applied.minimumFrameInterval else {
+            finishCursorRequests()
+            return
+        }
         resolutionUpdating = true
-        stream.updateConfiguration(config) { error in
+        stream.updateConfiguration(next) { error in
             DispatchQueue.main.async {
-                self.resolutionUpdating = false
                 guard self.stream === stream else { return }
-                if error != nil { config.width = oldWidth; config.height = oldHeight }
-                else { self.updateInteractiveResolution() }
+                self.resolutionUpdating = false
+                if let error {
+                    if next.pixelFormat != applied.pixelFormat && next.pixelFormat == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange {
+                        self.nv12Unavailable = true
+                        self.updateInteractiveResolution()
+                    } else {
+                        self.independentCursor = !applied.showsCursor
+                        self.finishCursorRequests(error)
+                    }
+                    return
+                }
+                self.configuration = next
+                if next.showsCursor != applied.showsCursor {
+                    self.latestVideoFrame = nil
+                    remoteVideoEncoder.reset(); remoteCompoundCapture.reset()
+                    remoteCursorStream.configure(!next.showsCursor)
+                }
+                self.updateInteractiveResolution()
             }
         }
     }
@@ -353,6 +415,7 @@ final class RemoteCaptureStream: NSObject, SCStreamOutput, SCStreamDelegate {
         epoch += 1
         let currentEpoch = epoch
         let old = stream; stream = nil; latest = nil; latestVideoFrame = nil; starting = true
+        clearConfiguration()
         let pending = waiting; waiting.removeAll()
         for request in pending { respond(request, ["ok": false, "error": "屏幕正在切换"]) }
         remoteVideoEncoder.reset()
@@ -368,7 +431,7 @@ final class RemoteCaptureStream: NSObject, SCStreamOutput, SCStreamDelegate {
     func stop(_ id: Int?) {
         epoch += 1
         let old = stream; stream = nil; latest = nil; latestVideoFrame = nil; starting = false
-        configuration = nil
+        clearConfiguration()
         idleResolutionWork?.cancel()
         interactiveUntil = .distantPast
         let pending = waiting; waiting.removeAll()
@@ -405,22 +468,12 @@ final class RemoteCaptureStream: NSObject, SCStreamOutput, SCStreamDelegate {
                 guard let target = self.captureDisplayID,
                       let display = content?.displays.first(where: { $0.displayID == target }) else { self.fail(error ?? NSError(domain: "AgentRoamCapture", code: 1, userInfo: [NSLocalizedDescriptionKey: "没有可采集的屏幕"])); return }
                 self.bounds = CGDisplayBounds(display.displayID)
-                let config = SCStreamConfiguration()
                 let mode = CGDisplayCopyDisplayMode(display.displayID)
-                let dimensions = self.quality.dimensions(width: mode?.pixelWidth ?? display.width, height: mode?.pixelHeight ?? display.height, receiverMaxEdge: self.receiverMaxEdge)
                 self.sourceDimensions = (mode?.pixelWidth ?? display.width, mode?.pixelHeight ?? display.height)
-                config.width = dimensions.0
-                config.height = dimensions.1
-                config.showsCursor = !self.independentCursor
-                config.minimumFrameInterval = CMTime(value: 1, timescale: 30)
-                config.queueDepth = 3
-                config.pixelFormat = kCVPixelFormatType_32BGRA
-                config.capturesAudio = self.audioEnabled
-                config.excludesCurrentProcessAudio = true
-                config.sampleRate = 48_000
-                config.channelCount = 2
+                let config = self.streamConfiguration(initial: true)
                 let stream = SCStream(filter: SCContentFilter(display: display, excludingWindows: []), configuration: config, delegate: self)
-                do { try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: .main) }
+                let output = RemoteScreenOutput { [weak capture = self] stream, sample in capture?.receiveScreen(stream, sample) }
+                do { try stream.addStreamOutput(output, type: .screen, sampleHandlerQueue: self.screenQueue) }
                 catch { self.fail(error); return }
                 if self.audioEnabled {
                     do { try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: .main) }
@@ -428,34 +481,36 @@ final class RemoteCaptureStream: NSObject, SCStreamOutput, SCStreamDelegate {
                 }
                 self.stream = stream
                 self.configuration = config
-                stream.startCapture { error in DispatchQueue.main.async { guard self.stream === stream else { return }; self.starting = false; if let error { self.fail(error) } } }
+                self.screenOutput = output
+                stream.startCapture { error in DispatchQueue.main.async {
+                    guard self.stream === stream else { return }
+                    self.starting = false
+                    if let error { self.fail(error) } else { self.updateInteractiveResolution() }
+                } }
             }
         }
     }
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
+        guard self.stream === stream, type == .audio else { return }
+        audioSequence += 1
+        if let event = systemAudioEvent(sampleBuffer, sequence: audioSequence) { respond(nil, event) }
+    }
+
+    private func receiveScreen(_ stream: SCStream, _ sample: RemoteScreenSample) {
         guard self.stream === stream else { return }
-        if type == .audio {
-            audioSequence += 1
-            if let event = systemAudioEvent(sampleBuffer, sequence: audioSequence) { respond(nil, event) }
-            return
-        }
-        guard type == .screen, sampleBuffer.isValid,
-              let attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false) as? [[SCStreamFrameInfo: Any]],
-              let frameInfo = attachments.first,
-              let status = frameInfo[.status] as? Int else { return }
-        if status == SCFrameStatus.idle.rawValue {
+        guard let pixel = sample.pixel else {
             remoteVideoEncoder.noteActivity(dirtyRatio: 0, idle: true)
             return
         }
-        guard status == SCFrameStatus.complete.rawValue,
-              let pixel = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+        // ScreenCaptureKit can deliver an already queued sample from the previous configuration.
+        if remoteCompoundCapture.enabled && CVPixelBufferGetPixelFormatType(pixel) != kCVPixelFormatType_32BGRA { return }
         let frameArea = Double(max(1, CVPixelBufferGetWidth(pixel) * CVPixelBufferGetHeight(pixel)))
-        let dirtyRects = (frameInfo[.dirtyRects] as? [NSValue])?.map(\.rectValue) ?? frameInfo[.dirtyRects] as? [CGRect]
+        let dirtyRects = sample.dirtyRects
         let dirtyArea = dirtyRects?.reduce(0.0) { total, rect in
             total + max(0, Double(rect.width * rect.height))
         }
         remoteVideoEncoder.noteActivity(dirtyRatio: dirtyArea.map { min(1, $0 / frameArea) })
-        let timestamp = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+        let timestamp = sample.timestamp
         remoteCompoundCapture.noteChange(pixel, timestamp: CMTimeGetSeconds(timestamp), dirtyRects: dirtyRects)
         latestVideoFrame = pixel
         remoteVideoEncoder.encode(pixel, timestamp: timestamp, contentVersion: remoteCompoundCapture.contentVersion)
@@ -469,7 +524,8 @@ final class RemoteCaptureStream: NSObject, SCStreamOutput, SCStreamDelegate {
     }
     func stream(_ stream: SCStream, didStopWithError error: Error) { DispatchQueue.main.async { if self.stream === stream { self.fail(error) } } }
     func encodeLatestVideoFrame() {
-        guard let latestVideoFrame else { return }
+        guard let latestVideoFrame,
+              !remoteCompoundCapture.enabled || CVPixelBufferGetPixelFormatType(latestVideoFrame) == kCVPixelFormatType_32BGRA else { return }
         let timestamp = CMClockGetTime(CMClockGetHostTimeClock())
         remoteCompoundCapture.noteChange(latestVideoFrame, timestamp: CMTimeGetSeconds(timestamp), dirtyRects: [])
         remoteVideoEncoder.encode(latestVideoFrame, timestamp: timestamp, contentVersion: remoteCompoundCapture.contentVersion)
@@ -478,7 +534,7 @@ final class RemoteCaptureStream: NSObject, SCStreamOutput, SCStreamDelegate {
         let failure = captureFailures.record(error, hasWaitingRequests: !waiting.isEmpty)
         epoch += 1
         let old = stream; stream = nil; latest = nil; latestVideoFrame = nil; starting = false
-        configuration = nil
+        clearConfiguration()
         idleResolutionWork?.cancel()
         interactiveUntil = .distantPast
         resolutionUpdating = false
@@ -532,11 +588,12 @@ func remoteCommand(_ line: String) {
             remoteVideoEncoder.forceKeyframe = true
             remoteCapture.encodeLatestVideoFrame()
         }
-        else { remoteVideoEncoder.stop(); remoteCompoundCapture.configure(false); remoteCapture.setReceiverMaxEdge(0) }
+        else { remoteVideoEncoder.stop(); remoteCompoundCapture.configure(false); remoteCapture.setReceiverMaxEdge(0); remoteCapture.setVideoMode(fps: 30, videoOnly: false) }
         respond(id, ["ok": true])
     case "compound-enable":
         guard let enabled = cmd["enabled"] as? Bool else { respond(id, ["ok": false, "error": "无效的复合画面参数"]); return }
         remoteCompoundCapture.configure(enabled)
+        remoteCapture.updateInteractiveResolution()
         if enabled { remoteVideoEncoder.forceKeyframe = true; remoteCapture.encodeLatestVideoFrame() }
         respond(id, ["ok": true, "version": 1, "codec": "png"])
     case "cursor-enable":
@@ -560,18 +617,24 @@ func remoteCommand(_ line: String) {
               let profile = RemoteH264Profile(rawValue: profileName),
               let bitRate = (cmd["bitRate"] as? NSNumber)?.intValue,
               let maxFps = (cmd["maxFps"] as? NSNumber)?.intValue,
-              (250_000...20_000_000).contains(bitRate), (5...30).contains(maxFps) else {
+              (250_000...20_000_000).contains(bitRate), (5...60).contains(maxFps) else {
             respond(id, ["ok": false, "error": "无效的视频启动参数"]); return
         }
         let admission = (cmd["maxPendingFrames"] as? NSNumber)?.intValue ?? 1
         guard (1...2).contains(admission) else { respond(id, ["ok": false, "error": "无效的编码队列上限"]); return }
         let keyInterval = min(120, max(5, (cmd["keyFrameInterval"] as? NSNumber)?.intValue ?? 60))
+        let captureFps = (cmd["captureFps"] as? Int) == 60 ? 60 : 30
+        remoteCapture.setVideoMode(fps: captureFps, videoOnly: cmd["videoOnly"] as? Bool == true)
         remoteCapture.setReceiverMaxEdge(receiverEdge)
         remoteVideoEncoder.start(profile: profile, bitRate: bitRate, maxFps: maxFps, maxPendingFrames: admission, keyFrameInterval: keyInterval)
         remoteCapture.encodeLatestVideoFrame()
-        respond(id, ["ok": true, "adaptiveResolutionVersion": 1, "profile": profile.rawValue, "bitRate": bitRate, "maxFps": maxFps, "maxPendingFrames": admission])
+        respond(id, ["ok": true, "adaptiveResolutionVersion": 1, "maxFrameRate": 60, "encoderPressureVersion": 1, "profile": profile.rawValue, "bitRate": bitRate, "maxFps": maxFps, "maxPendingFrames": admission])
+    case "video-backpressure":
+        guard let blocked = cmd["blocked"] as? Bool else { respond(id, ["ok": false, "error": "无效的发送队列状态"]); return }
+        remoteVideoEncoder.setSenderPressure(blocked)
+        respond(id, ["ok": true])
     case "video-stats":
-        var stats = remoteVideoEncoder.stats()
+        var stats = remoteVideoEncoder.stats().merging(remoteCapture.mediaStats) { _, value in value }
         stats["ok"] = true
         respond(id, stats)
     case "video-tuning":
@@ -579,7 +642,7 @@ func remoteCommand(_ line: String) {
         guard receiverEdge == nil || receiverEdge == 0 || (640...8192).contains(receiverEdge!) else { respond(id, ["ok": false, "error": "无效的视频尺寸上限"]); return }
         guard let bitRate = (cmd["bitRate"] as? NSNumber)?.intValue,
               let maxFps = (cmd["maxFps"] as? NSNumber)?.intValue,
-              (250_000...20_000_000).contains(bitRate), (5...30).contains(maxFps) else {
+              (250_000...20_000_000).contains(bitRate), (5...60).contains(maxFps) else {
             respond(id, ["ok": false, "error": "无效的视频调优参数"]); return
         }
         let admission = (cmd["maxPendingFrames"] as? NSNumber)?.intValue ?? 1

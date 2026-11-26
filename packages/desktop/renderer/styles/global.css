@@ -4012,48 +4012,6 @@ input:focus, select:focus, textarea:focus {
   }
 }
 
-.update-notice {
-  position: fixed;
-  top: 14px;
-  right: 18px;
-  z-index: 21000;
-  display: flex;
-  width: min(360px, calc(100vw - 28px));
-  min-height: 58px;
-  box-sizing: border-box;
-  align-items: center;
-  gap: 10px;
-  border: 1px solid var(--border-default);
-  border-left: 3px solid var(--accent);
-  border-radius: 8px;
-  background: var(--bg-surface);
-  padding: 10px 10px 10px 13px;
-  box-shadow: var(--shadow-md);
-  color: var(--text-primary);
-  -webkit-app-region: no-drag;
-}
-
-.update-notice--failed { border-left-color: var(--danger); }
-.update-notice__content { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 2px; }
-.update-notice__content strong { overflow-wrap: anywhere; font-size: 12px; line-height: 1.4; }
-.update-notice__content span { overflow-wrap: anywhere; color: var(--text-muted); font-size: 11px; line-height: 1.35; }
-.update-notice__action,
-.update-notice__close {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: center;
-  border: 0;
-  cursor: pointer;
-}
-.update-notice__action { min-height: 32px; gap: 5px; border-radius: 6px; background: var(--accent); padding: 0 10px; color: white; font-size: 12px; }
-.update-notice__close { width: 28px; height: 28px; border-radius: 6px; background: transparent; color: var(--text-muted); }
-.update-notice__close:hover { background: var(--bg-hover); color: var(--text-primary); }
-
-@media (max-width: 600px) {
-  .update-notice { top: 10px; right: 10px; width: calc(100vw - 20px); }
-}
-
 /* Empty session: one short activation moment, then a quiet task launcher. */
 .empty-session-welcome {
   display: flex;
@@ -4337,6 +4295,35 @@ input:focus, select:focus, textarea:focus {
 .layout-compact .composer-shell .ui-icon-button {
   width: 28px;
   height: 28px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .chat-view.chat-view--unified-history {
+    --chat-turn-gap: 8px;
+  }
+
+  .chat-view--unified-history .chat-message-bubble--assistant.message-card {
+    padding-top: 4px !important;
+  }
+
+  .chat-view--unified-history .execution-trace--completed:has(> .execution-trace__summary[aria-expanded="false"]) {
+    margin-bottom: 4px;
+  }
+
+  .chat-view--unified-history .execution-trace--completed > .execution-trace__summary[aria-expanded="false"] {
+    margin-bottom: 0;
+  }
+
+  .chat-message-bubble--assistant .chat-text-blank-line {
+    display: block;
+    height: 6px;
+    white-space: normal;
+  }
+
+  .chat-message-bubble--assistant .chat-text-blank-line:is(:first-child, :last-child),
+  .chat-message-bubble--assistant .chat-text-blank-line + .chat-text-blank-line {
+    display: none;
+  }
 }
 
 .reasoning-summary {

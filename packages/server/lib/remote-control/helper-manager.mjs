@@ -81,7 +81,10 @@ export class RemoteHelper {
     await this.stop();
     const generation = this.generation;
     if (!await this.available()) throw new Error('当前 CLI 未包含远程授权组件，请升级 CLI');
-    if (this.application) return this.application.withPreparedApp(() => this.openPrepared(generation));
+    if (this.application) return this.application.withPreparedApp(async (_path, fingerprint) => {
+      await this.openPrepared(generation);
+      this.componentFingerprint = fingerprint;
+    });
     return this.openPrepared(generation);
   }
   async openPrepared(generation) {
@@ -174,6 +177,23 @@ export class RemoteHelper {
     } catch (error) { await this.stop(); throw error; }
   }
   request(command) {
+    if (command.op === 'authorize' && this.componentFingerprint) return this.requestPermission(command);
+    return this.sendCommand(command);
+  }
+  async requestPermission(command) {
+    const generation = this.generation, fingerprint = this.componentFingerprint;
+    const reset = await this.preparePermission(command.permission);
+    if (generation !== this.generation) throw new Error('远控组件已切换，请重新授权');
+    if (reset && (!this.socket || this.socket.destroyed)) {
+      await this.start();
+      if (this.componentFingerprint !== fingerprint) return this.request(command);
+    }
+    return this.sendCommand(command);
+  }
+  preparePermission(permission) {
+    return this.application.beforePermissionPrompt(this.componentFingerprint, permission, () => this.sendCommand({ op: 'status' }));
+  }
+  sendCommand(command) {
     if (!this.socket || this.socket.destroyed) return Promise.reject(new Error('远程授权组件未连接'));
     const id = ++this.sequence;
     return new Promise((resolve, reject) => {
@@ -187,7 +207,7 @@ export class RemoteHelper {
   }
   rejectPending() { for (const item of this.pending.values()) { clearTimeout(item.timer); item.reject(new Error('远程授权组件已断开')); } this.pending.clear(); }
   async stop() {
-    this.generation += 1; this.cancelStart?.(); this.cancelStart = null;
+    this.generation += 1; this.componentFingerprint = null; this.cancelStart?.(); this.cancelStart = null;
     const socket = this.socket;
     if (socket && !socket.destroyed) {
       const closed = new Promise((resolve) => socket.once('close', resolve));
@@ -199,4 +219,18 @@ export class RemoteHelper {
     if (this.videoServer) { this.videoServer.close(); this.videoServer = null; }
     if (this.directory) { await rm(this.directory, { recursive: true, force: true }); this.directory = null; }
   }
+}
+
+// A newer CLI or desktop may still be connected to an older gateway. Prepare
+// its own payload locally, then let the selected gateway open the system dialog.
+export async function prepareMacRemoteComponent(sourcePath, permission) {
+  const application = new MacRemoteHelperApp({ sourcePath });
+  const pending = await application.withPreparedApp((_path, hash) =>
+    permission && application.permissions.hasPending(hash, permission));
+  if (!pending) return;
+  const helper = new RemoteHelper({ application });
+  try {
+    await helper.start();
+    await helper.preparePermission(permission);
+  } finally { await helper.stop(); }
 }

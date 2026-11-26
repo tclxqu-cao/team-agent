@@ -1,9 +1,49 @@
+import type { AgentEvent, Message, MessagePresentation } from "@agent/core";
+
+type QuestionStatus = NonNullable<MessagePresentation["question"]>["status"];
+
+export function resolvedSessionQuestions(events: readonly AgentEvent[]): Map<string, QuestionStatus> {
+  const resolutions = new Map<string, QuestionStatus>();
+  for (const event of events) {
+    if (event.type === "approval_resolved") {
+      resolutions.set(event.questionId, event.resolvedQuestion?.status === "cancelled" ? "cancelled" : "answered");
+    }
+  }
+  return resolutions;
+}
+
+export function sessionQuestionMessage(
+  event: Extract<AgentEvent, { type: "ask_user" }>,
+  status: QuestionStatus,
+): Message {
+  return {
+    role: "assistant",
+    content: "",
+    presentation: {
+      question: {
+        questionId: event.questionId,
+        question: event.question ?? "",
+        options: event.options ?? [],
+        fields: event.fields,
+        multiSelect: event.multiSelect ?? false,
+        cancellable: event.cancellable,
+        allowFreeText: event.allowFreeText,
+        status,
+        ...(status === "answered" ? { answer: "已处理" } : {}),
+      },
+    },
+  };
+}
+
+type RebuiltMessage = Message & { id: string; timestamp: number; isStreaming?: boolean };
+
 export function rebuildMessagesFromEvents(
-  events: Array<Record<string, unknown>>,
-  options: { runId?: string; isStreaming?: boolean } = {},
+  events: AgentEvent[],
+  options: { runId?: string; isStreaming?: boolean; pendingQuestionIds?: ReadonlySet<string> } = {},
 ) {
-  const messages: Array<Record<string, unknown>> = [];
-  let streamingAssistant: Record<string, unknown> | null = null;
+  const messages: RebuiltMessage[] = [];
+  let streamingAssistant: RebuiltMessage | null = null;
+  const resolutions = resolvedSessionQuestions(events);
   let messageIndex = 0;
   const nextId = () => `${options.runId ?? "event-history"}:${messageIndex++}`;
 
@@ -39,8 +79,8 @@ export function rebuildMessagesFromEvents(
       streamingAssistant = null;
       continue;
     }
-    if (event.type === "tool_result" && (event as { result?: { content?: string; toolCallId?: string } }).result) {
-      const result = (event as { result: { content?: string; toolCallId?: string } }).result;
+    if (event.type === "tool_result" && event.result) {
+      const result = event.result;
       messages.push({
         id: nextId(),
         role: "tool",
@@ -51,17 +91,11 @@ export function rebuildMessagesFromEvents(
       continue;
     }
     if (event.type === "ask_user") {
+      const status = resolutions.get(event.questionId)
+        ?? (options.pendingQuestionIds?.has(event.questionId) ? "pending" : "cancelled");
       messages.push({
+        ...sessionQuestionMessage(event, status),
         id: nextId(),
-        role: "assistant",
-        content: "",
-        askUser: {
-          questionId: event.questionId,
-          question: event.question ?? "",
-          options: event.options,
-          fields: event.fields,
-          multiSelect: event.multiSelect,
-        },
         timestamp: Date.now(),
       });
       continue;

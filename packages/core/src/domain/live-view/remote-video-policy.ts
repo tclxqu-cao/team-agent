@@ -5,6 +5,7 @@ import type {
   RemoteVideoH264Profile,
   RemoteVideoObservation,
   RemoteVideoNetworkTelemetry,
+  RemoteVideoMotionMode,
   RemoteVideoQuality,
 } from "./remote-video-types.js";
 
@@ -31,13 +32,14 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 function lowerFps(value: number): number {
+  if (value > 30) return 30;
   if (value > 15) return 15;
   return 5;
 }
 
-function raiseFps(value: number): number {
+function raiseFps(value: number, ceiling: number): number {
   if (value < 15) return 15;
-  return 30;
+  return value < 30 ? 30 : ceiling;
 }
 
 function networkPressure(network: RemoteVideoNetworkTelemetry, bitRate: number, baselineRttMs: number | null) {
@@ -57,6 +59,7 @@ function networkPressure(network: RemoteVideoNetworkTelemetry, bitRate: number, 
 export class RemoteVideoPolicy {
   readonly capabilities: RemoteVideoAdapterCapabilities;
   private quality: RemoteVideoQuality;
+  private motionMode: RemoteVideoMotionMode = "balanced";
   private bitRate: number;
   private readonly receiver = new RemoteVideoReceiverPolicy();
   private activityFps = 30;
@@ -92,21 +95,31 @@ export class RemoteVideoPolicy {
     this.lastPressureAt = -Infinity;
     this.lastPressureLossRate = 0;
     this.lastPressureQueueDelayMs = 0;
-    this.receiver.reset();
+    this.receiver.reset(this.fpsCeiling);
     return this.current("quality");
   }
 
+  private get fpsCeiling(): number {
+    return this.motionMode === "motion-60" && this.capabilities.maxFrameRate === 60 ? 60 : 30;
+  }
+
+  setMotionMode(mode: RemoteVideoMotionMode): void {
+    this.motionMode = mode;
+    this.activityFps = this.pressureFps = this.fpsCeiling;
+    this.receiver.reset(this.fpsCeiling);
+  }
+
   setCapabilities(capabilities: RemoteVideoAdapterCapabilities): void {
+    const previous = this.fpsCeiling;
     Object.assign(this.capabilities, capabilities);
+    if (previous !== this.fpsCeiling) this.setMotionMode(this.motionMode);
     this.preferredCodec = this.capabilities.codecPreferences.includes("high") ? "high" : "baseline";
   }
 
   resetSession(): RemoteVideoDecision {
-    this.receiver.reset();
+    this.setMotionMode("balanced");
     this.baselineRttMs = null;
     this.bitRate = REMOTE_VIDEO_PROFILES[this.quality].maxBitRate;
-    this.activityFps = 30;
-    this.pressureFps = 30;
     this.idleSince = null;
     this.motionSamples = 0;
     this.healthySamples = 0;
@@ -152,7 +165,7 @@ export class RemoteVideoPolicy {
   noteInteraction(now = Date.now()): RemoteVideoDecision {
     this.idleSince = null;
     this.motionSamples = 0;
-    this.activityFps = 30;
+    this.activityFps = this.fpsCeiling;
     // A local sender drop can leave pressureFps at 5 even after the queue has
     // drained. Give the click one bounded 15 FPS burst so its visual result
     // arrives promptly. Never bypass a recent network/encoder pressure signal
@@ -175,7 +188,8 @@ export class RemoteVideoPolicy {
   update(observation: RemoteVideoObservation = {}): RemoteVideoDecision {
     const now = finite(observation.now, observation.content?.observedAt ?? Date.now());
     this.updateActivity(observation, now);
-    const receiverChanged = this.receiver.observe(observation.receiver, this.quality, this.current().maxFps, now);
+    const preferFrameRate = this.motionMode !== "balanced" && this.capabilities.dynamicResolution === true;
+    const receiverChanged = this.receiver.observe(observation.receiver, this.quality, this.current().maxFps, now, preferFrameRate);
 
     const network = observation.network ?? {};
     const encoder = observation.encoder;
@@ -211,7 +225,8 @@ export class RemoteVideoPolicy {
         this.bitRate = Math.max(profile.minBitRate, Math.min(reduced, measuredCeiling || reduced));
       }
       if (encoderPressure || this.congestedSamples >= 2) {
-        this.pressureFps = lowerFps(this.pressureFps);
+        const reducedSize = preferFrameRate && this.receiver.reduceSizeForMotion(now);
+        if (!reducedSize || severeNetwork) this.pressureFps = lowerFps(this.pressureFps);
         this.congestedSamples = 0;
       }
       return this.current(encoderPressure ? "encoder-pressure" : severeNetwork ? "severe-congestion" : senderPressure ? "sender-pressure" : "congestion");
@@ -227,7 +242,7 @@ export class RemoteVideoPolicy {
       const profile = REMOTE_VIDEO_PROFILES[this.quality];
       this.bitRate = Math.min(profile.maxBitRate, Math.max(this.bitRate + 100_000, Math.floor(this.bitRate * 1.12)));
     }
-    if (this.capabilities.dynamicFrameRate) this.pressureFps = raiseFps(this.pressureFps);
+    if (this.capabilities.dynamicFrameRate) this.pressureFps = raiseFps(this.pressureFps, this.fpsCeiling);
     return this.current("recovery");
   }
 
@@ -237,7 +252,7 @@ export class RemoteVideoPolicy {
     if (content.activity === "motion") {
       this.idleSince = null;
       this.motionSamples += 1;
-      if (this.motionSamples >= 2) this.activityFps = 30;
+      if (this.motionSamples >= 2) this.activityFps = this.fpsCeiling;
       return;
     }
     this.motionSamples = 0;

@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { renderAssistantText } from "./ChatView";
 import MessageLink from "./MessageLink";
 
 const chatView = readFileSync(new URL("./ChatView.tsx", import.meta.url), "utf8");
@@ -147,6 +148,19 @@ describe("shared Codex-style message history", () => {
     expect(chatView).not.toContain("expandedMessages");
     expect(chatView).not.toContain('className="chat-message-disclosure"');
     expect(chatView).not.toContain("chat-message-long-content");
+  });
+
+  it("marks blank prose lines while preserving paragraph text and explicit line breaks", () => {
+    const text = "第一行\n第二行\n\n  \n- 项目一\n- 项目二";
+    const html = renderToStaticMarkup(renderAssistantText(text));
+    expect(html.match(/class="chat-text-blank-line"/g)).toHaveLength(2);
+    expect(html.replace(/<[^>]+>/g, "")).toBe(text);
+  });
+
+  it("leaves blank lines inside a code fence in the source", () => {
+    const html = renderToStaticMarkup(renderAssistantText("```text\nfirst\n\n  last\n```"));
+    expect(html).toContain("first\n\n  last</pre>");
+    expect(html).not.toContain("chat-text-blank-line");
   });
 
   it("owns the shared document lane, bubbles, and compact tool rows", () => {

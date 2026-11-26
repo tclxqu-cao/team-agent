@@ -10,7 +10,7 @@ import type Database from "better-sqlite3";
 export class SQLiteSessionStore implements ISessionStore {
   private readonly baseDir: string;
 
-  constructor(baseDir: string, private readonly eventCommit?: (db: Database.Database, sessionId: string, event: AgentEvent, at: number) => void) {
+  constructor(baseDir: string, private readonly eventCommit?: (db: Database.Database, sessionId: string, event: AgentEvent, at: number, eventId: number) => void) {
     this.baseDir = baseDir;
     getDatabase(baseDir);
   }
@@ -159,8 +159,8 @@ export class SQLiteSessionStore implements ISessionStore {
     const db = getDatabase(this.baseDir);
     db.db.transaction(() => {
       const at = Date.now();
-      db.db.prepare("INSERT INTO events (session_id, type, data, timestamp) VALUES (?,?,?,?)").run(sessionId, event.type, JSON.stringify(event), at);
-      this.eventCommit?.(db.db, sessionId, event, at);
+      const inserted = db.db.prepare("INSERT INTO events (session_id, type, data, timestamp) VALUES (?,?,?,?)").run(sessionId, event.type, JSON.stringify(event), at);
+      this.eventCommit?.(db.db, sessionId, event, at, Number(inserted.lastInsertRowid));
     })();
   }
 

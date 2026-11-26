@@ -14,7 +14,7 @@ import {
   stat,
 } from "node:fs/promises";
 import { get as httpsGet } from "node:https";
-import { resolve } from "node:path";
+import { resolve, win32 } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { promisify } from "node:util";
 
@@ -235,12 +235,8 @@ async function extractArchive(
     await dependencies.run("/usr/bin/tar", ["-xJf", archivePath, "-C", extractRoot], 120_000);
     return;
   }
-  const script = "& { param($archive, $destination) Expand-Archive -LiteralPath $archive -DestinationPath $destination -Force }";
-  await dependencies.run(
-    "powershell.exe",
-    ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script, archivePath, extractRoot],
-    120_000,
-  );
+  const tar = win32.join(process.env.SystemRoot || "C:\\Windows", "System32", "tar.exe");
+  await dependencies.run(tar, ["-xf", archivePath, "-C", extractRoot], 120_000);
 }
 
 async function acquireLock(options: {

@@ -1,5 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { findLanUrl } from "./network.js";
+import { findLanUrl, pairingNetworkRoutes } from "./network.js";
+
+describe("pairingNetworkRoutes", () => {
+  it("keeps LAN, Tailscale and other VPN IPv4 addresses selectable", () => {
+    const routes = pairingNetworkRoutes({
+      en0: [{ address: "192.168.1.20", netmask: "255.255.255.0", family: "IPv4", mac: "", internal: false, cidr: null }],
+      utun8: [{ address: "100.121.10.115", netmask: "255.255.255.255", family: "IPv4", mac: "", internal: false, cidr: null }],
+      wg0: [{ address: "10.8.0.2", netmask: "255.255.255.0", family: "IPv4", mac: "", internal: false, cidr: null }],
+      public: [{ address: "198.51.100.8", netmask: "255.255.255.0", family: "IPv4", mac: "", internal: false, cidr: null }],
+    });
+    expect(routes.map(route => [route.kind, route.address, route.interfaceName])).toEqual([
+      ["lan", "192.168.1.20", "en0"], ["tailscale", "100.121.10.115", "utun8"],
+      ["vpn", "10.8.0.2", "wg0"], ["vpn", "198.51.100.8", "public"],
+    ]);
+  });
+});
 
 describe("findLanUrl", () => {
   it("prefers an RFC1918 address over VPN and public interfaces", () => {

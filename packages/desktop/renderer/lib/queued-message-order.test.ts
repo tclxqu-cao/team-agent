@@ -9,6 +9,7 @@ import {
   projectSessionGoals,
   queuedSessionMessages,
   reconcileDurableQueuedMessages,
+  transcriptGoalMessageIds,
 } from "./queued-message-order";
 
 describe("moveQueuedMessage", () => {
@@ -109,11 +110,19 @@ describe("durable goal transcript order", () => {
   const user = { id: "earlier-user", role: "user", content: "question", timestamp: 2 };
   const reply = { id: "earlier-reply", role: "assistant", content: "answer", timestamp: 3 };
 
+  it("marks the admitted goal without marking a later ordinary input with the same objective", () => {
+    const native = { ...user, id: "native-goal", content: pending.content, presentation: { isGoal: true } };
+    const repeated = { ...user, id: "ordinary", content: native.content };
+    expect([...transcriptGoalMessageIds([native, repeated], [item])]).toEqual([native.id]);
+    expect([...transcriptGoalMessageIds([repeated], [item])]).toEqual([repeated.id]);
+    expect([...transcriptGoalMessageIds([repeated, { ...repeated, id: "other" }], [item])]).toEqual([]);
+  });
+
   it("promotes an earlier-submitted goal after the reply to the running input", () => {
     const waiting = reconcileDurableQueuedMessages([pending, user, reply], { active: null, queued: [item], history: [] });
     expect(waiting.filter(message => !message.isQueued)).toEqual([user, reply]);
     const active = reconcileDurableQueuedMessages(waiting, { active: item, queued: [], history: [] });
-    expect(active).toEqual([user, reply, { ...pending, isQueued: false, awaitingHistory: true }]);
+    expect(active).toEqual([user, reply, { ...pending, isQueued: false, awaitingHistory: true, goalHistoryAnchor: user.id }]);
     expect(reconcileDurableQueuedMessages(active, { active: item, queued: [], history: [] })).toEqual(active);
   });
 
@@ -122,7 +131,22 @@ describe("durable goal transcript order", () => {
       presentation: { executionTrace: { turnId: "native-turn", segmentIndex: 0 }, isGoal: true } };
     expect(reconcileDurableQueuedMessages([user, reply, native, pending], {
       active: item, queued: [], history: [],
-    })).toEqual([user, reply, native]);
+    })).toEqual([user, reply, { ...native, sourceMessageId: pending.id }]);
+  });
+
+  it("reconciles an unsegmented history input that arrives before goal promotion, preserving equal earlier and steered inputs", () => {
+    const earlier = { ...user, content: pending.content };
+    const submitted = { ...pending, goalHistoryAnchor: earlier.id };
+    const echoed = { ...earlier, id: "history-message.v1.2.native" };
+    const guide = { ...echoed, id: "history-message.v1.3.guide", isSteered: true };
+    const active = { active: item, queued: [], history: [] };
+    const beforeEcho = reconcileDurableQueuedMessages([earlier, reply, submitted], active);
+    expect(beforeEcho.map(row => row.id)).toEqual([earlier.id, reply.id, submitted.id]);
+    const afterEcho = reconcileDurableQueuedMessages([earlier, reply, echoed, guide, submitted], active);
+    expect(afterEcho.map(row => row.id)).toEqual([earlier.id, reply.id, echoed.id, guide.id]);
+    expect(afterEcho[2]).toMatchObject({ isGoal: true, sourceMessageId: pending.id });
+    expect(reconcileDurableQueuedMessages(afterEcho, active)).toEqual(afterEcho);
+    expect(reconcileDurableQueuedMessages([...beforeEcho, echoed, guide], active)).toEqual(afterEcho);
   });
 
   it("moves a goal steered by another client to the current transcript tail once", () => {

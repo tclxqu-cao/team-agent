@@ -800,6 +800,13 @@ describe("ClaudeRuntimeAdapter", () => {
       type: "user",
       message: { content: "/goal finish the migration" },
     });
+    const restored = claudeHistoryToMessages([
+      state.inputMessages[0],
+      { type: "user", message: { content: "finish the migration" } },
+    ]);
+    expect(restored.map(row => [row.content, row.presentation?.isGoal])).toEqual([
+      ["finish the migration", true], ["finish the migration", undefined],
+    ]);
   });
 
   it("refuses to run a session that another client owns", async () => {

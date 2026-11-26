@@ -157,7 +157,9 @@ describe("desktop shared service", () => {
     expect((await client.mobilePairing()).origin).toBe("http://192.168.1.20:3000");
     mesh = { phase: "joined", accessUrl: "http://my-computer.mesh.example" };
     expect((await client.mobilePairing()).pairingUrl).toMatch(/^http:\/\/my-computer\.mesh\.example\/pair#pair=/);
-    expect(grants).toBe(3);
+    tunnel = { phase: "ready", mode: "public", provider: "self-hosted", accessUrl: "https://desktop.connect.example/web" };
+    expect((await client.mobilePairing()).pairingUrl).toMatch(/^https:\/\/desktop\.connect\.example\/pair#pair=/);
+    expect(grants).toBe(4);
     request.mockRestore();
   });
   it("keeps pairing usable with an old backend but never substitutes a service restart", async () => {
@@ -171,5 +173,41 @@ describe("desktop shared service", () => {
     expect((await client.mobilePairing()).origin).toBe("http://192.168.1.10:3000");
     expect(request.mock.calls.map(call => call[0]).every(path => path.startsWith("/api/desktop/tunnel") || path === "/api/pairing/admin/qr" || path === "/api/mesh/status")).toBe(true);
     request.mockRestore();
+  });
+  it("creates the QR only after resolving the explicitly selected route", async () => {
+    const { client, start } = await fixture(); await start("one"); await client.status();
+    const request = vi.spyOn(client, "json").mockImplementation(async (path, method) => {
+      if (path === "/api/mesh/status") return { status: 200, body: '{"phase":"joined","accessUrl":"http://computer.mesh"}' };
+      if (path === "/api/desktop/tunnel/routes") return { status: 200, body: '{"routes":[{"id":"cloudflare","kind":"cloudflare"}]}' };
+      if (path === "/api/desktop/tunnel/routes?via=cloudflare" && method === "POST") return { status: 200, body: '{"accessUrl":"https://alternate.example/web"}' };
+      if (path === "/api/desktop/tunnel/routes?via=10.1.2.3") return { status: 503, body: '{"error":"IP 不可用"}' };
+      if (path === "/api/pairing/admin/qr") return { status: 200, body: JSON.stringify({ grant: "g".repeat(43), expiresAt: Date.now() + 300000 }) };
+      throw new Error("Unexpected request");
+    });
+    expect((await client.pairingRoutes()).map(route => route.id)).toEqual(["cloudflare", "headscale"]);
+    expect((await client.mobilePairing("cloudflare")).origin).toBe("https://alternate.example");
+    expect((await client.mobilePairing("headscale")).origin).toBe("http://computer.mesh");
+    await expect(client.mobilePairing("10.1.2.3")).rejects.toThrow("IP 不可用");
+    expect(request.mock.calls.filter(([path]) => path === "/api/pairing/admin/qr")).toHaveLength(2);
+  });
+  it("uses a confirmed active relay when an older backend cannot list routes", async () => {
+    const { client, start } = await fixture();
+    await start("one"); await client.status();
+    let provider = "cloudflare";
+    const request = vi.spyOn(client, "json").mockImplementation(async path => {
+      if (path === "/api/desktop/tunnel/routes") return { status: 404, body: "" };
+      if (path === "/api/mesh/status") return { status: 200, body: '{"phase":"unconfigured"}' };
+      if (path === "/api/desktop/tunnel") return { status: 200, body: JSON.stringify({
+        phase: "ready", mode: "public", provider, accessUrl: "https://working.example/web",
+      }) };
+      if (path === "/api/pairing/admin/qr") return { status: 200, body: JSON.stringify({ grant: "g".repeat(43), expiresAt: Date.now() + 300000 }) };
+      throw new Error("Unexpected request");
+    });
+    const [route] = await client.pairingRoutes();
+    expect(route).toEqual({ kind: "cloudflare", id: "active:cloudflare" });
+    expect((await client.mobilePairing(route.id)).origin).toBe("https://working.example");
+    provider = "self-hosted";
+    await expect(client.mobilePairing(route.id)).rejects.toThrow("已断开");
+    expect(request.mock.calls.filter(([path]) => path === "/api/pairing/admin/qr")).toHaveLength(1);
   });
 });

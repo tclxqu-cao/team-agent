@@ -686,12 +686,56 @@ describe("ZCode native NDJSON adapter", () => {
     expect(rpc.calls.find(call => call.method === "session/send")?.params).toMatchObject({ modelSelection: { options: { reasoningLevel: "medium" } } });
   });
 
+  it.each([
+    ["aws-quick/smart", "enabled"],
+    ["aws-quick/balanced", "enabled"],
+    ["aws-quick/advanced", "enabled"],
+    ["aws-quick/disabled", "disabled"],
+  ])("keeps ZCode native enabled/disabled defaults without exposing a generic effort picker (%s)", async (modelId, defaultLevel) => {
+    const rpc = new ZCodeFixture();
+    rpc.models = [{ ref: { providerId: "magpie", modelId }, label: modelId,
+      reasoning: { levels: ["disabled", "enabled"], defaultLevel } }];
+    const client = new ZCodeClient(rpc, { readMany: async () => new Map() });
+
+    const models = await client.listModels();
+    expect(models).toMatchObject([{ id: modelId }]);
+    expect(models[0]).not.toHaveProperty("reasoningEfforts");
+    await collect(client.run("sess_native", "request", undefined, { model: { providerID: "magpie", id: modelId } }));
+    expect(rpc.calls.find(call => call.method === "session/send")?.params).toMatchObject({ modelSelection: {
+      providerId: "magpie", modelId, options: { reasoningLevel: defaultLevel },
+    } });
+  });
+
+  it("keeps a generic native default alongside ZCode's enabled/disabled-only models", async () => {
+    const rpc = new ZCodeFixture();
+    rpc.models = [{ ref: { providerId: "magpie", modelId: "aws-quick/fast" }, label: "aws-quick/fast",
+      reasoning: { levels: ["low", "high"], defaultLevel: "high" } }];
+    const client = new ZCodeClient(rpc, { readMany: async () => new Map() });
+
+    expect(await client.listModels()).toMatchObject([{ reasoningEfforts: ["low", "high"] }]);
+    await collect(client.run("sess_native", "request", undefined, { model: { providerID: "magpie", id: "aws-quick/fast" } }));
+    expect(rpc.calls.find(call => call.method === "session/send")?.params).toMatchObject({ modelSelection: {
+      options: { reasoningLevel: "high" },
+    } });
+  });
+
   it("keeps an explicit effort instead of the native model default", async () => {
     const rpc = new ZCodeFixture();
     rpc.models[0].reasoning = { levels: [{ value: "low" }, { value: "max" }], defaultLevel: "max" };
     const client = new ZCodeClient(rpc, { readMany: async () => new Map() });
     await collect(client.run("sess_native", "request", undefined, { model: { providerID: "zcode-native", id: "native-model" }, reasoningEffort: "low" }));
     expect(rpc.calls.find(call => call.method === "session/send")?.params).toMatchObject({ modelSelection: { options: { reasoningLevel: "low" } } });
+  });
+
+  it("uses the broker run ID as the stable native input ID", async () => {
+    const rpc = new ZCodeFixture();
+    const client = new ZCodeClient(rpc, { readMany: async () => new Map() });
+
+    await collect(client.run("sess_native", "stable input", undefined, { brokerRunId: "broker-run-1" }));
+
+    expect(rpc.calls.find(call => call.method === "session/send")?.params).toMatchObject({
+      inputId: "broker-run-1",
+    });
   });
 
   it.each(["unknown", "max"])("does not invent an unadvertised native default %s", defaultLevel => {

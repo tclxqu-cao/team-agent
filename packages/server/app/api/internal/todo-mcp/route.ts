@@ -1,4 +1,4 @@
-import { TodoError, type TodoListQuery } from "@agent/core";
+import { enqueueTodoCompletion, TodoError, type TodoListQuery } from "@agent/core";
 import { authenticateTodoCredential, todoServiceId } from "../../../../lib/todo/todo-mcp-credentials";
 import { todoServices } from "../../../../lib/todo/todo-service";
 import { todoHttpError } from "../../../../lib/todo/todo-http";
@@ -8,7 +8,7 @@ export async function POST(request: Request) {
   try {
     const c = authenticateTodoCredential(request.headers.get("x-agentroam-todo-credential"));
     const { operation, args = {} } = await request.json();
-    const { todos, executions, notifications, uow } = todoServices();
+    const { todos, executions, notifications, uow, db } = todoServices();
     if (request.headers.get("x-agentroam-service-id") !== todoServiceId()) throw new TodoError("FORBIDDEN", "服务身份不匹配");
     if (operation === "identity") return Response.json({ serviceId: c.serviceId, scope: c.scope });
     if (c.scope === "relay") {
@@ -21,7 +21,20 @@ export async function POST(request: Request) {
         else if (["done", "error", "turn_aborted"].includes(event.type)) {
           notifications.resolveApproval(c.ownerId, c.sessionId);
           if (c.executionId) executions.settle(c.ownerId, c.executionId, event.result?.status ?? "interrupted", event.message);
-          else if (event.result?.status === "completed") notifications.ingest({ ownerId: c.ownerId, sourceEventId: `${args.runId}:completed`, kind: "completion", sessionId: c.sessionId, title: "会话已完成", body: String(event.finalText ?? "任务已完成").slice(0, 500), createdAt: args.createdAt ?? Date.now() });
+          else if (event.type === "done" && event.result?.status === "completed") {
+            const source = args.completionSource;
+            const report = args.completedWork; // Older brokers already extracted the titles.
+            const startedAt = source?.startedAt ?? report?.startedAt;
+            if (Number.isSafeInteger(startedAt) && startedAt <= args.createdAt) {
+              const job = { ownerId: c.ownerId, sessionId: c.sessionId, runId: args.runId, startedAt };
+              if (source && typeof source.input === "string" && typeof event.finalText === "string" && Array.isArray(source.plan)) {
+                enqueueTodoCompletion(db, { ...job, evidence: { kind: "native", input: source.input, finalText: event.finalText, plan: source.plan } });
+              } else if (Array.isArray(report?.titles) && report.titles.every((title: unknown) => typeof title === "string")) {
+                enqueueTodoCompletion(db, { ...job, evidence: { kind: "reported", titles: report.titles } });
+              }
+            }
+            notifications.ingest({ ownerId: c.ownerId, sourceEventId: `${args.runId}:completed`, kind: "completion", sessionId: c.sessionId, title: "会话已完成", body: String(event.finalText ?? "任务已完成").slice(0, 500), createdAt: args.createdAt ?? Date.now() });
+          }
         }
         return Response.json({ ok: true });
       }

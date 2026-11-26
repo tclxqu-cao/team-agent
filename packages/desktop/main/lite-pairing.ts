@@ -5,6 +5,7 @@ import { readMobilePairingOrigin, type MobilePairingInvitation } from "./mobile-
 /** Reuse a phone-ready CLI service; a local development server must not block first-run setup. */
 export class LitePairingService {
   private pending: Promise<MobilePairingInvitation> | null = null;
+  private pendingRoute?: string;
   constructor(
     private readonly service: Pick<SharedServiceConnection, "status" | "select" | "mobilePairing" | "meshPairingOrigin">,
     private readonly bootstrap: { prepare(): Promise<RuntimeBootstrapStatus> },
@@ -12,9 +13,13 @@ export class LitePairingService {
     private readonly prepareSharing: () => Promise<void> = async () => {},
   ) {}
 
-  refresh(): Promise<MobilePairingInvitation> {
-    if (!this.pending) this.pending = this.prepare().finally(() => { this.pending = null; });
-    return this.pending;
+  refresh(route?: string): Promise<MobilePairingInvitation> {
+    if (this.pending && this.pendingRoute === route) return this.pending;
+    const work = this.pending ? this.pending.catch(() => null).then(() => this.prepare(route)) : this.prepare(route);
+    const pending = work.finally(() => { if (this.pending === pending) this.pending = null; });
+    this.pendingRoute = route;
+    this.pending = pending;
+    return pending;
   }
 
   private async connect(): Promise<boolean> {
@@ -29,14 +34,14 @@ export class LitePairingService {
     return false;
   }
 
-  private async prepare(): Promise<MobilePairingInvitation> {
+  private async prepare(route?: string): Promise<MobilePairingInvitation> {
     if (!await this.connect()) {
       const result = await this.bootstrap.prepare();
       if (result.phase !== "ready") throw new Error(result.message || "运行环境尚未就绪，请点击刷新重试。");
       if (!await this.connect()) throw new Error("手机访问连接尚未就绪，请稍后点击刷新重试。");
     }
     // Authorization errors (including emergency lock) must remain visible, never switch services to bypass them.
-    const invitation = await this.service.mobilePairing();
+    const invitation = await this.service.mobilePairing(route);
     await this.prepareSharing();
     return invitation;
   }

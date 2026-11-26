@@ -5,13 +5,26 @@ export type UpdateChannel = "latest" | "preview";
 
 const VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-preview\.(0|[1-9]\d*))?$/;
 
-export function parseAgentRoamVersion(value: string): { core: [number, number, number]; preview: number | null } | null {
+export function parseAgentRoamVersion(value: string): { core: [bigint, bigint, bigint]; preview: bigint | null } | null {
   const match = VERSION.exec(value);
   if (!match) return null;
   return {
-    core: [Number(match[1]), Number(match[2]), Number(match[3])],
-    preview: match[4] === undefined ? null : Number(match[4]),
+    core: [BigInt(match[1]), BigInt(match[2]), BigInt(match[3])],
+    preview: match[4] === undefined ? null : BigInt(match[4]),
   };
+}
+
+export function compareAgentRoamVersions(left: string, right: string): number {
+  const a = parseAgentRoamVersion(left);
+  const b = parseAgentRoamVersion(right);
+  if (!a || !b) throw new Error("invalid AgentRoam version");
+  for (let index = 0; index < a.core.length; index++) {
+    if (a.core[index] !== b.core[index]) return a.core[index] > b.core[index] ? 1 : -1;
+  }
+  if (a.preview === b.preview) return 0;
+  if (a.preview === null) return 1;
+  if (b.preview === null) return -1;
+  return a.preview > b.preview ? 1 : -1;
 }
 
 // A prerelease installation follows the preview channel; a stable installation

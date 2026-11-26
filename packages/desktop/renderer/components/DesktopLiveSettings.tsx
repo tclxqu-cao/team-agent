@@ -145,7 +145,7 @@ export default function DesktopLiveSettings({ onboarding = false }: { onboarding
         </div>
       )}
       {platformSupported && <>
-        <p style={{ marginTop: 14, fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6 }}>点击对应权限的「去授权」，在系统设置中允许 AgentRoam，返回后自动检测。</p>
+        <p style={{ marginTop: 14, fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6 }}>点击「去授权」，在系统设置中允许 AgentRoam Remote Desktop，返回后会自动检测。</p>
         <details className="desktop-permission-more"><summary>更多操作</summary><div style={{ display: "flex", gap: 8, marginTop: 8 }}>
           <button type="button" className="ui-quiet-button" onClick={() => void recheck()}>重新检测</button>
           {!screenGranted && <button type="button" className="ui-quiet-button" onClick={() => void api?.desktopLiveRestart()}>重启桌面端</button>}

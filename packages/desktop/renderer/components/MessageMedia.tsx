@@ -7,6 +7,11 @@ import MessageImageLightbox from "./MessageImageLightbox";
 
 export const MessageMediaWorkspace = createContext<string | null>(null);
 
+const fileErrorHints: Record<string, string> = {
+  PATH_OUTSIDE_ROOT: "文件在可预览目录之外。请将它保存到当前工作区，再发送图片或视频链接。",
+  PATH_NOT_FOUND: "找不到这份媒体文件，请重新发送。",
+};
+
 interface MessageMediaProps {
   path: string;
   label: string;
@@ -19,7 +24,7 @@ export default function MessageMedia({ path, label, kind, onOpenArtifact }: Mess
   const resolvedPath = resolveMessageMediaPath(path, workspacePath);
   const remote = isWebMediaUrl(path);
   const [source, setSource] = useState<{ path: string; url: string } | null>(null);
-  const [failedPath, setFailedPath] = useState<string | null>(null);
+  const [failure, setFailure] = useState<{ path: string; hint?: string } | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [openingVideo, setOpeningVideo] = useState(false);
   const [videoWindowError, setVideoWindowError] = useState<string | null>(null);
@@ -32,7 +37,7 @@ export default function MessageMedia({ path, label, kind, onOpenArtifact }: Mess
 
   useEffect(() => {
     setExpanded(false);
-    setFailedPath(null);
+    setFailure(null);
     setVideoWindowError(null);
     if (remote) return;
     const api = window.agentApi;
@@ -43,12 +48,12 @@ export default function MessageMedia({ path, label, kind, onOpenArtifact }: Mess
     const load = () => {
       if (started || disposed) return;
       started = true;
-      if (!api?.fileWorkspaceRequest || !resolvedPath) { setFailedPath(path); return; }
+      if (!api?.fileWorkspaceRequest || !resolvedPath) { setFailure({ path }); return; }
       void api.fileWorkspaceRequest<FileWorkspacePreviewTicket>("fs:preview-open", { path: resolvedPath }).then((ticket) => {
         if (disposed) { close(ticket.ticketId); return; }
         ticketId = ticket.ticketId;
         setSource({ path, url: ticket.url });
-      }).catch(() => { if (!disposed) setFailedPath(path); });
+      }).catch(error => { if (!disposed) setFailure({ path, hint: fileErrorHints[error?.code] }); });
     };
     const observer = typeof IntersectionObserver === "undefined" ? null : new IntersectionObserver((entries) => {
       if (entries.some((entry) => entry.isIntersecting)) { observer?.disconnect(); load(); }
@@ -83,17 +88,17 @@ export default function MessageMedia({ path, label, kind, onOpenArtifact }: Mess
   };
 
   return <span ref={container} className="chat-message-media" data-tab-swipe-ignore>
-    {failedPath === path ? <span role="status">媒体加载失败 {onOpenArtifact && resolvedPath && <button type="button" className="chat-message-artifact-link" onClick={() => onOpenArtifact(resolvedPath)}>打开预览</button>}</span>
+    {failure?.path === path ? <span role="status">{failure.hint ?? "媒体加载失败"} {!failure.hint && onOpenArtifact && resolvedPath && <button type="button" className="chat-message-artifact-link" onClick={() => onOpenArtifact(resolvedPath)}>打开预览</button>}</span>
       : !src ? <span role="status">正在加载{name}…</span>
         : kind === "video" ? <span className="chat-message-media__video">
-            <video ref={video} src={src} controls controlsList={canPopOutVideo ? "nofullscreen" : undefined} playsInline preload="metadata" aria-label={name} onError={() => setFailedPath(path)} />
+            <video ref={video} src={src} controls controlsList={canPopOutVideo ? "nofullscreen" : undefined} playsInline preload="metadata" aria-label={name} onError={() => setFailure({ path })} />
             {canPopOutVideo && <button type="button" className="chat-message-media__popout" aria-label="在独立窗口播放" title="在独立窗口播放" disabled={openingVideo} onClick={() => { void popOutVideo(); }}>
               <Maximize size={16} aria-hidden="true" />
             </button>}
             {videoWindowError === path && <span role="status">无法打开独立播放器，请重试</span>}
           </span>
           : <button type="button" className="chat-message-media__image" aria-label={`放大图片 ${name}`} onClick={() => setExpanded(true)}>
-            <img src={src} alt={name} loading="lazy" onError={() => setFailedPath(path)} />
+            <img src={src} alt={name} loading="lazy" onError={() => setFailure({ path })} />
           </button>}
     <MessageImageLightbox image={expanded && src ? { src, alt: name } : null} onClose={() => setExpanded(false)} />
   </span>;

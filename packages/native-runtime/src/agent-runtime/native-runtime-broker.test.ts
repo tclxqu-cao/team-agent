@@ -1021,6 +1021,91 @@ describe("NativeRuntimeBrokerHost", () => {
     } finally { await host.stop(); }
   });
 
+  it("collapses failed ZCode inputs after a successful retry", async () => {
+    const path = await directory();
+    const runtime = new FakeNativeRuntime();
+    const zcodeSessionId = encodeUnifiedSessionId("zcode", "native-session");
+    const originalGet = runtime.get;
+    runtime.get = async () => ({
+      ...await originalGet(),
+      id: zcodeSessionId,
+      agentType: "zcode",
+      nativeSessionId: "native-session",
+    });
+    runtime.messages = [
+      { role: "user", content: "哪些部分实现的接口是为啥" },
+      { role: "user", content: "哪些部分实现的接口是为啥" },
+      { role: "user", content: "哪些部分实现的接口是为啥" },
+      { role: "assistant", content: "我会按接口逐项核对。" },
+    ];
+    const host = new NativeRuntimeBrokerHost(path, runtime as unknown as UnifiedSessionService);
+    const database = new SQLiteDatabase(path);
+    const insert = database.db.prepare(
+      "INSERT INTO native_runtime_turn_completion(run_id,session_id,input,final_text,duration_ms,completed_at,result) VALUES(?,?,?,?,?,?,?)",
+    );
+    insert.run("failed-1", zcodeSessionId, "哪些部分实现的接口是为啥", "", 5, 100,
+      JSON.stringify({ runId: "failed-1", status: "failed", reason: "provider_error", durationMs: 5 }));
+    insert.run("failed-2", zcodeSessionId, "哪些部分实现的接口是为啥", "", 5, 200,
+      JSON.stringify({ runId: "failed-2", status: "failed", reason: "provider_error", durationMs: 5 }));
+    insert.run("success", zcodeSessionId, "哪些部分实现的接口是为啥", "我会按接口逐项核对。", 10, 300,
+      JSON.stringify({ runId: "success", status: "completed", reason: "completed", durationMs: 10 }));
+    database.close();
+    try {
+      const detail = await host.get(zcodeSessionId);
+      expect(detail.messages.filter(message => message.role === "user")).toHaveLength(1);
+      expect(detail.messages).toEqual([
+        expect.objectContaining({
+          role: "user",
+          content: "哪些部分实现的接口是为啥",
+        }),
+        expect.objectContaining({
+          role: "assistant",
+          content: "我会按接口逐项核对。",
+          presentation: expect.objectContaining({
+            runResult: expect.objectContaining({ status: "completed" }),
+            completionDurationMs: 10,
+          }),
+        }),
+      ]);
+    } finally { await host.stop(); }
+  });
+
+  it("keeps intentional repeated ZCode inputs when both turns completed", async () => {
+    const path = await directory();
+    const runtime = new FakeNativeRuntime();
+    const zcodeSessionId = encodeUnifiedSessionId("zcode", "native-session");
+    const originalGet = runtime.get;
+    runtime.get = async () => ({
+      ...await originalGet(),
+      id: zcodeSessionId,
+      agentType: "zcode",
+      nativeSessionId: "native-session",
+    });
+    runtime.messages = [
+      { role: "user", content: "重复提问" },
+      { role: "assistant", content: "第一次回答" },
+      { role: "user", content: "重复提问" },
+      { role: "assistant", content: "第二次回答" },
+    ];
+    const host = new NativeRuntimeBrokerHost(path, runtime as unknown as UnifiedSessionService);
+    const database = new SQLiteDatabase(path);
+    const insert = database.db.prepare(
+      "INSERT INTO native_runtime_turn_completion(run_id,session_id,input,final_text,duration_ms,completed_at,result) VALUES(?,?,?,?,?,?,?)",
+    );
+    insert.run("success-1", zcodeSessionId, "重复提问", "第一次回答", 10, 100,
+      JSON.stringify({ runId: "success-1", status: "completed", reason: "completed", durationMs: 10 }));
+    insert.run("success-2", zcodeSessionId, "重复提问", "第二次回答", 10, 200,
+      JSON.stringify({ runId: "success-2", status: "completed", reason: "completed", durationMs: 10 }));
+    database.close();
+    try {
+      const detail = await host.get(zcodeSessionId);
+      expect(detail.messages.filter(message => message.role === "user")).toHaveLength(2);
+      expect(detail.messages.filter(message => message.role === "assistant").map(message => message.content)).toEqual([
+        "第一次回答", "第二次回答",
+      ]);
+    } finally { await host.stop(); }
+  });
+
   it("persists the Codex compatibility catalog in broker-owned SQLite", async () => {
     const path = await directory();
     let firstRepository!: CodexSessionCatalogRepository;

@@ -1,4 +1,5 @@
 export type RemoteVideoQuality = "smooth" | "hd" | "original";
+export type RemoteVideoMotionMode = "balanced" | "motion-30" | "motion-60";
 export type RemoteVideoContentActivity = "idle" | "interactive" | "motion";
 export type RemoteVideoH264Profile = "high" | "baseline";
 export type RemoteVideoDecoderAcceleration = "hardware" | "software" | "unknown";
@@ -20,6 +21,8 @@ export interface RemoteVideoNetworkTelemetry {
 }
 
 export interface RemoteVideoEncoderTelemetry {
+  captureMaxFps?: number;
+  capturePixelFormat?: "BGRA" | "NV12";
   pendingFrames?: number;
   queuedFrames?: number;
   coalescedFrames?: number;
@@ -77,6 +80,7 @@ export interface RemoteVideoObservation {
 }
 
 export interface RemoteVideoAdapterCapabilities {
+  maxFrameRate?: 30 | 60;
   compoundVideo?: boolean;
   dynamicResolution?: boolean;
   dynamicBitrate: boolean;

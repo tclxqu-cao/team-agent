@@ -81,6 +81,15 @@ describe("shared Electron and Web composer", () => {
     expect(chatView).toContain('aria-label={shouldQueueMessage ? "排队发送" : "发送"}');
   });
 
+  it("turns files dropped on the composer into attachments instead of navigation", () => {
+    expect(chatView).toContain("const handleFiles = async (files: readonly File[])");
+    expect(chatView).toContain('types.includes("text/uri-list")');
+    expect(chatView).toContain("onDragOverCapture={handleComposerDragOver}");
+    expect(chatView).toContain("onDropCapture={handleComposerDrop}");
+    expect(chatView).toContain("event.dataTransfer.dropEffect = canSubmitComposer ? \"copy\" : \"none\"");
+    expect(chatView).toContain("void handleFiles(Array.from(event.dataTransfer.files))");
+  });
+
   it("groups queued messages and keeps drag, copy, edit, delete, and steer icon actions", () => {
     const start = chatView.indexOf("{/* Queued messages — shown above input when agent is running */}");
     const end = chatView.indexOf("{/* Input box */}", start);

@@ -6,7 +6,7 @@ export class PacedVideoSender {
    * Packet values and frame contexts are opaque to this coordinator.
    */
   constructor({ policy, clock, write, writeRepair, onRepairExpired = () => undefined,
-    onRecovery = () => undefined, onKeyframe, onError, onFrameSent = () => undefined }) {
+    onRecovery = () => undefined, onKeyframe, onError, onFrameSent = () => undefined, onEncoderPressure }) {
     this.policy = policy;
     this.clock = clock;
     this.write = write;
@@ -16,6 +16,9 @@ export class PacedVideoSender {
     this.onKeyframe = onKeyframe;
     this.onError = onError;
     this.onFrameSent = onFrameSent;
+    this.onEncoderPressure = onEncoderPressure;
+    this.encoderBlocked = false;
+    this.pressureSentAt = -Infinity;
     this.queue = [];
     this.repairs = [];
     this.queuedRepairBytes = 0;
@@ -99,6 +102,20 @@ export class PacedVideoSender {
     return oldest ? Math.max(0, this.clock.now() - oldest.enqueuedAt) : 0;
   }
 
+  updateEncoderPressure() {
+    if (!this.onEncoderPressure) return;
+    const now = this.clock.now();
+    const bytes = this.queuedBytes + this.queuedRepairBytes;
+    const delay = Math.max(this.queueDelayMs, bytes * 8000 / Math.max(1, this.policy.pacingBitRate));
+    const blocked = this.running && delay >= (this.encoderBlocked ? 25 : 50);
+    // Refresh a bounded native hold while the pacer is busy. An interrupted
+    // control pipe can never strand the final screen update in the encoder.
+    if (blocked === this.encoderBlocked && (!blocked || now - this.pressureSentAt < 100)) return;
+    this.encoderBlocked = blocked;
+    this.pressureSentAt = now;
+    this.onEncoderPressure(blocked);
+  }
+
   snapshot() {
     const oldest = this.current ?? this.queue[0];
     const snapshot = {
@@ -126,6 +143,7 @@ export class PacedVideoSender {
     this.queuedBytes = 0;
     this.droppedFrames = 0; this.supersededFrames = 0;
     this.policy.requireKeyframe();
+    this.updateEncoderPressure();
     this.onRecovery();
   }
 
@@ -196,6 +214,7 @@ export class PacedVideoSender {
   }
 
   wake(delay = 0) {
+    this.updateEncoderPressure();
     if (!this.running || this.draining || this.timer !== null || (!this.current && !this.queue.length && !this.repairs.length)) return;
     const generation = this.generation;
     this.timer = this.clock.schedule(() => {

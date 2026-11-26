@@ -7,7 +7,7 @@ function frame(id: string, count = 8, keyFrame = true) {
   return { keyFrame, packets: Array.from({ length: count }, (_, index) => ({ value: { id, index }, bytes: 1_250 })) };
 }
 
-function fixture(bitRate = 800_000) {
+function fixture(bitRate = 800_000, onEncoderPressure?: (blocked: boolean) => void) {
   const writes: Array<{ id: string; index: number; at: number }> = [];
   const write = vi.fn(async (packet: { id: string; index: number }) => { writes.push({ ...packet, at: Date.now() }); });
   const onKeyframe = vi.fn();
@@ -15,13 +15,28 @@ function fixture(bitRate = 800_000) {
   const onFrameSent = vi.fn();
   const policy = new RemoteVideoPacingPolicy({ bitRate, now: Date.now() });
   const clock = { now: () => Date.now(), schedule: (fn: () => void, ms: number) => setTimeout(fn, ms), cancel: clearTimeout };
-  const sender = new PacedVideoSender({ policy, clock, write, onKeyframe, onError, onFrameSent });
+  const sender = new PacedVideoSender({ policy, clock, write, onKeyframe, onError, onFrameSent, onEncoderPressure });
   return { sender, writes, write, policy, clock, onKeyframe, onError, onFrameSent };
 }
 
 afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); });
 
 describe('PacedVideoSender', () => {
+  it('holds encoding on projected backlog and releases it when the last queued frame drains', async () => {
+    vi.useFakeTimers();
+    const pressure = vi.fn();
+    const { sender } = fixture(800_000, pressure);
+    expect(sender.enqueue(frame('first', 16))).toBe(true);
+    expect(pressure.mock.calls).toEqual([[true]]);
+    await vi.advanceTimersByTimeAsync(400);
+    expect(pressure.mock.calls.at(-1)).toEqual([false]);
+    expect(sender.snapshot().queuedFrames).toBe(0);
+    const count = pressure.mock.calls.length;
+    sender.enqueue(frame('small', 1));
+    await vi.advanceTimersByTimeAsync(100);
+    expect(pressure).toHaveBeenCalledTimes(count);
+    sender.stop();
+  });
   it('bounds the repair queue and cancels it across fresh keyframes, pause and stale deadlines', async () => {
     vi.useFakeTimers();
     const writes = vi.fn(async () => undefined), expired = vi.fn();

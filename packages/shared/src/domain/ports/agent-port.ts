@@ -13,6 +13,7 @@ export type {
   SessionQueryIndex,
   SessionQueryIndexEntry,
   ThreadGoalInfo,
+  NativeComposerCatalog,
   NativeGoalMutation,
   NativeSessionGoal,
   RuntimeBackgroundJob,

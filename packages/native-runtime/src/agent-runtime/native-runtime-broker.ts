@@ -90,6 +90,7 @@ import type {
   ImportedAgentWorkspace,
   ImportedAgentWorkspaceRepository,
   ImportAgentWorkspaceResult,
+  NativeComposerCatalog,
   NativeRunOverrides,
   RuntimeHealth,
   RuntimeBackgroundJob,
@@ -170,6 +171,7 @@ export interface NativeRuntimeBrokerSnapshot {
 
 export interface NativeRuntimeBrokerCallbacks {
   onApprovalResolved(questionId: string): void;
+  threadHandoffs?(sessionId: string): { summaryText: string }[];
   importedWorkspaceRepository: ImportedAgentWorkspaceRepository;
   codexSessionCatalogRepository: CodexSessionCatalogRepository;
 }
@@ -1117,7 +1119,7 @@ class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, Code
       }
       const sequence = run.nextSequence + 1;
       this.todoOutbox.append(run.sessionId, runId, sequence, recordedEvent, eventAt,
-        () => this.todoContextForRun(run, this.todoOutbox.get(run.sessionId)));
+        () => this.todoContextForRun(run, this.todoOutbox.get(run.sessionId)), run);
       this.database.db.prepare(
         "INSERT INTO native_runtime_event(run_id, sequence, payload, created_at) VALUES (?, ?, ?, ?)",
       ).run(runId, sequence, JSON.stringify(recordedEvent), eventAt);
@@ -1138,9 +1140,10 @@ class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, Code
         `).run(recordedEvent.questionId, run.sessionId, run.input, JSON.stringify(recordedEvent), eventAt);
       }
       if (isTerminalEvent(recordedEvent)) {
-        const previousEvents = this.database.db.prepare("SELECT payload FROM native_runtime_event WHERE run_id = ? ORDER BY sequence ASC").all(runId) as Array<{ payload: string }>;
         const finalText = recordedEvent.type === "done" ? recordedEvent.finalText
-          : previousEvents.map(({ payload }) => parseAgentEvent(payload)).flatMap((entry) => entry?.type === "text_chunk" ? [entry.text] : []).join("");
+          : (this.database.db.prepare("SELECT payload FROM native_runtime_event WHERE run_id = ? ORDER BY sequence ASC")
+            .all(runId) as Array<{ payload: string }>).map(({ payload }) => parseAgentEvent(payload))
+            .flatMap(entry => entry?.type === "text_chunk" ? [entry.text] : []).join("");
         this.database.db.prepare(`
           INSERT OR IGNORE INTO native_runtime_turn_completion(
             run_id, session_id, input, final_text, duration_ms, completed_at, result, final_message_id
@@ -1376,12 +1379,16 @@ class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, Code
     }
   }
 
+  threadHandoffs(sessionId: string): { summaryText: string }[] {
+    const threadKey = this.engineSwitch.records.threadOfSession(sessionId);
+    return threadKey ? this.engineSwitch.handoffs.summariesForThread(threadKey) : [];
+  }
+
   applyDetail(detail: UnifiedSessionDetail, options: { mergeProjection?: boolean; includePendingQuestions?: boolean; windowed?: boolean } = {}): UnifiedSessionDetail {
     const canForkWithHistory = supportsContextFork(detail.agentType);
     const fork = canForkWithHistory
       ? this.engineSwitch.handoffs.forkForSession(detail.id) : null;
-    const threadKey = this.engineSwitch.records.threadOfSession(detail.id);
-    const handoffs = threadKey ? this.engineSwitch.handoffs.summariesForThread(threadKey) : [];
+    const handoffs = this.threadHandoffs(detail.id);
     if (fork) handoffs.push(fork);
     if (!options.windowed) detail = { ...detail, messages: this.restoreAcpQuestions(detail.id, detail.messages) };
     if (handoffs.length) detail = { ...detail, messages: cleanEngineHistory(detail.messages, handoffs) };
@@ -1438,6 +1445,9 @@ class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, Code
       }
     }
     const completedMessages = applyTurnCompletions(completionMessages, completionRows, { windowed });
+    const projectedCompletedMessages = detail.agentType === "zcode"
+      ? collapseFailedZCodeRetries(completedMessages)
+      : completedMessages;
     const harnessInputReceipt = detail.agentType === "deepseek-harness" && mergeProjection && projection.run?.goalId
       ? this.database.db.prepare(`
         SELECT source_message_id FROM native_runtime_message_receipt
@@ -1445,10 +1455,10 @@ class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, Code
       `).get(detail.id, projection.run.goalId, projection.run.runId) as { source_message_id: string } | undefined
       : undefined;
     const messages = detail.agentType === "copilot"
-      ? this.restoreSteeredMessages(detail.id, completedMessages)
+      ? this.restoreSteeredMessages(detail.id, projectedCompletedMessages)
       : detail.agentType === "deepseek-harness" && mergeProjection
-      ? restoreHarnessRunInputIdentity(completedMessages, projection.run, harnessInputReceipt?.source_message_id)
-      : completedMessages;
+      ? restoreHarnessRunInputIdentity(projectedCompletedMessages, projection.run, harnessInputReceipt?.source_message_id)
+      : projectedCompletedMessages;
     let snapshotTurnId: string | null = null;
     for (const { event } of projection.events) {
       if ("turnId" in event && typeof event.turnId === "string" && event.turnId) snapshotTurnId = event.turnId;
@@ -1628,6 +1638,7 @@ export class NativeRuntimeBrokerHost {
     this.runtime = typeof runtime === "function"
       ? runtime({
           onApprovalResolved: (questionId) => this.handleApprovalResolved(questionId),
+          threadHandoffs: sessionId => this.state.threadHandoffs(sessionId),
           importedWorkspaceRepository: this.state,
           codexSessionCatalogRepository: this.state,
         })
@@ -2101,6 +2112,16 @@ export class NativeRuntimeBrokerHost {
     return this.runtime.listModels(agentType);
   }
 
+  getCodexComposerCatalog(cwd: string, fileQuery?: string): Promise<NativeComposerCatalog> {
+    return this.runtime.getCodexComposerCatalog(cwd, fileQuery);
+  }
+
+  requestComposerPrediction(sessionId: string, turnId: string): Promise<string | null> {
+    this.state.assertSessionVisible(sessionId);
+    if (this.state.activeRun(sessionId)) return Promise.resolve(null);
+    return this.runtime.requestComposerPrediction(sessionId, turnId);
+  }
+
   async getGoals(
     sessionId: string,
     controller: NativeRuntimeController = "web",
@@ -2493,6 +2514,7 @@ export class NativeRuntimeBrokerHost {
         brokerRunId: run.runId,
         ...(runOverrides?.model ? { model: runOverrides.model } : {}),
         ...(runOverrides?.reasoningEffort ? { reasoningEffort: runOverrides.reasoningEffort } : {}),
+        ...(run.agentType === "codex" && runOverrides?.codexMode ? { codexMode: runOverrides.codexMode } : {}),
         ...(runOverrides?.attachments?.length ? { attachments: runOverrides.attachments } : {}),
         ...(run.goalId && activeItem?.id === run.goalId && sessionQueueItemKind(activeItem) === "goal" ? {
           goal: {
@@ -2864,6 +2886,12 @@ export class NativeRuntimeBrokerHost {
         runOverridesParam(request.params),
       );
       case "listModels": return this.listModels(nativeAgentTypeParam(request.params, "agentType"));
+      case "getCodexComposerCatalog": return this.getCodexComposerCatalog(
+        stringParam(request.params, "cwd") ?? "", stringParam(request.params, "fileQuery") ?? undefined,
+      );
+      case "requestComposerPrediction": return this.requestComposerPrediction(
+        requireSessionId(sessionId), requiredStringParam(request.params, "turnId"),
+      );
       case "bindTodoContext": {
         this.state.todoOutbox.set(requireSessionId(sessionId), request.params.context as RuntimeTodoContext);
         return { ok: true };
@@ -3287,6 +3315,14 @@ export class NativeRuntimeBrokerClient {
     return this.request("getNativeGoal", { sessionId: id });
   }
 
+  getCodexComposerCatalog(cwd: string, fileQuery?: string): Promise<NativeComposerCatalog> {
+    return this.request("getCodexComposerCatalog", { cwd, fileQuery });
+  }
+
+  requestComposerPrediction(id: string, turnId: string): Promise<string | null> {
+    return this.request("requestComposerPrediction", { sessionId: id, turnId });
+  }
+
   async listBackgroundJobs(id: string): Promise<RuntimeBackgroundJob[]> {
     return this.request("listBackgroundJobs", { sessionId: id });
   }
@@ -3511,6 +3547,7 @@ export function createNativeRuntimeBrokerHostRuntime(
     client: codexClient,
     codexExecutable: codexExecutable || "codex",
     onApprovalResolved: callbacks?.onApprovalResolved,
+    threadHandoffs: callbacks?.threadHandoffs,
   });
   const codexCompatibility = callbacks?.codexSessionCatalogRepository
     ? new CodexSessionCompatibilityService(
@@ -3698,6 +3735,41 @@ function codexSkillRunInputIndex(
     && presentation.executionTrace.segmentIndex === 0);
 }
 
+// A Codex snapshot can include compaction notices between streamed messages.
+// Match native items even while the turn is open or the broker was interrupted.
+function reconcileCodexReplayText(projected: Message[], events: BrokerRunEvent[]): Set<string> {
+  const nativeIndices = new Map<string, number>();
+  const completedTurns = new Set<string>();
+  for (const [index, message] of projected.entries()) {
+    if (message.role !== "assistant" || !message.content) continue;
+    const id = message.presentation?.nativeMessageId ?? message.historyId;
+    if (id) nativeIndices.set(id, index);
+    const turnId = message.presentation?.forkPoint?.turnId;
+    if (turnId) completedTurns.add(turnId);
+  }
+
+  const matched = new Set<string>();
+  const partialReplay = new Map<number, string>();
+  for (const { event } of events) {
+    if (event.type !== "text_chunk" || !event.turnId || !event.text) continue;
+    const id = codexTraceHistoryId(event.turnId, "agent", event.itemId);
+    if (!id) continue;
+    const index = nativeIndices.get(id);
+    if (index === undefined) continue;
+    matched.add(id);
+    if (!completedTurns.has(event.turnId)) {
+      partialReplay.set(index, (partialReplay.get(index) ?? "") + event.text);
+    }
+  }
+  for (const [index, text] of partialReplay) {
+    const message = projected[index];
+    if (text.length > message.content.length && text.startsWith(message.content)) {
+      projected[index] = { ...message, content: text };
+    }
+  }
+  return matched;
+}
+
 export function mergeProjectionMessages(
   messages: Message[],
   run: BrokerRunRecord | null,
@@ -3735,24 +3807,18 @@ export function mergeProjectionMessages(
     nextUserIndex = index;
     break;
   }
+  const reconciledCodexItems = run.agentType === "codex" ? reconcileCodexReplayText(projected, events) : null;
   const persistedAssistantText = hasPersistedRunInput
     ? projected
       .slice(runUserIndex + 1, nextUserIndex)
-      .filter((message) => message.role === "assistant")
+      .filter((message) => message.role === "assistant" && (!reconciledCodexItems || (
+        message.name !== "__compaction_checkpoint__"
+        && !reconciledCodexItems.has(message.presentation?.nativeMessageId ?? message.historyId ?? "")
+      )))
       .map((message) => message.content)
       .join("")
     : null;
   const nativeTurn = preserveNativeOrder && hasPersistedRunInput ? projected.slice(runUserIndex + 1, nextUserIndex) : [];
-  const completedCodexTurns = new Set<string>();
-  const codexHistoryIds = new Set<string>();
-  if (run.agentType === "codex" && run.status === "terminal") {
-    for (const message of messages) {
-      if (message.role !== "assistant" || !message.content.trim()) continue;
-      if (message.historyId) codexHistoryIds.add(message.historyId);
-      const turnId = message.presentation?.forkPoint?.turnId;
-      if (turnId) completedCodexTurns.add(turnId);
-    }
-  }
   const nativeReasoning = nativeTurn.flatMap((message) => (
     (message.presentation?.reasoning ?? []).map((section) => ({ message, section }))
   ));
@@ -3793,11 +3859,12 @@ export function mergeProjectionMessages(
       continue;
     }
     if (event.type !== "text_chunk" && event.type !== "tool_call") continue;
-    if (event.type === "text_chunk" && event.turnId && completedCodexTurns.has(event.turnId)) {
-      // Persisted Codex items include their own identity. History can also
-      // contain compaction notices and other text absent from the stream.
-      const historyId = codexTraceHistoryId(event.turnId, "agent", event.itemId);
-      if (historyId && codexHistoryIds.has(historyId)) continue;
+    if (event.type === "text_chunk" && event.turnId && reconciledCodexItems?.size) {
+      const id = codexTraceHistoryId(event.turnId, "agent", event.itemId);
+      if (id && reconciledCodexItems.has(id)) {
+        activeAssistantIndex = null;
+        continue;
+      }
     }
     if (activeAssistantIndex === null) {
       activeAssistantIndex = eventMessages.length;
@@ -4027,6 +4094,52 @@ function applyTurnCompletions(
   return completed;
 }
 
+/**
+ * ZCode persists a failed input before model creation finishes. When the
+ * composer retries that input successfully, the native history contains both
+ * attempts but does not expose a broker run ID to identify them. The broker
+ * result attached by applyTurnCompletions is the only reliable distinction.
+ * Remove the failed attempt's whole turn while preserving intentional repeated
+ * inputs whose earlier turns completed normally.
+ */
+function collapseFailedZCodeRetries(messages: Message[]): Message[] {
+  const isTurnInput = (message: Message) => message.role === "user"
+    && !message.name?.startsWith("__native_steered:")
+    && message.name !== "__native_steering_pending";
+  const turns: Array<{ start: number; end: number; input: string; result?: RunResult; completed: boolean }> = [];
+  for (let start = 0; start < messages.length; start += 1) {
+    if (!isTurnInput(messages[start])) continue;
+    let end = messages.length;
+    for (let index = start + 1; index < messages.length; index += 1) {
+      if (isTurnInput(messages[index])) {
+        end = index;
+        break;
+      }
+    }
+    const result = messages.slice(start, end)
+      .map(message => message.presentation?.runResult)
+      .find(Boolean);
+    const completed = result?.status === "completed"
+      || messages.slice(start, end).some(message => {
+        const duration = message.presentation?.completionDurationMs;
+        return typeof duration === "number" && Number.isFinite(duration) && duration >= 0;
+      });
+    turns.push({ start, end, input: messages[start].content, result, completed });
+    start = end - 1;
+  }
+  const removed = new Set<number>();
+  const successfulInputsAfter = new Set<string>();
+  for (let index = turns.length - 1; index >= 0; index -= 1) {
+    const turn = turns[index];
+    const failed = turn.result?.status === "failed" || turn.result?.status === "interrupted";
+    if (failed && successfulInputsAfter.has(turn.input)) {
+      for (let messageIndex = turn.start; messageIndex < turn.end; messageIndex += 1) removed.add(messageIndex);
+    }
+    if (turn.completed) successfulInputsAfter.add(turn.input);
+  }
+  return removed.size ? messages.filter((_message, index) => !removed.has(index)) : messages;
+}
+
 function missingProjectionMessage(
   messages: Message[],
   candidate: Message,
@@ -4207,8 +4320,11 @@ function controllerParam(value: unknown): NativeRuntimeController {
 function runOverridesParam(params: Record<string, unknown>): NativeRunOverrides | undefined {
   const options = normalizeSessionMessageRunOptions(params.runOverrides);
   if (!options) return undefined;
-  const { model, reasoningEffort, attachments } = options;
-  return { ...(model ? { model } : {}), ...(reasoningEffort ? { reasoningEffort } : {}), ...(attachments?.length ? { attachments } : {}) };
+  const { model, reasoningEffort, attachments, codexMode } = options;
+  return {
+    ...(model ? { model } : {}), ...(reasoningEffort ? { reasoningEffort } : {}),
+    ...(attachments?.length ? { attachments } : {}), ...(codexMode ? { codexMode } : {}),
+  };
 }
 
 function queryParam(params: Record<string, unknown>): SessionHistoryQuery | undefined {

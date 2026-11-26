@@ -33,6 +33,8 @@ export interface DurableQueuedMessageLike extends UserMessageLike {
   isSteering?: boolean;
   isSteered?: boolean;
   isGoal?: boolean;
+  isCompactionSummary?: boolean;
+  goalHistoryAnchor?: string | null;
   sourceMessageId?: string;
   awaitingHistory?: boolean;
   presentation?: Pick<MessagePresentation, "executionTrace" | "forkPoint" | "isGoal">;
@@ -63,6 +65,43 @@ export function hideQueuedGoalMessages<T extends { id: string }>(
   );
   if (queuedMessageIds.size === 0) return messages;
   return messages.filter((message) => !queuedMessageIds.has(message.id));
+}
+
+function normalizedGoalText(value: string): string {
+  return value.trim().replace(/^\/goal\s+/i, "").replace(/^\$([\w-]+)/, "/$1").trim();
+}
+
+export function transcriptGoalMessageIds(
+  messages: readonly DurableQueuedMessageLike[], goals: readonly (DurableQueueItemLike | null)[],
+): Set<string> {
+  const marked = new Set<string>();
+  const sources = new Set<string>();
+  const remaining = new Map<string, number>();
+  const candidates = new Map<string, string[]>();
+  for (const goal of goals) {
+    if (!goal || goal.kind === "message") continue;
+    sources.add(goal.sourceMessageId ?? goal.id);
+    const text = normalizedGoalText(goal.objective);
+    remaining.set(text, (remaining.get(text) ?? 0) + 1);
+  }
+  for (const message of messages) {
+    if (message.role !== "user" || message.isQueued || message.isCompactionSummary) continue;
+    const text = normalizedGoalText(message.content);
+    if (message.isGoal || message.presentation?.isGoal || sources.has(message.sourceMessageId ?? message.id)) {
+      marked.add(message.id);
+      remaining.set(text, (remaining.get(text) ?? 0) - 1);
+    } else if (remaining.has(text) && !message.isSteered && !message.presentation?.executionTrace) {
+      const group = candidates.get(text) ?? [];
+      group.push(message.id);
+      candidates.set(text, group);
+    }
+  }
+  // Older histories have only text. Give them a marker only when the
+  // executed goals account for every remaining input with that text.
+  for (const [text, ids] of candidates) {
+    if (ids.length <= (remaining.get(text) ?? 0)) ids.forEach(id => marked.add(id));
+  }
+  return marked;
 }
 
 export function markDurableMessageSteered<T extends DurableQueuedMessageLike>(
@@ -114,6 +153,26 @@ function findActiveNativeInput(
     && message.content === activeItem.objective
     && (message.agentName === undefined || message.agentName === activeItem.messagePayload?.agentName)
   ));
+}
+
+function findPromotedGoalInput(
+  history: DurableQueuedMessageLike[], goal: DurableQueueItemLike, local: DurableQueuedMessageLike,
+): number {
+  const source = history.findIndex(row => row.role === "user" && (row.id === local.id || row.sourceMessageId === local.id));
+  if (source >= 0) return source;
+  const anchor = local.goalHistoryAnchor;
+  if (anchor === undefined) return findActiveNativeInput(history, goal, local.id, true);
+  const boundary = anchor === null ? -1 : history.findIndex(row => row.id === anchor || row.sourceMessageId === anchor);
+  if (anchor !== null && boundary < 0) return -1;
+  // Only a new initial input can acknowledge the local goal. Earlier equal
+  // prompts and same-turn steering keep their own message identities.
+  for (let index = history.length - 1; index > boundary; index--) {
+    const row = history[index];
+    if (row.role !== "user" || row.isSteered || row.isCompactionSummary || (row.presentation?.executionTrace?.segmentIndex ?? 0) > 0) continue;
+    return row.content === goal.objective && !row.awaitingHistory && !row.sendState
+      && (!row.presentation?.executionTrace || row.presentation.isGoal === true) ? index : -1;
+  }
+  return -1;
 }
 
 export function reconcileDurableQueuedMessages<T extends DurableQueuedMessageLike>(
@@ -228,14 +287,19 @@ export function reconcileDurableQueuedMessages<T extends DurableQueuedMessageLik
     .map(item => item.sourceMessageId || item.id));
   const activeGoal = state.active?.kind !== "message" ? state.active : null;
   const pendingGoals = messages.filter(message => message.isGoal && message.isQueued);
-  const promotedGoal = pendingGoals.find(message => message.id === (activeGoal?.sourceMessageId || activeGoal?.id));
-  if (activeGoal && promotedGoal && findActiveNativeInput(history, activeGoal, promotedGoal.id, true) < 0) {
-    history.push({
-      ...promotedGoal,
-      content: activeGoal.objective,
-      isQueued: false,
-      awaitingHistory: true,
-    });
+  const promotedGoal = activeGoal && messages.find(message => message.isGoal && (message.isQueued || message.awaitingHistory)
+    && message.id === (activeGoal.sourceMessageId || activeGoal.id));
+  if (activeGoal && promotedGoal) {
+    const transcript = promotedGoal.isQueued ? history : history.filter(row => row !== promotedGoal);
+    const index = findPromotedGoalInput(transcript, activeGoal, promotedGoal);
+    if (index >= 0) {
+      history = transcript;
+      const native = history[index];
+      history[index] = { ...native, isGoal: true, sourceMessageId: promotedGoal.id,
+        ...(promotedGoal.images?.length && !native.images ? { images: promotedGoal.images } : {}) };
+    } else if (promotedGoal.isQueued) {
+      history.push({ ...promotedGoal, content: activeGoal.objective, isQueued: false, awaitingHistory: true });
+    }
   }
   const steeredGoalSources = new Set(state.history.filter(item => item.kind !== "message" && item.lastReason === "steered")
     .map(item => item.sourceMessageId || item.id));
@@ -249,7 +313,10 @@ export function reconcileDurableQueuedMessages<T extends DurableQueuedMessageLik
   const unconfirmed = messages.filter(message => message.isQueued && !message.isGoal && (!message.queueItemId || message.isSteering)
     && !confirmedIds.has(message.id) && !confirmedIds.has(message.queueItemId)
     && !history.some(candidate => candidate.id === message.id));
-  const waitingGoals = pendingGoals.filter(message => queuedGoalSources.has(message.id) || !confirmedIds.has(message.id));
+  const latestInputId = pendingGoals.length ? findLatestUnqueuedUserMessageId(history) : null;
+  const waitingGoals = pendingGoals.filter(message => queuedGoalSources.has(message.id) || !confirmedIds.has(message.id))
+    .map(message => queuedGoalSources.has(message.id)
+      ? { ...message, goalHistoryAnchor: latestInputId } : message);
   return [...history, ...queued, ...unconfirmed, ...waitingGoals];
 }
 

@@ -3,6 +3,14 @@ import { describe, expect, it } from "vitest";
 import { parseArgs } from "./args.js";
 
 describe("parseArgs", () => {
+  it("allows listing pairing routes or choosing one without overriding the service relay", () => {
+    expect(parseArgs(["pair", "--list-routes"])).toMatchObject({ pairingListRoutes: true, relay: "auto" });
+    expect(parseArgs(["pair", "--via", "10.22.32.45"])).toMatchObject({ pairingVia: "10.22.32.45", relay: "auto" });
+    expect(parseArgs(["pair", "--via", "tailscale"])).toMatchObject({ pairingVia: "tailscale" });
+    expect(parseArgs(["pair", "--via", "vpn"])).toMatchObject({ pairingVia: "vpn" });
+    expect(() => parseArgs(["pair", "--via", "example.org"])).toThrow("local IPv4");
+    expect(() => parseArgs(["pair", "--via", "cloudflare", "--no-qr"])).toThrow("cannot be combined");
+  });
   it("limits local desktop authorization commands to explicit actions and data directories", () => {
     for (const action of ["authorize", "status", "disable"]) {
       expect(parseArgs(["desktop", action, "--data-dir", "/tmp/desktop"]))
@@ -96,10 +104,13 @@ describe("parseArgs", () => {
     expect(() => parseArgs(["service", "stop", "--local-only"])).toThrow("does not accept options");
   });
 
-  it("parses update with an optional exact stable version", () => {
+  it("parses update with an exact version or a read-only check", () => {
     expect(parseArgs(["update"]).updateVersion).toBeNull();
     expect(parseArgs(["update", "1.2.3", "--data-dir", "./data"])).toMatchObject({ command: "update", updateVersion: "1.2.3" });
-    expect(() => parseArgs(["update", "1.2.3-preview.1"])).toThrow("exact stable");
+    expect(parseArgs(["update", "1.2.3-preview.1"]).updateVersion).toBe("1.2.3-preview.1");
+    expect(parseArgs(["update", "--check"]).updateCheckOnly).toBe(true);
+    expect(() => parseArgs(["update", "preview"])).toThrow("exact version");
+    expect(() => parseArgs(["update", "1.2.3", "--check"])).toThrow("exact version");
   });
 });
 

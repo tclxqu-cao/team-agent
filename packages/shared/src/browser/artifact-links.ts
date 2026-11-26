@@ -6,6 +6,15 @@ export type ArtifactBridgeWindow = Pick<Window, "location"> & {
 
 let requestSequence = 0;
 
+/** A producer can publish a copy of a temporary image under the host's existing preview root. */
+export function publishedTempImagePath(path: unknown): string | null {
+  if (typeof path !== "string" || /[\\\0\r\n?#]/.test(path)) return null;
+  const relative = /^\/(?:private\/)?tmp\/(.+)$/.exec(path)?.[1];
+  if (!relative || !/\.(?:png|jpe?g|webp|gif|bmp|ico)$/i.test(relative)) return null;
+  if (relative.split("/").some(part => !part || part === "." || part === "..")) return null;
+  return `~/.agentroam/artifacts/tmp/${relative}`;
+}
+
 function isAbsoluteHostPath(value: string): boolean {
   return value.startsWith("/")
     || /^[A-Za-z]:[\\/]/.test(value)

@@ -102,9 +102,9 @@ export class CodexAppServerClient {
     this.serverRequestHandler = handler;
   }
 
-  async request<T>(method: string, params: unknown): Promise<T> {
+  async request<T>(method: string, params: unknown, timeoutMs?: number): Promise<T> {
     await this.ensureStarted();
-    return this.sendRequest<T>(method, params);
+    return this.sendRequest<T>(method, params, timeoutMs);
   }
 
   respond(id: RpcId, result: unknown): void {

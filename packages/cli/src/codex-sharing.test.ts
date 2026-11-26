@@ -35,6 +35,25 @@ describe("persistent Codex sharing", () => {
     await expect(inspectCodexSharing(f.context)).resolves.toMatchObject({ state: "shared", configured: true, autoStart: true, daemonReachable: true });
     expect(f.execute.mock.calls.some(([, args]) => args.includes("start") || args.includes("setenv") || args.includes("bootout"))).toBe(false);
   });
+  it.each([true, false])("requires a bundled desktop helper when the main process has no daemon peer (%s)", async bundled => {
+    const f = await fixture();
+    const appPath = "/Applications/ChatGPT.app";
+    const context = { ...f.context, inspect: async () => ({ status: "running", pid: 10, appPath, activity: { state: "unknown", reason: "shared" } }) as const };
+    const helper = bundled ? `${appPath}/Contents/Frameworks/Codex Framework.framework/Helpers/Codex (Aperitif)` : "/tmp/unrelated";
+    const socket = await realpath(f.socket);
+    const original = f.execute.getMockImplementation()!;
+    f.execute.mockImplementation(async (command, args) => {
+      if (command.includes("ps")) return { stdout: `10 1 ${appPath}/Contents/MacOS/ChatGPT\n30 10 ${helper}\n20 1 /tools/codex app-server daemon run`, stderr: "" };
+      if (command.includes("lsof")) return {
+        stdout: `codex 20 user 11u unix 0xabc 0t0 ${socket}\nCodex\\x20 30 user 32u unix 0xdef 0t0 ->0xabc`,
+        stderr: "",
+      };
+      return original(command, args);
+    });
+    await expect(inspectCodexSharing(context)).resolves.toMatchObject({ state: bundled ? "shared" : "failed" });
+    const lsof = f.execute.mock.calls.find(([command]) => command.includes("lsof"));
+    expect(lsof?.[1][3]?.split(",").includes("30")).toBe(bundled);
+  });
   it("keeps actual sharing visible when GUI defaults are missing", async () => {
     const f = await fixture(); const original = f.execute.getMockImplementation()!;
     f.execute.mockImplementation(async (command, args) => {

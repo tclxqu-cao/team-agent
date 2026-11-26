@@ -36,6 +36,7 @@ export async function POST(request: Request) {
       toolPolicyId?: string;
       nativeModel?: { id: string; providerID?: string };
       nativeReasoningEffort?: "low" | "medium" | "high" | "xhigh" | "max";
+      codexMode?: unknown;
       attachments?: unknown;
     };
 
@@ -69,6 +70,7 @@ export async function POST(request: Request) {
       const admission = await service.startRun(sessionId, body.input, body.images, "web", {
         ...(body.nativeModel?.id ? { model: body.nativeModel } : {}),
         ...(body.nativeReasoningEffort ? { reasoningEffort: body.nativeReasoningEffort } : {}),
+        ...(body.codexMode === "plan" || body.codexMode === "default" ? { codexMode: body.codexMode } : {}),
         ...(attachments?.length ? { attachments } : {}),
       });
       agentHost.resetExternalStream(sessionId);

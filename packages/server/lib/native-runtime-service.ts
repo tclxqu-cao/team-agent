@@ -30,6 +30,7 @@ import {
   type CreateRuntimeSessionOptions,
   type EngineThreadSessionSummary,
   type ImportAgentWorkspaceResult,
+  type NativeComposerCatalog,
   type NativeRunOverrides,
   type NativeGoalMutation,
   type NativeSessionGoal,
@@ -81,6 +82,8 @@ export interface NativeRuntimePort {
   bindTodoContext?(id: string, context: import("@agent/native-runtime").RuntimeTodoContext): Promise<void>;
   health(): Promise<RuntimeHealth[]>;
   listModels(agentType: Exclude<AgentType, "customer-agent">): Promise<RuntimeModelInfo[]>;
+  getCodexComposerCatalog?(cwd: string, fileQuery?: string): Promise<NativeComposerCatalog>;
+  requestComposerPrediction?(id: string, turnId: string): Promise<string | null>;
   listWorkspaces(agentType: Exclude<AgentType, "customer-agent">, query?: WorkspaceQuery): Promise<WorkspacePage<AgentWorkspace>>;
   listWorkspaceSessions(
     agentType: Exclude<AgentType, "customer-agent">,
@@ -192,6 +195,14 @@ export class NativeRuntimeService implements NativeRuntimePort {
 
   listModels(agentType: Exclude<AgentType, "customer-agent">): Promise<RuntimeModelInfo[]> {
     return this.runtime.listModels(agentType);
+  }
+
+  async getCodexComposerCatalog(cwd: string, fileQuery?: string): Promise<NativeComposerCatalog> {
+    return await this.runtime.getCodexComposerCatalog?.(cwd, fileQuery) ?? { skills: [], files: [] };
+  }
+
+  async requestComposerPrediction(id: string, turnId: string): Promise<string | null> {
+    return await this.runtime.requestComposerPrediction?.(id, turnId) ?? null;
   }
 
   listWorkspaces(

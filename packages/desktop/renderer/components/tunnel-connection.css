@@ -6,6 +6,11 @@
 .tunnel-connection .tunnel-connected { color:var(--text-success, #29a985); }
 .tunnel-connection p { margin:8px 0 0; font-size:12px; line-height:1.6; color:var(--text-secondary, #9eafb8); }
 .tunnel-connection p[role="alert"] { color:var(--text-warning, #c9923d); }
+.pairing-route-picker { display:grid; gap:6px; margin:12px 0; min-width:0; text-align:left; font-size:13px; }
+.pairing-route-picker label { display:grid; gap:6px; min-width:0; }
+.pairing-route-picker .pairing-route-refresh { justify-self:start; color:inherit; font:inherit; cursor:pointer; background:transparent; border:0; padding:2px 0; min-height:0; text-decoration:underline; }
+.pairing-route-picker select { min-width:0; width:100%; padding:8px 10px; border:1px solid var(--border-default, #405662); border-radius:7px; background:var(--bg-elevated, #1b2d37); color:inherit; font:inherit; }
+.pairing-route-picker small { color:var(--text-secondary, #9eafb8); line-height:1.5; }
 .tunnel-spin { animation:tunnel-spin 1s linear infinite; }
 @keyframes tunnel-spin { to { transform:rotate(360deg); } }
 @media (prefers-reduced-motion:reduce) { .tunnel-spin { animation:none; } }

@@ -34,7 +34,7 @@ export default function RemoteDesktopPage() {
   const onFullscreenChange = useCallback((fullscreen: boolean) => {
     window.parent.postMessage({ type: REMOTE_DESKTOP_FULLSCREEN_TYPE, fullscreen }, location.origin);
   }, []);
-  return <BrowserLivePanel onFullscreenChange={onFullscreenChange} open={opened} active={visible} onClose={() => {
+  return <BrowserLivePanel showPlayoutExperiment onFullscreenChange={onFullscreenChange} open={opened} active={visible} onClose={() => {
     setOpened(false);
     setVisible(false);
     window.parent.postMessage({ type: REMOTE_DESKTOP_CLOSE_TYPE }, location.origin);

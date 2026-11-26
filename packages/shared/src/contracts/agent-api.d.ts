@@ -142,6 +142,11 @@ export interface RuntimeModelInfo {
 /** Per-run model/effort the composer pins onto native runtime turns. */
 export type NativeRunOptions = SessionMessageRunOptions;
 
+export interface NativeComposerCatalog {
+  skills: Array<{ name: string; description: string }>;
+  files: string[];
+}
+
 export interface AgentWorkspace {
   agentType: AgentType;
   workspaceId: string;
@@ -388,6 +393,8 @@ export interface AgentApi {
   setSessionNativeMode?(id: string, preset: string): Promise<UnifiedSessionSummary>;
   setSessionNativePermissionPreset?(id: string, preset: string): Promise<UnifiedSessionSummary>;
   getSessionNativeGoal?(id: string): Promise<NativeSessionGoal | null>;
+  getCodexComposerCatalog?(cwd: string, fileQuery?: string, signal?: AbortSignal): Promise<NativeComposerCatalog>;
+  requestComposerPrediction?(id: string, turnId: string, signal?: AbortSignal): Promise<string | null>;
   listSessionBackgroundJobs?(id: string): Promise<RuntimeBackgroundJob[]>;
   getSessionBackgroundJobOutput?(id: string, jobId: string): Promise<RuntimeBackgroundJobOutput>;
   stopSessionBackgroundJob?(id: string, jobId: string): Promise<RuntimeBackgroundJobStopResult>;

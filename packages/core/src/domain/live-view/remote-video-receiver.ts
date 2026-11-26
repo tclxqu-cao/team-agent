@@ -15,20 +15,35 @@ export class RemoteVideoReceiverPolicy {
   private scale = 1;
   private latencyPressure = 0;
   private sourceEdge = 0;
+  private fpsCeiling = 30;
+  private displayedEdge = 0;
 
-  reset(): void {
-    this.maxFps = 30; this.maxEdge = undefined; this.sequence = -1;
+  reset(fpsCeiling = 30): void {
+    this.fpsCeiling = this.maxFps = fpsCeiling; this.maxEdge = undefined; this.sequence = -1;
     this.lastSampleAt = this.sizeAt = -Infinity; this.pressure = this.healthy = this.latencyPressure = 0;
-    this.scale = 1; this.sourceEdge = 0;
+    this.scale = 1; this.sourceEdge = this.displayedEdge = 0;
   }
 
-  observe(sample: RemoteVideoReceiverTelemetry | undefined, quality: RemoteVideoQuality, fps: number, now: number): boolean {
+  reduceSizeForMotion(now: number): boolean {
+    const edge = Math.min(this.displayedEdge, this.maxEdge ?? Infinity);
+    if (edge <= 640) return false;
+    if (now - this.sizeAt < 5000) return true;
+    const next = EDGES.filter(value => value <= edge * .8).at(-1) ?? 640;
+    this.scale = Math.max(.1, this.scale * next / edge);
+    this.maxEdge = next;
+    this.sizeAt = now;
+    this.healthy = 0;
+    return true;
+  }
+
+  observe(sample: RemoteVideoReceiverTelemetry | undefined, quality: RemoteVideoQuality, fps: number, now: number, preferFrameRate = false): boolean {
     if (!sample || !Number.isSafeInteger(sample.sequence) || sample.sequence <= this.sequence || !Number.isFinite(now)) return false;
     this.sequence = sample.sequence;
     if (sample.visible !== true) { this.pressure = this.healthy = this.latencyPressure = 0; return false; }
     if (now - this.lastSampleAt < 750) return false;
     this.lastSampleAt = now;
     const oldFps = this.maxFps, oldEdge = this.maxEdge;
+    if (sample.width && sample.height) this.displayedEdge = Math.max(sample.width, sample.height);
     const validInterval = sample.intervalMs !== undefined && sample.intervalMs >= 250 && sample.intervalMs <= 5000;
     const evidence = validInterval && (sample.decodedFrames ?? 0) >= 3;
     const minimumBufferMs = Math.max(0, sample.jitterBufferMinimumMs ?? 0);
@@ -37,7 +52,7 @@ export class RemoteVideoReceiverPolicy {
     const delayed = validInterval && (sample.decodedFrames ?? 0) >= 1
       && (sample.jitterBufferMs ?? 0) >= Math.max(200, minimumBufferMs + 100);
     this.latencyPressure = delayed ? this.latencyPressure + 1 : 0;
-    const frameBudget = 1000 / clamp(fps, 5, 30);
+    const frameBudget = 1000 / clamp(fps, 5, this.fpsCeiling);
     const overloaded = evidence && ((sample.decodeMs ?? 0) > frameBudget * .8
       || (sample.droppedRatio ?? 0) >= .08
       || (sample.presentationDelayMs ?? 0) >= Math.max(50, frameBudget * .8));
@@ -49,12 +64,14 @@ export class RemoteVideoReceiverPolicy {
       && (sample.presentationDelayMs ?? 0) < Math.max(20, frameBudget * .6);
     if (overloaded) {
       this.healthy = 0; this.pressure += 1;
-      if (this.pressure >= 2) this.maxFps = this.maxFps > 15 ? 15 : 5;
-      if (this.pressure >= 4 && now - this.sizeAt >= 5000) { this.scale = Math.max(.4, this.scale * .75); this.pressure = 0; }
+      if (this.pressure >= 2 && !(preferFrameRate && this.reduceSizeForMotion(now))) {
+        this.maxFps = this.maxFps > 30 ? 30 : this.maxFps > 15 ? 15 : 5;
+      }
+      if (!preferFrameRate && this.pressure >= 4 && now - this.sizeAt >= 5000) { this.scale = Math.max(.4, this.scale * .75); this.pressure = 0; }
     } else if (knownHealthy) {
       this.pressure = 0; this.healthy += 1;
       if (this.healthy >= 5) {
-        this.maxFps = this.maxFps < 15 ? 15 : 30;
+        this.maxFps = this.maxFps < 15 ? 15 : this.maxFps < 30 ? 30 : this.fpsCeiling;
         this.scale = Math.min(1, this.scale / .75); this.healthy = 0;
       }
     } else { this.pressure = this.healthy = 0; }

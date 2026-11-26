@@ -34,6 +34,7 @@ import { CapacitorNativeEnvironment } from "./mobile/infrastructure/capacitor-na
 import { LocalEndpointStorage } from "./mobile/infrastructure/local-endpoint-storage";
 import { HttpConnectivityProbe } from "./mobile/infrastructure/http-connectivity-probe";
 import UnpairedHome from "./mobile/presentation/UnpairedHome";
+import { AndroidUpdateNotice } from "./mobile/presentation/AndroidUpdateNotice";
 import { mountNativeConsole, rememberNativeEndpoint } from "./mobile/presentation/native-console";
 import WorkspaceBoot from "../../shared/src/console/WorkspaceBoot";
 import "../../shared/src/console/neural-boot.css";
@@ -67,7 +68,7 @@ if (nativeWorkspace) document.body.dataset.nativeApp = "1";
 installNativeStatusBarBridge();
 if (!nativeEnvironment.isNativeApp() && window.parent === window) {
   const manifest = document.createElement("link"); manifest.rel = "manifest"; manifest.href = "/manifest.webmanifest"; document.head.append(manifest);
-  const icon = document.querySelector<HTMLLinkElement>('link[rel="apple-touch-icon"]'); if (icon) icon.href = "/pwa/icon-192.png";
+  const icon = document.querySelector<HTMLLinkElement>('link[rel="apple-touch-icon"]'); if (icon) icon.href = "/pwa/apple-touch-icon.png";
   const install = document.createElement("script"); install.src = "/pwa/install.js"; document.head.append(install);
 }
 // Standalone document (home-screen PWA opened directly, not in the /web
@@ -179,13 +180,13 @@ void (async () => {
 function showUnpairedHome(failure = ""): void {
   globalThis.fetch = nativeTransport;
   delete window.__agentroamNativeFrame;
-  root.render(<UnpairedHome initialFailure={failure} onScan={async () => {
+  root.render(<><UnpairedHome initialFailure={failure} onScan={async () => {
     const raw = await scanPairingQr();
     if (!raw || !nativePairing) return;
     const endpoint = await nativePairing.pair(raw);
     rememberNativeEndpoint(endpoint);
     await boot(endpoint);
-  }} />);
+  }} /><AndroidUpdateNotice /></>);
 }
 
 async function boot(endpoint: ServerEndpoint | null): Promise<void> {

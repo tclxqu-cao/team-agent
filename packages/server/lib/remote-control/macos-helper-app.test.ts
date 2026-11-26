@@ -4,6 +4,7 @@ import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { acquireMacInstallLock, MacRemoteHelperApp } from './macos-helper-app.mjs';
+import { MacHelperPermissions } from './macos-helper-permissions.mjs';
 
 const executable = 'Contents/MacOS/agentroam-remote-desktop';
 const roots: string[] = [];
@@ -18,7 +19,9 @@ async function testLock(path: string) {
   queues.set(path, next); await previous;
   return async () => { release(); if (queues.get(path) === next) queues.delete(path); };
 }
-async function installedEntries(path: string) { return (await readdir(dirname(path))).filter(name => name !== '.remote-helper-install.lock'); }
+async function installedEntries(path: string) {
+  return (await readdir(dirname(path))).filter(name => name !== '.remote-helper-install.lock' && name !== '.remote-helper-permissions.json');
+}
 
 async function bundle(path: string, version: string | null, bytes = version ?? 'old') {
   await mkdir(join(path, 'Contents/MacOS'), { recursive: true });
@@ -39,8 +42,13 @@ async function fixture(version = '0.2.0-preview.54') {
   const stopProcesses = vi.fn(async items => {
     for (const item of items) { const index = paths.indexOf(item.path); if (index >= 0) paths.splice(index, 1); }
   });
-  const options = { sourcePath, appPath, verify, register, unregister, processes, stopProcesses, ...(process.platform === 'darwin' ? {} : { acquireLock: testLock }) };
-  return { root, sourcePath, appPath, paths, verify, register, unregister, stopProcesses, options, app: new MacRemoteHelperApp(options) };
+  const reset = vi.fn(async (_service: string) => {}), requiresNewGrant = vi.fn(async () => false);
+  const permissionFile = join(dirname(appPath), '.remote-helper-permissions.json');
+  const buildSpecific = vi.fn(async () => false);
+  const permissions = new MacHelperPermissions(permissionFile, { reset, requiresNewGrant, buildSpecific });
+  const registeredCopies = vi.fn(async (): Promise<string[]> => []);
+  const options = { sourcePath, appPath, verify, register, unregister, registeredCopies, processes, stopProcesses, permissions, ...(process.platform === 'darwin' ? {} : { acquireLock: testLock }) };
+  return { root, sourcePath, appPath, paths, verify, register, unregister, registeredCopies, stopProcesses, reset, requiresNewGrant, buildSpecific, permissionFile, options, app: new MacRemoteHelperApp(options) };
 }
 
 async function legacyBundle(root: string, version: string | null = '0.2.0-preview.53', indexed = false) {
@@ -202,6 +210,113 @@ it('cleans the backup after an installer exits with the replacement already inst
   const before = await stat(join(f.appPath, executable)); await f.app.prepare();
   expect((await stat(join(f.appPath, executable))).ino).toBe(before.ino);
   expect(await installedEntries(f.appPath)).toEqual(['AgentRoam Remote Desktop.app']);
+});
+
+it('cleans old grants once per permission across clients after a verified incompatible upgrade', async () => {
+  const f = await fixture();
+  await bundle(f.appPath, '0.2.0-preview.53');
+  f.requiresNewGrant.mockResolvedValue(true);
+  const fingerprint = await f.app.withPreparedApp((_path: string, hash: string) => hash);
+  const second = new MacRemoteHelperApp({ ...f.options, permissions: new MacHelperPermissions(f.permissionFile, { reset: f.reset }) });
+  await second.prepare(); await second.describe();
+  expect(f.reset).not.toHaveBeenCalled();
+  const probe = vi.fn(async () => ({ screen: false, accessibility: false, locked: false }));
+  await Promise.all([f.app, second].map(client => client.beforePermissionPrompt(fingerprint, 'screen', probe)));
+  expect(f.reset.mock.calls).toEqual([['ScreenCapture']]);
+  await second.beforePermissionPrompt(fingerprint, 'accessibility', probe);
+  await f.app.beforePermissionPrompt(fingerprint, 'accessibility', probe);
+  expect(f.reset.mock.calls).toEqual([['ScreenCapture'], ['Accessibility']]);
+  expect(probe).toHaveBeenCalledTimes(2);
+});
+
+it('preserves current grants and waits for an unlocked, affirmative permission probe', async () => {
+  const f = await fixture(); await bundle(f.appPath, '0.2.0-preview.53');
+  f.requiresNewGrant.mockResolvedValue(true);
+  const hash = await f.app.withPreparedApp((_path: string, hash: string) => hash);
+  for (const locked of [true, null]) {
+    await f.app.beforePermissionPrompt(hash, 'screen', async () => ({ screen: false, accessibility: true, locked }));
+  }
+  await f.app.beforePermissionPrompt(hash, 'screen', async () => ({ screen: undefined, locked: false }));
+  expect(f.reset).not.toHaveBeenCalled();
+  await f.app.beforePermissionPrompt(hash, 'screen', async () => ({ screen: false, accessibility: true, locked: false }));
+  await f.app.beforePermissionPrompt(hash, 'accessibility', async () => ({ accessibility: false, locked: false }));
+  expect(f.reset.mock.calls).toEqual([['ScreenCapture']]);
+});
+
+it.skipIf(process.platform === 'win32')('unregisters only verified obsolete copies before resetting and retains backup files', async () => {
+  const f = await fixture();
+  await bundle(f.appPath, '0.2.0-preview.53');
+  f.requiresNewGrant.mockResolvedValue(true);
+  const hash = await f.app.withPreparedApp((_path: string, hash: string) => hash);
+  const old = join(f.root, 'Documents/retired.app'), newer = join(f.root, 'later.app');
+  const alternate = join(f.root, 'same-version-different-binary.app'), unrelated = join(f.root, 'unrelated.app');
+  await bundle(old, '0.2.0-preview.53');
+  await bundle(newer, '0.2.0-preview.99');
+  await bundle(alternate, '0.2.0-preview.54', 'different build');
+  await bundle(unrelated, '0.2.0-preview.40');
+  await writeFile(join(unrelated, 'Contents/Info.plist'), '<key>CFBundleIdentifier</key><string>example.other</string>');
+  f.registeredCopies.mockResolvedValue([f.appPath, old, old, f.sourcePath, newer, alternate, unrelated]);
+  await f.app.beforePermissionPrompt(hash, 'screen', async () => ({ screen: false, locked: true }));
+  expect(f.registeredCopies).not.toHaveBeenCalled();
+  await f.app.beforePermissionPrompt(hash, 'screen', async () => ({ screen: false, locked: false }));
+  expect(f.unregister.mock.calls).toEqual([[old], [f.sourcePath]]);
+  expect(f.register).toHaveBeenLastCalledWith(f.appPath, f.appPath);
+  expect(f.register.mock.invocationCallOrder.at(-1)).toBeLessThan(f.reset.mock.invocationCallOrder[0]);
+  expect(await readFile(join(old, executable), 'utf8')).toBe('0.2.0-preview.53');
+  expect(await readFile(join(f.sourcePath, executable), 'utf8')).toBe('0.2.0-preview.54');
+});
+
+it('does not clear permissions on first install, signature-compatible upgrades or when an older client reopens them', async () => {
+  const f = await fixture(), probe = vi.fn(async () => ({ screen: false, locked: false }));
+  f.buildSpecific.mockResolvedValue(true);
+  let hash = await f.app.withPreparedApp((_path: string, value: string) => value);
+  await f.app.beforePermissionPrompt(hash, 'screen', probe);
+  const source = join(f.root, 'newer/AgentRoam Remote Desktop.app');
+  await bundle(source, '0.2.0-preview.55');
+  const newer = new MacRemoteHelperApp({ ...f.options, sourcePath: source });
+  hash = await newer.withPreparedApp((_path: string, value: string) => value);
+  await newer.beforePermissionPrompt(hash, 'screen', probe);
+  await f.app.prepare(); await f.app.beforePermissionPrompt(hash, 'screen', probe);
+  expect(f.requiresNewGrant).toHaveBeenCalledOnce();
+  expect(probe).not.toHaveBeenCalled();
+  expect(f.reset).not.toHaveBeenCalled();
+  expect(f.buildSpecific).not.toHaveBeenCalled();
+});
+
+it('repairs an explicitly requested missing grant of a preexisting ad hoc installation once, even after the old binary was discarded', async () => {
+  const f = await fixture(); await bundle(f.appPath, '0.2.0-preview.54');
+  f.buildSpecific.mockResolvedValue(true);
+  const hash = await f.app.withPreparedApp((_path: string, hash: string) => hash);
+  expect(f.buildSpecific).toHaveBeenCalledWith(f.appPath);
+  expect(f.reset).not.toHaveBeenCalled();
+  expect((await stat(f.permissionFile)).mode & 0o777).toBe(0o600);
+  f.reset.mockRejectedValueOnce(Object.assign(new Error('temporarily busy'), { code: 1 }));
+  const probe = async () => ({ screen: true, accessibility: false, locked: false });
+  await expect(f.app.beforePermissionPrompt(hash, 'accessibility', probe)).resolves.toBe(false);
+  await expect(f.app.beforePermissionPrompt(hash, 'accessibility', probe)).resolves.toBe(true);
+  await f.app.prepare();
+  await f.app.beforePermissionPrompt(hash, 'screen', probe);
+  await f.app.beforePermissionPrompt(hash, 'accessibility', probe);
+  expect(f.reset.mock.calls).toEqual([['Accessibility'], ['Accessibility']]);
+  expect(f.buildSpecific).toHaveBeenCalledOnce();
+  expect(f.requiresNewGrant).not.toHaveBeenCalled();
+});
+
+it('recovers a pending migration after replacement and carries the remaining permissions across a compatible update', async () => {
+  const f = await fixture(); await f.app.prepare();
+  await bundle(join(dirname(f.appPath), '.remote-helper-previous.app'), '0.2.0-preview.53');
+  f.requiresNewGrant.mockResolvedValueOnce(true);
+  const oldHash = await f.app.withPreparedApp((_path: string, hash: string) => hash);
+  const probe = async () => ({ screen: false, accessibility: false, locked: false });
+  await f.app.beforePermissionPrompt(oldHash, 'screen', probe);
+  const newerSource = join(f.root, 'newer/AgentRoam Remote Desktop.app'); await bundle(newerSource, '0.2.0-preview.55');
+  const newer = new MacRemoteHelperApp({ ...f.options, sourcePath: newerSource });
+  const hash = await newer.withPreparedApp((_path: string, hash: string) => hash);
+  await f.app.beforePermissionPrompt(oldHash, 'accessibility', probe);
+  await newer.beforePermissionPrompt(hash, 'screen', probe);
+  expect(f.reset.mock.calls).toEqual([['ScreenCapture']]);
+  await newer.beforePermissionPrompt(hash, 'accessibility', probe);
+  expect(f.reset.mock.calls).toEqual([['ScreenCapture'], ['Accessibility']]);
 });
 
 it.skipIf(process.platform !== 'darwin')('retains the OS lock until release and can reuse its file', async () => {

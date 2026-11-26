@@ -7,9 +7,11 @@ import { DesktopRuntimeBootstrap } from "./runtime-bootstrap.js";
 import { DesktopLiveCliProxy } from "./desktop-live-cli-proxy.js";
 import { LitePairingService } from "./lite-pairing.js";
 import { DesktopCodexSharingSetup } from "./codex-sharing-setup.js";
+import { DesktopUpdateService } from "./update-service.js";
+import { installDesktopUpdate } from "./desktop-installer.js";
 
 const require = createRequire(import.meta.url);
-const { app, BrowserWindow, ipcMain, Menu, dialog } = require("electron") as typeof import("electron");
+const { app, BrowserWindow, ipcMain, Menu, dialog, net, shell } = require("electron") as typeof import("electron");
 app.setName("AgentRoam Lite");
 if (process.env.AGENTROAM_DESKTOP_USER_DATA?.trim()) app.setPath("userData", resolve(process.env.AGENTROAM_DESKTOP_USER_DATA));
 const logger = installGlobalLogging({ dir: join(app.getPath("userData"), "logs"), source: "desktop-lite", minLevel: "info", handlers: { exitOnUncaughtException: false } });
@@ -25,20 +27,37 @@ const sharing = new DesktopCodexSharingSetup({
   report: message => { logger.warn("Codex sharing setup incomplete", { message }); void dialog.showMessageBox({ type: "warning", message: "Codex 共享尚未完成", detail: message, buttons: ["知道了"] }); },
 });
 const pairing = new LitePairingService(service, bootstrap, undefined, () => sharing.prepare());
-const remote = new DesktopLiveCliProxy({ request: (path, method, body) => service.json(path, method, body) });
+const remote = new DesktopLiveCliProxy({
+  request: (path, method, body) => service.json(path, method, body),
+  prepareRemoteComponent: permission => bootstrap.prepareRemoteComponent(permission),
+});
 let window: import("electron").BrowserWindow | null = null;
+const updates = new DesktopUpdateService({
+  version: app.getVersion(), platform: process.platform, arch: process.arch, edition: "desktop-lite",
+  packaged: app.isPackaged, downloadsDirectory: join(app.getPath("userData"), "updates"),
+  fetch: (input, init) => net.fetch(input instanceof URL ? input.href : input, init),
+  activate: (path, version) => installDesktopUpdate(path, version, {
+    platform: process.platform, edition: "desktop-lite", executable: process.execPath,
+    openPath: path => shell.openPath(path), quit: () => app.quit(),
+  }),
+});
+updates.subscribe(status => window?.webContents.send("update:status", status));
 
 function trusted(event: import("electron").IpcMainInvokeEvent): void {
   if (event.sender !== window?.webContents || event.senderFrame !== event.sender.mainFrame) throw new Error("Untrusted desktop sender");
 }
-ipcMain.handle("lite:refresh", async event => {
+ipcMain.handle("update:get-status", event => { trusted(event); return updates.getStatus(); });
+ipcMain.handle("update:check", event => { trusted(event); return updates.check(); });
+ipcMain.handle("update:install", event => { trusted(event); return updates.install(); });
+ipcMain.handle("lite:refresh", async (event, route?: string) => {
   trusted(event);
-  const invitation = await pairing.refresh();
+  const invitation = await pairing.refresh(route);
   logger.info("lite QR invitation ready");
   return invitation;
 });
 ipcMain.handle("lite:progress", event => { trusted(event); return bootstrap.status(); });
 ipcMain.handle("lite:tunnel-status", event => { trusted(event); return service.tunnelStatus(); });
+ipcMain.handle("lite:pairing-routes", event => { trusted(event); return service.pairingRoutes(); });
 ipcMain.handle("lite:tunnel-connect", event => { trusted(event); return service.connectTunnel(); });
 ipcMain.handle("lite:authorization", (event, action: unknown, permission: unknown) => {
   trusted(event);
@@ -65,6 +84,7 @@ app.whenReady().then(async () => {
   app.setAccessibilitySupportEnabled(true);
   Menu.setApplicationMenu(Menu.buildFromTemplate([{ label: "AgentRoam Lite", submenu: [{ role: "about" }, { type: "separator" }, { role: "quit" }] }, { role: "editMenu" }, { role: "windowMenu" }]));
   createWindow();
+  updates.schedule();
 }).catch(error => { logger.error("lite startup failed", error); app.quit(); });
 app.on("activate", () => { if (!window) createWindow(); else { window.show(); window.focus(); } });
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });

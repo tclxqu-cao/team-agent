@@ -3,6 +3,7 @@ import type { CollaborationCommand } from "@agent/core/domain/collaboration/type
 import type { CatalogSession } from "@agent/core/domain/supervision/types";
 import { isAgentType } from "../../../../core/src/domain/agent/agent-type";
 import { normalizeOutgoingComposerImages } from "../../browser/browser-image-normalization";
+import { publishedTempImagePath } from "../../browser/artifact-links";
 import type {
   AgentApi,
   AgentDefinition,
@@ -12,6 +13,7 @@ import type {
   SessionGoalState,
   SessionQueryIndex,
   ThreadGoalInfo,
+  NativeComposerCatalog,
   NativeGoalMutation,
   NativeSessionGoal,
   RuntimeBackgroundJob,
@@ -132,11 +134,24 @@ export class AgentHttpGateway {
     return this.dictation?.onDictationError(callback) ?? (() => undefined);
   }
 
-  fileWorkspaceRequest<T>(method: string, params: Record<string, unknown> = {}): Promise<T> {
+  async fileWorkspaceRequest<T>(method: string, params: Record<string, unknown> = {}): Promise<T> {
     if (method !== "fs:preview-open" && method !== "fs:preview-close") {
-      return Promise.reject(new Error("消息区仅支持媒体预览操作"));
+      throw new Error("消息区仅支持媒体预览操作");
     }
-    return this.requireProjectBridge().request<T>(method, params);
+    const bridge = this.requireProjectBridge();
+    try {
+      return await bridge.request<T>(method, params);
+    } catch (error) {
+      const code = (error as { code?: string } | null)?.code;
+      if (method !== "fs:preview-open" || (code !== "PATH_OUTSIDE_ROOT" && code !== "PATH_NOT_FOUND")) throw error;
+      const copy = publishedTempImagePath(params.path);
+      if (!copy) throw error;
+      // Old messages still address the temporary original. The copy needs its own ordinary preview ticket.
+      return bridge.request<T>(method, { ...params, path: copy }).catch((copyError) => {
+        if (copyError?.code === "PATH_NOT_FOUND" || copyError?.code === "PATH_OUTSIDE_ROOT") throw error;
+        throw copyError;
+      });
+    }
   }
 
   private requireProjectBridge(): WebProjectBridge {
@@ -216,6 +231,7 @@ export class AgentHttpGateway {
         ...(!isNativeSession && nativeOptions?.profileId ? { profileId: nativeOptions.profileId } : {}),
         ...(nativeOptions?.model?.id ? { nativeModel: nativeOptions.model } : {}),
         ...(nativeOptions?.reasoningEffort ? { nativeReasoningEffort: nativeOptions.reasoningEffort } : {}),
+        ...(nativeOptions?.codexMode ? { codexMode: nativeOptions.codexMode } : {}),
         ...(nativeOptions?.attachments?.length ? { attachments: nativeOptions.attachments } : {}),
       };
       // The request deadline also covers uploading the image payload.
@@ -643,6 +659,19 @@ export class AgentHttpGateway {
     const state = await this.http.get<SessionGoalState>(`/api/sessions/${encodeURIComponent(id)}/goals`);
     if (state.active) void this.openStream(id, this.nativeStreamCursors.get(id)).catch(() => undefined);
     return state;
+  }
+
+  getCodexComposerCatalog(cwd: string, fileQuery?: string, signal?: AbortSignal): Promise<NativeComposerCatalog> {
+    const params = new URLSearchParams({ cwd });
+    if (fileQuery !== undefined) params.set("fileQuery", fileQuery);
+    return this.http.get(`/api/agent/composer?${params}`, { signal, timeoutMs: 7_000 });
+  }
+
+  async requestComposerPrediction(id: string, turnId: string, signal?: AbortSignal): Promise<string | null> {
+    const result = await this.http.post<{ text: string | null }>(
+      "/api/agent/composer", { sessionId: id, turnId }, { signal, timeoutMs: 10_000 },
+    );
+    return result.text;
   }
 
   async enqueueSessionGoal(id: string, objective: string, sourceMessageId?: string): Promise<SessionGoalState> {

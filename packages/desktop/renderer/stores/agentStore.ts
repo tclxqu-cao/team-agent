@@ -166,6 +166,8 @@ export interface ChatMessage {
   /** Identifies a goal-mode user message and links it to the durable goal queue. */
   isGoal?: boolean;
   goalId?: string;
+  /** Last visible user input before this local goal, used when a runtime has no turn IDs. */
+  goalHistoryAnchor?: string | null;
   /** ask_user question data */
   askUser?: {
     questionId: string;

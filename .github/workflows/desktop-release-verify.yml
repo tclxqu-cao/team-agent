@@ -75,7 +75,7 @@ jobs:
           $assetDir = "$env:RUNNER_TEMP/release-assets"
           gh release download $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --pattern '*.dmg' --pattern '*.apk' --pattern SHA256SUMS --dir $assetDir
           if ($LASTEXITCODE -ne 0) { throw 'Release asset download failed' }
-          $verified = 0
+          $verifiedNames = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
           foreach ($line in Get-Content "$assetDir/SHA256SUMS") {
             if ($line -notmatch '^([a-f0-9]{64})  ([^/\\]+)$') { throw 'Invalid release checksum entry' }
             $expected = $Matches[1]
@@ -84,11 +84,16 @@ jobs:
             if (!(Test-Path $path)) { $path = Join-Path "$env:RUNNER_TEMP/installer" $name }
             if (!(Test-Path $path)) { throw "Missing release asset: $name" }
             if ((Get-FileHash $path -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expected) { throw "Release checksum mismatch: $name" }
-            $verified++
+            if (!$verifiedNames.Add($name)) { throw "Duplicate release checksum: $name" }
             Write-Output "Verified complete release asset: $name"
           }
-          $expectedCount = if ($env:DESKTOP_EXECUTABLE -eq 'AgentRoam Lite.exe') { 2 } else { 3 }
-          if ($verified -ne $expectedCount) { throw 'Unexpected release asset count' }
+          $lite = $env:DESKTOP_EXECUTABLE -eq 'AgentRoam Lite.exe'
+          $productPrefix = if ($lite) { 'AgentRoam-Lite' } else { 'AgentRoam' }
+          $releaseVersion = $env:RELEASE_TAG -replace '^desktop(?:-lite)?-v', ''
+          $expectedNames = @("$productPrefix-$releaseVersion-arm64.dmg", "$productPrefix-Setup-$releaseVersion-x64.exe")
+          $androidAsset = "AgentRoam-$releaseVersion-android.apk"
+          if (!$lite -and (Test-Path (Join-Path $assetDir $androidAsset))) { $expectedNames += $androidAsset }
+          if (!$verifiedNames.SetEquals([string[]]$expectedNames)) { throw 'Unexpected release assets in SHA256SUMS' }
       - name: Start the installed first-launch worker
         shell: pwsh
         run: |

@@ -1,16 +1,16 @@
 import { execFile, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { access, cp, lstat, mkdir, mkdtemp, open, readFile, readdir, rename, rm } from 'node:fs/promises';
+import { access, cp, lstat, mkdir, mkdtemp, open, readFile, readdir, realpath, rename, rm } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { setTimeout as delay } from 'node:timers/promises';
 import { componentVersionPattern as versionPattern, compareComponentVersions as compareVersions } from './component-version.mjs';
+import { MacHelperPermissions, macRemoteBundleId } from './macos-helper-permissions.mjs';
 
 const run = promisify(execFile);
-const bundleId = 'com.agentroam.remote-desktop';
 const executable = 'Contents/MacOS/agentroam-remote-desktop';
 const metadata = 'Contents/Resources/agentroam-component.json';
 
@@ -29,7 +29,7 @@ async function readBundle(path) {
   let version = 'legacy';
   try {
     const value = JSON.parse(await readFile(join(path, metadata), 'utf8'));
-    if (value.bundleId !== bundleId || !versionPattern.test(value.version)) throw new Error('远控组件版本信息无效');
+    if (value.bundleId !== macRemoteBundleId || !versionPattern.test(value.version)) throw new Error('远控组件版本信息无效');
     version = value.version;
   } catch (error) { if (error.code !== 'ENOENT') throw error; }
   const hash = createHash('sha256');
@@ -102,6 +102,28 @@ async function unregisterApp(path) {
   await run(register, ['-u', path], { timeout: 5000, maxBuffer: 4096 });
 }
 
+async function registeredInactiveCopies() {
+  // Query Launch Services via AppKit. This does not send Apple Events or prompt.
+  const script = `function run(args) {
+    ObjC.import("AppKit");
+    const running = $.NSRunningApplication.runningApplicationsWithBundleIdentifier(args[0]);
+    const active = new Set();
+    for (let i = 0; i < running.count; i++) {
+      const url = running.objectAtIndex(i).bundleURL;
+      if (url && !url.isNil()) active.add(ObjC.unwrap(url.path));
+    }
+    const urls = $.NSWorkspace.sharedWorkspace.URLsForApplicationsWithBundleIdentifier(args[0]);
+    const paths = [];
+    for (let i = 0; i < urls.count; i++) {
+      const path = ObjC.unwrap(urls.objectAtIndex(i).path);
+      if (!active.has(path)) paths.push(path);
+    }
+    return JSON.stringify(paths);
+  }`;
+  const { stdout } = await run('/usr/bin/osascript', ['-l', 'JavaScript', '-e', script, macRemoteBundleId], { timeout: 5000 });
+  return JSON.parse(stdout);
+}
+
 export async function acquireMacInstallLock(path, timeoutMs) {
   const handle = await open(path, 'a', 0o600);
   try {
@@ -119,8 +141,16 @@ export async function acquireMacInstallLock(path, timeoutMs) {
 
 /** One installed app per user; npm version directories only carry its payload. */
 export class MacRemoteHelperApp {
-  constructor({ sourcePath = bundledRemoteAppPath(), appPath = join(homedir(), 'Library/Application Support/AgentRoamRemoteDesktop/Services.noindex/AgentRoam Remote Desktop.app'), processes = macHelperProcesses, stopProcesses = stopMacHelperProcesses, verify = verifyBundle, register = registerApp, unregister = unregisterApp, acquireLock = acquireMacInstallLock, lockTimeoutMs = 10000 } = {}) {
-    Object.assign(this, { sourcePath, appPath, processes, stopProcesses, verify, register, unregister, acquireLock, lockTimeoutMs });
+  constructor({
+    sourcePath = bundledRemoteAppPath(),
+    appPath = join(homedir(), 'Library/Application Support/AgentRoamRemoteDesktop/Services.noindex/AgentRoam Remote Desktop.app'),
+    processes = macHelperProcesses, stopProcesses = stopMacHelperProcesses, verify = verifyBundle,
+    register = registerApp, unregister = unregisterApp, registeredCopies = registeredInactiveCopies,
+    acquireLock = acquireMacInstallLock, lockTimeoutMs = 10000,
+    permissions = new MacHelperPermissions(join(dirname(appPath), '.remote-helper-permissions.json')),
+  } = {}) {
+    Object.assign(this, { sourcePath, appPath, processes, stopProcesses, verify, register, unregister, registeredCopies, acquireLock, lockTimeoutMs });
+    this.permissions = permissions;
   }
   async available() { try { await access(join(this.sourcePath, executable)); return true; } catch { return false; } }
   async registerInstalled(hash) {
@@ -133,7 +163,39 @@ export class MacRemoteHelperApp {
     const source = await readBundle(this.sourcePath);
     return { name: 'AgentRoam Remote Desktop', path: this.appPath, version: installed?.version ?? source?.version ?? 'unknown', fingerprint: (installed ?? source)?.hash.slice(0, 12), installed: Boolean(installed), updatePending: false };
   }
+  async removeObsoleteRegistrations(installed) {
+    const managed = await realpath(this.appPath);
+    for (const path of new Set(await this.registeredCopies())) {
+      try {
+        if (resolve(path) === managed) continue;
+        const info = await lstat(path);
+        if (!info.isDirectory() || info.uid !== process.getuid() || await realpath(path) === managed) continue;
+        const copy = await readBundle(path);
+        if (!copy || (copy.hash !== installed.hash && compareVersions(copy.version, installed.version) >= 0)) continue;
+        await this.verify(path);
+        // Registration only. A backup or another CLI's repair payload belongs to its owner.
+        await this.unregister(path);
+      } catch { /* Ignore missing, unreadable or unrelated registrations. */ }
+    }
+    await this.register(this.appPath, this.appPath);
+  }
   lock() { return this.acquireLock(join(dirname(this.appPath), '.remote-helper-install.lock'), this.lockTimeoutMs); }
+  async beforePermissionPrompt(fingerprint, permission, probe) {
+    const unlock = await this.lock();
+    try {
+      return await this.permissions.beforePrompt(fingerprint, permission, async () => {
+        const installed = await readBundle(this.appPath);
+        if (installed?.hash !== fingerprint) throw new Error('远控组件已更新，请重新授权');
+        const status = await probe();
+        if (status.locked === false && status[permission] === false) {
+          await this.removeObsoleteRegistrations(installed).catch(error => {
+            console.warn('远控旧应用登记清理失败，将继续请求系统授权', { code: error.code });
+          });
+        }
+        return status;
+      });
+    } finally { await unlock(); }
+  }
   prepare() { return this.withPreparedApp(path => path); }
   async withPreparedApp(use) {
     await mkdir(dirname(this.appPath), { recursive: true, mode: 0o700 });
@@ -144,7 +206,9 @@ export class MacRemoteHelperApp {
       const backup = join(dirname(this.appPath), '.remote-helper-previous.app');
       const previous = await lstat(backup).catch(error => { if (error.code !== 'ENOENT') throw error; return null; });
       if (previous) {
-        if (!previous.isDirectory() || previous.isSymbolicLink() || !await readBundle(backup)) throw new Error('远控组件更新备份无效，未覆盖');
+        if (!previous.isDirectory() || previous.isSymbolicLink()) throw new Error('远控组件更新备份无效，未覆盖');
+        const previousBundle = await readBundle(backup);
+        if (!previousBundle) throw new Error('远控组件更新备份无效，未覆盖');
         // Recover a process exit between the two renames before considering
         // the current CLI's version, which might be older than the backup.
         if (!existing) {
@@ -152,8 +216,10 @@ export class MacRemoteHelperApp {
           await rename(backup, this.appPath);
           existing = await lstat(this.appPath);
         } else {
-          if (!await readBundle(this.appPath)) throw new Error('远控组件更新未完成，已保留旧应用备份');
+          const current = await readBundle(this.appPath);
+          if (!current) throw new Error('远控组件更新未完成，已保留旧应用备份');
           await this.verify(this.appPath);
+          await this.permissions.recordReplacement(backup, previousBundle.hash, this.appPath, current.hash);
           await rm(backup, { recursive: true });
         }
       }
@@ -186,10 +252,11 @@ export class MacRemoteHelperApp {
         const stoppedPaths = new Set(stop.map(item => resolve(item.path)));
         if ((await this.processes()).some(item => stoppedPaths.has(resolve(item.path)))) throw new Error('旧远控组件仍在使用，未替换现有应用');
       };
-      const cleanup = async () => {
+      const cleanup = async targetHash => {
         for (const item of new Map(retired.filter(item => item.remove).map(item => [resolve(item.appPath), item])).values()) {
           if ((await readBundle(item.appPath))?.hash !== item.hash) throw new Error('旧远控组件已变化，未删除');
           if ((await this.processes()).some(process => resolve(process.path) === resolve(item.path))) throw new Error('旧远控组件重新启动，未删除');
+          await this.permissions.recordReplacement(item.appPath, item.hash, this.appPath, targetHash);
           await this.unregister(item.appPath);
           await rm(item.appPath, { recursive: true });
         }
@@ -198,8 +265,9 @@ export class MacRemoteHelperApp {
         await this.verify(this.appPath);
         await retire();
         await this.registerInstalled(installed.hash);
-        await cleanup();
-        return await use(this.appPath);
+        await cleanup(installed.hash);
+        await this.permissions.trackInstallation(installed.hash, this.appPath);
+        return await use(this.appPath, installed.hash);
       }
       const staging = await mkdtemp(join(dirname(this.appPath), '.remote-helper-update-'));
       const staged = join(staging, 'AgentRoam Remote Desktop.app');
@@ -219,14 +287,16 @@ export class MacRemoteHelperApp {
           throw error;
         }
         await this.registerInstalled(source.hash);
-        if (moved) await rm(backup, { recursive: true });
-        await cleanup();
+        if (moved) {
+          await this.permissions.recordReplacement(backup, installed.hash, this.appPath, source.hash);
+          await rm(backup, { recursive: true });
+        }
+        await cleanup(source.hash);
+        await this.permissions.trackInstallation(source.hash);
       } finally {
-        // Backups are removed only after replacement. Permission records and
-        // user data are not part of component cleanup.
         await rm(staging, { recursive: true, force: true });
       }
-      return await use(this.appPath);
+      return await use(this.appPath, source.hash);
     } finally { await unlock(); }
   }
 }

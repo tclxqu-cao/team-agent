@@ -16,7 +16,7 @@ import {
   type ResolveOpenCodeRuntimeOptions,
 } from "./opencode-runtime-manager.js";
 import type { PlatformTarget } from "./platform.js";
-import { resolvePlatformRuntime } from "./platform-packages.js";
+import { AGENTROAM_VERSION, resolvePlatformRuntime } from "./platform-packages.js";
 import { findAvailablePort } from "./port.js";
 import { ProcessSupervisor } from "./process-supervisor.js";
 import { ensureWindowsBackend } from "./codex-windows-backend.js";
@@ -81,7 +81,7 @@ export class RuntimeManager {
       } catch (error) { this.report(`Codex 共享后台未就绪，可在头像菜单重试：${error instanceof Error ? error.message : error}`); }
     }
 
-    const { runtimeRoot } = resolvePlatformRuntime(target);
+    const { runtimeRoot, manifest } = resolvePlatformRuntime(target);
     await repairNativeRuntimePermissions(runtimeRoot);
     const gateway = resolve(runtimeRoot, "ws-server.mjs");
     const meshEnvironment = await loadMeshEnvironment(dataDir, process.env).catch(error => {
@@ -105,7 +105,8 @@ export class RuntimeManager {
         AGENT_LOG_DIR: resolve(dataDir, "logs"),
         AGENT_WEB_ROOTS: options.roots.join(delimiter),
         AGENT_TRUST_TUNNEL_PROXY: "1",
-        AGENTROAM_VERSION: resolvePlatformRuntime(target).manifest.packageVersion,
+        AGENTROAM_VERSION: manifest.packageVersion,
+        AGENTROAM_CLI_VERSION: AGENTROAM_VERSION,
         AGENTROAM_DATA_DIR: dataDir,
         AGENTROAM_CLI_PATH: fileURLToPath(new URL("../bin/agentroam.mjs", import.meta.url)),
       },

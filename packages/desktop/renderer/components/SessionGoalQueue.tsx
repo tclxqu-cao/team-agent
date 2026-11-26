@@ -4,14 +4,20 @@ import type { SessionGoalState } from "@agent/core";
 
 type GoalDraft = { goalId: string; objective: string };
 
-interface SessionGoalQueueProps {
-  active: SessionGoalState["active"];
-  queued: SessionGoalState["queued"];
+type SessionGoalQueueProps = {
   onEdit: (goalId: string, objective: string) => Promise<void>;
-  insertion?: { mode: "current" | "next"; submit: (goalId: string) => Promise<void> };
   onRemove: (goalId: string) => Promise<void>;
+} & ({
+  active: NonNullable<SessionGoalState["active"]>;
+  queued?: never;
+  insertion?: never;
+  onReorder?: never;
+} | {
+  active?: never;
+  queued: SessionGoalState["queued"];
+  insertion?: { mode: "current" | "next"; submit: (goalId: string) => Promise<void> };
   onReorder: (sourceId: string, targetId: string) => Promise<void>;
-}
+});
 
 export default function SessionGoalQueue({ active, queued, onEdit, insertion, onRemove, onReorder }: SessionGoalQueueProps) {
   const [draft, setDraft] = useState<GoalDraft | null>(null);
@@ -19,7 +25,7 @@ export default function SessionGoalQueue({ active, queued, onEdit, insertion, on
   const [inserting, setInserting] = useState<string | null>(null);
   const [dragging, setDragging] = useState<string | null>(null);
   const pointerDrag = useRef<{ pointerId: number; goalId: string } | null>(null);
-  const rows = active ? [active, ...queued] : queued;
+  const rows = active ? [active] : queued;
   const savingRef = useRef(false);
   const save = async () => {
     if (!draft || !draft.objective.trim() || savingRef.current) return;
@@ -60,12 +66,12 @@ export default function SessionGoalQueue({ active, queued, onEdit, insertion, on
     </form>
   );
 
-  return <div className="queued-message-list" aria-label="目标队列" data-tab-swipe-ignore>
+  return <div className="queued-message-list" aria-label={active ? "当前目标" : "目标队列"} data-tab-swipe-ignore>
     {rows.map(goal => {
       const isActive = goal.id === active?.id;
       const editor = draft?.goalId === goal.id ? draft : null;
       if (editor) return renderEditor(editor);
-      const isNext = insertion?.mode === "next" && goal.id === queued[0]?.id;
+      const isNext = insertion?.mode === "next" && goal.id === rows[0]?.id;
       const insertLabel = insertion?.mode === "current" ? "插入到当前对话" : isNext ? "已排在下一条" : "插入为下一条目标";
       return (
         <div key={goal.id} className={`queued-message-row${dragging === goal.id ? " is-dragging" : ""}`}
@@ -79,7 +85,7 @@ export default function SessionGoalQueue({ active, queued, onEdit, insertion, on
             if (!dragging || isActive || dragging === goal.id) return;
             event.preventDefault();
             setDragging(null);
-            void onReorder(dragging, goal.id);
+            void onReorder?.(dragging, goal.id);
           }}>
           {isActive ? <span className="queued-message-grip session-goal-marker" role="img" aria-label="目标进行中" title="进行中"><Target size={15} aria-hidden="true" /></span>
             : <button type="button" className="queued-message-grip" draggable={!draft && !busy}
@@ -93,8 +99,8 @@ export default function SessionGoalQueue({ active, queued, onEdit, insertion, on
               onKeyDown={event => {
                 if (draft || busy || (event.key !== "ArrowUp" && event.key !== "ArrowDown")) return;
                 event.preventDefault();
-                const target = queued[queued.findIndex(item => item.id === goal.id) + (event.key === "ArrowUp" ? -1 : 1)];
-                if (target) void onReorder(goal.id, target.id);
+                const target = rows[rows.findIndex(item => item.id === goal.id) + (event.key === "ArrowUp" ? -1 : 1)];
+                if (target) void onReorder?.(goal.id, target.id);
               }}
               onPointerDown={event => {
                 if (draft || busy || event.pointerType === "mouse") return;
@@ -109,7 +115,7 @@ export default function SessionGoalQueue({ active, queued, onEdit, insertion, on
                 setDragging(null);
                 const target = document.elementFromPoint(event.clientX, event.clientY)
                   ?.closest<HTMLElement>("[data-queued-goal-id]")?.dataset.queuedGoalId;
-                if (target && target !== pointer.goalId) void onReorder(pointer.goalId, target);
+                if (target && target !== pointer.goalId) void onReorder?.(pointer.goalId, target);
               }}
               onLostPointerCapture={() => { pointerDrag.current = null; setDragging(null); }}>
               <Target size={15} aria-hidden="true" />

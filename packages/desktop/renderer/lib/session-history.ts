@@ -445,7 +445,9 @@ function isCoreAssistantMessage(message: ChatMessage): boolean {
 
 export function restoreSessionHistoryPage(detail: SessionHistoryDetail | null): ChatMessage[] {
   const isCodexCore = detail?.history?.delivery === "core";
-  const restored = restoreSessionMessages(detail, !isCodexCore);
+  const restored = detail?.agentType === "zcode"
+    ? collapseFailedZCodeRetries(restoreSessionMessages(detail, !isCodexCore))
+    : restoreSessionMessages(detail, !isCodexCore);
   const prefixStart = restored.findIndex((message) => (
     (message.role === "user" && !message.isCompactionSummary)
     || (message.role === "assistant" && !message.askUser && !message.widget)
@@ -464,6 +466,49 @@ export function restoreSessionHistoryPage(detail: SessionHistoryDetail | null): 
     groupCodexExecutionTrace(restored, revision),
     detail?.events ?? [],
   );
+}
+
+/**
+ * ZCode records an input before a failed model request is known to the broker.
+ * If a later turn with the same input completed, the failed turn is a retry
+ * artifact. Keep a failed turn that appears after the last successful turn so
+ * an intentional repeat that failed remains visible.
+ */
+function collapseFailedZCodeRetries(messages: ChatMessage[]): ChatMessage[] {
+  const isTurnInput = (message: ChatMessage) => message.role === "user"
+    && !message.name?.startsWith("__native_steered:")
+    && message.name !== "__native_steering_pending";
+  const turns: Array<{ start: number; end: number; input: string; result?: RunResult; completed: boolean }> = [];
+  for (let start = 0; start < messages.length; start += 1) {
+    if (!isTurnInput(messages[start])) continue;
+    let end = messages.length;
+    for (let index = start + 1; index < messages.length; index += 1) {
+      if (isTurnInput(messages[index])) {
+        end = index;
+        break;
+      }
+    }
+    const turnMessages = messages.slice(start, end);
+    const result = turnMessages.map(message => message.presentation?.runResult).find(Boolean);
+    const completed = result?.status === "completed"
+      || turnMessages.some(message => {
+        const duration = message.presentation?.completionDurationMs;
+        return typeof duration === "number" && Number.isFinite(duration) && duration >= 0;
+      });
+    turns.push({ start, end, input: messages[start].content, result, completed });
+    start = end - 1;
+  }
+  const removed = new Set<number>();
+  const successfulInputsAfter = new Set<string>();
+  for (let index = turns.length - 1; index >= 0; index -= 1) {
+    const turn = turns[index];
+    const failed = turn.result?.status === "failed" || turn.result?.status === "interrupted";
+    if (failed && successfulInputsAfter.has(turn.input)) {
+      for (let messageIndex = turn.start; messageIndex < turn.end; messageIndex += 1) removed.add(messageIndex);
+    }
+    if (turn.completed) successfulInputsAfter.add(turn.input);
+  }
+  return removed.size ? messages.filter((_message, index) => !removed.has(index)) : messages;
 }
 
 export function shouldDeferLiveHistoryRefresh(
@@ -712,6 +757,11 @@ export function mergeRefreshedSessionHistory(
       timestamp: previous.timestamp,
       images: hasPersistedImage ? undefined : message.images ?? previous.images,
       presentation: mergeRunResultPresentation(previous.presentation, carried.presentation),
+      ...(previous.isGoal && !previous.isQueued && message.role === "user"
+        && (message.id === previous.id || (previous.awaitingHistory && !message.isSteered
+          && (!message.presentation?.executionTrace || message.presentation.isGoal))) ? {
+        isGoal: true, sourceMessageId: previous.sourceMessageId ?? previous.id,
+      } : {}),
       ...(previous.isSteered ? { isSteered: true, sourceMessageId: previous.sourceMessageId ?? previous.id } : {}),
       ...(toolCalls ? { toolCalls } : {}),
     };

@@ -21,4 +21,14 @@ describe("composer keyboard", () => {
     expect(composerKeyAction({ key: "Enter", nativeEvent: {} }, running)).toBe("send");
     expect(composerKeyAction({ key: "Enter", shiftKey: true, nativeEvent: {} }, running)).toBeNull();
   });
+
+  it("fills a prediction with plain Tab and leaves normal focus navigation and IME alone", () => {
+    const state = { running: false, pickerOpen: false, predictionVisible: true };
+    expect(composerKeyAction({ key: "Tab", nativeEvent: {} }, state)).toBe("accept-prediction");
+    expect(composerKeyAction({ key: "Tab", shiftKey: true, nativeEvent: {} }, state)).toBeNull();
+    expect(composerKeyAction({ key: "Tab", nativeEvent: {} }, { ...state, predictionVisible: false })).toBeNull();
+    expect(composerKeyAction({ key: "Tab", nativeEvent: { isComposing: true } }, state)).toBeNull();
+    expect(composerKeyAction({ key: "Escape", nativeEvent: {} }, state)).toBe("dismiss-prediction");
+    expect(composerKeyAction({ key: "Tab", nativeEvent: {} }, { ...state, pickerOpen: true, pickerOptions: 2 })).toBe("accept-option");
+  });
 });

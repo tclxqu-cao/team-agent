@@ -20,6 +20,7 @@ import type {
   ImportedAgentWorkspaceRepository,
   ImportAgentWorkspaceResult,
   CreateRuntimeSessionOptions,
+  NativeComposerCatalog,
   RuntimeHealth,
   RuntimeBackgroundJob,
   RuntimeBackgroundJobOutput,
@@ -129,6 +130,16 @@ export class UnifiedSessionService {
       );
     }
     return adapter.listModels();
+  }
+
+  async getCodexComposerCatalog(cwd: string, fileQuery?: string): Promise<NativeComposerCatalog> {
+    return await this.adapters.get("codex")?.getComposerCatalog?.(cwd, fileQuery) ?? { skills: [], files: [] };
+  }
+
+  async requestComposerPrediction(id: string, turnId: string): Promise<string | null> {
+    const { adapter, nativeSessionId } = this.resolveAdapter(id);
+    if (adapter.agentType !== "codex") return null;
+    return await adapter.requestComposerPrediction?.(nativeSessionId, turnId) ?? null;
   }
 
   async list(projectId?: string): Promise<UnifiedSessionSummary[]> {

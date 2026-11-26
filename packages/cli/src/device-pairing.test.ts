@@ -1,15 +1,51 @@
 import { describe, expect, it, vi } from "vitest";
 import { parseArgs } from "./args.js";
-import { pairingQrPayload, resolveApprovalInput, watchPairingApproval, type pairingAdmin } from "./device-pairing.js";
+import { pairingQrPayload, printPairingCode, printPairingRoutes, resolveApprovalInput, watchPairingApproval, type pairingAdmin } from "./device-pairing.js";
+import * as local from "./local-service-request.js";
 import { withCliProgress } from "../bin/cli-progress.mjs";
 
 describe("local approval commands", () => {
+  it("prints the selectable VPN, LAN, Tailscale and Cloudflare routes", async () => {
+    const request = vi.spyOn(local, "localServiceRequest")
+      .mockResolvedValueOnce({ routes: [
+        { id: "10.8.0.2", kind: "vpn", address: "10.8.0.2", interfaceName: "wg0" },
+        { id: "192.168.1.20", kind: "lan", address: "192.168.1.20", interfaceName: "en0" },
+        { id: "100.121.10.115", kind: "tailscale", address: "100.121.10.115", interfaceName: "utun8" },
+        { id: "cloudflare", kind: "cloudflare" },
+      ] })
+      .mockResolvedValueOnce({ phase: "unconfigured" });
+    try {
+      const log = vi.fn();
+      await printPairingRoutes("/tmp/local-pairing", log);
+      const output = log.mock.calls.flat().join("\n");
+      expect(output).toContain("自建 VPN / 本机网络地址");
+      expect(output).toContain("局域网");
+      expect(output).toContain("Tailscale / 组网地址");
+      expect(output).toContain("Cloudflare");
+      expect(output).toContain("vpn  自动选择自建 VPN 地址");
+    } finally { request.mockRestore(); }
+  });
+
   it("encodes a separate QR invitation and validates the server URL", () => {
     expect(parseArgs(["pair", "--url", "https://phone.example/web"]).pairingUrl).toBe("https://phone.example/web");
     const link = new URL(pairingQrPayload("https://phone.example/web", "a".repeat(43)));
     expect(link.origin + link.pathname).toBe("https://phone.example/pair");
     expect(link.search).toBe(""); expect(link.hash).toBe(`#pair=${"a".repeat(43)}`);
     expect(() => pairingQrPayload("https://user:password@phone.example", "a".repeat(43))).toThrow();
+  });
+  it("prints a single HTTPS pairing QR without starting manual confirmation", async () => {
+    const request = vi.spyOn(local, "localServiceRequest")
+      .mockResolvedValueOnce({ phase: "ready", provider: "self-hosted", accessUrl: "https://d1.connect.example/web" })
+      .mockResolvedValueOnce({ grant: "a".repeat(43) });
+    try {
+      const log = vi.fn();
+      await printPairingCode("/tmp/local-pairing", log, { interactive: true });
+      expect(request.mock.calls.map(call => call[1])).toEqual(["/api/desktop/tunnel", "/api/pairing/admin/qr"]);
+      expect(log.mock.calls.flat().join(" ")).toContain("Scan with your phone to connect");
+      expect(log.mock.calls.flat().join(" ")).not.toContain("Pairing code:");
+    } finally {
+      request.mockRestore();
+    }
   });
   const id = "12345678-1234-1234-1234-123456789abc";
   it("suspends the outer heartbeat while the user checks the approval phrase", async () => {

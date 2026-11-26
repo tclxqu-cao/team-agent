@@ -166,6 +166,26 @@ describe("managed Node.js runtime", () => {
       npmCli: managedNodeNpmCli(dataDir, "windows-amd64"),
     });
   });
+
+  it("extracts the official Windows ZIP into a profile with spaces and brackets", async () => {
+    const dataDir = resolve(await temporaryRoot(), "AgentRoam [test] profile");
+    const run = extractionRunner("windows-amd64");
+    const node = await ensureManagedNode({
+      dataDir,
+      target: "windows-amd64",
+      dependencies: {
+        download: async (_url, path) => writeFile(path, "archive"),
+        sha256: async () => NODE_RUNTIME_ASSETS["windows-amd64"].sha256,
+        run,
+      },
+    });
+    expect(run).toHaveBeenCalledWith(
+      expect.stringMatching(/\\System32\\tar\.exe$/i),
+      ["-xf", expect.stringContaining("node-v22.22.0-win-x64.zip"), "-C", expect.stringContaining(dataDir)],
+      120_000,
+    );
+    expect(await readFile(node.npmCli, "utf8")).toBe("npm");
+  });
 });
 
 async function temporaryRoot(): Promise<string> {
@@ -189,10 +209,8 @@ function versionRunner(version = `v${MANAGED_NODE_VERSION}`) {
 
 function extractionRunner(target: NodeRuntimeTarget, version = `v${MANAGED_NODE_VERSION}`) {
   return vi.fn(async (command: string, args: string[]) => {
-    if (command === "/usr/bin/tar" || command === "powershell.exe") {
-      const extractRoot = command === "/usr/bin/tar"
-        ? args[args.indexOf("-C") + 1]
-        : args.at(-1)!;
+    if (command === "/usr/bin/tar" || command.endsWith("\\tar.exe")) {
+      const extractRoot = args[args.indexOf("-C") + 1];
       const archiveRoot = resolve(extractRoot, NODE_RUNTIME_ASSETS[target].archiveRoot);
       const executable = target === "windows-amd64"
         ? resolve(archiveRoot, "node.exe")

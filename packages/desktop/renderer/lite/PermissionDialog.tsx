@@ -11,7 +11,7 @@ export function PermissionDialog({ api, onClose }: { api: LiteApi; onClose(): vo
   useEffect(() => {
     alive.current = true;
     dialog.current?.showModal();
-    void api.authorization("status").then(value => { if (alive.current) setStatus(value); }).catch(() => { if (alive.current) setError("无法读取授权状态，请点击重新检查。"); });
+    void api.authorization("recheck").then(value => { if (alive.current) setStatus(value); }).catch(() => { if (alive.current) setError("无法读取授权状态，请点击重新检查。"); });
     return () => { alive.current = false; dialog.current?.close(); };
   }, [api]);
   const act = async (action: "enable" | "recheck" | "restart" | "authorize", permission?: "screen" | "accessibility") => {
@@ -29,7 +29,7 @@ export function PermissionDialog({ api, onClose }: { api: LiteApi; onClose(): vo
         <div className="lite-permission-row"><span>屏幕录制<small>{status.permissionScreen === "granted" ? "已授权" : "未授权"}</small></span><button disabled={busy} onClick={() => void act("authorize", "screen")}>去授权</button></div>
         <div className="lite-permission-row"><span>辅助功能<small>{status.accessibilityTrusted ? "已授权" : "未授权"}</small></span><button disabled={busy} onClick={() => void act("authorize", "accessibility")}>去授权</button></div>
       </>}
-      <p className="lite-permission-note">{ready ? "授权已完成，可以扫码连接。" : "完成系统授权后，点击「重新检查」更新状态。"}</p>
+      <p className="lite-permission-note">{ready ? "授权已完成，可以扫码连接。" : status?.platform === "darwin" ? "在系统设置中允许 AgentRoam Remote Desktop，返回后点「重新检查」。" : "完成系统授权后，点击「重新检查」更新状态。"}</p>
     </>}
     {(error || status?.error) && <p role="alert">{error || status?.error}</p>}
     <div className="lite-actions"><button disabled={busy} onClick={() => void act("recheck")}>{busy ? "处理中…" : "重新检查"}</button><button className="lite-primary" onClick={onClose}>{ready ? "完成" : "稍后设置"}</button></div>

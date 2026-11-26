@@ -1,17 +1,19 @@
 import { createHash } from "node:crypto";
 import { createWriteStream } from "node:fs";
-import { access, mkdir, readFile, rename, unlink } from "node:fs/promises";
-import { resolve } from "node:path";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { join } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import { UpdateChecker, buildDesktopAssetUrl, type UpdatePlatform, type UpdateStatus } from "@agent/core";
+import { UpdateChecker, type DesktopEdition, type UpdatePlatform, type UpdateStatus } from "@agent/core";
 
 export interface DesktopUpdateDependencies {
   version: string;
   platform: NodeJS.Platform;
   arch: string;
+  edition: DesktopEdition;
+  packaged: boolean;
   downloadsDirectory: string;
-  reveal(path: string): void;
+  activate(path: string, version: string): Promise<string>;
   fetch?: typeof fetch;
 }
 
@@ -22,16 +24,26 @@ export class DesktopUpdateService {
   private installPromise: Promise<UpdateStatus> | null = null;
 
   constructor(private readonly dependencies: DesktopUpdateDependencies) {
-    const platform = desktopPlatform(dependencies.platform, dependencies.arch);
+    const platform = dependencies.packaged ? desktopPlatform(dependencies.platform, dependencies.arch) : null;
     this.status = { phase: platform ? "idle" : "unavailable", currentVersion: dependencies.version };
-    this.checker = platform ? new UpdateChecker({ currentVersion: dependencies.version, client: "desktop", platform, fetch: dependencies.fetch }) : null;
-    this.checker?.subscribe((status) => this.publish(status));
+    this.checker = platform ? new UpdateChecker({
+      currentVersion: dependencies.version, client: dependencies.edition, platform, fetch: dependencies.fetch, timeoutMs: 10_000,
+    }) : null;
+    this.checker?.subscribe((status) => {
+      if (this.installPromise) return;
+      if ((this.status.phase === "failed" || this.status.phase === "complete")
+        && status.targetVersion === this.status.targetVersion && ["checking", "available"].includes(status.phase)) return;
+      this.publish(status);
+    });
   }
 
   schedule(): void { this.checker?.schedule(); }
   getStatus(): UpdateStatus { return structuredClone(this.status); }
   subscribe(listener: (status: UpdateStatus) => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener); }
-  async check(): Promise<UpdateStatus> { return this.checker ? this.checker.refresh() : this.getStatus(); }
+  async check(): Promise<UpdateStatus> {
+    if (!this.installPromise) await this.checker?.refresh();
+    return this.getStatus();
+  }
 
   install(): Promise<UpdateStatus> {
     if (this.installPromise) return this.installPromise;
@@ -41,29 +53,42 @@ export class DesktopUpdateService {
 
   private async download(): Promise<UpdateStatus> {
     const candidate = this.checker?.getStatus();
-    if (!candidate || candidate.phase !== "available" || !candidate.targetVersion || !candidate.asset) throw new Error("no validated Desktop update is available");
-    await mkdir(this.dependencies.downloadsDirectory, { recursive: true });
-    const destination = await availableDestination(this.dependencies.downloadsDirectory, candidate.asset.fileName);
-    const partial = `${destination}.download`;
-    this.publish({ ...candidate, phase: "downloading", progress: 0 });
+    if (!candidate || candidate.phase !== "available" || !candidate.targetVersion || !candidate.asset?.url) {
+      throw new Error("当前没有可安装的更新");
+    }
+    const { asset, targetVersion } = candidate;
+    const url = candidate.asset.url;
+    const publishProgress = (progress: number) => this.publish({ ...candidate, phase: "downloading", progress });
+    let directory: string | undefined;
+    publishProgress(0);
     try {
-      const response = await (this.dependencies.fetch ?? fetch)(buildDesktopAssetUrl(candidate.targetVersion, candidate.asset.fileName));
-      if (!response.ok || !response.body) throw new Error("Desktop installer download failed");
-      const expectedSize = Number(response.headers.get("content-length")) || candidate.asset.size || 0;
+      await mkdir(this.dependencies.downloadsDirectory, { recursive: true });
+      directory = await mkdtemp(join(this.dependencies.downloadsDirectory, "agentroam-update-"));
+      const destination = join(directory, asset.fileName);
+      const response = await (this.dependencies.fetch ?? fetch)(url, { signal: AbortSignal.timeout(15 * 60_000) });
+      if (!response.ok || !response.body) throw new Error("安装包下载失败");
+      const expectedSize = asset.size ?? (Number(response.headers.get("content-length")) || 0);
+      const limit = 2 * 1024 ** 3;
+      const hash = createHash("sha256");
       let downloaded = 0;
-      const source = Readable.fromWeb(response.body as any);
-      source.on("data", (chunk: Buffer) => {
-        downloaded += chunk.length;
-        if (expectedSize > 0) this.publish({ ...candidate, phase: "downloading", progress: Math.min(99, Math.round(downloaded / expectedSize * 100)) });
-      });
-      await pipeline(source, createWriteStream(partial, { flags: "wx", mode: 0o600 }));
-      const actual = createHash("sha256").update(await readFile(partial)).digest("hex");
-      if (actual !== candidate.asset.sha256) throw new Error("Desktop installer checksum mismatch");
-      await rename(partial, destination);
-      this.dependencies.reveal(destination);
-      return this.publish({ ...candidate, phase: "complete", progress: 100, message: "安装包已下载，请手动安装" });
+      let progress = 0;
+      const source = Readable.fromWeb(response.body as import("node:stream/web").ReadableStream<Uint8Array>);
+      await pipeline(source, async function* (source) {
+        for await (const chunk of source) {
+          downloaded += chunk.length;
+          if (downloaded > (expectedSize || limit) || downloaded > limit) throw new Error("安装包大小异常");
+          hash.update(chunk);
+          const next = expectedSize ? Math.min(99, Math.floor(downloaded / expectedSize * 100)) : 0;
+          if (next > progress) { progress = next; publishProgress(progress); }
+          yield chunk;
+        }
+      }, createWriteStream(destination, { flags: "wx", mode: 0o700 }));
+      if (hash.digest("hex") !== asset.sha256 || (asset.size && asset.size !== downloaded)) throw new Error("安装包校验失败");
+      this.publish({ ...candidate, phase: "installing", progress: 100 });
+      const message = await this.dependencies.activate(destination, targetVersion);
+      return this.publish({ ...candidate, phase: "complete", progress: 100, message });
     } catch (error) {
-      await unlink(partial).catch(() => undefined);
+      if (directory) await rm(directory, { recursive: true, force: true }).catch(() => undefined);
       return this.publish({ ...candidate, phase: "failed", message: error instanceof Error ? error.message : "Desktop installer download failed" });
     }
   }
@@ -79,15 +104,4 @@ export function desktopPlatform(platform: NodeJS.Platform, arch: string): Update
   if (platform === "darwin" && arch === "arm64") return "darwin-arm64";
   if (platform === "win32" && arch === "x64") return "windows-amd64";
   return null;
-}
-
-async function availableDestination(directory: string, fileName: string): Promise<string> {
-  const dot = fileName.lastIndexOf(".");
-  const stem = dot > 0 ? fileName.slice(0, dot) : fileName;
-  const extension = dot > 0 ? fileName.slice(dot) : "";
-  for (let suffix = 0; suffix < 100; suffix += 1) {
-    const candidate = resolve(directory, suffix === 0 ? fileName : `${stem}-${suffix}${extension}`);
-    try { await access(candidate); } catch { return candidate; }
-  }
-  throw new Error("unable to allocate Desktop installer filename");
 }

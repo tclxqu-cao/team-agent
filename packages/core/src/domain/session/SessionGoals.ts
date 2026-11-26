@@ -6,6 +6,7 @@ export type SessionQueueItemKind = "goal" | "message";
 export interface SessionMessageRunOptions {
   model?: { id: string; providerID?: string };
   reasoningEffort?: "low" | "medium" | "high" | "xhigh" | "max";
+  codexMode?: "default" | "plan";
   profileId?: string;
   attachments?: PromptAttachment[];
 }
@@ -28,6 +29,7 @@ export function normalizeSessionMessageRunOptions(value: unknown): SessionMessag
       model: { id: model.id, ...(typeof model.providerID === "string" && model.providerID ? { providerID: model.providerID } : {}) },
     } : {}),
     ...(effort ? { reasoningEffort: effort } : {}),
+    ...(raw.codexMode === "plan" || raw.codexMode === "default" ? { codexMode: raw.codexMode } : {}),
     ...(typeof raw.profileId === "string" && raw.profileId.trim() ? { profileId: raw.profileId } : {}),
     ...(attachments?.length ? { attachments } : {}),
   };

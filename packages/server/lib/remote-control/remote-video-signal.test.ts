@@ -3,6 +3,12 @@ import { describe, expect, it } from 'vitest';
 import { MAX_REMOTE_AUDIO_BUFFERED_BYTES, parseProducerRemoteVideoSignal, parseViewerRemoteVideoSignal, shouldDropRemoteAudioEvent } from './remote-video-signal.mjs';
 
 describe('remote video signal boundary', () => {
+  it('accepts supported motion modes and advertised caps', () => {
+    expect(parseViewerRemoteVideoSignal({ kind: 'start', motionMode: 'motion-60' }).motionMode).toBe('motion-60');
+    expect(() => parseViewerRemoteVideoSignal({ kind: 'start', motionMode: 'unlimited' })).toThrow();
+    expect(parseProducerRemoteVideoSignal({ kind: 'state', state: 'connected', maxFrameRate: 60 }).maxFrameRate).toBe(60);
+    expect(() => parseProducerRemoteVideoSignal({ kind: 'state', state: 'connected', maxFrameRate: 600 })).toThrow();
+  });
   it('preserves bounded attempt identities on both directions', () => {
     expect(parseViewerRemoteVideoSignal({ kind: 'answer', attemptId: '7-2', sdp: { type: 'answer', sdp: 'v=0' } }).attemptId).toBe('7-2');
     expect(parseProducerRemoteVideoSignal({ kind: 'offer', attemptId: '7-2', sdp: { type: 'offer', sdp: 'v=0' } }).attemptId).toBe('7-2');

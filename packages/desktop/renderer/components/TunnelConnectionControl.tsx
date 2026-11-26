@@ -1,7 +1,65 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Globe, LoaderCircle } from "lucide-react";
+import type { PairingRoute } from "../../../shared/src/contracts/tunnel-status";
 import type { useTunnelConnection } from "../lib/use-tunnel-connection";
+import { pairingRouteOptions } from "../lib/pairing-route-options";
 import "./tunnel-connection.css";
+
+export function PairingRoutePicker({ api, value, busy, onChange }: {
+  api: { pairingRoutes(): Promise<PairingRoute[]> };
+  value: string;
+  busy: boolean;
+  onChange(value: string): void;
+}) {
+  const [routes, setRoutes] = useState<PairingRoute[]>([]);
+  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [attempt, setAttempt] = useState(0);
+  const [pickedKey, setPickedKey] = useState("");
+  useEffect(() => {
+    if (busy) return;
+    let active = true;
+    let pending = false;
+    const load = async () => {
+      if (pending) return;
+      pending = true;
+      setStatus("loading");
+      try {
+        const choices = await api.pairingRoutes();
+        if (active) { setRoutes(choices); setStatus("ready"); }
+      } catch {
+        if (active) { setRoutes([]); setStatus("error"); }
+      } finally { pending = false; }
+    };
+    void load();
+    window.addEventListener("focus", load);
+    return () => { active = false; window.removeEventListener("focus", load); };
+  }, [api, busy, attempt]);
+  const loading = busy || status === "loading";
+  const missing = loading ? "正在读取" : status === "error" ? "线路未知" : "后台未提供";
+  const options = pairingRouteOptions(routes, missing);
+  const selected = options.find(o => o.key === pickedKey && o.route?.id === value) ?? options.find(o => o.route?.id === value);
+  const needsNetwork = selected?.route && !["self-hosted", "cloudflare"].includes(selected.route.kind);
+  return <div className="pairing-route-picker">
+    <label>
+      <span>扫码连接方式</span>
+      <select value={selected?.key ?? value} onChange={event => {
+        const key = event.target.value;
+        const routeId = options.find(option => option.key === key)?.route?.id ?? "";
+        setPickedKey(key);
+        if (routeId !== value) onChange(routeId);
+      }}>
+        <option value="">默认连接</option>
+        {value && !selected && <option value={value} disabled>当前所选线路 · {missing}</option>}
+        {options.map(option => <option key={option.key} value={option.key} disabled={!option.route || busy}>{option.label}</option>)}
+      </select>
+    </label>
+    {!busy && status !== "loading" && !routes.length && <small role="status">{status === "error"
+      ? "无法读取后台线路，请检查 AgentRoam 后台后重试。"
+      : "后台未返回可选线路。连接网络或 VPN 后可重新读取。"}</small>}
+    <button type="button" className="pairing-route-refresh" disabled={loading} onClick={() => setAttempt(n => n + 1)}>刷新线路</button>
+    {needsNetwork && <small>手机需要能访问所选地址。使用 VPN 时，手机也需要接入对应组网。</small>}
+  </div>;
+}
 
 export function TunnelConnectionControl({ connection }: { connection: ReturnType<typeof useTunnelConnection> }) {
   const { status, failure, requesting, connect } = connection;

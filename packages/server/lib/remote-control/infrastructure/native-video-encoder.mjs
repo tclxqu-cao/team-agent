@@ -13,6 +13,7 @@ export class NativeVideoEncoder {
     return {
       dynamicBitrate: !this.legacyVideo,
       dynamicFrameRate: !this.legacyVideo,
+      maxFrameRate: this.maxFrameRate ?? 30,
       dynamicResolution: !this.legacyVideo && this.resolutionSupported === true,
       encoderQueueTelemetry: !this.legacyVideo,
       explicitH264Profile: this.highProfile && !this.legacyVideo,
@@ -53,7 +54,7 @@ export class NativeVideoEncoder {
     }));
   }
 
-  async start({ profile, decision }) {
+  async start({ profile, decision, videoOnly = false, captureFps = 30 }) {
     if (this.legacyVideo) {
       if (profile !== 'baseline') throw new Error('Legacy video helper supports Baseline only');
       await this.helper.request({ op: 'video', enabled: true });
@@ -61,15 +62,23 @@ export class NativeVideoEncoder {
     }
     try {
       this.resolutionConfigured = decision.maxEdge !== undefined;
-      const reply = await this.helper.request({ op: 'video-start', profile, bitRate: decision.bitRate, maxFps: decision.maxFps,
+      // Start within the legacy limit until this specific helper advertises 60 fps.
+      const reply = await this.helper.request({ op: 'video-start', profile, bitRate: decision.bitRate, maxFps: Math.min(decision.maxFps, 30),
+        ...(videoOnly ? { videoOnly: true } : {}), ...(captureFps === 60 ? { captureFps } : {}),
         ...(decision.maxEdge !== undefined || this.resolutionConfigured ? { maxEdge: decision.maxEdge ?? 0 } : {}),
         ...liveView.remoteVideoEncodeAdmission(decision.maxFps), keyFrameInterval: liveView.remoteVideoKeyframeInterval(decision.maxFps, decision.reason) });
       this.resolutionSupported = reply?.adaptiveResolutionVersion === 1;
+      this.maxFrameRate = reply?.maxFrameRate === 60 ? 60 : 30;
+      this.canHoldEncoder = reply?.encoderPressureVersion === 1;
     } catch (error) {
       if (profile === 'high') throw error;
       await this.helper.request({ op: 'video', enabled: true });
       this.legacyVideo = true;
     }
+  }
+
+  setEncoderPressure(blocked) {
+    if (this.canHoldEncoder) return this.helper.request({ op: 'video-backpressure', blocked }).catch(() => undefined);
   }
 
   apply(decision) {
@@ -92,6 +101,8 @@ export class NativeVideoEncoder {
       const result = await this.helper.request({ op: 'video-stats' });
       if (!result || result.ok === false) return null;
       const telemetry = {
+        captureMaxFps: [30, 60].includes(result.captureMaxFps) ? result.captureMaxFps : undefined,
+        capturePixelFormat: ['BGRA', 'NV12'].includes(result.capturePixelFormat) ? result.capturePixelFormat : undefined,
         pendingFrames: Number.isFinite(result.pendingFrames) ? result.pendingFrames : undefined,
         queuedFrames: Number.isFinite(result.queuedFrames) ? result.queuedFrames : undefined,
         coalescedFrames: Number.isFinite(result.coalescedFrames) ? result.coalescedFrames : undefined,
@@ -111,6 +122,8 @@ export class NativeVideoEncoder {
   }
 
   stop() {
+    this.canHoldEncoder = false;
+    this.maxFrameRate = 30;
     return this.helper.request({ op: 'video', enabled: false }).catch(() => undefined);
   }
 }

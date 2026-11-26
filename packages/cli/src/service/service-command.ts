@@ -78,6 +78,7 @@ export async function runServiceCommand(options: CliOptions, context: ServiceCom
       } catch (error) {
         log(`Codex will be checked and installed during service startup: ${error instanceof Error ? error.message : error}`);
       }
+      const relayUrl = options.relayUrl ?? environment.AGENTROAM_HTTPS_RELAY_URL?.trim();
       const config: ServiceConfig = {
         version: context.version,
         nodePath: context.nodePath,
@@ -89,6 +90,7 @@ export async function runServiceCommand(options: CliOptions, context: ServiceCom
         port: options.port,
         relay: options.relay,
         tunnelCommand: options.tunnelCommand,
+        ...(relayUrl ? { relayUrl } : {}),
         localOnly: options.localOnly,
         dataDir: options.dataDir,
         installedAt: now.toISOString(),
@@ -229,7 +231,7 @@ export function buildServiceEnvironmentPath(
   return [...new Set(entries)].join(separator);
 }
 
-function createController(platform: NodeJS.Platform, homeDir?: string): ServiceController {
+export function createController(platform: NodeJS.Platform, homeDir?: string): ServiceController {
   if (platform === "darwin") return new MacLaunchAgent({ homeDir });
   if (platform === "win32") return new WindowsTaskService({ homeDir });
   throw cliError(`agentroam service is unavailable on ${platform}; supported platforms are macOS and Windows`);

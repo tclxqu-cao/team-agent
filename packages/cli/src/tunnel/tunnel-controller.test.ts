@@ -1,23 +1,23 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { parseArgs } from "../args.js";
 import { TunnelController } from "./tunnel-controller.js";
-import type { TunnelStatus } from "../../../shared/src/contracts/tunnel-status";
+import type { TunnelStatus } from "../../../shared/src/contracts/tunnel-status.js";
 import type { TunnelHandle } from "./tunnel-provider.js";
 
 const controllers: TunnelController[] = [];
 afterEach(async () => { await Promise.all(controllers.splice(0).map(controller => controller.close())); vi.useRealTimers(); });
 
-function fixture(localOnly = false) {
+function fixture(localOnly = false, selfHosted = false) {
   let end!: () => void;
   const handle: TunnelHandle = { publicUrl: "https://working.example", close: vi.fn(async () => {}), exited: new Promise(resolve => { end = () => resolve({ code: 1, signal: null }); }) };
   const start = vi.fn(async () => handle);
   const readiness = vi.fn(async () => {});
   const published: TunnelStatus[] = [];
   const lanUrl = vi.fn(async () => "http://192.168.1.10:43210");
-  const cli = parseArgs(localOnly ? ["--local-only"] : []);
+  const cli = parseArgs(localOnly ? ["--local-only"] : selfHosted ? ["--relay", "self-hosted"] : []);
   const controller = new TunnelController({
     relay: { cli, target: "windows-amd64", localUrl: "http://127.0.0.1:43210", port: 43210, log: vi.fn(),
-      timeoutMs: 30_000, readiness, providerFactories: { cloudflare: async () => ({ start }) } },
+      timeoutMs: 30_000, readiness, providerFactories: { [selfHosted ? "self-hosted" : "cloudflare"]: async () => ({ start }) } },
     lanUrl, publish: async status => { published.push(status); },
   });
   controllers.push(controller);
@@ -25,6 +25,35 @@ function fixture(localOnly = false) {
 }
 
 describe("independent tunnel lifetime", () => {
+  it("reuses the default relay and starts an alternate once without changing the published route", async () => {
+    const initial = { publicUrl: "https://self.example", close: vi.fn(async () => {}), exited: new Promise<never>(() => {}) };
+    const alternate = { ...initial, publicUrl: "https://alternate.example", close: vi.fn(async () => {}) };
+    const startAlternate = vi.fn(async () => alternate);
+    const checkNetworkRoute = vi.fn(async () => {});
+    const publish = vi.fn(async () => {});
+    const controller = new TunnelController({
+      relay: { cli: parseArgs(["--relay", "self-hosted", "--relay-url", "https://self.example"]), target: "darwin-arm64", localUrl: "http://127.0.0.1:43000", port: 43000, log: vi.fn(), readiness: vi.fn(async () => {}),
+        providerFactories: { "self-hosted": async () => ({ start: async () => initial }), cloudflare: async () => ({ start: startAlternate }) } },
+      lanUrl: async () => "http://10.1.2.3:43000", publish, checkNetworkRoute,
+      networkRoutes: () => [{ id: "10.1.2.3", kind: "lan", address: "10.1.2.3" }, { id: "100.90.1.2", kind: "tailscale", address: "100.90.1.2" }],
+    });
+    controllers.push(controller);
+    expect((await controller.connect(false)).provider).toBe("self-hosted");
+    expect(await controller.pairingUrl("self-hosted")).toBe("https://self.example/web");
+    expect(publish).toHaveBeenCalledTimes(2);
+    await expect(Promise.all([controller.pairingUrl("cloudflare"), controller.pairingUrl("cloudflare")])).resolves.toEqual(["https://alternate.example/web", "https://alternate.example/web"]);
+    expect(startAlternate).toHaveBeenCalledOnce();
+    await expect(controller.pairingUrl("10.1.2.3")).resolves.toBe("http://10.1.2.3:43000/web");
+    await expect(controller.pairingUrl("tailscale")).resolves.toBe("http://100.90.1.2:43000/web");
+    expect(checkNetworkRoute).toHaveBeenCalledTimes(2);
+    await expect(controller.pairingUrl("10.2.3.4")).rejects.toThrow("地址当前不可用");
+    expect(controller.status().accessUrl).toBe("https://self.example/web");
+    expect(publish).toHaveBeenCalledTimes(2);
+    expect(initial.close).not.toHaveBeenCalled();
+    await controller.close();
+    expect(alternate.close).toHaveBeenCalledOnce();
+    expect(initial.close).toHaveBeenCalledOnce();
+  });
   it("shares concurrent requests, checks readiness and publishes the public address", async () => {
     const f = fixture();
     let finish!: () => void;
@@ -68,6 +97,16 @@ describe("independent tunnel lifetime", () => {
     await vi.waitFor(() => expect(f.controller.status()).toMatchObject({ phase: "error", accessUrl: "http://192.168.1.20:43210/web" }));
     expect(f.start).toHaveBeenCalledOnce();
   });
+  it("reconnects to the self-hosted provider automatically after the route drops", async () => {
+    const f = fixture(false, true);
+    f.start.mockResolvedValueOnce(f.handle).mockResolvedValue({ ...f.handle, exited: new Promise(() => {}) });
+    expect(await f.controller.connect()).toMatchObject({ provider: "self-hosted", phase: "ready" });
+    f.end();
+    await vi.waitFor(() => expect(f.start).toHaveBeenCalledTimes(2), { timeout: 2500 });
+    await vi.waitFor(() => expect(f.controller.status()).toMatchObject({
+      phase: "ready", provider: "self-hosted", accessUrl: "https://working.example/web",
+    }));
+  });
   it("refreshes the fallback address when the network changes during a connection attempt", async () => {
     const f = fixture();
     f.readiness.mockImplementationOnce(async () => {
@@ -108,5 +147,25 @@ describe("independent tunnel lifetime", () => {
     controllers.push(controller);
     expect(await controller.connect()).toMatchObject({ phase: "unsupported", mode: "local", error: expect.stringContaining("测试模式") });
     expect(f.start).not.toHaveBeenCalled();
+  });
+  it("keeps LAN, VPN and Tailscale pairing routes available in test mode", async () => {
+    const f = fixture(true);
+    f.cli.testNoPairing = true;
+    const controller = new TunnelController({
+      relay: { cli: f.cli, target: "windows-amd64", localUrl: "http://127.0.0.1:43210", port: 43210, log: vi.fn() },
+      lanUrl: f.lanUrl, publish: vi.fn(), select: vi.fn(),
+      networkRoutes: () => [
+        { id: "192.168.1.10", kind: "lan", address: "192.168.1.10", interfaceName: "en0" },
+        { id: "100.64.0.10", kind: "tailscale", address: "100.64.0.10", interfaceName: "utun8" },
+        { id: "10.8.0.2", kind: "vpn", address: "10.8.0.2", interfaceName: "wg0" },
+      ],
+      checkNetworkRoute: async () => {},
+    });
+    controllers.push(controller);
+    expect(controller.pairingRoutes().map(route => route.id)).toEqual(["192.168.1.10", "100.64.0.10", "10.8.0.2"]);
+    await expect(controller.pairingUrl("192.168.1.10")).resolves.toBe("http://192.168.1.10:43210/web");
+    await expect(controller.pairingUrl("100.64.0.10")).resolves.toBe("http://100.64.0.10:43210/web");
+    await expect(controller.pairingUrl("10.8.0.2")).resolves.toBe("http://10.8.0.2:43210/web");
+    await expect(controller.pairingUrl("cloudflare")).rejects.toThrow("公网配对线路");
   });
 });

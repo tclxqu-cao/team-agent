@@ -51,6 +51,99 @@
 .web-native-composer-textarea:disabled {
   cursor: not-allowed;
 }
+.composer-edit-area {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+.composer-edit-area textarea {
+  display: block;
+}
+.composer-prediction {
+  position: absolute;
+  inset: 3px 4px auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 10px 8px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--bg-surface);
+  color: var(--text-muted);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.composer-prediction-text {
+  flex: 1;
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+  line-height: 1.45;
+}
+.composer-prediction-hint {
+  flex: none;
+  padding-block: 2px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.composer-prediction-hint kbd {
+  padding: 1px 4px;
+  border: 1px solid var(--border-default);
+  border-radius: 4px;
+  font: inherit;
+}
+.composer-prediction:hover,
+.composer-prediction:focus-visible,
+.composer-picker-option:hover,
+.composer-picker-option[aria-current="true"] {
+  background: var(--accent-dim);
+}
+.composer-prediction:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.composer-picker > .composer-picker-label {
+  position: sticky;
+  top: 0;
+  padding: 6px 12px 4px;
+  background: var(--bg-surface);
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.composer-picker-option {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.composer-picker-option strong,
+.composer-picker-option small {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.composer-picker-option strong {
+  color: var(--text-primary);
+  font-size: 13px;
+}
+.composer-picker-option small {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+@media (hover: none) {
+  .composer-prediction-hint kbd { display: none; }
+}
 .web-native-add-button,
 .web-native-send-button,
 .web-native-stop-button {

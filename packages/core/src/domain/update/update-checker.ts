@@ -1,38 +1,32 @@
 import {
   buildCliInstallManifestUrl,
-  buildDesktopManifestUrl,
   compareAgentRoamVersions,
   parseAgentRoamVersion,
   parseChannelVersion,
   registryUrlsForChannel,
-  resolveUpdateChannel,
   validateCliInstallManifest,
-  validateReleaseManifest,
-  type UpdateAsset,
-  type UpdateChannel,
-  type UpdateClient,
   type UpdatePlatform,
   type UpdateStatus,
 } from "./update-release.js";
+import { readAppRelease, type AppUpdateTarget } from "./app-release.js";
 
-export interface UpdateCheckerOptions {
+export const UPDATE_CHECK_INTERVAL_MS = 5 * 60_000;
+
+export type UpdateCheckerOptions = ({ client: "cli"; platform: UpdatePlatform } | AppUpdateTarget) & {
   currentVersion: string;
-  client: UpdateClient;
-  platform: UpdatePlatform;
   fetch?: typeof globalThis.fetch;
   now?: () => number;
   random?: () => number;
   setTimer?: (callback: () => void, delay: number) => ReturnType<typeof setTimeout>;
   timeoutMs?: number;
   intervalMs?: number;
-}
+};
 
 export class UpdateChecker {
   private status: UpdateStatus;
   private checkedAt = 0;
-  private readonly etags = new Map<string, string>();
+  private readonly registryCache = new Map<string, { version: string; etag: string | null }>();
   private inFlight: Promise<UpdateStatus> | null = null;
-  private readonly channel: UpdateChannel;
   private readonly fetchImpl: typeof globalThis.fetch;
   private readonly now: () => number;
   private readonly random: () => number;
@@ -44,13 +38,12 @@ export class UpdateChecker {
 
   constructor(private readonly options: UpdateCheckerOptions) {
     if (!parseAgentRoamVersion(options.currentVersion)) throw new Error("invalid current AgentRoam version");
-    this.channel = resolveUpdateChannel(options.currentVersion);
     this.fetchImpl = options.fetch ?? globalThis.fetch;
     this.now = options.now ?? Date.now;
     this.random = options.random ?? Math.random;
     this.setTimer = options.setTimer ?? setTimeout;
     this.timeoutMs = options.timeoutMs ?? 4_000;
-    this.intervalMs = options.intervalMs ?? 6 * 60 * 60 * 1_000;
+    this.intervalMs = options.intervalMs ?? UPDATE_CHECK_INTERVAL_MS;
     this.status = { phase: "idle", currentVersion: options.currentVersion };
   }
 
@@ -90,66 +83,51 @@ export class UpdateChecker {
   private async runRefresh(): Promise<UpdateStatus> {
     const previous = this.status;
     this.publish({ ...previous, phase: "checking", message: undefined });
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
-    timer.unref?.();
     try {
-      const candidate = await this.readRegistryCandidate(controller.signal);
+      const candidate = this.options.client === "cli"
+        ? await this.readCliRelease(this.options.platform)
+        : await readAppRelease(this.options, this.options.currentVersion, this.fetchImpl, this.timeoutMs);
       this.checkedAt = this.now();
-      if (!candidate.version) {
-        if (candidate.notModified) return this.publish({ ...previous, checkedAt: this.checkedAt });
-        throw new Error("registry candidate unavailable");
-      }
-      const latest = candidate.version;
-      if (compareAgentRoamVersions(latest, this.options.currentVersion) <= 0) {
+      if (!candidate) {
         return this.publish({ phase: "up-to-date", currentVersion: this.options.currentVersion, checkedAt: this.checkedAt });
       }
-      const asset = await this.readManifestAsset(latest, controller.signal);
-      return this.publish({ phase: "available", currentVersion: this.options.currentVersion, targetVersion: latest, checkedAt: this.checkedAt, asset });
+      return this.publish({ phase: "available", currentVersion: this.options.currentVersion, targetVersion: candidate.version, checkedAt: this.checkedAt, asset: candidate.asset });
     } catch {
       this.checkedAt = this.now();
       if (["available", "up-to-date"].includes(previous.phase)) return this.publish({ ...previous, checkedAt: this.checkedAt });
       return this.publish({ phase: "unavailable", currentVersion: this.options.currentVersion, checkedAt: this.checkedAt });
-    } finally {
-      clearTimeout(timer);
     }
   }
 
-  // CLI 安装器是版本无关脚本，读分支 raw 上的单份清单；桌面端安装包是构建产物，
-  // 只能按版本读 Releases 资产清单。
-  private async readManifestAsset(version: string, signal: AbortSignal): Promise<UpdateAsset> {
-    const isCli = this.options.client === "cli";
-    const url = isCli ? buildCliInstallManifestUrl() : buildDesktopManifestUrl(version);
-    const response = await this.fetchImpl(url, { headers: { accept: "application/json" }, signal });
-    if (!response.ok) throw new Error("release manifest unavailable");
-    const body = await response.json();
-    return isCli
-      ? validateCliInstallManifest(body, this.options.platform)
-      : validateReleaseManifest(body, version, "desktop", this.options.platform).asset;
+  private async readCliRelease(platform: UpdatePlatform) {
+    const signal = AbortSignal.timeout(this.timeoutMs);
+    const version = await this.readRegistryCandidate(signal);
+    if (compareAgentRoamVersions(version, this.options.currentVersion) <= 0) return null;
+    const response = await this.fetchImpl(buildCliInstallManifestUrl(), { headers: { accept: "application/json" }, signal });
+    if (!response.ok) throw new Error("CLI installer manifest unavailable");
+    return { version, asset: validateCliInstallManifest(await response.json(), platform) };
   }
 
-  // Preview installations watch both the preview and latest npm dist-tags and
-  // follow the higher version, so a newer stable release can pull them onto the
-  // stable track. Stable installations only ever read latest.
-  private async readRegistryCandidate(signal: AbortSignal): Promise<{ version: string | null; notModified: boolean }> {
-    let best: string | null = null;
-    let notModified = false;
-    let sawResponse = false;
-    for (const url of registryUrlsForChannel(this.channel)) {
+  private async readRegistryCandidate(signal: AbortSignal): Promise<string> {
+    const results = await Promise.allSettled(registryUrlsForChannel("preview").map(async (url) => {
       const headers: Record<string, string> = { accept: "application/json" };
-      const etag = this.etags.get(url);
-      if (etag) headers["if-none-match"] = etag;
+      const cached = this.registryCache.get(url);
+      if (cached?.etag) headers["if-none-match"] = cached.etag;
       const response = await this.fetchImpl(url, { headers, signal });
-      const responseEtag = response.headers.get("etag");
-      if (responseEtag) this.etags.set(url, responseEtag);
-      if (response.status === 304) { notModified = true; continue; }
-      if (!response.ok) continue;
-      sawResponse = true;
-      const candidate = parseChannelVersion((await response.json() as { version?: unknown }).version, this.channel);
+      if (response.status === 304) return cached?.version;
+      if (!response.ok) return undefined;
+      const version = parseChannelVersion((await response.json() as { version?: unknown }).version, "preview");
+      if (version) this.registryCache.set(url, { version, etag: response.headers.get("etag") });
+      return version;
+    }));
+    let best: string | null = null;
+    for (const result of results) {
+      const candidate = result.status === "fulfilled" ? result.value : null;
       if (!candidate) continue;
       if (!best || compareAgentRoamVersions(candidate, best) > 0) best = candidate;
     }
-    return { version: best, notModified: notModified && !sawResponse };
+    if (!best) throw new Error("npm release channel unavailable");
+    return best;
   }
 
   private publish(status: UpdateStatus): UpdateStatus {

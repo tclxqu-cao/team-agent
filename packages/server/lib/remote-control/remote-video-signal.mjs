@@ -140,6 +140,7 @@ export function parseViewerRemoteVideoSignal(value) {
       if (!validProfiles(data.receiverProfiles)) invalid();
       if (data.compoundVersion !== undefined && data.compoundVersion !== 1) invalid();
       if (data.inputVersion !== undefined && ![1, 2].includes(data.inputVersion)) invalid();
+      if (data.motionMode !== undefined && !['balanced', 'motion-30', 'motion-60'].includes(data.motionMode)) invalid();
       break;
     case 'answer':
       if (!validDescription(data.sdp, 'answer')) invalid();
@@ -179,6 +180,7 @@ export function parseProducerRemoteVideoSignal(value) {
       if (!validCandidate(data.candidate)) invalid();
       break;
     case 'state':
+      if (data.maxFrameRate !== undefined && ![30, 60].includes(data.maxFrameRate)) invalid();
       if (!['new', 'connecting', 'connected', 'disconnected', 'failed', 'closed'].includes(String(data.state))) invalid();
       if (!boundedString(data.error, 500) || !boundedString(data.fallbackReason, 500)) invalid();
       break;

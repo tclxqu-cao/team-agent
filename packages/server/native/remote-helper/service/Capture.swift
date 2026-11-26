@@ -3,6 +3,52 @@ import CoreGraphics
 import CoreImage
 import ScreenCaptureKit
 
+struct RemoteScreenSample {
+    let pixel: CVPixelBuffer?
+    let timestamp: CMTime
+    var dirtyRects: [CGRect]?
+}
+
+/// ScreenCaptureKit delivers on a dedicated queue. Keep at most one pending
+/// change while the main queue owns input, the encoder and compound revisions.
+final class RemoteScreenOutput: NSObject, SCStreamOutput {
+    private let lock = NSLock()
+    private var pending: RemoteScreenSample?
+    private let consume: (SCStream, RemoteScreenSample) -> Void
+
+    init(consume: @escaping (SCStream, RemoteScreenSample) -> Void) { self.consume = consume }
+
+    func stream(_ stream: SCStream, didOutputSampleBuffer buffer: CMSampleBuffer, of type: SCStreamOutputType) {
+        guard type == .screen, buffer.isValid,
+              let info = (CMSampleBufferGetSampleAttachmentsArray(buffer, createIfNecessary: false) as? [[SCStreamFrameInfo: Any]])?.first,
+              let status = info[.status] as? Int else { return }
+        let pixel = CMSampleBufferGetImageBuffer(buffer)
+        guard status == SCFrameStatus.idle.rawValue || (status == SCFrameStatus.complete.rawValue && pixel != nil) else { return }
+        var sample = RemoteScreenSample(pixel: status == SCFrameStatus.idle.rawValue ? nil : pixel,
+            timestamp: CMSampleBufferGetPresentationTimeStamp(buffer),
+            dirtyRects: (info[.dirtyRects] as? [NSValue])?.map(\.rectValue))
+        lock.lock()
+        if let previous = pending {
+            if sample.pixel != nil {
+                // Rectangles only describe the change from the preceding capture.
+                if previous.pixel != nil { sample.dirtyRects = nil }
+                pending = sample
+            }
+            lock.unlock()
+            return
+        }
+        pending = sample
+        lock.unlock()
+        DispatchQueue.main.async {
+            self.lock.lock()
+            let latest = self.pending
+            self.pending = nil
+            self.lock.unlock()
+            if let latest { self.consume(stream, latest) }
+        }
+    }
+}
+
 final class DesktopCapture: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
     private(set) var backend="starting"
     private var quartz: UnsafeMutableRawPointer?

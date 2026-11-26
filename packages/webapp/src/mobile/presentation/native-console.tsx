@@ -7,6 +7,7 @@ import { LocalEndpointStorage } from "../infrastructure/local-endpoint-storage";
 import { NativeCredentialStorage, NativePairingClient, scanPairingQr } from "../infrastructure/native-pairing";
 import { createNativeConsoleFetch, nativeWorkspaceFrameUrl } from "../infrastructure/native-console-transport";
 import { ServerEndpoint } from "../domain/server-endpoint";
+import { AndroidUpdateNotice } from "./AndroidUpdateNotice";
 
 export function rememberNativeEndpoint(endpoint: ServerEndpoint): void {
   saveComputers(rememberComputer(endpoint.url, undefined, readComputers()));
@@ -41,5 +42,5 @@ export async function mountNativeConsole(root: Root, endpoint: ServerEndpoint, p
     },
   });
   const { default: Console } = await import("../../../../server/app/web/page");
-  root.render(<StrictMode><Console /></StrictMode>);
+  root.render(<StrictMode><Console /><AndroidUpdateNotice /></StrictMode>);
 }

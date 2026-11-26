@@ -4,7 +4,8 @@ import type { MobilePairingInvitation } from "../../main/mobile-pairing";
 import type { LiteApi } from "./api";
 import { PermissionDialog } from "./PermissionDialog";
 import { useTunnelConnection } from "../lib/use-tunnel-connection";
-import { TunnelConnectionControl } from "../components/TunnelConnectionControl";
+import { PairingRoutePicker, TunnelConnectionControl } from "../components/TunnelConnectionControl";
+import UpdateNotice from "../components/UpdateNotice";
 
 export function LiteApp({ api = window.liteApi }: { api?: LiteApi }) {
   const [invitation, setInvitation] = useState<MobilePairingInvitation | null>(null);
@@ -13,13 +14,14 @@ export function LiteApp({ api = window.liteApi }: { api?: LiteApi }) {
   const [error, setError] = useState("");
   const [now, setNow] = useState(Date.now);
   const [permissions, setPermissions] = useState(false);
+  const [route, setRoute] = useState("");
   const mounted = useRef(false);
   const request = useRef(0);
-  const refresh = async () => {
+  const refresh = async (via = route) => {
     const id = ++request.current;
     setBusy(true); setError(""); setInvitation(null); setMessage("正在生成二维码…");
     try {
-      const value = await api.refresh();
+      const value = await api.refresh(via || undefined);
       if (!mounted.current || id !== request.current) return;
       setInvitation(value); setNow(Date.now());
       if (!localStorage.getItem("agentroam-lite:authorization-introduced")) {
@@ -40,12 +42,14 @@ export function LiteApp({ api = window.liteApi }: { api?: LiteApi }) {
     return () => { mounted.current = false; request.current++; clearInterval(timer); };
   }, [api]);
   const expired = invitation !== null && invitation.expiresAt <= now;
-  const tunnel = useTunnelConnection(api, { origin: invitation?.origin, busy: Boolean(invitation?.viaMesh) || busy || (!invitation && !error), onAddressChanged: () => void refresh() });
+  const tunnel = useTunnelConnection(api, { origin: invitation?.origin, busy: Boolean(route || invitation?.viaMesh) || busy || (!invitation && !error), onAddressChanged: () => void refresh() });
   return <main className="lite-shell">
     <header className="lite-brand"><Smartphone size={20} aria-hidden="true" /><span>AgentRoam <b>Lite</b></span></header>
+    <UpdateNotice api={api} product="AgentRoam Lite" scope="desktop-lite" inline />
     <h1>扫码，连接这台电脑。</h1>
     <p className="lite-description">{invitation?.viaMesh ? "手机加入同一 Tailscale 组网后，用 AgentRoam App 扫码连接。" : <>打开手机 App 的扫码按钮，<br />或用手机相机扫描二维码。</>}</p>
-    {!invitation?.viaMesh && <TunnelConnectionControl connection={tunnel} />}
+    <PairingRoutePicker api={api} value={route} busy={busy || (!invitation && !error)} onChange={value => { setRoute(value); void refresh(value); }} />
+    {!route && !invitation?.viaMesh && <TunnelConnectionControl connection={tunnel} />}
     <div className="lite-qr" aria-busy={busy}>
       {invitation && !expired ? <img src={`data:image/svg+xml,${encodeURIComponent(invitation.svg)}`} alt="AgentRoam 手机授权二维码" />
         : busy ? <div role="status"><LoaderCircle className="lite-spin" size={28} /><p>{message}</p></div>

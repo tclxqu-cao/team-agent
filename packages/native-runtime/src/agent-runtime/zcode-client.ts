@@ -47,10 +47,11 @@ interface PendingQuestionRead {
 }
 const rows = (value: unknown): NativeJsonPacket[] => Array.isArray(value) ? value.map(nativeRecord) : [];
 const reasoningEfforts: readonly NativeReasoningEffort[] = ["low", "medium", "high", "xhigh", "max"];
-const nativeEffort = (value: unknown) => reasoningEfforts.find(effort => effort === value);
-const nativeReasoningLevel = (value: unknown) => nativeEffort(
-  typeof value === "string" ? value : nativeRecord(value).value,
-);
+type ZCodeReasoningLevel = NativeReasoningEffort | "enabled" | "disabled";
+const nativeReasoningLevel = (value: unknown): ZCodeReasoningLevel | undefined => {
+  const level = typeof value === "string" ? value : nativeRecord(value).value;
+  return [...reasoningEfforts, "enabled", "disabled"].find(candidate => candidate === level) as ZCodeReasoningLevel | undefined;
+};
 const todoMcpServers = (configuration: NativeTodoMcpConfiguration): NativeJsonPacket[] => [{
   name: "agentroam-todo", command: configuration.command, args: [...configuration.args],
   env: Object.entries(configuration.env).sort(([left], [right]) => left.localeCompare(right)).map(([name, value]) => ({ name, value })),
@@ -147,7 +148,7 @@ export class ZCodeClient implements NativeSessionProtocol {
   private readonly pendingQuestionReads = new Map<string, PendingQuestionRead>();
   private readonly interactions = new Map<string, { sessionId: string; response: Promise<NativeJsonPacket> }>();
   private models: RuntimeModelInfo[] = [];
-  private readonly modelDefaults = new Map<string, NativeReasoningEffort>();
+  private readonly modelDefaults = new Map<string, ZCodeReasoningLevel>();
   private readonly childCatalog = new Map<string, { updated: string; ids: string[] }>();
   private readonly unsubscribe: Array<() => void>;
   private readonly steering: ZCodeSteering;
@@ -196,12 +197,13 @@ export class ZCodeClient implements NativeSessionProtocol {
         const ref = nativeRecord(option.ref);
         if (typeof ref.modelId !== "string" || typeof ref.providerId !== "string" || option.disabledReason) return [];
         const reasoning = nativeRecord(option.reasoning);
-        const efforts = [...new Set((Array.isArray(reasoning.levels) ? reasoning.levels : []).flatMap(level => {
-          const effort = nativeReasoningLevel(level);
-          return effort ? [effort] : [];
+        const levels = [...new Set((Array.isArray(reasoning.levels) ? reasoning.levels : []).flatMap(level => {
+          const value = nativeReasoningLevel(level);
+          return value ? [value] : [];
         }))];
+        const efforts = levels.filter((level): level is NativeReasoningEffort => reasoningEfforts.includes(level as NativeReasoningEffort));
         const defaultEffort = nativeReasoningLevel(reasoning.defaultLevel);
-        if (defaultEffort && efforts.includes(defaultEffort)) this.modelDefaults.set(modelRefKey(ref.providerId, ref.modelId), defaultEffort);
+        if (defaultEffort && levels.includes(defaultEffort)) this.modelDefaults.set(modelRefKey(ref.providerId, ref.modelId), defaultEffort);
         return [{ id: ref.modelId, providerID: ref.providerId, displayName: String(option.label ?? ref.modelId),
           providerDisplayName: typeof option.providerLabel === "string" ? option.providerLabel : undefined,
           description: typeof option.description === "string" ? option.description : undefined,
@@ -537,7 +539,7 @@ export class ZCodeClient implements NativeSessionProtocol {
     return [...this.models];
   }
 
-  private async modelEffort(id: string, model: NonNullable<RuntimeRunOptions["model"]>, explicit?: NativeReasoningEffort): Promise<NativeReasoningEffort | undefined> {
+  private async modelEffort(id: string, model: NonNullable<RuntimeRunOptions["model"]>, explicit?: NativeReasoningEffort): Promise<ZCodeReasoningLevel | undefined> {
     if (explicit) return explicit;
     const key = modelRefKey(model.providerID, model.id);
     const current = this.modelDefaults.get(key);
@@ -585,7 +587,7 @@ export class ZCodeClient implements NativeSessionProtocol {
     }
     if (options?.todoMcp !== undefined) await this.configureTodoMcp(id, options.todoMcp, signal);
     signal?.throwIfAborted();
-    let effort: NativeReasoningEffort | undefined;
+    let effort: ZCodeReasoningLevel | undefined;
     const subscribed = await this.withActiveSession(id, async session => {
       signal?.throwIfAborted();
       const [observed] = await this.withDesktopActivity([session]);
@@ -609,7 +611,11 @@ export class ZCodeClient implements NativeSessionProtocol {
     this.runs.set(id, run);
     if (this.pendingTodoRuns.get(id)?.signal === signal) this.pendingTodoRuns.delete(id);
     try {
-      const accepted = await this.rpc.request("session/send", { sessionId: id, inputId: randomUUID(), content: input,
+      // The broker run ID is stable for the lifetime of one admitted turn. ZCode
+      // uses inputId as its durable command identity, so reusing it lets a
+      // transport retry be acknowledged without creating another history row.
+      const inputId = options?.brokerRunId ?? randomUUID();
+      const accepted = await this.rpc.request("session/send", { sessionId: id, inputId, content: input,
         ...(attachments.length ? { attachments } : {}),
         ...(options?.model ? { modelSelection: { providerId: options.model.providerID, modelId: options.model.id,
           ...(effort ? { options: { reasoningLevel: effort } } : {}) } } : {}),

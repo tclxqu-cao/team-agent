@@ -23,4 +23,10 @@ describe("composer slash token", () => {
       expect(readComposerSlashToken(marked.replace("|", ""), marked.indexOf("|"))).toBeNull();
     },
   );
+
+  it("preserves the native skill sigil and surrounding draft text", () => {
+    const value = "先用 $front 检查";
+    const token = readComposerSlashToken(value, "先用 $front".length, "$");
+    expect(completeComposerSlashToken(value, token!, "frontend-design").value).toBe("先用 $frontend-design 检查");
+  });
 });

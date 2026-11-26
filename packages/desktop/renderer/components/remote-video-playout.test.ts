@@ -5,6 +5,33 @@ const sample = (sequence: number) => ({ jitterMs: 5, receiver: { sequence, visib
   decodedFrames: 30, jitterBufferMs: 80, decodeMs: 5, droppedRatio: 0 } });
 
 describe('browser playout control', () => {
+  it('switches the existing receiver to 20ms and keeps the fixed target through jitter and tab suspension', () => {
+    const receiver = { track: { kind: 'video' }, jitterBufferTarget: null as number | null };
+    const adapter = new BrowserRemoteVideoPlayout({ getReceivers: () => [receiver as any] });
+    expect(adapter.apply(sample(1), 1000).playoutTargetMs).toBe(40);
+    adapter.setLowLatency(true);
+    expect(receiver.jitterBufferTarget).toBe(20);
+    expect(adapter.apply({ ...sample(2), jitterMs: 150 }, 2000).playoutTargetMs).toBe(20);
+    adapter.stop();
+    expect(receiver.jitterBufferTarget).toBeNull();
+    expect(adapter.apply(sample(3), 3000).playoutTargetMs).toBe(20);
+    adapter.setLowLatency(false);
+    expect(receiver.jitterBufferTarget).toBeNull();
+    expect(adapter.apply(sample(4), 4000).playoutTargetMs).toBe(40);
+  });
+
+  it('applies 20ms as seconds on a newly available legacy receiver', () => {
+    const receiver = { track: { kind: 'video' }, playoutDelayHint: .2 };
+    const receivers: typeof receiver[] = [];
+    const adapter = new BrowserRemoteVideoPlayout({ getReceivers: () => receivers as any });
+    adapter.setLowLatency(true);
+    receivers.push(receiver);
+    adapter.setLowLatency(true);
+    expect(receiver.playoutDelayHint).toBe(.02);
+    adapter.stop();
+    expect(receiver.playoutDelayHint).toBe(.2);
+  });
+
   it('writes exposed millisecond controls and restores null after repeated targets and hidden state', () => {
     const receiver = { track: { kind: 'video' }, jitterBufferTarget: null as number | null };
     const adapter = new BrowserRemoteVideoPlayout({ getReceivers: () => [receiver as any] });

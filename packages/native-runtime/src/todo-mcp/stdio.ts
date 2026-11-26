@@ -2,10 +2,10 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { TodoServiceClient } from "./todo-service-client";
-import { TODO_TOOLS, TODO_TOOL_INSTRUCTIONS, todoToolOperation } from "./tool-definitions";
+import { TODO_EXECUTION_INSTRUCTIONS, TODO_TOOLS, TODO_TOOL_INSTRUCTIONS, todoToolOperation } from "./tool-definitions";
 export function createTodoMcpServer(client: Pick<TodoServiceClient, "call">, scope: string) {
   const allowed = scope === "execution" ? TODO_TOOLS.filter(t => ["todo_get", "todo_report_execution"].includes(t.name)) : TODO_TOOLS.filter(t => t.name !== "todo_report_execution");
-  const server = new Server({ name: "agentroam-todo", version: "1.0.0" }, { capabilities: { tools: {} }, instructions: TODO_TOOL_INSTRUCTIONS });
+  const server = new Server({ name: "agentroam-todo", version: "1.0.0" }, { capabilities: { tools: {} }, instructions: scope === "execution" ? TODO_EXECUTION_INSTRUCTIONS : TODO_TOOL_INSTRUCTIONS });
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: allowed }));
   server.setRequestHandler(CallToolRequestSchema, async request => {
     try {

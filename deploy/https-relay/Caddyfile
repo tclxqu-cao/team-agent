@@ -1,0 +1,6 @@
+{$PUBLIC_HOST}, *.{$PUBLIC_HOST} {
+	tls {$TLS_CERTIFICATE} {$TLS_PRIVATE_KEY}
+	reverse_proxy 127.0.0.1:18082 {
+		header_up X-Real-IP {remote_host}
+	}
+}

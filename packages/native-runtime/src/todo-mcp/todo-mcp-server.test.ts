@@ -81,14 +81,24 @@ describe("Todo MCP protocol", () => {
     const server = createTodoMcpServer({ call: async (op, args) => { calls.push([op, args]); return { id: "todo" }; } }, "manage");
     const client = new Client({ name: "test", version: "1" });
     const [a, b] = InMemoryTransport.createLinkedPair(); await server.connect(a); await client.connect(b);
-    try { const list = await client.listTools(); expect(list.tools).toHaveLength(11); expect(list.tools.some(t => t.name === "todo_schedule")).toBe(true);
+    try {
+      const list = await client.listTools();
+      expect(list.tools).toHaveLength(11);
+      expect(list.tools.some(t => t.name === "todo_schedule")).toBe(true);
+      expect(client.getInstructions()).toContain("后台在会话成功结束后异步核对");
+      expect(list.tools.find(t => t.name === "todo_list")?.description).toContain("自动同步无需在答复前查询或修改日历");
       const result = await client.callTool({ name: "todo_create", arguments: { title: "验证", requestId: "stable-request" } }); expect(result.isError).not.toBe(true); expect(calls).toEqual([["execute", { command: { type: "create", title: "验证" }, requestId: "stable-request" }]]);
     } finally { await client.close(); await server.close(); }
   });
   it("execution credentials cannot mutate other Todos or complete a recurring task", async () => {
     const server = createTodoMcpServer({ call: async () => ({ ok: true }) }, "execution"), client = new Client({ name: "test", version: "1" });
     const [a, b] = InMemoryTransport.createLinkedPair(); await server.connect(a); await client.connect(b);
-    try { expect((await client.listTools()).tools.map(t => t.name)).toEqual(["todo_get", "todo_report_execution"]); expect((await client.callTool({ name: "todo_complete", arguments: {} })).isError).toBe(true); }
+    try {
+      expect(client.getInstructions()).toContain("todo_report_execution");
+      expect(client.getInstructions()).not.toContain("todo_complete");
+      expect((await client.listTools()).tools.map(t => t.name)).toEqual(["todo_get", "todo_report_execution"]);
+      expect((await client.callTool({ name: "todo_complete", arguments: {} })).isError).toBe(true);
+    }
     finally { await client.close(); await server.close(); }
   });
 });

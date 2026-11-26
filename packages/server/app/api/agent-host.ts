@@ -45,6 +45,7 @@ import {
 import { homedir } from "node:os";
 import { getAgentWorkingDirectory, getServerBaseDir } from "../../lib/server-data-dir";
 import { serverLogger } from "../../lib/global-logger";
+import { resolvedSessionQuestions, sessionQuestionMessage } from "../../lib/session-history-source";
 
 const IMAGE_FILE_EXTENSIONS: Record<string, string> = {
   jpeg: "jpg",
@@ -438,6 +439,7 @@ class AgentHost {
     const messages: Message[] = [];
     let streamingAssistant: Message | null = null;
     const toolCallNames = new Map<string, string>();
+    const questionResolutions = resolvedSessionQuestions(events);
     let runResult: RunResult | undefined;
     const ephemeralSkillCallIds = new Set(events.flatMap((event) =>
       event.type === "tool_result" && event.result.metadata?.ephemeralSkillContext === true
@@ -491,11 +493,8 @@ class AgentHost {
         continue;
       }
 
-      if ((event as { type?: string }).type === "ask_user") {
-        messages.push({
-          role: "assistant",
-          content: "",
-        } as Message);
+      if (event.type === "ask_user") {
+        messages.push(sessionQuestionMessage(event, questionResolutions.get(event.questionId) ?? "cancelled"));
         streamingAssistant = null;
         continue;
       }
@@ -1070,16 +1069,14 @@ class AgentHost {
     sessionId: string,
   ): Promise<AskUserResponse> {
     const questionId = crypto.randomUUID();
-    const event = {
-      type: "ask_user" as any,
-      ...({
-        questionId,
-        question: request.question,
-        options: request.options,
-        fields: request.fields,
-        multiSelect: request.multiSelect,
-      } as any),
-    } as AgentEvent;
+    const event: AgentEvent = {
+      type: "ask_user",
+      questionId,
+      question: request.question,
+      options: request.options,
+      fields: request.fields,
+      multiSelect: request.multiSelect,
+    };
     const response = new Promise<AskUserResponse>((resolve, reject) => {
       this.pendingQuestions.set(questionId, { resolve, reject, sessionId });
     });

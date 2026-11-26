@@ -19,6 +19,28 @@ describe("persistent personal Todos", () => {
   const schedule = (d: TodoDetail, trigger = once(now + 60000)) => service.execute({ type: "schedule", taskId: d.task.id, expectedVersion: d.task.version, trigger, enabled: true, target: { agentType: "claude-code", cwd: root, permissionMode: "default" } }, context("schedule"));
   beforeEach(() => { root = mkdtempSync(join(tmpdir(), "todo-domain-")); now = Date.parse("2026-11-17T01:00:00Z"); db = new SQLiteDatabase(root); uow = new SQLiteTodoUnitOfWork(db.db); service = new TodoApplicationService(uow, () => now); scheduler = new TodoScheduler(uow); execution = new TodoExecutionService(uow, () => now); });
   afterEach(() => { db.close(); rmSync(root, { recursive: true, force: true }); });
+  it("settles unique, open work across sessions without overwriting later edits on replay", () => {
+    const add = (title: string, requestId: string, kind: "normal" | "scheduled" = "normal") =>
+      service.execute({ type: "create", title, kind }, context(requestId)).task;
+    const research = add("cross desk 调研", "research");
+    const deployment = add("CrossDesk 部署", "deployment");
+    const scheduled = add("定期比对", "scheduled", "scheduled");
+    const first = add("同名调研", "first");
+    const second = add("同名调研", "second");
+    const startedAt = ++now;
+    const report = () => service.completeReportedWork(["CrossDesk 调研", "同名调研", "定期比对"], startedAt, {
+      ownerId: owner, sessionId: "different-agent-session", runId: "run-2",
+    });
+    report(); report();
+    expect(service.get(research.id, owner).task).toMatchObject({ status: "completed", version: 2 });
+    for (const task of [scheduled, deployment, first, second]) expect(service.get(task.id, owner).task.status).toBe("pending");
+    now++;
+    service.execute({ type: "reopen", taskId: research.id, expectedVersion: 2 }, context("reopen"));
+    service.execute({ type: "cancel", taskId: second.id, expectedVersion: 1 }, context("cancel"));
+    report();
+    expect(service.get(research.id, owner).task.status).toBe("pending");
+    expect(service.get(first.id, owner).task.status).toBe("pending");
+  });
   it("retries the same command after a lost response and survives database restart", () => {
     const d = create(); expect(create()).toEqual(d);
     expect(() => service.execute({ type: "create", title: "不同正文" }, context("create"))).toThrow(/requestId/);

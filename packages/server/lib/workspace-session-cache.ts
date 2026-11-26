@@ -8,6 +8,23 @@ interface Entry {
   failed?: boolean;
 }
 
+function mergeRefreshingPage(previous: Page, next: Page): Page {
+  const seen = new Set<string>();
+  const data = [...next.data, ...previous.data].filter((session) => {
+    if (seen.has(session.id)) return false;
+    seen.add(session.id);
+    return true;
+  });
+  return {
+    ...previous,
+    data,
+    nextCursor: next.nextCursor ?? previous.nextCursor,
+    watermark: next.watermark ?? previous.watermark,
+    ...(next.stale ? { stale: true } : {}),
+    refreshing: true,
+  };
+}
+
 /** Keep first pages readable while slow native discovery refreshes them. */
 export class WorkspaceSessionCache {
   private readonly entries = new Map<string, Entry>();
@@ -44,10 +61,17 @@ export class WorkspaceSessionCache {
 
   private load(entry: Entry, query: WorkspaceSessionQuery, load: (query: WorkspaceSessionQuery) => Promise<Page>): Promise<Page> {
     const pending = Promise.resolve().then(() => load(query)).then(page => {
-      entry.page = page;
+      if (page.refreshing && entry.page) {
+        // A native runtime can return its direct head while the complete
+        // discovery catalog is still warming. Keep the visible window until
+        // that catalog produces a complete page.
+        entry.page = mergeRefreshingPage(entry.page, page);
+      } else {
+        entry.page = page;
+      }
       entry.failed = false;
       // A cache read from the broker does not replace an explicit refresh.
-      entry.refreshAfter = query.refresh ? this.now() + 15_000 : 0;
+      entry.refreshAfter = page.refreshing ? this.now() + 1_000 : query.refresh ? this.now() + 15_000 : 0;
       return page;
     }, error => {
       entry.failed = true;

@@ -4,6 +4,22 @@ import { RemoteVideoPolicy } from './remote-video-policy.js';
 const sample = { sequence: 1, visible: true, intervalMs: 1000, decodedFrames: 30, decodeMs: 4, droppedRatio: 0,
   width: 2560, height: 1440, viewport: { width: 390, height: 700, pixelRatio: 3, zoom: 1 } };
 describe('receiver adaptation', () => {
+  it('negotiates 60 fps, reduces pixels before frames under load, and restores the default for the next viewer', () => {
+    const policy = new RemoteVideoPolicy('original', { dynamicResolution: true });
+    policy.setMotionMode('motion-60');
+    expect(policy.current().maxFps).toBe(30);
+    policy.setCapabilities({ ...policy.capabilities, maxFrameRate: 60 });
+    expect(policy.noteInteraction().maxFps).toBe(60);
+    const observe = (sequence: number, width: number) => policy.update({ now: sequence * 6000,
+      receiver: { ...sample, sequence, width, height: Math.round(width / 2), decodeMs: 45 } });
+    observe(1, 2560);
+    expect(observe(2, 2560)).toMatchObject({ maxFps: 60, maxEdge: 1920 });
+    expect(observe(3, 1920).maxEdge).toBeLessThan(1920);
+    expect(observe(4, 640).maxFps).toBe(30);
+    expect(policy.resetSession().maxFps).toBe(30);
+    policy.setMotionMode('motion-30');
+    expect(policy.noteInteraction().maxFps).toBe(30);
+  });
   it('sizes to physical viewport, preserves aspect ratio/quality ceilings and debounces zoom', () => {
     const policy = new RemoteVideoReceiverPolicy();
     policy.observe(sample, 'hd', 30, 0); expect(policy.maxEdge).toBe(1280);

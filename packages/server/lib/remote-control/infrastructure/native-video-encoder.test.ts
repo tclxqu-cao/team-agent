@@ -6,6 +6,22 @@ import { WindowsRemoteHelper } from '../windows-helper.mjs';
 vi.mock('@agent/core', async original => ({ ...await original<Record<string, unknown>>(), ...await import('../../../../core/src/domain/live-view/index.js'), ...await import('../../../../core/src/domain/live-view/remote-video-encode-admission.js') }));
 
 describe('NativeVideoEncoder', () => {
+  it('enables 60 fps and bounded encoder holds only after a native receipt', async () => {
+    const helper = { request: vi.fn(async (_command: unknown) => ({ ok: true, maxFrameRate: 60, encoderPressureVersion: 1 })) };
+    const encoder = new NativeVideoEncoder({ helper });
+    const decision = { bitRate: 8_000_000, maxFps: 60 };
+    encoder.setEncoderPressure(true);
+    expect(helper.request).not.toHaveBeenCalled();
+    await encoder.start({ profile: 'high', decision, captureFps: 60, videoOnly: true });
+    expect(helper.request).toHaveBeenLastCalledWith(expect.objectContaining({ op: 'video-start', maxFps: 30, captureFps: 60, videoOnly: true }));
+    expect(encoder.capabilities().maxFrameRate).toBe(60);
+    await encoder.apply(decision);
+    expect(helper.request).toHaveBeenLastCalledWith(expect.objectContaining({ op: 'video-tuning', maxFps: 60 }));
+    await encoder.setEncoderPressure(true);
+    expect(helper.request).toHaveBeenLastCalledWith({ op: 'video-backpressure', blocked: true });
+    await encoder.stop(); encoder.setEncoderPressure(false);
+    expect(helper.request).toHaveBeenLastCalledWith({ op: 'video', enabled: false });
+  });
   it('claims adaptive resolution only after a versioned native receipt', async () => {
     const helper = { request: vi.fn(async () => ({ ok: true, adaptiveResolutionVersion: 1 })) };
     const encoder = new NativeVideoEncoder({ helper });

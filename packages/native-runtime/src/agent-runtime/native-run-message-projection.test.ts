@@ -9,11 +9,16 @@ const thought = (itemId: string, text: string): Message => ({
 });
 const reasoning = (itemId: string, delta: string): AgentEvent => ({ type: "reasoning_summary_delta", itemId, sectionIndex: 0, delta });
 
-function project(messages: Message[], events: AgentEvent[], agentType: "qoder" | "zcode" | "workbuddy" | "codex" | "copilot" = "qoder") {
+function project(
+  messages: Message[],
+  events: AgentEvent[],
+  agentType: "qoder" | "zcode" | "workbuddy" | "codex" | "copilot" = "qoder",
+  status: "active" | "terminal" = "terminal",
+) {
   const run: NonNullable<Parameters<typeof mergeProjectionMessages>[1]> = {
     runId: "run", sessionId: "session", agentType, nativeSessionId: "native", input: "Question",
-    permissionMode: "request-approval", controller: "web", status: "terminal", nextSequence: events.length,
-    createdAt: 1, terminalAt: 2, goalId: null,
+    permissionMode: "request-approval", controller: "web", status, nextSequence: events.length,
+    createdAt: 1, terminalAt: status === "terminal" ? 2 : null, goalId: null,
   };
   return mergeProjectionMessages(messages, run, events.map((event, index) => ({ runId: "run", sequence: index + 1, event })));
 }
@@ -37,6 +42,7 @@ describe("native run transcript reconciliation", () => {
     ];
     const replay: AgentEvent[] = [
       { type: "text_chunk", turnId, itemId: "progress", text: "Checking", messagePhase: "commentary" },
+      { type: "text_chunk", turnId, itemId: "progress", text: "...", messagePhase: "commentary" },
       { type: "text_chunk", turnId, itemId: "final", text: "Fin", messagePhase: "final_answer" },
       { type: "text_chunk", turnId, itemId: "final", text: "ished", messagePhase: "final_answer" },
       { type: "done", finalText: "Finished", forkPoint: { turnId } },
@@ -44,16 +50,45 @@ describe("native run transcript reconciliation", () => {
     expect(project(native, replay, "codex")).toEqual(native);
   });
 
-  it("preserves Codex replay output when history lacks that item or the turn is incomplete", () => {
+  it.each(["active", "terminal"] as const)("replays a %s Codex run in native order across compaction before a final answer exists", status => {
+    const commentary = (id: string, text: string): Message => ({
+      ...answer(text), historyId: `codex-trace:turn:agent:${id}`, presentation: { agentMessagePhase: "commentary" },
+    });
+    const chunk = (itemId: string, text: string): AgentEvent => ({
+      type: "text_chunk", turnId: "turn", itemId, text, messagePhase: "commentary",
+    });
+    const tool = { id: "read", name: "Read", arguments: {} };
+    const native: Message[] = [
+      user(), commentary("a", "Checking"), { ...answer("Compacted"), name: "__compaction_checkpoint__" },
+      thought("r", "Inspect"), { role: "assistant", content: "", toolCalls: [tool] },
+      { role: "tool", content: "result", toolCallId: tool.id }, commentary("b", "Checking"), commentary("c", "Fin"),
+    ];
+    const replay: AgentEvent[] = [chunk("a", "Check"), reasoning("r", "Inspect"), { type: "tool_call", toolCall: tool },
+      chunk("b", "Checking"), chunk("c", "Fin"), chunk("c", "ished")];
+    const expected = [...native.slice(0, -1), commentary("c", "Finished")];
+    const merged = project(native, replay, "codex", status);
+    expect(merged).toEqual(expected);
+    expect(project(merged, replay, "codex", status)).toEqual(expected);
+  });
+
+  it("reconciles an incomplete Codex item in place and preserves a different turn's replay", () => {
     const progress: Message = { ...answer("Check"), historyId: "codex-trace:turn:agent:progress" };
     const chunk: AgentEvent = { type: "text_chunk", turnId: "turn", itemId: "progress", text: "Checking" };
     expect(project([user(), progress], [chunk], "codex").map(message => message.content))
-      .toEqual(["Question", "Check", "ing"]);
+      .toEqual(["Question", "Checking"]);
 
     const previous: Message = { ...progress, historyId: "codex-trace:previous:agent:progress" };
     const final: Message = { ...answer("Finished"), presentation: { forkPoint: { turnId: "turn" } } };
     expect(project([user("Previous"), previous, user(), final], [chunk], "codex").at(-1)?.content)
       .toBe("Checking");
+  });
+
+  it("reconciles legacy Codex chunks without IDs across a compaction checkpoint", () => {
+    const native = [user(), answer("Starting"), { ...answer("Compacted"), name: "__compaction_checkpoint__" },
+      thought("r", "Inspect"), answer("Checked")];
+    const replay: AgentEvent[] = [{ type: "text_chunk", text: "Starting" }, reasoning("r", "Inspect"),
+      { type: "text_chunk", text: "Checked" }];
+    expect(project(native, replay, "codex")).toEqual(native);
   });
 
   it.each(["qoder", "zcode", "workbuddy", "copilot"] as const)("keeps %s reasoning before the completed answer when live and history IDs differ", agent => {

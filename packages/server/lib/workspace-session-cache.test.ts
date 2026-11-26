@@ -24,6 +24,28 @@ describe("workspace session cache", () => {
     expect(load).toHaveBeenCalledTimes(2);
   });
 
+  it("keeps the complete window when a refresh returns a warming native head", async () => {
+    const load = vi.fn()
+      .mockResolvedValueOnce(page("complete"))
+      .mockResolvedValueOnce({
+        data: [{ id: "head" } as UnifiedSessionSummary],
+        nextCursor: "native-next",
+        watermark: "head",
+        refreshing: true,
+      });
+    const cache = new WorkspaceSessionCache(() => 100);
+
+    await cache.read("codex/repo/20", { limit: 20 }, load);
+    await cache.read("codex/repo/20", { refresh: true, limit: 20 }, load);
+    await flush();
+
+    await expect(cache.read("codex/repo/20", { limit: 20 }, load)).resolves.toMatchObject({
+      data: [{ id: "head" }, { id: "complete" }],
+      nextCursor: "native-next",
+      refreshing: true,
+    });
+  });
+
   it("deduplicates cold reads and preserves pagination parameters", async () => {
     let finish!: (value: WorkspacePage<UnifiedSessionSummary>) => void;
     const load = vi.fn().mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }))

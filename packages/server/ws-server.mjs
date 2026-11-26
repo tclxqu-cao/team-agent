@@ -6,6 +6,7 @@ import { createMeshGateway, createMeshRuntimeBridge } from "./lib/mesh/mesh-gate
 import { createDesktopDiscovery } from "./lib/desktop-discovery.mjs";
 import { createTunnelControlGateway } from "./lib/tunnel-control.mjs";
 import { createVoiceAsrGateway } from "./lib/voice-asr-gateway.mjs";
+import { startTodoCompletionWorker } from "./lib/todo-completion-worker.mjs";
 import { webAppCacheControl } from "./lib/web-app-cache.mjs";
 // ws-server.mjs — custom server for @agent/server.
 // Serves the Next.js app (API + /web console) and multiplexes a WebSocket
@@ -1498,9 +1499,11 @@ wss.on("connection", (ws, _req, principal) => {
   });
 });
 
+let stopTodoCompletionWorker;
 let ownedServicesClosePromise = null;
 function closeOwnedServices() {
   if (!ownedServicesClosePromise) ownedServicesClosePromise = (async () => {
+    await stopTodoCompletionWorker?.();
     await voiceAsrGateway.close();
     await remoteAuthorization.close();
     pairingGateway.close();
@@ -1542,6 +1545,8 @@ server.listen(port, process.env.HOST || "127.0.0.1", async () => {
     server.close();
     return;
   }
+  stopTodoCompletionWorker = startTodoCompletionWorker(path.join(serverBaseDir, ".agent-data", "agent.db"),
+    error => globalLogger.error("Calendar completion worker stopped", error));
   // Load the server-owned Customer runtime (including persisted schedules)
   // without requiring a desktop/browser visit after a service restart.
   void fetch(`http://127.0.0.1:${server.address().port}/api/agent/model`, {

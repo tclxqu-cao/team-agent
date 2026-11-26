@@ -338,6 +338,10 @@ export class SQLiteDatabase {
     this.migratePinnedCommands();
     this.migrateCommandHistoryExitCode();
     this.migrateEngineSwitch();
+    this.db.exec(`CREATE TABLE IF NOT EXISTS todo_completion_jobs(
+      owner_id TEXT NOT NULL, session_id TEXT NOT NULL, run_id TEXT NOT NULL, started_at INTEGER NOT NULL,
+      evidence TEXT NOT NULL, retry_at INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(owner_id,session_id,run_id));
+      CREATE INDEX IF NOT EXISTS todo_completion_jobs_ready ON todo_completion_jobs(retry_at);`);
     migrateTodoTables(this.db);
   }
 

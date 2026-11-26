@@ -32,12 +32,13 @@ export interface ServiceConfig {
   port: number | null;
   relay: RelayMode;
   tunnelCommand: string | null;
+  relayUrl?: string;
   localOnly: boolean;
   dataDir: string;
   installedAt: string;
 }
 
-export type ServiceProvider = "cloudflare" | "pinggy" | "custom" | "lan";
+export type ServiceProvider = "cloudflare" | "pinggy" | "custom" | "self-hosted" | "lan";
 
 export interface ServiceRuntimeState {
   status: "starting" | "ready" | "stopped";

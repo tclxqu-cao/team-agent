@@ -44,6 +44,7 @@ interface BrowserLivePanelProps {
   embedded?: boolean;
   /** A hidden shell tab retains its viewer/control and local viewport state. */
   active?: boolean;
+  showPlayoutExperiment?: boolean;
   agentSessionId?: string | null;
   sessionDesktop?: { expanded: boolean; status: string; onExpand: () => void };
   onClose: () => void;
@@ -222,7 +223,7 @@ export function touchScrollDelta(
   return delta;
 }
 
-export default function BrowserLivePanel({ open, active = true, embedded = false, agentSessionId, sessionDesktop, onClose, onFullscreenChange }: BrowserLivePanelProps) {
+export default function BrowserLivePanel({ open, active = true, embedded = false, showPlayoutExperiment = false, agentSessionId, sessionDesktop, onClose, onFullscreenChange }: BrowserLivePanelProps) {
   const headerControl = useContext(BrowserLiveHeaderContext);
   const api = typeof window === "undefined" ? undefined : window.browserLiveApi;
   const projection = sessionDesktop !== undefined;
@@ -301,6 +302,10 @@ export default function BrowserLivePanel({ open, active = true, embedded = false
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [pendingDisplayId, setPendingDisplayId] = useState<string | null>(null);
   const [videoQuality, setVideoQuality] = useState("hd");
+  const [motionMode, setMotionMode] = useState<"balanced" | "motion-30" | "motion-60">("balanced");
+  const [motionSupported, setMotionSupported] = useState(false);
+  const [lowLatencyPlayout, setLowLatencyPlayout] = useState(false);
+  const lowLatencyPlayoutRef = useRef(false);
   // Holds the quality being switched to (the helper applies it over several
   // seconds); null once the quality-state confirmation lands.
   const [pendingQuality, setPendingQuality] = useState<string | null>(null);
@@ -720,6 +725,9 @@ export default function BrowserLivePanel({ open, active = true, embedded = false
         };
         peer.ontrack = (event) => {
           if (webrtcPeerRef.current !== peer) return;
+          if (event.track.kind === "video" && lowLatencyPlayoutRef.current && document.visibilityState !== "hidden") {
+            remotePlayoutRef.current?.setLowLatency(true);
+          }
           const video = webrtcVideoRef.current;
           if (video && event.streams[0]) {
             video.srcObject = event.streams[0];
@@ -788,7 +796,11 @@ export default function BrowserLivePanel({ open, active = true, embedded = false
     if (data.kind === "state") {
       if (data.attemptId !== undefined && webrtcNegotiationRef.current && !webrtcNegotiationRef.current.accepts(data.attemptId)) return;
       const state = String(data.state);
-      if (state === "connected") setWebrtcState("live");
+      if (state === "connected") {
+        setWebrtcState("live");
+        setMotionSupported(data.maxFrameRate === 60);
+        if (data.maxFrameRate !== 60) setMotionMode("balanced");
+      }
       else if (state === "failed" || state === "disconnected" || state === "closed") setWebrtcState("failed");
     }
   }, [answerWebrtcOffer, playRemotePcm, stopVoice]);
@@ -977,10 +989,13 @@ export default function BrowserLivePanel({ open, active = true, embedded = false
     remoteVideoStatsCursorRef.current = null;
     setRemoteVideoStats(null);
     setWebrtcState("connecting");
+    setMotionSupported(false);
     videoStallRef.current.begin(performance.now());
     void api.request("browser:webrtc", {
       sessionId: selectedId,
-      data: { kind: "start", inputVersion: 2, receiverProfiles: readReceiverH264Profiles(), ...(BrowserCompoundVideo.supported() ? { compoundVersion: 1 } : {}) },
+      data: { kind: "start", inputVersion: 2, receiverProfiles: readReceiverH264Profiles(),
+        ...(motionMode !== "balanced" ? { motionMode } : {}),
+        ...(BrowserCompoundVideo.supported() ? { compoundVersion: 1 } : {}) },
     }).catch(() => setWebrtcState("failed"));
     return () => {
       remoteCursorRef.current?.stop();
@@ -995,7 +1010,7 @@ export default function BrowserLivePanel({ open, active = true, embedded = false
       setRemoteVideoStats(null);
       void api.request("browser:webrtc", { sessionId: selectedId, data: { kind: "stop" } }).catch(() => undefined);
     };
-  }, [api, hasControl, isDesktop, open, selectedId, viewNonce]);
+  }, [api, hasControl, isDesktop, open, selectedId, viewNonce, motionMode]);
 
   useEffect(() => {
     if (!open || !hasControl || !isDesktop || webrtcState !== "failed" || webrtcRetryRef.current >= 2) return;
@@ -1422,6 +1437,26 @@ export default function BrowserLivePanel({ open, active = true, embedded = false
                 <button type="button" aria-label="退出全屏" title="退出全屏" onClick={() => void toggleFullscreen()}>
                   <Minimize size={15} aria-hidden="true" />退出全屏
                 </button>
+              )}
+              {motionSupported && isDesktop && (
+                <LiveViewSelect label="视频帧率" title="切换视频帧率会重新连接画面" value={motionMode} busy={false} disabled={!hasControl || webrtcState !== "live"} compact onChange={value => {
+                  if (value === "balanced" || value === "motion-30" || value === "motion-60") setMotionMode(value);
+                }}>
+                  <option value="balanced">30 帧 · 自适应</option>
+                  <option value="motion-30">30 帧 · 帧率优先</option>
+                  <option value="motion-60">60 帧 · 帧率优先</option>
+                </LiveViewSelect>
+              )}
+              {showPlayoutExperiment && isDesktop && (
+                <LiveViewSelect label="播放缓冲" title="远程桌面播放缓冲对照" value={lowLatencyPlayout ? "low" : "adaptive"} busy={false} disabled={webrtcState !== "live"} compact onChange={(mode) => {
+                  const enabled = mode === "low";
+                  lowLatencyPlayoutRef.current = enabled;
+                  setLowLatencyPlayout(enabled);
+                  remotePlayoutRef.current?.setLowLatency(enabled);
+                }}>
+                  <option value="adaptive">自适应</option>
+                  <option value="low">20 ms</option>
+                </LiveViewSelect>
               )}
               {sessions.length > 1 && (
                 <div className="browser-live-session-tabs" role="tablist" aria-label="切换直播屏幕">

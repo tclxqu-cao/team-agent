@@ -50,6 +50,7 @@ final class RemoteVideoEncoder {
     private var drainWork: DispatchWorkItem?
     private var lastSubmittedAt: UInt64 = 0
     private var coalescedFrames = 0
+    private var senderHoldUntil: UInt64 = 0
 
     private let compression: RemoteVideoCompressionPort
     private let timeoutSeconds: TimeInterval
@@ -57,6 +58,7 @@ final class RemoteVideoEncoder {
     private var jobSequence: UInt64 = 0
     private var offeredTimestamp = CMTime.invalid
     private var offeredDimensions: (Int, Int)?
+    private var offeredFormat: OSType?
 
     init(compression: RemoteVideoCompressionPort = VideoToolboxCompression(), timeoutSeconds: TimeInterval = 3) {
         self.compression = compression; self.timeoutSeconds = timeoutSeconds
@@ -78,6 +80,7 @@ final class RemoteVideoEncoder {
         self.keyFrameInterval = min(120, max(5, keyFrameInterval))
         self.maxPendingFrames = min(2, max(1, maxPendingFrames))
         enabled = true
+        senderHoldUntil = 0
         reset()
     }
 
@@ -97,14 +100,21 @@ final class RemoteVideoEncoder {
         jobs.removeAll(); pendingFrames = 0
         encodeLatencyMs = 0; droppedSinceSnapshot = 0; statsSequence &+= 1
         compression.invalidate()
-        offeredTimestamp = .invalid; offeredDimensions = nil
+        offeredTimestamp = .invalid; offeredDimensions = nil; offeredFormat = nil
         lastEncodedTimestamp = .invalid
         forceKeyframe = true
     }
 
     func stop() {
         enabled = false
+        senderHoldUntil = 0
         reset()
+    }
+
+    func setSenderPressure(_ blocked: Bool) {
+        guard enabled else { return }
+        senderHoldUntil = blocked ? DispatchTime.now().uptimeNanoseconds + 250_000_000 : 0
+        drain()
     }
 
     func noteActivity(dirtyRatio: Double?, idle: Bool = false) {
@@ -147,8 +157,9 @@ final class RemoteVideoEncoder {
     func encode(_ pixel: CVPixelBuffer, timestamp: CMTime, contentVersion: RemoteVideoContentVersion) {
         guard enabled, timestamp.isValid, CMTimeGetSeconds(timestamp).isFinite, CMTimeGetSeconds(timestamp) >= 0 else { return }
         let size = (CVPixelBufferGetWidth(pixel), CVPixelBufferGetHeight(pixel))
-        if let previous = offeredDimensions, previous != size { reset() }
-        offeredDimensions = size
+        let format = CVPixelBufferGetPixelFormatType(pixel)
+        if let previous = offeredDimensions, previous != size || offeredFormat != format { reset() }
+        offeredDimensions = size; offeredFormat = format
         if latestOffer != nil { coalescedFrames += 1 }
         latestOffer = RemoteVideoFrameOffer(pixel: pixel, timestamp: timestamp, contentVersion: contentVersion)
         drain()
@@ -162,14 +173,18 @@ final class RemoteVideoEncoder {
         guard pending < maxPendingFrames else { return }
         let now = DispatchTime.now().uptimeNanoseconds
         let interval = UInt64(1_000_000_000 / max(1, maxFps))
-        if lastSubmittedAt > 0 && now - lastSubmittedAt < interval {
+        let nextSlot = lastSubmittedAt + interval
+        // Capture and encoder timers have different phases. Keep the scheduled
+        // slot for small jitter without accumulating early sends or replaying missed slots.
+        let tolerance = min(1_500_000, interval / 10)
+        if senderHoldUntil > now || nextSlot > now + tolerance {
             let token = lockedGeneration()
             let work = DispatchWorkItem { [weak self] in
                 guard let self, self.lockedGeneration() == token else { return }
                 self.drain()
             }
             drainWork = work
-            DispatchQueue.main.asyncAfter(deadline: .now() + .nanoseconds(Int(interval - (now - lastSubmittedAt))), execute: work)
+            DispatchQueue.main.asyncAfter(deadline: .init(uptimeNanoseconds: max(senderHoldUntil, nextSlot)), execute: work)
             return
         }
         latestOffer = nil
@@ -188,7 +203,8 @@ final class RemoteVideoEncoder {
         pendingFrames += 1; statsSequence &+= 1
         let settings = RemoteVideoCompressionSettings(profile: profile, bitRate: bitRate,
             maxFps: maxFps, keyFrameInterval: keyFrameInterval)
-        let keyframe = forceKeyframe; forceKeyframe = false; lastSubmittedAt = now
+        let keyframe = forceKeyframe; forceKeyframe = false
+        lastSubmittedAt = now > nextSlot + tolerance ? now : nextSlot
         DispatchQueue.main.asyncAfter(deadline: .now() + timeoutSeconds, execute: deadline)
         compression.submit(offer.pixel, timestamp: timestamp, settings: settings, forceKeyframe: keyframe,
             submitted: { [weak self] status in
@@ -254,13 +270,19 @@ final class RemoteVideoEncoder {
         var revision = 0
         for profile in RemoteH264Profile.allCases {
             encoder.start(profile: profile, bitRate: 8_000_000, maxFps: 30)
-            for _ in 0..<4 {
+            for format in [kCVPixelFormatType_32BGRA, kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
+                           kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, kCVPixelFormatType_32BGRA] {
                 for (width, height) in [(1280, 534), (2560, 1070), (3440, 1440), (2560, 1070)] {
                     var buffer: CVPixelBuffer?
                     let attrs = [kCVPixelBufferIOSurfacePropertiesKey: [:]] as CFDictionary
-                    precondition(CVPixelBufferCreate(nil, width, height, kCVPixelFormatType_32BGRA, attrs, &buffer) == kCVReturnSuccess)
+                    precondition(CVPixelBufferCreate(nil, width, height, format, attrs, &buffer) == kCVReturnSuccess)
                     let pixel = buffer!; CVPixelBufferLockBaseAddress(pixel, [])
-                    memset(CVPixelBufferGetBaseAddress(pixel)!, Int32(revision % 255), CVPixelBufferGetDataSize(pixel))
+                    if CVPixelBufferIsPlanar(pixel) {
+                        for plane in 0..<CVPixelBufferGetPlaneCount(pixel) {
+                            memset(CVPixelBufferGetBaseAddressOfPlane(pixel, plane)!, plane == 0 ? 100 : 128,
+                                CVPixelBufferGetBytesPerRowOfPlane(pixel, plane) * CVPixelBufferGetHeightOfPlane(pixel, plane))
+                        }
+                    } else { memset(CVPixelBufferGetBaseAddress(pixel)!, Int32(revision % 255), CVPixelBufferGetDataSize(pixel)) }
                     CVPixelBufferUnlockBaseAddress(pixel, [])
                     revision += 1; let target = outputs + 1
                     encoder.encode(pixel, timestamp: CMTime(value: Int64(revision), timescale: 30),
@@ -288,6 +310,25 @@ final class RemoteVideoEncoder {
         memset(CVPixelBufferGetBaseAddress(pixel)!, 255, CVPixelBufferGetDataSize(pixel))
         CVPixelBufferUnlockBaseAddress(pixel, [])
         var accepted: [Int] = [], errors: [String] = []
+        let heldCodec = RemoteAdmissionTestCompression()
+        let held = RemoteVideoEncoder(compression: heldCodec)
+        var released: [Int] = []
+        held.onSubmitted = { _, _, version in released.append(version.revision) }
+        held.start(profile: .high, bitRate: 1_000_000, maxFps: 60)
+        held.setSenderPressure(true)
+        for revision in 1...8 {
+            held.encode(pixel, timestamp: CMTime(value: Int64(revision), timescale: 60),
+                contentVersion: RemoteVideoContentVersion(epoch: 1, revision: revision))
+        }
+        precondition(released.isEmpty)
+        held.setSenderPressure(false)
+        precondition(released == [8])
+        heldCodec.completeOne()
+        held.setSenderPressure(true)
+        held.encode(pixel, timestamp: CMTime(value: 9, timescale: 60), contentVersion: RemoteVideoContentVersion(epoch: 1, revision: 9))
+        RunLoop.main.run(until: Date().addingTimeInterval(0.32))
+        precondition(released == [8, 9])
+        held.stop()
         encoder.onOutput = { _, _, _ in }
         encoder.onError = { errors.append($0) }
         encoder.onSubmitted = { _, _, version in accepted.append(version.revision) }

@@ -3,7 +3,9 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { WebSocket } from "ws";
 import { createMobilePairingInvitation, pairingOrigin } from "./mobile-pairing.js";
-import type { TunnelStatus } from "../../shared/src/contracts/tunnel-status";
+import type { PairingRoute, TunnelStatus } from "../../shared/src/contracts/tunnel-status";
+
+const pairingRoutesPath = "/api/desktop/tunnel/routes";
 
 export interface ServiceDescriptor {
   protocol: 1; instanceId: string; pid: number; url: string; dataDir: string; token: string;
@@ -109,7 +111,8 @@ export class SharedServiceConnection {
   async json(path: string, method: string, body?: string, descriptor?: ServiceDescriptor): Promise<{ status: number; body: string }> {
     if (!["GET", "POST", "PATCH", "DELETE"].includes(method) || (body?.length ?? 0) > 20_000_000) throw new Error("Invalid service request");
     const d = descriptor ?? await this.connection();
-    const res = await this.request(serviceApiUrl(d.url, path), { method, ...(body === undefined ? {} : { body }), headers: { "content-type": "application/json", "x-agentroam-desktop-token": d.token }, signal: AbortSignal.timeout(path === "/api/agent/codex-sharing" ? 180_000 : 30_000), redirect: "error" });
+    const timeout = path === "/api/agent/codex-sharing" ? 180_000 : path.startsWith(`${pairingRoutesPath}?`) ? 40_000 : 30_000;
+    const res = await this.request(serviceApiUrl(d.url, path), { method, ...(body === undefined ? {} : { body }), headers: { "content-type": "application/json", "x-agentroam-desktop-token": d.token }, signal: AbortSignal.timeout(timeout), redirect: "error" });
     return { status: res.status, body: await res.text() };
   }
 
@@ -149,13 +152,70 @@ export class SharedServiceConnection {
     } catch { return null; }
   }
 
-  async mobilePairing() {
+  async pairingRoutes(): Promise<PairingRoute[]> {
     const descriptor = await this.connection();
-    const mesh = await this.readMeshPairingOrigin(descriptor);
+    const [reply, mesh] = await Promise.all([
+      this.json(pairingRoutesPath, "GET", undefined, descriptor).catch(() => null),
+      this.readMeshPairingOrigin(descriptor),
+    ]);
+    if (reply?.status === 401 || reply?.status === 403) throw new Error("后台未授权读取配对线路。");
+    let routes: PairingRoute[] = [];
+    let listed = false;
+    if (reply?.status === 200) {
+      try {
+        const data = JSON.parse(reply.body);
+        if (Array.isArray(data?.routes)) { routes = data.routes; listed = true; }
+      } catch { /* Some older services serve HTML for unknown endpoints. */ }
+    }
+    if (!routes.length) {
+      const relay = await this.activePairingRelay(descriptor);
+      if (relay) routes.push({ id: `active:${relay.provider}`, kind: relay.provider });
+    }
+    if (mesh) routes.push({ id: "headscale", kind: "headscale", address: new URL(mesh).hostname });
+    if (!routes.length && !listed) throw new Error("后台未能提供配对线路。");
+    return routes;
+  }
+
+  private async activePairingRelay(descriptor: ServiceDescriptor) {
+    const status = await this.tunnelRequest("/api/desktop/tunnel", "GET", descriptor).catch(() => null);
+    if (status?.phase !== "ready" || status.mode !== "public" || !status.accessUrl ||
+      (status.provider !== "cloudflare" && status.provider !== "self-hosted")) return null;
+    try { return { provider: status.provider, origin: pairingOrigin(status.accessUrl) }; }
+    catch { return null; }
+  }
+
+  async mobilePairing(route?: string) {
+    const descriptor = await this.connection();
     const mint = () => this.json("/api/pairing/admin/qr", "POST", "{}", descriptor);
+    if (route === "headscale") {
+      const mesh = await this.readMeshPairingOrigin(descriptor);
+      if (!mesh) throw new Error("电脑尚未加入自建 Headscale 组网。");
+      return { ...await createMobilePairingInvitation(descriptor.dataDir, mint, mesh), viaMesh: true };
+    }
+    if (route === "active:cloudflare" || route === "active:self-hosted") {
+      const relay = await this.activePairingRelay(descriptor);
+      if (!relay || route !== `active:${relay.provider}`) throw new Error("所选公网线路已断开，请刷新线路。");
+      return createMobilePairingInvitation(descriptor.dataDir, mint, relay.origin);
+    }
+    if (route !== undefined) {
+      if (typeof route !== "string" || route.length > 64) throw new Error("配对线路无效。");
+      const reply = await this.json(`${pairingRoutesPath}?via=${encodeURIComponent(route)}`, "POST", "{}", descriptor);
+      let result: { accessUrl?: string; error?: string };
+      try { result = JSON.parse(reply.body); } catch { result = {}; }
+      if (reply.status !== 200 || typeof result.accessUrl !== "string") throw new Error(result.error || "当前后台不支持这条线路，请升级或选择其他线路。");
+      return createMobilePairingInvitation(descriptor.dataDir, mint, result.accessUrl);
+    }
+    const [tunnel, mesh] = await Promise.all([
+      this.tunnelRequest("/api/desktop/tunnel", "GET", descriptor)
+        .then(status => ({ status }), (error: unknown) => ({ error })),
+      this.readMeshPairingOrigin(descriptor),
+    ]);
+    if ("status" in tunnel && tunnel.status.provider === "self-hosted" && tunnel.status.phase === "ready") {
+      return createMobilePairingInvitation(descriptor.dataDir, mint, tunnel.status.accessUrl);
+    }
     if (mesh) return { ...await createMobilePairingInvitation(descriptor.dataDir, mint, mesh), viaMesh: true };
-    const tunnel = await this.tunnelRequest("/api/desktop/tunnel", "GET", descriptor);
-    return createMobilePairingInvitation(descriptor.dataDir, mint, tunnel.phase === "unsupported" ? undefined : tunnel.accessUrl);
+    if ("error" in tunnel) throw tunnel.error;
+    return createMobilePairingInvitation(descriptor.dataDir, mint, tunnel.status.phase === "unsupported" ? undefined : tunnel.status.accessUrl);
   }
 
   tunnelStatus(): Promise<TunnelStatus> { return this.tunnelRequest("/api/desktop/tunnel", "GET"); }
@@ -168,7 +228,7 @@ export class SharedServiceConnection {
     let value: TunnelStatus;
     try { value = JSON.parse(response.body); } catch { return unsupported; }
     if (!value || !["idle", "connecting", "ready", "error", "unsupported"].includes(value.phase)
-      || !["local", "lan", "public"].includes(value.mode) || !["lan", "cloudflare", "pinggy", "custom"].includes(value.provider)) return unsupported;
+      || !["local", "lan", "public"].includes(value.mode) || !["lan", "cloudflare", "pinggy", "custom", "self-hosted"].includes(value.provider)) return unsupported;
     return value;
   }
 

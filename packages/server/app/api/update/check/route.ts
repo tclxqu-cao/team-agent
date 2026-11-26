@@ -5,7 +5,9 @@ export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
   if (isCrossSite(request)) return NextResponse.json({ error: "cross-site update request rejected" }, { status: 403 });
-  return NextResponse.json(getUpdateService().requestCheck(), { status: 202, headers: { "cache-control": "no-store" } });
+  const service = getUpdateService();
+  service.requestCheck();
+  return NextResponse.json(await service.status(), { status: 202, headers: { "cache-control": "no-store" } });
 }
 
 const NATIVE_SHELL_ORIGINS = new Set(["capacitor://localhost", "ionic://localhost"]);

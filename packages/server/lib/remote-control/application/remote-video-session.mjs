@@ -160,6 +160,8 @@ export class RemoteVideoSession {
       encoderQueuedFrames: encoder.queuedFrames,
       encoderCoalescedFrames: encoder.coalescedFrames,
       encoderAdmissionLimit: encoder.admissionLimit,
+      captureMaxFps: encoder.captureMaxFps,
+      capturePixelFormat: encoder.capturePixelFormat,
       encoderLatencyMs: encoder.encodeLatencyMs,
       encoderDroppedFrames: encoder.droppedFrames,
       encoderSequence: encoder.sequence,
@@ -217,10 +219,13 @@ export class RemoteVideoSession {
       const generation = this.generation;
       this.policy.setCapabilities?.(this.encoder.capabilities());
       this.policy.resetSession?.();
+      this.policy.setMotionMode?.(data.motionMode ?? 'balanced');
+      this.captureFps = data.motionMode === 'motion-60' ? 60 : 30;
       this.sessionStartedAt = Date.now();
       const receiverProfiles = Array.isArray(data.receiverProfiles) ? data.receiverProfiles : ['baseline'];
       const profile = this.policy.selectCodec?.(receiverProfiles) ?? 'baseline';
-      this.compoundRequested = data.compoundVersion === 1 && this.encoder.capabilities().compoundVideo === true;
+      this.compoundRequested = (data.motionMode ?? 'balanced') === 'balanced'
+        && data.compoundVersion === 1 && this.encoder.capabilities().compoundVideo === true;
       return this.startAttempt(profile, generation);
     }
     if (data.kind === 'answer') {
@@ -257,6 +262,10 @@ export class RemoteVideoSession {
       onKeyframe: () => { if (!this.paused) void this.encoder.requestKeyframe().catch(() => undefined); },
       onState: state => { void this.onTransportState(state, transport, generation); },
       onFeedback: sample => this.onTransportFeedback(sample, transport, generation),
+      onEncoderPressure: blocked => {
+        if (this.transport === transport && this.generation === generation && this.encoderActive && !this.paused)
+          this.encoder.setEncoderPressure?.(blocked);
+      },
       onFrameSent: frame => this.onFrameSent(frame, generation, transport),
       compound: this.compoundRequested === true,
       inputStream: inputContext?.stream,
@@ -296,11 +305,11 @@ export class RemoteVideoSession {
     if (generation !== this.generation || this.transport !== transport) return;
     if (state === 'connected') {
       clearTimeout(this.connectTimer);
-      const decision = { ...this.policy.current('connected'), preferredCodec: this.profile };
+      let decision = { ...this.policy.current('connected'), preferredCodec: this.profile };
       transport.setTuning?.(decision);
       this.seedProtection(transport);
       try {
-        await this.encoder.start({ profile: this.profile, decision });
+        await this.encoder.start({ profile: this.profile, decision, videoOnly: !this.compoundRequested, captureFps: this.captureFps });
         if (generation !== this.generation || this.transport !== transport) {
           await this.encoder.stop().catch(() => undefined);
           return;
@@ -309,6 +318,7 @@ export class RemoteVideoSession {
         // Native extensions become available only after the helper capability receipt.
         this.policy.setCapabilities?.(this.encoder.capabilities());
         this.policy.selectCodec?.([this.profile]);
+        decision = { ...this.policy.current('connected'), preferredCodec: this.profile };
         if (this.compound) {
           await this.compound.start();
           if (generation !== this.generation || this.transport !== transport) return;
@@ -317,7 +327,8 @@ export class RemoteVideoSession {
         this.log('info', 'webrtc connected; encoder started', {
           profile: this.profile, bitRate: decision.bitRate, maxFps: decision.maxFps, preferredCodec: decision.preferredCodec,
         });
-        this.signal({ kind: 'state', state: 'connected', attemptId: this.attemptId });
+        this.signal({ kind: 'state', state: 'connected', attemptId: this.attemptId,
+          ...(this.encoder.capabilities().maxFrameRate === 60 ? { maxFrameRate: 60 } : {}) });
         this.watchFrames(transport, generation);
         this.watchStats(transport, generation);
         this.watchProtection(transport, generation);
@@ -486,6 +497,8 @@ export class RemoteVideoSession {
     }
   }
   async stopAttempt() {
+    this.pendingDecision = null;
+    this.latestDecision = null;
     this.playbackHealthy = false;
     this.receiverObservation = null;
     this.lastUrgentNetworkAt = -Infinity;
@@ -498,6 +511,7 @@ export class RemoteVideoSession {
     const transport = this.transport; this.transport = null;
     this.attemptId = undefined;
     transport?.pause?.();
+    await this.tuningChain;
     const compound = this.compound; this.compound = null;
     await compound?.stop();
     if (hadAttempt) await this.encoder.stop();

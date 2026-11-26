@@ -42,13 +42,14 @@ export function packetizeH264(nals, timestamp, state) {
 
 export class WeriftVideoTransport {
   constructor({ signal, iceConfig, onState = () => undefined, onKeyframe = () => undefined, onFeedback = () => undefined,
-    onFrameSent = () => undefined, compound = false, onCompoundMessage = () => undefined, inputStream, inputVersion = 1, onInput = () => 'unavailable', onReliableInput, clock }) {
+    onFrameSent = () => undefined, onEncoderPressure, compound = false, onCompoundMessage = () => undefined, inputStream, inputVersion = 1, onInput = () => 'unavailable', onReliableInput, clock }) {
     this.signal = signal;
     this.iceConfig = iceConfig;
     this.onState = onState;
     this.onKeyframe = onKeyframe;
     this.onFeedback = onFeedback;
     this.onFrameSent = onFrameSent;
+    this.onEncoderPressure = onEncoderPressure;
     this.compound = compound;
     this.onCompoundMessage = onCompoundMessage;
     this.inputStream = inputStream; this.inputVersion = inputVersion; this.onInput = onInput; this.onReliableInput = onReliableInput;
@@ -94,6 +95,7 @@ export class WeriftVideoTransport {
       onRecovery: () => this.recovery?.reset(),
       onKeyframe: () => this.requestKeyframe(),
       onFrameSent: context => this.onFrameSent(context),
+      onEncoderPressure: this.onEncoderPressure,
       onError: () => { this.connected = false; this.onState('failed'); },
     });
   }

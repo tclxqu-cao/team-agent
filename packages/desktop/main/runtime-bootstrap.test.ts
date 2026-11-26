@@ -18,8 +18,37 @@ describe("desktop first-launch runtime preparation", () => {
   });
   it("leaves developer services alone", async () => {
     const spawn = vi.fn();
-    expect((await new DesktopRuntimeBootstrap(false, "/resources", "/electron", spawn).prepare()).phase).toBe("idle");
+    const bootstrap = new DesktopRuntimeBootstrap(false, "/resources", "/electron", spawn);
+    expect((await bootstrap.prepare()).phase).toBe("idle");
+    await bootstrap.prepareRemoteComponent("screen");
     expect(spawn).not.toHaveBeenCalled();
+  });
+  it.skipIf(process.platform !== "darwin" || process.arch !== "arm64")("coalesces component preparation and waits for it before a permission request", async () => {
+    const children: EventEmitter[] = [];
+    const spawn = vi.fn((_executable: string, _args: readonly string[]) => {
+      const child = new EventEmitter();
+      children.push(child);
+      return child;
+    });
+    const bootstrap = new DesktopRuntimeBootstrap(true, "/resources", "/electron", spawn as never);
+    const failed = bootstrap.prepareRemoteComponent();
+    children[0].emit("exit", 1);
+    await expect(failed).rejects.toThrow("远控组件更新未完成");
+    const initial = bootstrap.prepareRemoteComponent();
+    const recheck = bootstrap.prepareRemoteComponent();
+    const screen = bootstrap.prepareRemoteComponent("screen");
+    expect(children).toHaveLength(2);
+    children[1].emit("exit", 0);
+    await Promise.all([initial, recheck]);
+    await vi.waitFor(() => expect(children).toHaveLength(3));
+    children[2].emit("exit", 0);
+    await screen;
+    await bootstrap.prepareRemoteComponent();
+    expect(spawn.mock.calls.map(call => call[1])).toEqual([
+      ["/resources/bootstrap/runtime-bootstrap.mjs", "--remote-component"],
+      ["/resources/bootstrap/runtime-bootstrap.mjs", "--remote-component"],
+      ["/resources/bootstrap/runtime-bootstrap.mjs", "--remote-component", "screen"],
+    ]);
   });
   it("reports incompatible downloads without suggesting a network retry or leaking child errors", async () => {
     const child = Object.assign(new EventEmitter(), { stdout: new PassThrough() });

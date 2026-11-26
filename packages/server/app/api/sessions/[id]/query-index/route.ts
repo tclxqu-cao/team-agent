@@ -3,7 +3,6 @@ import {
   SessionQueryIndexCache,
   StaleSessionAnchorError,
   isInternalGoalMessage,
-  type Message,
 } from "@agent/core";
 import { agentHost } from "../../../agent-host";
 import {
@@ -40,7 +39,7 @@ export async function GET(
   const session = await agentHost.getSessionStore().get(params.id);
   if (!session) return NextResponse.json({ error: "Session not found" }, { status: 404 });
   const messages = (!session.messages?.length && session.events?.length
-    ? rebuildMessagesFromEvents(session.events as Array<Record<string, unknown>>)
+    ? rebuildMessagesFromEvents(session.events)
     : session.messages)?.filter((message) => !isInternalGoalMessage(message)) ?? [];
-  return NextResponse.json(localIndexCache.getOrCreate(params.id, messages as Message[]));
+  return NextResponse.json(localIndexCache.getOrCreate(params.id, messages));
 }

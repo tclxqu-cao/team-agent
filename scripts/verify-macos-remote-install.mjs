@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { RemoteHelper } from '../packages/server/lib/remote-control/helper-manager.mjs';
 import { bundledRemoteAppPath, macHelperProcesses, MacRemoteHelperApp, stopMacHelperProcesses } from '../packages/server/lib/remote-control/macos-helper-app.mjs';
+import { MacHelperPermissions } from '../packages/server/lib/remote-control/macos-helper-permissions.mjs';
 
 if (process.platform !== 'darwin') throw new Error('Run managed remote helper verification on macOS');
 const root = await realpath(await mkdtemp(join(tmpdir(), 'agentroam-mac-install-')));
@@ -17,7 +18,11 @@ const oldSourcePath = join(root, 'old/runtime/native', appName);
 const appPath = join(root, 'Application Support/AgentRoamRemoteDesktop/Services.noindex', appName);
 const helpers = [], children = [], unregistered = [];
 const processes = async () => (await macHelperProcesses()).filter(item => item.path.startsWith(root + '/'));
-const options = { appPath, processes, register: async () => {}, unregister: async path => { unregistered.push(path); } };
+const resetServices = [];
+// Use real signature comparisons and installation, with a recorder in place of
+// tccutil so testing a copied production bundle cannot change the user's grants.
+const permissions = new MacHelperPermissions(join(root, 'permissions.json'), { reset: async service => { resetServices.push(service); } });
+const options = { appPath, processes, permissions, registeredCopies: async () => [], register: async () => {}, unregister: async path => { unregistered.push(path); } };
 
 async function launch(application) {
   let child;
@@ -51,6 +56,13 @@ try {
 
   const currentApp = new MacRemoteHelperApp({ ...options, sourcePath });
   const current = await launch(currentApp);
+  assert.deepEqual(resetServices, []);
+  const hash = current.helper.componentFingerprint;
+  const probe = async () => ({ screen: false, accessibility: true, locked: false });
+  await currentApp.beforePermissionPrompt(hash, 'screen', probe);
+  await currentApp.beforePermissionPrompt(hash, 'screen', probe);
+  await currentApp.beforePermissionPrompt(hash, 'accessibility', probe);
+  assert.deepEqual(resetServices, ['ScreenCapture'], 'only the obsolete permission should be reset, once');
   assert(!(await processes()).some(item => item.pid === first.child.pid), 'old fixed helper must exit before replacement');
   assert.equal((await currentApp.describe()).version, currentVersion);
   assert.equal((await currentApp.describe()).updatePending, false);
@@ -65,7 +77,7 @@ try {
   assert(unregistered.includes(oldSourcePath));
   assert.equal(await readFile(join(root, 'old/sessions.json'), 'utf8'), 'keep session data');
   assert.equal((await current.helper.request({ op: 'status' })).ok, true);
-  console.log(`Managed macOS helper verified: ${currentVersion}; real process identity guard, immediate replacement, strict signature, stable repeat install and legacy app cleanup passed.`);
+  console.log(`Managed macOS helper verified: ${currentVersion}; signature migration, scoped permission cleanup policy, stable installation and legacy app cleanup passed.`);
   console.log('Permission grants, desktop input and iPhone keyboard behavior were not tested by this installation check.');
 } finally {
   await Promise.allSettled(helpers.map(helper => helper.stop()));

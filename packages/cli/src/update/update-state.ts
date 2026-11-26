@@ -1,5 +1,6 @@
 import { mkdir, open, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
+import type { RelayMode } from "../args.js";
 
 export type DurableUpdatePhase = "downloading" | "installing" | "reconnecting" | "complete" | "failed";
 export interface DurableUpdateState {
@@ -10,8 +11,9 @@ export interface DurableUpdateState {
   dataDir: string;
   roots: string[];
   port: number | null;
-  relay: "auto" | "cloudflare" | "pinggy" | "custom";
+  relay: RelayMode;
   tunnelCommand: string | null;
+  relayUrl?: string;
   localOnly: boolean;
   fileName: string;
   sha256: string;

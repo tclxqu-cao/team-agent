@@ -6,7 +6,6 @@ import {
   paginateSessionHistory,
   isInternalGoalMessage,
   StaleSessionAnchorError,
-  type Message,
   type SessionHistoryQuery,
   type SessionHistoryView,
 } from "@agent/core";
@@ -70,12 +69,16 @@ export async function GET(
 
   const recoverableRun = agentHost.getRecoverableRun(session);
   const committedMessages = (!session.messages?.length && !recoverableRun && Array.isArray(session.events) && session.events.length > 0
-    ? rebuildMessagesFromEvents(session.events as Array<Record<string, unknown>>)
+    ? rebuildMessagesFromEvents(session.events)
     : session.messages)?.filter((message) => !isInternalGoalMessage(message)) ?? [];
   const currentRunMessages = recoverableRun
     ? rebuildMessagesFromEvents(
-        session.events.slice(recoverableRun.eventStart) as Array<Record<string, unknown>>,
-        { runId: recoverableRun.runId, isStreaming: recoverableRun.running },
+        session.events.slice(recoverableRun.eventStart),
+        {
+          runId: recoverableRun.runId,
+          isStreaming: recoverableRun.running,
+          pendingQuestionIds: recoverableRun.running ? agentHost.pendingQuestionIds(session.id) : undefined,
+        },
       )
     : [];
   const rebuiltMessages = [...(committedMessages ?? []), ...currentRunMessages];
@@ -99,7 +102,7 @@ export async function GET(
           permissionMode: normalizeToolPermissionMode(session.metadata.permissionMode),
           ...(activeRun ? { activeRun } : {}),
           ...paginateSessionHistory(
-            (rebuiltMessages ?? []) as Message[],
+            rebuiltMessages,
             session.events ?? [],
             historyQuery,
           ),

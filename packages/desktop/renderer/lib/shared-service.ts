@@ -4,7 +4,7 @@ import { LocalSettingsRepository } from "../../../shared/src/infrastructure/loca
 import type { AgentApi } from "../../../shared/src/contracts/agent-api";
 import type { MobilePairingInvitation } from "../../main/mobile-pairing";
 import type { TerminalSocketFrame } from "../../main/shared-service";
-import type { TunnelStatus } from "../../../shared/src/contracts/tunnel-status";
+import type { PairingRoute, TunnelStatus } from "../../../shared/src/contracts/tunnel-status";
 
 export interface SharedServiceStatus {
   connected: boolean;
@@ -14,7 +14,8 @@ export interface SharedServiceStatus {
 }
 export interface SharedServiceApi {
   status(): Promise<SharedServiceStatus>;
-  mobilePairing(): Promise<MobilePairingInvitation>;
+  mobilePairing(route?: string): Promise<MobilePairingInvitation>;
+  pairingRoutes(): Promise<PairingRoute[]>;
   tunnelStatus(): Promise<TunnelStatus>;
   connectTunnel(): Promise<TunnelStatus>;
   bootstrapStatus(): Promise<{ phase: "idle" | "installing" | "ready" | "error"; message: string }>;

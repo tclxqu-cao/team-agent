@@ -3,7 +3,7 @@ import { prepareChromeExtension, showChromeExtensionSetup } from "./ai-hub/chrom
 // on electron 32 / Node 20.18 (cjsPreparseModuleExports: "exports" undefined).
 import { createRequire } from "module";
 const require = createRequire(import.meta.url);
-const { app, BrowserWindow, ipcMain, dialog, Menu, nativeImage, session, shell, desktopCapturer, systemPreferences, screen, globalShortcut, clipboard, powerMonitor, protocol, Notification } = require("electron") as typeof import("electron");
+const { app, BrowserWindow, ipcMain, dialog, Menu, nativeImage, net, session, shell, desktopCapturer, systemPreferences, screen, globalShortcut, clipboard, powerMonitor, protocol, Notification } = require("electron") as typeof import("electron");
 import { spawn, type ChildProcess } from "node:child_process";
 import { basename, delimiter, join, resolve } from "node:path";
 import { homedir } from "node:os";
@@ -34,6 +34,7 @@ import { openVideoWindow } from "./video-window.js";
 import { DesktopCodexSharingSetup } from "./codex-sharing-setup.js";
 import { DesktopRuntimeBootstrap } from "./runtime-bootstrap.js";
 import { DesktopUpdateService } from "./update-service.js";
+import { installDesktopUpdate } from "./desktop-installer.js";
 import { DesktopTaskCompletionNotifier } from "./task-completion-notifier.js";
 import { createDesktopNotificationSound } from "./notification-sound.js";
 import { DesktopNotificationSubscription } from "./notification-subscription.js";
@@ -121,8 +122,14 @@ const desktopUpdateService = new DesktopUpdateService({
   version: app.getVersion(),
   platform: process.platform,
   arch: process.arch,
-  downloadsDirectory: app.getPath("downloads"),
-  reveal: (path) => shell.showItemInFolder(path),
+  edition: "desktop",
+  packaged: app.isPackaged,
+  downloadsDirectory: join(app.getPath("userData"), "updates"),
+  fetch: (input, init) => net.fetch(input instanceof URL ? input.href : input, init),
+  activate: (path, version) => installDesktopUpdate(path, version, {
+    platform: process.platform, edition: "desktop", executable: process.execPath,
+    openPath: path => shell.openPath(path), quit: () => app.quit(),
+  }),
 });
 desktopUpdateService.subscribe((status) => mainWindow?.webContents.send("update:status", status));
 // ── AI Hub 浏览器 Profile 导入 + 共享 Session + 托管 Chrome 重登录 ─────────
@@ -178,6 +185,7 @@ const codexSharingSetup = new DesktopCodexSharingSetup({
 });
 const desktopLiveProxy = new DesktopLiveCliProxy({
   request: (path, method, body) => sharedService.json(path, method, body),
+  prepareRemoteComponent: permission => runtimeBootstrap.prepareRemoteComponent(permission),
   onStatus: (status) => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("desktop-live:status", status);
     const controlled = status.enabled && status.controlState !== null && status.controlState !== "agent-controlled";
@@ -204,13 +212,14 @@ const trustedServiceSender = (event: import("electron").IpcMainInvokeEvent) => {
   rendererWindows.assertSender(event);
 };
 ipcMain.handle("service:status", (event) => { trustedServiceSender(event); return sharedService.status(); });
-ipcMain.handle("service:mobile-pairing", async (event) => {
+ipcMain.handle("service:mobile-pairing", async (event, route?: string) => {
   trustedServiceSender(event);
-  const invitation = await sharedService.mobilePairing();
+  const invitation = await sharedService.mobilePairing(route);
   await codexSharingSetup.prepare();
   return invitation;
 });
 ipcMain.handle("service:tunnel-status", (event) => { trustedServiceSender(event); return sharedService.tunnelStatus(); });
+ipcMain.handle("service:pairing-routes", (event) => { trustedServiceSender(event); return sharedService.pairingRoutes(); });
 ipcMain.handle("service:tunnel-connect", (event) => { trustedServiceSender(event); return sharedService.connectTunnel(); });
 ipcMain.handle("service:bootstrap-status", (event) => { trustedServiceSender(event); return runtimeBootstrap.status(); });
 ipcMain.handle("service:bootstrap", async (event) => {
@@ -340,7 +349,9 @@ function createWindow(): void {
     globalLogger.error("preload script failed", error, { preloadPath });
   });
   window.on("closed", () => {
-    if (mainWindow === window) mainWindow = null;
+    if (mainWindow !== window) return;
+    mainWindow = null;
+    if (process.platform === "darwin" && !app.isPackaged && !quitCleanupStarted) app.quit();
   });
 
   if (useRendererDevServer) {
@@ -432,9 +443,17 @@ ipcMain.handle("shell:open-external", (_event, raw: unknown) => {
   }
 });
 
-ipcMain.handle("update:get-status", () => desktopUpdateService.getStatus());
-ipcMain.handle("update:check", () => desktopUpdateService.check());
-ipcMain.handle("update:install", () => desktopUpdateService.install());
+function trustedUpdateSender(event: import("electron").IpcMainInvokeEvent): void {
+  trustedServiceSender(event);
+  const sender = new URL(event.senderFrame!.url);
+  sender.search = "";
+  sender.hash = "";
+  const renderer = useRendererDevServer ? rendererDevUrl : pathToFileURL(rendererEntryFile).href;
+  if (sender.href !== renderer) throw new Error("Untrusted update sender");
+}
+ipcMain.handle("update:get-status", (event) => { trustedUpdateSender(event); return desktopUpdateService.getStatus(); });
+ipcMain.handle("update:check", (event) => { trustedUpdateSender(event); return desktopUpdateService.check(); });
+ipcMain.handle("update:install", (event) => { trustedUpdateSender(event); return desktopUpdateService.install(); });
 
 // ── IPC: AI Hub (embedded multi-AI web aggregation) ─────────────────────
 

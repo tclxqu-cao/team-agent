@@ -12,7 +12,7 @@ import {
   type SessionToolResultRef,
 } from "@agent/core";
 import { createTaskCompletionNotification } from "../../../core/src/application/notification/task-completion";
-import { ArrowDownToLine, AlarmClock, Check, CircleAlert, Copy, CornerUpRight, FileText, GitFork, GripVertical, LoaderCircle, MessagesSquare, Monitor, PanelLeftClose, PanelLeftOpen, Paperclip, Pencil, Play, RefreshCw, Square, Target, Trash2, Unplug } from "lucide-react";
+import { ArrowDownToLine, AlarmClock, Check, CircleAlert, Copy, CornerUpRight, FileText, GitFork, GripVertical, ListChecks, LoaderCircle, MessagesSquare, Monitor, PanelLeftClose, PanelLeftOpen, Paperclip, Pencil, Play, RefreshCw, Square, Target, Trash2, Unplug } from "lucide-react";
 import AgentBrandIcon from "./AgentBrandIcon";
 import SessionLoading from "./SessionLoading";
 import SessionTaskPanel, { SessionTaskPanelToggle } from "./SessionTaskPanel";
@@ -118,11 +118,14 @@ import {
   markDurableMessageSteered,
   moveQueuedMessage,
   projectSessionGoals,
+  transcriptGoalMessageIds,
   reconcileDurableQueuedMessages,
 } from "../lib/queued-message-order";
 import { canSteerQueuedMessage, steerQueuedMessage } from "../lib/queued-message-steering";
 import { composerKeyAction } from "../lib/composer-keyboard";
 import { completeComposerSlashToken, readComposerSlashToken, type ComposerSlashToken } from "../lib/composer-slash-token";
+import { useCodexComposerCatalog } from "../lib/use-codex-composer-catalog";
+import { useComposerPrediction } from "../lib/use-composer-prediction";
 import { useComposerPopoverPosition } from "../lib/use-composer-popover-position";
 import { applyCopilotLiveMessage } from "../lib/copilot-live-message";
 import { isWebShell } from "../web/webLayout";
@@ -158,10 +161,6 @@ import {
 // including its complete answer, instead of downloading unrelated screenshots.
 const CODEX_NAVIGATION_HISTORY_PAGE_SIZE = 1;
 const JUMP_TO_BOTTOM_THRESHOLD_PX = 160;
-
-function normalizeGoalMessageText(value: string): string {
-  return value.trim().replace(/^\/goal\s+/i, "").replace(/^\$([\w-]+)/, "/$1").trim();
-}
 
 /** Human-readable description of a cron/interval expression (browser-safe, no Node.js). */
 function describeCron(cron: string): string {
@@ -419,7 +418,9 @@ export function renderAssistantText(text: string, onOpenArtifact?: (path: string
         segments.push(
           <span key={`txt-${segKey++}`}>
             {plainLines.map((line, li) => (
-              <span key={li}>{renderRichInline(line, onOpenArtifact)}{li < plainLines.length - 1 ? '\n' : null}</span>
+              <span key={li} className={line.trim() ? undefined : 'chat-text-blank-line'}>
+                {renderRichInline(line, onOpenArtifact)}{li < plainLines.length - 1 ? '\n' : null}
+              </span>
             ))}
           </span>
         );
@@ -980,12 +981,19 @@ export default function ChatView({
     ? effectiveNativePref.reasoningEffort
     : undefined;
   const nativeModelPickerReady = runtimeModelOptions.length > 0;
+  const [codexModes, setCodexModes] = useState<Record<string, NonNullable<NativeRunOptions["codexMode"]>>>({});
+  const codexModeKey = viewSessionId ?? `new:${selectedProjectId ?? workspacePath ?? ""}`;
+  const codexMode = composerAgentType === "codex" && !isParallelComposer ? codexModes[codexModeKey] : undefined;
+  const toggleCodexPlan = () => setCodexModes(previous => ({
+    ...previous, [codexModeKey]: previous[codexModeKey] === "plan" ? "default" : "plan",
+  }));
 
   const composerRunOptions = (attachments?: NativeRunOptions["attachments"]): NativeRunOptions | undefined => {
     if (!isNativeRuntime) return activeProfileId ? { profileId: activeProfileId } : undefined;
     return {
       ...(supportsNativeModelSelection && nativeModelCatalogReady && effectiveNativePref.model?.id ? { model: effectiveNativePref.model } : {}),
       ...(supportsNativeModelSelection && activeNativeEffort ? { reasoningEffort: activeNativeEffort } : {}),
+      ...(codexMode ? { codexMode } : {}),
       ...(attachments?.length ? { attachments } : {}),
     };
   };
@@ -1053,6 +1061,11 @@ export default function ChatView({
     () => groupSessionExecutionMessages(ungroupedMessages, isRunning),
     [isRunning, ungroupedMessages],
   );
+  const transcriptGoalIds = useMemo(
+    () => transcriptGoalMessageIds(renderedMessages, [goalState.active, ...goalState.history]
+      .filter(goal => goal?.sessionId === viewSessionId)),
+    [renderedMessages, goalState.active, goalState.history, viewSessionId],
+  );
   const turnResults = useMemo(() => new Map(sessionTurnResults(renderedMessages, isRunning)
     .map(turn => [turn.footerId, turn])), [renderedMessages, isRunning]);
   const turnWorkspace = sessionSummary?.cwd || workspacePath;
@@ -1096,6 +1109,12 @@ export default function ChatView({
   const supportsNativeGoal = composerAgentType === "deepseek-harness" && sessionSummary?.nativeGoalSupported !== false;
   const supportsNativeModelSelection = sessionSummary?.nativeModelSelectionSupported !== false;
   const nativeGoal = useNativeSessionGoal(viewSessionId, supportsNativeGoal);
+  const goalDetailsId = useId();
+  const [showGoalDetails, setShowGoalDetails] = useState(false);
+  const activeSessionGoal = goalState.active?.sessionId === viewSessionId ? goalState.active : null;
+  const currentThreadGoal = threadGoal?.sessionId === viewSessionId ? threadGoal : null;
+  const hasGoalDetails = Boolean(activeSessionGoal || currentThreadGoal || (supportsNativeGoal && nativeGoal.goal));
+  useEffect(() => { setShowGoalDetails(false); }, [viewSessionId]);
   const canComposeNativeGoal = supportsNativeGoal && composerRoute.ready && runtimeReady && !isCompatibilityReadOnly;
   const canSubmitComposer = isParallelComposer
     ? composerRoute.ready && !parallel.submitting
@@ -1251,13 +1270,28 @@ export default function ChatView({
   }, [focusComposerNonce]);
   const pickerAnchorRef = useRef<HTMLDivElement>(null);
   const slashMenuRef = useRef<HTMLDivElement>(null);
-  const [pickerRect, setPickerRect] = useState<DOMRect | null>(null);
+  const mentionMenuRef = useRef<HTMLDivElement>(null);
   const [agents, setAgents] = useState<Array<{id: string; name: string; description: string; isActive?: boolean}>>([]);
   const [skills, setSkills] = useState<Array<{name: string; description: string}>>([]);
   /** List of agents selected via @mention — sent in order */
   const [pendingAgents, setPendingAgents] = useState<Array<{id: string; name: string}>>([]);
   const [atQuery, setAtQuery] = useState<string | null>(null);
   const [slashToken, setSlashToken] = useState<ComposerSlashToken | null>(null);
+  const [composerMenuIndex, setComposerMenuIndex] = useState(0);
+  const predictionReady = composerAgentType === "codex" && canSubmitComposer && !isParallelComposer
+    && !isRunning && !goalMode && codexMode !== "plan" && !pendingQuestionMessages.length && historyWindowMode === "latest"
+    && !input && !attachedFiles.length && !pendingImages.length && !pendingImageReads && !pendingAgents.length;
+  const prediction = useComposerPrediction(viewSessionId, predictionReady && pageActive);
+  const codexComposer = useCodexComposerCatalog(
+    sessionSummary?.cwd || workspacePath || "",
+    composerAgentType === "codex" && slashToken !== null,
+    composerAgentType === "codex" ? atQuery : null,
+  );
+  useEffect(() => {
+    setAtQuery(null);
+    setSlashToken(null);
+    setComposerMenuIndex(0);
+  }, [composerAgentType, selectedProjectId, viewSessionId]);
   const historyAgentType = useCallback((targetSid: string): AgentType | undefined => resolveSessionAgentType(
     targetSid, selectedSessionIdRef.current, sessionSummary?.agentType,
   ), [sessionSummary?.agentType]);
@@ -1541,7 +1575,8 @@ export default function ChatView({
   // A stale browser can try to send while a recovered native run is already
   // active. Keep that original run marked as live when its admission rejects.
   const preserveNativeConflictRef = useRef<Set<string>>(new Set());
-  const pendingNativeSendPayloadRef = useRef<Map<string, OccupiedSendPayload>>(new Map());
+  type PendingNativeSendPayload = OccupiedSendPayload & { admitted?: boolean };
+  const pendingNativeSendPayloadRef = useRef<Map<string, PendingNativeSendPayload>>(new Map());
   const occupiedRecoveryActionRef = useRef<string | null>(null);
   // Always-current refs for selectedSessionId and sessionId — used inside event
   // handlers that are captured in closures and may outlive React renders.
@@ -1651,35 +1686,73 @@ export default function ChatView({
   useEffect(() => {
     if (!window.agentApi) return;
     void window.agentApi.listAgentDefs().then((list) => setAgents(list as Array<{id: string; name: string; description: string; isActive?: boolean}>));
-    void window.agentApi.listSkills().then((list) => setSkills((list as Array<{name: string; description: string}>).filter(s => s.name))).catch((e: unknown) => console.error('[listSkills] mount error:', e));
   }, []);
 
   const filteredAgents = atQuery === null ? [] : agents.filter(a =>
     atQuery === "" || a.name.toLowerCase().includes(atQuery.toLowerCase())
   );
 
-  /** Built-in slash commands that always appear in the picker */
-  const BUILTIN_COMMANDS = [
+  const slashCommand = slashToken !== null && input[slashToken.start] === "/";
+  const standaloneCommand = slashCommand && !input.slice(0, slashToken.start).trim() && !input.slice(slashToken.end).trim();
+  const commands: Array<{ name: string; description: string; action?: () => void }> = [
     { name: "goal", description: "目标模式：持续推进当前目标，后续目标自动排队" },
     { name: "compact", description: "主动压缩当前会话上下文，并在下轮重新注入环境" },
     { name: "loop", description: "定时任务：/loop 5m 任务 | list | pause/resume/delete <id> | stop" },
   ];
-
+  if (composerAgentType === "codex" && !isParallelComposer) {
+    commands.push({ name: "review", description: "审查未提交变更，可用 /review --base <分支> 比较" });
+    if (standaloneCommand && !canStopRun) {
+      commands.push({
+        name: "plan", description: codexMode === "plan" ? "关闭 Codex 计划模式" : "开启 Codex 计划模式",
+        action: () => { toggleCodexPlan(); inputRef.current?.focus(); },
+      });
+    }
+  }
+  if (standaloneCommand) {
+    if (!isParallelComposer && (isNativeRuntime ? supportsNativeModelSelection && nativeModelPickerReady : profiles.length > 0)) {
+      commands.push({ name: "model", description: "选择当前模型", action: () => modelPickerRef.current?.showPicker() });
+    }
+    if (!isParallelComposer && (isNativeRuntime ? nativeEffortOptions.length > 0 : profiles.length > 0) && !canStopRun) {
+      commands.push({ name: "reasoning", description: "选择推理强度", action: () => {
+        if (isNativeRuntime) setNativeEffortMenuOpen(true);
+        else setEffortMenuOpen(true);
+      } });
+    }
+    if (viewSessionId && !isSavingPermission && (!usesNativePermissions || (nativePermissions?.options.length && window.agentApi?.setSessionNativePermissionPreset))) {
+      commands.push({ name: "permissions", description: "选择会话权限", action: () => setPermissionMenuOpen(true) });
+    }
+    commands.push({ name: "attach", description: "添加附件或图片", action: () => fileInputRef.current?.click() });
+  }
+  const slashChoices = slashCommand ? [...commands, ...codexComposer.skills, ...skills] : codexComposer.skills;
   const slashQuery = slashToken?.query.toLowerCase();
-  const filteredSkills = slashQuery === undefined
-    ? []
-    : [...BUILTIN_COMMANDS, ...skills].filter(skill => skill.name.toLowerCase().includes(slashQuery));
+  const matchingSkills = new Map<string, (typeof commands)[number]>();
+  if (slashQuery !== undefined) {
+    for (const choice of slashChoices) {
+      if (!matchingSkills.has(choice.name) && choice.name.toLowerCase().includes(slashQuery)) matchingSkills.set(choice.name, choice);
+    }
+  }
+  const filteredSkills = [...matchingSkills.values()];
+  const pickerOptionCount = atQuery !== null ? filteredAgents.length + codexComposer.files.length : filteredSkills.length;
+  const activeComposerOption = Math.min(composerMenuIndex, pickerOptionCount - 1);
   const slashMenuPosition = useComposerPopoverPosition(filteredSkills.length > 0, pickerAnchorRef, slashMenuRef, {
     matchAnchorWidth: true,
     maxHeight: 320,
   });
+  const mentionMenuPosition = useComposerPopoverPosition(atQuery !== null && pickerOptionCount > 0, pickerAnchorRef, mentionMenuRef, {
+    matchAnchorWidth: true,
+    maxHeight: 320,
+  });
+  useEffect(() => {
+    const menu = atQuery !== null ? mentionMenuRef.current : slashMenuRef.current;
+    menu?.querySelector('[aria-current="true"]')?.scrollIntoView({ block: "nearest" });
+  }, [activeComposerOption, atQuery, slashToken]);
 
   const selectAgent = (agent: {id: string; name: string}) => {
     // Add agent to pending list (avoid duplicates)
     setPendingAgents(prev =>
       prev.find(a => a.id === agent.id) ? prev : [...prev, agent]
     );
-    setInput(prev => prev.replace(/@[\w\u4e00-\u9fff]*$/, ""));
+    setInput(prev => atQuery === null ? prev : prev.slice(0, -atQuery.length - 1));
     setAtQuery(null);
     setTimeout(() => inputRef.current?.focus(), 0);
   };
@@ -1688,8 +1761,14 @@ export default function ChatView({
     setPendingAgents(prev => prev.filter(a => a.id !== id));
   };
 
-  const selectSkill = (skill: {name: string}) => {
+  const selectSkill = (skill: (typeof commands)[number]) => {
     if (!slashToken) return;
+    if (skill.action) {
+      setInput("");
+      setSlashToken(null);
+      skill.action();
+      return;
+    }
     const completion = completeComposerSlashToken(input, slashToken, skill.name);
     setInput(completion.value);
     setSlashToken(null);
@@ -1701,35 +1780,49 @@ export default function ChatView({
     });
   };
 
+  const selectComposerFile = (path: string) => {
+    if (atQuery === null) return;
+    const ticks = "`".repeat(1 + Math.max(0, ...(path.match(/`+/g) ?? []).map(run => run.length)));
+    setInput(input.slice(0, -atQuery.length - 1) + ticks + path + ticks + " ");
+    setAtQuery(null);
+    requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true }));
+  };
+
   const updateSlashToken = (value: string, caret: number, selectionEnd: number) => {
-    const token = caret === selectionEnd ? readComposerSlashToken(value, caret) : null;
+    const token = caret === selectionEnd
+      ? readComposerSlashToken(value, caret) ?? (composerAgentType === "codex" ? readComposerSlashToken(value, caret, "$") : null)
+      : null;
     setSlashToken(token);
     if (token) setAtQuery(null);
     return token;
   };
 
+  const updateAtQuery = (value: string, caret: number, selectionEnd: number) => {
+    const atMatch = caret === value.length && caret === selectionEnd ? value.match(composerAgentType === "codex"
+      ? /(?:^|\s)@([^\s@]*)$/
+      : /@([\w\u4e00-\u9fff]*)$/) : null;
+    setAtQuery(atMatch?.[1] ?? null);
+    if (atMatch && atQuery === null && window.agentApi) {
+      void window.agentApi.listAgentDefs().then((list) =>
+        setAgents(list as Array<{ id: string; name: string; description: string; isActive?: boolean }>),
+      ).catch(() => undefined);
+    }
+  };
+
   const handleComposerChange = (value: string, caret = value.length, selectionEnd = caret) => {
+    prediction.dismiss();
+    setComposerMenuIndex(0);
     setInput(value);
-    if (updateSlashToken(value, caret, selectionEnd)) {
-      if (slashToken === null && window.agentApi) {
+    const token = updateSlashToken(value, caret, selectionEnd);
+    if (token) {
+      if (value[token.start] === "/" && slashToken === null && window.agentApi) {
         void window.agentApi.listSkills().then((list) =>
-          setSkills((list as Array<{ name: string; description: string }>).filter(skill => skill.name)),
+          setSkills((list as Array<{ name: string; description: string; enabled?: boolean }>).filter(skill => skill.name && skill.enabled !== false)),
         ).catch((error: unknown) => console.error("[listSkills] slash error:", error));
       }
       return;
     }
-    const atMatch = caret === value.length ? value.match(/@([\w\u4e00-\u9fff]*)$/) : null;
-    if (atMatch) {
-      if (window.agentApi) {
-        void window.agentApi.listAgentDefs().then((list) =>
-          setAgents(list as Array<{id: string; name: string; description: string; isActive?: boolean}>),
-        );
-      }
-      setPickerRect(pickerAnchorRef.current?.getBoundingClientRect() ?? null);
-      setAtQuery(atMatch[1]);
-      return;
-    }
-    setAtQuery(null);
+    updateAtQuery(value, caret, selectionEnd);
   };
 
   const selectStarterPrompt = (prompt: string) => {
@@ -1739,25 +1832,44 @@ export default function ChatView({
     requestAnimationFrame(() => inputRef.current?.focus());
   };
 
+  const acceptPrediction = () => {
+    if (!prediction.text || inputRef.current?.value !== "") return;
+    setInput(prediction.text);
+    prediction.dismiss();
+    requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true }));
+  };
+
   const handleComposerKeyDown = (event: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    const action = composerKeyAction(event, { pickerOpen: atQuery !== null || filteredSkills.length > 0, running: canStopRun });
+    const action = composerKeyAction(event, {
+      pickerOpen: atQuery !== null || filteredSkills.length > 0,
+      pickerOptions: pickerOptionCount,
+      predictionVisible: Boolean(prediction.text),
+      running: canStopRun,
+    });
     if (!action) return;
+    event.preventDefault();
     if (action === "dismiss-picker") {
-      event.preventDefault();
       setAtQuery(null);
       setSlashToken(null);
+    } else if (action === "accept-option") {
+      if (atQuery === null) selectSkill(filteredSkills[activeComposerOption]);
+      else if (activeComposerOption < filteredAgents.length) selectAgent(filteredAgents[activeComposerOption]);
+      else selectComposerFile(codexComposer.files[activeComposerOption - filteredAgents.length]);
+    } else if (action === "next-option" || action === "previous-option") {
+      const offset = action === "next-option" ? 1 : -1;
+      setComposerMenuIndex((activeComposerOption + offset + pickerOptionCount) % pickerOptionCount);
+    } else if (action === "accept-prediction") {
+      acceptPrediction();
+    } else if (action === "dismiss-prediction") {
+      prediction.dismiss();
     } else if (action === "abort") {
-      event.preventDefault();
       handleAbort("keyboard");
     } else if (action === "send") {
-      event.preventDefault();
       void handleSend();
     }
   };
 
-  const handleFileAttach = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? []);
-    e.target.value = "";
+  const handleFiles = async (files: readonly File[]) => {
     if (files.length === 0) return;
 
     const imageCount = files.filter((file) => file.type.toLowerCase().startsWith("image/")).length;
@@ -1780,6 +1892,31 @@ export default function ChatView({
     } finally {
       if (imageCount > 0) setPendingImageReads((count) => Math.max(0, count - 1));
     }
+  };
+
+  const handleFileAttach = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = "";
+    await handleFiles(files);
+  };
+
+  const hasFileDragPayload = (event: React.DragEvent<HTMLDivElement>) => {
+    const types = Array.from(event.dataTransfer.types);
+    return types.includes("Files") || types.includes("text/uri-list") || types.includes("public.file-url");
+  };
+
+  const handleComposerDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+    if (!hasFileDragPayload(event)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = canSubmitComposer ? "copy" : "none";
+  };
+
+  const handleComposerDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    if (!hasFileDragPayload(event) && event.dataTransfer.files.length === 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (!canSubmitComposer) return;
+    void handleFiles(Array.from(event.dataTransfer.files));
   };
 
   function restorePromptAttachments(attachments: NativeRunOptions["attachments"]) {
@@ -2662,6 +2799,10 @@ export default function ChatView({
     if (desktopTaskPane && eventSid && desktopTaskOwnsSession && !desktopTaskOwnsSession(eventSid)) return;
     if (desktopTaskPane && !ownsTaskPaneEvent(eventSid, viewedSid, managedRunSessionsRef.current)) return;
     if (!eventSid && event.type !== "cron_update") return;
+    if (eventSid && event.type === "run_admitted") {
+      const pending = pendingNativeSendPayloadRef.current.get(eventSid);
+      if (pending) pendingNativeSendPayloadRef.current.set(eventSid, { ...pending, admitted: true });
+    }
     if (event._nativeRunId && Number.isSafeInteger(event._nativeSequence)) {
       const key = `${event._nativeRunId}:${event._nativeSequence}`;
       if (seenNativeEventKeysRef.current.has(key)) return;
@@ -2731,6 +2872,7 @@ export default function ChatView({
       case "run_admitted":
         if (eventSid) runTerminalBySessionRef.current.delete(eventSid);
         if (isViewed) {
+          prediction.dismiss();
           setRestoredRunError(null);
           updateAgentActivity("thinking");
           if (eventSid && !managedRunSessionsRef.current.has(eventSid)) void refreshLatestHistory(eventSid);
@@ -2743,7 +2885,6 @@ export default function ChatView({
           if (isViewed) setError(null);
         }
         if (eventSid) {
-          pendingNativeSendPayloadRef.current.delete(eventSid);
           const currentRecovery = findOccupiedRecovery(occupiedRecoveriesRef.current, eventSid);
           if (currentRecovery) {
             if (occupiedRecoveryActionRef.current === currentRecovery.token) {
@@ -3069,6 +3210,13 @@ export default function ChatView({
         break;
       case "done":
         if (isViewed) {
+          if (eventSid && !isAnchoredView && !event._nativeRecoveredFromSnapshot && !event._preserveActiveRun
+            && historyAgentType(eventSid) === "codex" && event.forkPoint?.turnId && event.finalText
+            && !composerDraftRef.current.text && !composerDraftRef.current.images.length
+            && !attachedFiles.length && !pendingAgents.length && !goalMode && codexMode !== "plan"
+            && !getMessagesForSession(eventSid).some(message => message.isQueued)) {
+            prediction.offer({ sessionId: eventSid, turnId: event.forkPoint.turnId, reply: event.finalText });
+          }
           const failure = runTerminal ? terminalRunError(runTerminal) : null;
           setRestoredRunError(failure && eventSid ? { sessionId: eventSid, message: failure } : null);
           if (!failure) setError(null);
@@ -3104,6 +3252,7 @@ export default function ChatView({
           updateAgentActivity("idle");
         }
         if (eventSid) {
+          pendingNativeSendPayloadRef.current.delete(eventSid);
           if (managedRunSessionsRef.current.has(eventSid)) {
             window.setTimeout(() => { void loadGoalState(eventSid); }, 150);
           } else {
@@ -3199,10 +3348,11 @@ export default function ChatView({
           } : undefined);
           if (forkRecovery) {
             restoreForkRecoveryToComposer(eventSid, forkRecovery);
-          } else if (recoveryPayload?.content && capturedPayload?.restoreDraftOnFailure !== false) {
+          } else if (capturedPayload?.content && capturedPayload.admitted !== true
+            && capturedPayload.restoreDraftOnFailure !== false) {
             const restored = restoreFailedComposerDraft(isViewed ? composerDraftRef.current : {
               text: readSessionDraft(eventSid), images: [],
-            }, recoveryPayload);
+            }, capturedPayload);
             writeSessionDraft(eventSid, restored.text);
             void imageDraftCoordinator.save(eventSid, restored.images);
             if (isViewed) {
@@ -3310,6 +3460,7 @@ export default function ChatView({
         }
         break;
       case "turn_aborted":
+        if (eventSid) pendingNativeSendPayloadRef.current.delete(eventSid);
         if (eventSid && cancellationTimeoutSessionId === eventSid) {
           setCancellationTimeoutSessionId(null);
           if (isViewed) setError(null);
@@ -3805,6 +3956,7 @@ export default function ChatView({
       agentName: message.agentName,
       restoreDraftOnFailure: message.restoreDraftOnFailure,
       runOptions,
+      admitted: false,
     });
     abortRef.current = false;
     managedRunSessionsRef.current.add(targetSessionId);
@@ -3832,7 +3984,7 @@ export default function ChatView({
         const failedPayload = targetSessionId.startsWith("runtime:")
           ? pendingNativeSendPayloadRef.current.get(targetSessionId) : message;
         if (failedPayload?.content) {
-          if (failedPayload.restoreDraftOnFailure !== false) {
+          if (failedPayload.restoreDraftOnFailure !== false && failedPayload.admitted !== true) {
             const isViewed = viewSessionIdRef.current === targetSessionId
               || (message.restoreDraftScope !== undefined && composerScopeRef.current === message.restoreDraftScope);
             const restored = restoreFailedComposerDraft(isViewed ? composerDraftRef.current : {
@@ -3907,7 +4059,10 @@ export default function ChatView({
         workspaceSource,
         workspacePath,
       });
-      if (composerScopeRef.current === scope) createdSessionDraftRef.current = created.id;
+      if (composerScopeRef.current === scope) {
+        createdSessionDraftRef.current = created.id;
+        if (codexMode) setCodexModes(previous => ({ ...previous, [created.id]: codexMode }));
+      }
       return created;
     } finally {
       creatingSessionRef.current = false;
@@ -4198,7 +4353,9 @@ export default function ChatView({
         if (submission.images?.length) throw new Error("Harness 原生目标暂不接收附件，请先发送附件，再设置目标");
         const mutation = nativeGoalSubmission(finalMsg, nativeGoal.goal);
         if (mutation === "show") {
-          if (viewSessionId) await nativeGoal.refresh(viewSessionId);
+          if (viewSessionId && await nativeGoal.refresh(viewSessionId) && isCurrentGoalSubmission()) {
+            setShowGoalDetails(true);
+          }
           return;
         }
         if (!targetSessionId) {
@@ -4260,6 +4417,7 @@ export default function ChatView({
           },
           showUserMessage: (text, id) => {
             optimisticSessionId = id;
+            historyRequestsRef.current.invalidate(id);
             addMessage({
               id: sourceMessageId,
               role: "user",
@@ -4270,6 +4428,7 @@ export default function ChatView({
               isQueued: true,
               isGoal: true,
               goalId: sourceMessageId,
+              goalHistoryAnchor: findLatestUnqueuedUserMessageId(getMessagesForSession(id)),
             }, id);
           },
           onSessionCreated,
@@ -4441,6 +4600,7 @@ export default function ChatView({
   };
 
   const handleSend = async () => {
+    prediction.dismiss();
     if (sendingAttachmentsRef.current) return;
     const scope = composerScopeRef.current;
     let attachments: NativeRunOptions["attachments"];
@@ -4591,6 +4751,12 @@ export default function ChatView({
         }}>
           {sessionTitle || "会话"}
         </span>
+        {hasGoalDetails && <button type="button" className="ui-icon-button" title="会话目标"
+          aria-label="查看会话目标" aria-controls={goalDetailsId} aria-expanded={showGoalDetails}
+          style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+          onClick={() => setShowGoalDetails(open => !open)}>
+          <Target size={16} aria-hidden="true" />
+        </button>}
         {sessionDesktop.available && <button type="button" className={`ui-icon-button session-desktop-header-button${sessionDesktop.runId ? " is-active" : ""}`}
           aria-label="查看会话桌面" aria-expanded={sessionDesktop.showPreview} title={sessionDesktop.status} onClick={sessionDesktop.open}>
           <Monitor size={16} aria-hidden="true" />桌面
@@ -4636,6 +4802,71 @@ export default function ChatView({
           />
         )}
       </div>
+
+      {hasGoalDetails && showGoalDetails && <section id={goalDetailsId} aria-label="会话目标">
+        {supportsNativeGoal && <NativeGoalBar
+          goal={nativeGoal.goal} pending={nativeGoal.pending} error={nativeGoal.error}
+          onMutate={mutation => viewSessionId ? nativeGoal.mutate(viewSessionId, mutation) : Promise.reject(new Error("请先选择会话"))}
+        />}
+        {currentThreadGoal && (() => {
+          const statusLabel: Record<ThreadGoalInfo["status"], string> = {
+            active: "推进中",
+            paused: "已暂停",
+            blocked: "已受阻",
+            usage_limited: "用量受限",
+            budget_limited: "预算耗尽",
+            complete: "已完成",
+          };
+          const canResume = currentThreadGoal.status !== "active" && currentThreadGoal.status !== "complete";
+          return (
+            <div className={`goal-queue thread-goal is-${currentThreadGoal.status}`} aria-label="目标模式">
+              <div className="goal-queue__header">
+                <Target size={14} strokeWidth={1.9} aria-hidden="true" />
+                <span>目标模式</span>
+                <span className="goal-queue__count">{statusLabel[currentThreadGoal.status]}</span>
+                <span className="thread-goal__usage">
+                  {currentThreadGoal.tokenBudget !== null
+                    ? `${currentThreadGoal.tokensUsed}/${currentThreadGoal.tokenBudget} tokens · ${currentThreadGoal.turnCount} 轮`
+                    : `${currentThreadGoal.tokensUsed} tokens · ${currentThreadGoal.turnCount} 轮`}
+                </span>
+              </div>
+              <div className="goal-queue__row is-active">
+                <span className="goal-queue__objective" title={currentThreadGoal.objective}>{currentThreadGoal.objective}</span>
+                {currentThreadGoal.status === "active" && (
+                  <button
+                    type="button"
+                    className="goal-queue__action"
+                    onClick={() => { void handleThreadGoalAction("pause"); }}
+                    title="暂停目标续跑"
+                    aria-label="暂停目标续跑"
+                  >⏸</button>
+                )}
+                {canResume && (
+                  <button
+                    type="button"
+                    className="goal-queue__action"
+                    onClick={() => { void handleThreadGoalAction("resume"); }}
+                    title="恢复目标续跑"
+                    aria-label="恢复目标续跑"
+                  ><Play size={12} strokeWidth={2} aria-hidden="true" /></button>
+                )}
+                <button
+                  type="button"
+                  className="goal-queue__action"
+                  onClick={() => { void handleThreadGoalAction("clear"); }}
+                  title="清除目标，停止续跑"
+                  aria-label="清除目标，停止续跑"
+                ><Trash2 size={12} strokeWidth={2} aria-hidden="true" /></button>
+              </div>
+            </div>
+          );
+        })()}
+        {activeSessionGoal && <SessionGoalQueue key={`active-goal:${viewSessionId}:${activeSessionGoal.id}`}
+          active={activeSessionGoal} onEdit={editGoal} onRemove={removeGoal} />}
+      </section>}
+      {supportsNativeGoal && nativeGoal.error && !(hasGoalDetails && showGoalDetails) && (
+        <div className="native-goal-error" role="alert">{nativeGoal.error}</div>
+      )}
 
       {isParallelComposer && <ParallelAgentTabs
         members={parallel.group
@@ -4814,12 +5045,7 @@ export default function ChatView({
             );
           }
           const isUser = msg.role === "user";
-          const isGoalMessage = isUser && (
-            chatMsg.isGoal === true
-            || chatMsg.presentation?.isGoal === true
-            || [goalState.active, ...goalState.queued, ...goalState.history]
-              .some((goal) => Boolean(goal && normalizeGoalMessageText(goal.objective) === normalizeGoalMessageText(msg.content)))
-          );
+          const isGoalMessage = transcriptGoalIds.has(msg.id);
           const actionPolicy = messageActionPolicy(renderedMessages, i, isRunning);
           const runResult = chatMsg.presentation?.runResult;
 
@@ -5665,66 +5891,9 @@ export default function ChatView({
         })()}
 
         {composerAgentType === "deepseek-harness" && viewSessionId && window.agentApi?.listSessionBackgroundJobs && (
-          <SessionBackgroundJobs key={viewSessionId} sessionId={viewSessionId} />
+          <SessionBackgroundJobs key={`background-jobs:${viewSessionId}`} sessionId={viewSessionId} />
         )}
-        {supportsNativeGoal && <NativeGoalBar
-          goal={nativeGoal.goal} pending={nativeGoal.pending} error={nativeGoal.error}
-          onMutate={mutation => viewSessionId ? nativeGoal.mutate(viewSessionId, mutation) : Promise.reject(new Error("请先选择会话"))}
-        />}
-        {threadGoal && (() => {
-          const statusLabel: Record<ThreadGoalInfo["status"], string> = {
-            active: "推进中",
-            paused: "已暂停",
-            blocked: "已受阻",
-            usage_limited: "用量受限",
-            budget_limited: "预算耗尽",
-            complete: "已完成",
-          };
-          const canResume = threadGoal.status !== "active" && threadGoal.status !== "complete";
-          return (
-            <div className={`goal-queue thread-goal is-${threadGoal.status}`} aria-label="目标模式">
-              <div className="goal-queue__header">
-                <Target size={14} strokeWidth={1.9} aria-hidden="true" />
-                <span>目标模式</span>
-                <span className="goal-queue__count">{statusLabel[threadGoal.status]}</span>
-                <span className="thread-goal__usage">
-                  {threadGoal.tokenBudget !== null
-                    ? `${threadGoal.tokensUsed}/${threadGoal.tokenBudget} tokens · ${threadGoal.turnCount} 轮`
-                    : `${threadGoal.tokensUsed} tokens · ${threadGoal.turnCount} 轮`}
-                </span>
-              </div>
-              <div className="goal-queue__row is-active">
-                <span className="goal-queue__objective" title={threadGoal.objective}>{threadGoal.objective}</span>
-                {threadGoal.status === "active" && (
-                  <button
-                    type="button"
-                    className="goal-queue__action"
-                    onClick={() => { void handleThreadGoalAction("pause"); }}
-                    title="暂停目标续跑"
-                    aria-label="暂停目标续跑"
-                  >⏸</button>
-                )}
-                {canResume && (
-                  <button
-                    type="button"
-                    className="goal-queue__action"
-                    onClick={() => { void handleThreadGoalAction("resume"); }}
-                    title="恢复目标续跑"
-                    aria-label="恢复目标续跑"
-                  ><Play size={12} strokeWidth={2} aria-hidden="true" /></button>
-                )}
-                <button
-                  type="button"
-                  className="goal-queue__action"
-                  onClick={() => { void handleThreadGoalAction("clear"); }}
-                  title="清除目标，停止续跑"
-                  aria-label="清除目标，停止续跑"
-                ><Trash2 size={12} strokeWidth={2} aria-hidden="true" /></button>
-              </div>
-            </div>
-          );
-        })()}
-        <SessionGoalQueue key={viewSessionId} active={goalState.active} queued={goalState.queued}
+        <SessionGoalQueue key={`goal-queue:${viewSessionId}`} queued={goalState.queued}
           onEdit={editGoal}
           insertion={canInsertQueuedGoal ? { mode: canSteerQueuedGoals ? "current" : "next", submit: insertGoal } : undefined}
           onRemove={removeGoal} onReorder={reorderQueuedGoal} />
@@ -5910,7 +6079,10 @@ export default function ChatView({
           }}>重试发送</button>
         </div>)}
 
-        <div className={`composer-shell${isNewSessionComposer ? " composer-shell--new-session" : ""}${isParallelComposer ? " composer-shell--parallel" : ""}`} style={{
+        <div className={`composer-shell${isNewSessionComposer ? " composer-shell--new-session" : ""}${isParallelComposer ? " composer-shell--parallel" : ""}`}
+          onDragOverCapture={handleComposerDragOver}
+          onDropCapture={handleComposerDrop}
+          style={{
           display: "flex",
           flexDirection: "column",
           gap: 0,
@@ -6002,7 +6174,7 @@ export default function ChatView({
             </div>
           )}
 
-          {/* Shared multiline input */}
+          <div className="composer-edit-area">
           <textarea
             className="composer-text-input web-native-composer-textarea"
             ref={inputRef as React.RefObject<HTMLTextAreaElement>}
@@ -6014,13 +6186,27 @@ export default function ChatView({
             }}
             onSelect={(event) => {
               const { value, selectionStart, selectionEnd } = event.currentTarget;
-              updateSlashToken(value, selectionStart, selectionEnd);
+              if (!updateSlashToken(value, selectionStart, selectionEnd)) updateAtQuery(value, selectionStart, selectionEnd);
             }}
-            onBlur={() => setTimeout(() => { setAtQuery(null); setSlashToken(null); }, 120)}
+            onBlur={() => setTimeout(() => {
+              if (document.activeElement === inputRef.current) return;
+              setAtQuery(null);
+              setSlashToken(null);
+            }, 120)}
             onKeyDown={handleComposerKeyDown}
-            placeholder={isParallelComposer ? "输入消息，选择接收的 Agent" : codexReleaseState === "released" ? "已停止在 AgentRoam 中使用；Codex Desktop 最长约 30 分钟后可用" : isCompatibilityReadOnly ? (compatibilityStatus === "incompatible" ? "Codex 版本不兼容" : "正在验证会话兼容性") : isReadOnly ? "原客户端使用中，当前只读" : canGuideExternalSession(sessionSummary) ? "补充要求会交给桌面端原会话" : runtimeReady ? (goalMode ? "输入要持续推进的目标" : shouldQueueMessage ? "输入下一条排队消息" : isNewSessionComposer ? "描述你想做的事，第一条消息会创建会话" : "提出后续修改要求") : "请先在设置中配置 API Key"}
+            aria-label="消息"
+            aria-keyshortcuts={prediction.text ? "Tab" : undefined}
+            placeholder={prediction.text ? "" : isParallelComposer ? "输入消息，选择接收的 Agent" : codexReleaseState === "released" ? "已停止在 AgentRoam 中使用；Codex Desktop 最长约 30 分钟后可用" : isCompatibilityReadOnly ? (compatibilityStatus === "incompatible" ? "Codex 版本不兼容" : "正在验证会话兼容性") : isReadOnly ? "原客户端使用中，当前只读" : canGuideExternalSession(sessionSummary) ? "补充要求会交给桌面端原会话" : runtimeReady ? (goalMode ? "输入要持续推进的目标" : shouldQueueMessage ? "输入下一条排队消息" : isNewSessionComposer ? "描述你想做的事，第一条消息会创建会话" : "提出后续修改要求") : "请先在设置中配置 API Key"}
             disabled={!canSubmitComposer}
           />
+          {prediction.text && (
+            <button type="button" className="composer-prediction" aria-label={`填入建议：${prediction.text}`}
+              onMouseDown={event => event.preventDefault()} onClick={acceptPrediction}>
+              <span className="composer-prediction-text">{prediction.text}</span>
+              <span className="composer-prediction-hint" aria-hidden="true"><kbd>Tab</kbd> 填入</span>
+            </button>
+          )}
+          </div>
 
           {/* Shared action toolbar */}
           <div className="web-native-composer-toolbar">
@@ -6045,6 +6231,14 @@ export default function ChatView({
               >
                 <Target size={18} strokeWidth={1.9} aria-hidden="true" />
               </button>
+
+              {codexMode === "plan" && (
+                <button type="button" className="web-native-runtime-status goal-mode-toggle is-active"
+                  aria-label="关闭 Codex 计划模式" aria-pressed={true} title="Codex 计划模式"
+                  onClick={toggleCodexPlan}>
+                  <ListChecks size={18} aria-hidden="true" />
+                </button>
+              )}
 
               <div className="web-native-permission-wrap" ref={permissionMenuRef}>
                   <button
@@ -6163,6 +6357,7 @@ export default function ChatView({
                   </>
                 ) : (
                   <ComposerModelPicker
+                    ref={modelPickerRef}
                     value={activeProfileId}
                     disabled={profiles.length === 0}
                     options={profiles.length === 0 ? [{ value: "", label: "未配置模型" }]
@@ -6305,28 +6500,33 @@ export default function ChatView({
       />
 
       {/* ── Picker overlays rendered via portal to escape overflow:hidden ancestors ── */}
-      {pickerRect && atQuery !== null && filteredAgents.length > 0 && createPortal(
-        <div style={{
+      {atQuery !== null && pickerOptionCount > 0 && createPortal(
+        <div ref={mentionMenuRef} className="composer-picker" aria-label="引用" style={{
           position: "fixed",
-          bottom: window.innerHeight - pickerRect.top + 8,
-          left: pickerRect.left,
-          width: pickerRect.width,
+          ...mentionMenuPosition,
           background: "var(--bg-surface)",
           border: "1px solid var(--border-default)",
           borderRadius: 10,
           boxShadow: "var(--shadow-md)",
-          overflow: "hidden",
+          overflowY: "auto",
+          overscrollBehavior: "contain",
           zIndex: 99999,
         }}>
-          <div style={{ padding: "6px 10px 4px", fontSize: 10, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase" as const, letterSpacing: "0.06em" }}>智能体</div>
-          {filteredAgents.map(agent => (
+          {filteredAgents.length > 0 && <div className="composer-picker-label">智能体</div>}
+          {filteredAgents.map((agent, index) => (
             <button key={agent.id}
-              onMouseDown={(e) => { e.preventDefault(); selectAgent(agent); }}
-              style={{ display: "block", width: "100%", textAlign: "left" as const, padding: "8px 12px", border: "none", background: "transparent", cursor: "pointer" }}
-              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = "var(--accent-dim)"; }}
-              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}>
-              <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>@{agent.name}</div>
-              {agent.description && <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 1 }}>{agent.description}</div>}
+              type="button" className="composer-picker-option" aria-current={index === activeComposerOption}
+              onMouseDown={event => event.preventDefault()} onClick={() => selectAgent(agent)}>
+              <strong>@{agent.name}</strong>
+              {agent.description && <small>{agent.description}</small>}
+            </button>
+          ))}
+          {codexComposer.files.length > 0 && <div className="composer-picker-label">工作区文件</div>}
+          {codexComposer.files.map((path, index) => (
+            <button key={path} type="button" className="composer-picker-option"
+              aria-current={index + filteredAgents.length === activeComposerOption}
+              onMouseDown={event => event.preventDefault()} onClick={() => selectComposerFile(path)}>
+              <strong title={path}>{path}</strong>
             </button>
           ))}
         </div>,
@@ -6334,7 +6534,7 @@ export default function ChatView({
       )}
 
       {filteredSkills.length > 0 && createPortal(
-        <div ref={slashMenuRef} role="region" aria-label="技能" style={{
+        <div ref={slashMenuRef} className="composer-picker" role="region" aria-label={slashCommand ? "指令和技能" : "Codex 技能"} style={{
           position: "fixed",
           ...slashMenuPosition,
           background: "var(--bg-surface)",
@@ -6345,19 +6545,14 @@ export default function ChatView({
           overflowY: "auto",
           overscrollBehavior: "contain",
         }}>
-          <div style={{ position: "sticky", top: 0, background: "var(--bg-surface)", padding: "6px 10px 4px", fontSize: 10, fontWeight: 600, color: "var(--text-muted)", letterSpacing: "0.06em" }}>
-            技能 ({filteredSkills.length})
-          </div>
-          {filteredSkills.map(skill => (
+          <div className="composer-picker-label">{slashCommand ? "指令和技能" : "Codex 技能"}</div>
+          {filteredSkills.map((skill, index) => (
             <button key={skill.name}
-              type="button"
+              type="button" className="composer-picker-option" aria-current={index === activeComposerOption}
               onMouseDown={event => event.preventDefault()}
-              onClick={() => selectSkill(skill)}
-              style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 12px", border: "none", background: "transparent", cursor: "pointer" }}
-              onMouseEnter={event => { event.currentTarget.style.background = "var(--accent-dim)"; }}
-              onMouseLeave={event => { event.currentTarget.style.background = "transparent"; }}>
-              <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>/{skill.name}</div>
-              {skill.description && <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{skill.description}</div>}
+              onClick={() => selectSkill(skill)}>
+              <strong>{slashCommand ? "/" : "$"}{skill.name}</strong>
+              {skill.description && <small>{skill.description}</small>}
             </button>
           ))}
         </div>,

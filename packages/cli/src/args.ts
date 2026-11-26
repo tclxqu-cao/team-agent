@@ -1,7 +1,9 @@
 import { homedir } from "node:os";
 import { resolve } from "node:path";
+import { isIPv4 } from "node:net";
+import { parseAgentRoamVersion } from "./update/update-channel.js";
 
-export type RelayMode = "auto" | "cloudflare" | "pinggy" | "custom";
+export type RelayMode = "auto" | "cloudflare" | "pinggy" | "custom" | "self-hosted";
 export type CliCommand = "start" | "doctor" | "version" | "service" | "unlock-service" | "update" | "update-worker" | "pair" | "devices" | "revoke" | "approvals" | "approve" | "deny" | "lock" | "unlock" | "audit" | "codex-desktop" | "desktop" | "mesh";
 export type DesktopAction = "authorize" | "status" | "disable";
 export type MeshAction = "status" | "onboard" | "offboard" | "qr" | "nodes";
@@ -16,6 +18,7 @@ export interface CliOptions {
   port: number | null;
   relay: RelayMode;
   tunnelCommand: string | null;
+  relayUrl?: string;
   localOnly: boolean;
   testNoPairing?: boolean;
   qr: boolean;
@@ -25,7 +28,10 @@ export interface CliOptions {
   approvalRequestId?: string;
   approvalPhrase?: string;
   pairingUrl?: string;
+  pairingVia?: string;
+  pairingListRoutes?: boolean;
   updateVersion?: string | null;
+  updateCheckOnly?: boolean;
   updateStateFile?: string | null;
   desktopDryRun?: boolean;
   desktopRestart?: boolean;
@@ -132,13 +138,20 @@ export function parseArgs(argv: string[]): CliOptions {
       if (!value) throw cliError(`missing value for ${arg}`);
       return value;
     };
-    if (arg === "--restart" && command === "codex-desktop") options.desktopRestart = true;
+    if (arg === "--check" && command === "update") options.updateCheckOnly = true;
+    else if (arg === "--restart" && command === "codex-desktop") options.desktopRestart = true;
     else if (arg === "--dry-run" && command === "codex-desktop") options.desktopDryRun = true;
     else if (arg === "--status" && command === "codex-desktop") options.desktopSharingStatus = true;
     else if (arg === "--repair" && command === "codex-desktop") options.desktopRepair = true;
     else if (arg === "--setup" && command === "codex-desktop") options.desktopSetup = true;
     else if (arg === "--setup-codex-desktop" && command === "service" && serviceAction === "install") options.desktopSetup = true;
     else if (arg === "--url" && command === "pair") options.pairingUrl = next();
+    else if (arg === "--list-routes" && command === "pair") options.pairingListRoutes = true;
+    else if (arg === "--via" && command === "pair") {
+      const via = next();
+      if (!["self-hosted", "cloudflare", "lan", "tailscale", "vpn", "headscale"].includes(via) && !isIPv4(via)) throw cliError("pair --via requires self-hosted, cloudflare, lan, tailscale, vpn, headscale or a local IPv4 address");
+      options.pairingVia = via;
+    }
     else if (arg === "--node-name" && command === "mesh") {
       const name = next();
       if (!/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i.test(name)) throw cliError("node name must be 1-63 letters, digits or hyphens and cannot start or end with a hyphen");
@@ -151,11 +164,12 @@ export function parseArgs(argv: string[]): CliOptions {
       options.port = port;
     } else if (arg === "--relay") {
       const relay = next();
-      if (!(["auto", "cloudflare", "pinggy", "custom"] as string[]).includes(relay)) {
-        throw cliError("relay must be auto, cloudflare, pinggy, or custom");
+      if (!(["auto", "cloudflare", "pinggy", "custom", "self-hosted"] as string[]).includes(relay)) {
+        throw cliError("relay must be auto, cloudflare, pinggy, custom, or self-hosted");
       }
       options.relay = relay as RelayMode;
-    } else if (arg === "--tunnel-command") options.tunnelCommand = next();
+    } else if (arg === "--relay-url") options.relayUrl = next();
+    else if (arg === "--tunnel-command") options.tunnelCommand = next();
     else if (arg === "--data-dir") options.dataDir = resolve(next());
     else if (arg === "--phrase" && command === "approve") options.approvalPhrase = next();
     else if (arg === "--local-only") options.localOnly = true;
@@ -175,12 +189,15 @@ export function parseArgs(argv: string[]): CliOptions {
     throw cliError("--status and --repair cannot be combined with other desktop actions");
   }
 
-  if (command === "update" && updateVersion && !/^\d+\.\d+\.\d+$/.test(updateVersion)) {
-    throw cliError("update version must be an exact stable X.Y.Z version");
+  if (command === "update" && updateVersion && (!parseAgentRoamVersion(updateVersion) || options.updateCheckOnly)) {
+    throw cliError("update accepts --check or an exact version (X.Y.Z or X.Y.Z-preview.N)");
   }
 
-  if (options.testNoPairing && (command !== "start" || !options.localOnly || options.tunnelCommand || options.relay !== "auto")) throw cliError("--test-no-pairing requires start --local-only and cannot use a tunnel or background service");
+  if (options.testNoPairing && (command !== "start" || !options.localOnly || options.tunnelCommand || options.relayUrl || options.relay !== "auto")) throw cliError("--test-no-pairing requires start --local-only and cannot use a tunnel or background service");
 
+  if ((options.pairingVia || options.pairingListRoutes) && (options.pairingUrl || !options.qr || (options.pairingVia && options.pairingListRoutes))) {
+    throw cliError("pair --via and --list-routes cannot be combined with each other, --url or --no-qr");
+  }
   if (!options.roots.length) options.roots = [process.cwd()];
   if (options.relay === "custom" && !options.tunnelCommand) throw cliError("--relay custom requires --tunnel-command");
   return options;

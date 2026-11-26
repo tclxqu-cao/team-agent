@@ -15,6 +15,8 @@ describe("UpdateNotice source contract", () => {
     expect(source).toContain("onClick={() => void install()}");
   });
   it("keeps dismissal scoped to the target version", () => {
-    expect(source).toContain('sessionStorage.setItem("agentroam.dismissed-update", status.targetVersion)');
+    expect(source).toContain('`agentroam.dismissed-update.${scope}`');
+    expect(source).toContain("sessionStorage.setItem(storageKey, status.targetVersion)");
+    expect(source).toContain("status.targetVersion === dismissedVersion");
   });
 });

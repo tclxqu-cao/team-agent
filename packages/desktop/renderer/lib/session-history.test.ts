@@ -695,6 +695,16 @@ describe("mergeRefreshedSessionHistory", () => {
     expect(merged.filter(entry => entry.role === "user")).toEqual([first, later]);
   });
 
+  it("preserves a confirmed goal's source across refreshes without transferring it to an equal native follow-up", () => {
+    const local = { ...message("goal-source", "finish"), isGoal: true, awaitingHistory: true };
+    const native = message("history-message.v1.0.confirmed", local.content);
+    const confirmed = mergeRefreshedSessionHistory([local], [native]);
+    expect(confirmed[0]).toMatchObject({ id: native.id, isGoal: true, sourceMessageId: local.id });
+    expect(mergeRefreshedSessionHistory(confirmed, [native])).toEqual(confirmed);
+    const later = { ...native, id: "history-message.v1.1.follow-up", isSteered: true };
+    expect(mergeRefreshedSessionHistory(confirmed, [later]).at(-1)).not.toHaveProperty("isGoal");
+  });
+
   it("preserves loaded older pages and replaces the overlapping latest tail", () => {
     const current = ["old-1", "old-2", "tail-1", "tail-2"].map((content) => message(content, content));
     const refreshed = [message("new-tail-1", "tail-1"), message("new-tail-2", "tail-2 updated")];

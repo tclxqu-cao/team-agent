@@ -233,6 +233,7 @@ export interface RuntimeRunOptions {
   brokerRunId?: string;
   model?: RuntimeModelSelection;
   reasoningEffort?: NativeReasoningEffort;
+  codexMode?: "default" | "plan";
   attachments?: PromptAttachment[];
   goal?: {
     id: string;
@@ -240,7 +241,12 @@ export interface RuntimeRunOptions {
   };
 }
 
-export type NativeRunOverrides = Pick<RuntimeRunOptions, "model" | "reasoningEffort" | "attachments">;
+export type NativeRunOverrides = Pick<RuntimeRunOptions, "model" | "reasoningEffort" | "attachments" | "codexMode">;
+
+export interface NativeComposerCatalog {
+  skills: Array<{ name: string; description: string }>;
+  files: string[];
+}
 
 export interface AgentRuntimeAdapter {
   readonly agentType: AgentType;
@@ -307,6 +313,8 @@ export interface AgentRuntimeAdapter {
   delete?(nativeSessionId: string): Promise<void>;
   /** Models the runtime's own connection offers; undefined when the runtime cannot enumerate them. */
   listModels?(): Promise<RuntimeModelInfo[]>;
+  getComposerCatalog?(cwd: string, fileQuery?: string): Promise<NativeComposerCatalog>;
+  requestComposerPrediction?(nativeSessionId: string, turnId: string): Promise<string | null>;
   dispose?(): Promise<void>;
 }
 

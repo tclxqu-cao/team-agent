@@ -7,6 +7,7 @@ import { basename, extname, isAbsolute, join, relative, resolve, sep, win32 } fr
 import { promisify } from "node:util";
 import {
   buildSessionQueryIndex,
+  cleanEngineHistory,
   computeSessionHistoryRevision,
   decodeSessionHistoryAnchor,
   normalizeToolPermissionMode,
@@ -36,6 +37,7 @@ import {
   type RpcServerRequest,
 } from "./codex-app-server-client.js";
 import type { CodexAppServerLaunchMode } from "./codex-app-server-launcher.js";
+import { CodexComposerPredictions, listCodexSkills, loadCodexComposerCatalog, parseCodexReviewTarget } from "./codex-composer.js";
 import { CodexDesktopTools } from "./codex-desktop-tools.js";
 import { CodexDesktopContinuation } from "./codex-desktop-continuation.js";
 import { assertCodexTodoMcpReady, codexTodoMcpConfiguration, resumeCodexThreadWithTodo } from "./codex-todo-mcp.js";
@@ -59,6 +61,7 @@ import type {
   AgentRuntimeAdapter,
   AgentWorkspace,
   CreateRuntimeSessionOptions,
+  NativeComposerCatalog,
   NativeReasoningEffort,
   RuntimeHealth,
   RuntimeModelInfo,
@@ -163,9 +166,17 @@ interface CodexRunUsage {
   completedTurnIds: Set<string>;
   startedTurnIds: Set<string>;
   initialTurnId?: string;
+  awaitingCompaction?: boolean;
+  completedPlanText?: string;
   pendingNotifications?: RpcNotification[];
   usage?: TokenUsage;
   partial: boolean;
+}
+
+interface CodexThreadRunSettings {
+  model?: string;
+  reasoningEffort?: string | null;
+  thread?: { status?: { type?: string } };
 }
 
 export function codexThreadStatusToSessionStatus(
@@ -210,6 +221,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
   private readonly emittedInstantToolItems = new Map<string, Set<string>>();
   private readonly todoMcp = new Map<string, NativeTodoMcpConfiguration>();
   private readonly freshTodoThreads = new Set<string>();
+  private readonly composerPredictions: CodexComposerPredictions;
   /** Flipped off permanently only when the app-server lacks the paginated turn protocol. */
   private nativePagingSupported = true;
   /** Progressive full-item hydration per session; the summary skeleton stays the ordinal source of truth. */
@@ -254,6 +266,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
 
   constructor(options: {
     client?: CodexAppServerClient;
+    threadHandoffs?: (sessionId: string) => { summaryText: string }[];
     discoveryClient?: CodexDiscoveryClient;
     desktopTools?: Pick<CodexDesktopTools, "connect"> | null;
     sessionRoot?: string;
@@ -288,6 +301,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     this.discoveryClient = options.discoveryClient
       ?? new CodexAppServerClient({ executable: this.codexExecutable, environment: options.environment });
     this.codexHome = resolveCodexHome(options.environment, options.homeDir);
+    this.composerPredictions = new CodexComposerPredictions(this.client);
     this.sessionRoot = options.sessionRoot ?? join(this.codexHome, "sessions");
     this.imageStorageRoot = options.imageStorageRoot ?? join(this.codexHome, "agentroam-images");
     this.platform = options.platform ?? process.platform;
@@ -317,11 +331,13 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       }
     });
     this.onApprovalResolved = options.onApprovalResolved;
+    this.threadHandoffs = options.threadHandoffs;
     this.coreInlineImageBudgetBytes = options.coreInlineImageBudgetBytes
       ?? CODEX_CORE_INLINE_IMAGE_BUDGET_BYTES;
   }
 
   private readonly onApprovalResolved?: (questionId: string) => void;
+  private readonly threadHandoffs?: (sessionId: string) => { summaryText: string }[];
   private readonly coreInlineImageBudgetBytes: number;
 
   async health(): Promise<RuntimeHealth> {
@@ -380,6 +396,15 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
             }
           : {}),
       }));
+  }
+
+  getComposerCatalog(cwd: string, fileQuery?: string): Promise<NativeComposerCatalog> {
+    this.ensureAvailable();
+    return loadCodexComposerCatalog(this.client, cwd, fileQuery);
+  }
+
+  requestComposerPrediction(nativeSessionId: string, turnId: string): Promise<string | null> {
+    return this.composerPredictions.request(nativeSessionId, turnId);
   }
 
   async discoverSessions(): Promise<UnifiedSessionSummary[]> {
@@ -577,13 +602,14 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     let meta: { thread: CodexThread };
     let openFiles: Set<string>;
     let ascTurns: CodexTurn[];
+    const readHandoffs = this.goalHandoffs(nativeSessionId);
     try {
       // Occupancy inspection is independent of native history. Do not put its
       // process scan between the metadata and summary reads on every click.
       [meta, openFiles, ascTurns] = await Promise.all([
         metadata,
         occupancy,
-        metadata.then(({ thread }) => this.loadSummaryTurns(nativeSessionId, thread.path)),
+        metadata.then(({ thread }) => this.loadSummaryTurns(nativeSessionId, thread.path, readHandoffs)),
       ]);
     } catch (error) {
       throw this.normalizePagedError(error);
@@ -614,7 +640,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
         if (item.type === "userMessage") skeleton.push({ turnId: turn.id, role: "user" });
         else if (item.id && questionHistory.has(item.id)) {
           skeleton.push(...questionHistory.get(item.id)!.map(() => ({ turnId: turn.id, role: "assistant" as const })));
-        } else if (isCodexCoreAgentMessage(item, turn.status, legacyFinalAgentMessage)) {
+        } else if (codexPlanText(item) || isCodexCoreAgentMessage(item, turn.status, legacyFinalAgentMessage)) {
           skeleton.push({ turnId: turn.id, role: "assistant" });
         }
       }
@@ -637,6 +663,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       let hydratedItems = mergeCodexGoalInput(
         this.pagedTurnItems.get(nativeSessionId)?.turns.get(turn.id) ?? turn.items ?? [],
         turn.items?.find(item => item.isGoal === true),
+        readHandoffs,
       );
       if (meta.thread.path) {
         const commentary = await this.rolloutCommentaryReader.read(meta.thread.path, turn.id);
@@ -711,6 +738,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       items: mergeCodexGoalInput(
         state?.turns.get(turn.id) ?? turn.items ?? [],
         turn.items?.find(item => item.isGoal === true),
+        readHandoffs,
       ),
     }));
     const messages = await codexTurnsToMessages(windowTurns, {
@@ -816,6 +844,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
   private async loadSummaryTurns(
     nativeSessionId: string,
     knownRolloutPath?: string | null,
+    readHandoffs = this.goalHandoffs(nativeSessionId),
   ): Promise<CodexTurn[]> {
     const response = await this.client.request<{ data?: CodexTurn[] }>("thread/turns/list", {
       threadId: nativeSessionId,
@@ -832,7 +861,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     }
     if (!rolloutPath) return turns;
     const userMessages = await this.rolloutUserMessageReader.read(rolloutPath);
-    const merged = mergeCodexSummaryUserMessages(turns, userMessages);
+    const merged = mergeCodexSummaryUserMessages(turns, userMessages, readHandoffs);
     const asyncMessages = await this.rolloutUserMessageReader.readAsyncMessages?.(rolloutPath) ?? [];
     for (const message of [...asyncMessages].reverse()) {
       const turn = merged.find(candidate => candidate.id === message.turnId);
@@ -849,6 +878,11 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       turn.items.splice((userIndex >= 0 ? userIndex : lastUserIndex) + 1, 0, item);
     }
     return this.withCompletionDurations(merged, rolloutPath);
+  }
+
+  private goalHandoffs(nativeSessionId: string) {
+    let handoffs: { summaryText: string }[] | undefined;
+    return () => handoffs ??= this.threadHandoffs?.(encodeUnifiedSessionId(this.agentType, nativeSessionId)) ?? [];
   }
 
   private async withCompletionDurations(turns: CodexTurn[], rolloutPath: string | null): Promise<CodexTurn[]> {
@@ -1294,11 +1328,20 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     if (this.activeQueues.has(nativeSessionId)) {
       throw new RuntimeSessionError("Codex session is already running", "SESSION_ALREADY_RUNNING");
     }
+    this.composerPredictions.clear(nativeSessionId);
     // The occupancy marker is advisory (lsof says the rollout file is open
     // elsewhere); the app-server writer lock is the authority. Attempt the
     // takeover so a stale marker does not block the send, and let a genuine
     // second writer fail the resume with SESSION_OCCUPIED below.
     const detail = await this.getSession(nativeSessionId);
+    const compact = !options?.goal && /^\/compact$/i.test(input.trim());
+    const review = options?.goal ? null : parseCodexReviewTarget(input);
+    if ((compact || review) && detail.status === "running") {
+      throw new RuntimeSessionError("请等待当前 Codex 回合结束", "SESSION_OCCUPIED");
+    }
+    if ((compact || review) && (images?.length || options?.attachments?.length)) {
+      throw new RuntimeSessionError("请先移除附件，再执行 Codex 指令", "OPERATION_NOT_SUPPORTED");
+    }
     const todoMcp = options?.todoMcp ?? this.todoMcp.get(nativeSessionId);
     const requiresTodoMcp = Boolean(todoMcp && todoMcp.readiness !== "background");
     if (requiresTodoMcp && detail.status === "running") {
@@ -1311,12 +1354,14 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     const todoPreparation = requiresTodoMcp ? new AbortController() : undefined;
     let imageDirectory: string | null = null;
     let imageDirectoryReferencedByTurn = false;
+    let compactionStartTimer: ReturnType<typeof setTimeout> | undefined;
     this.activeQueues.set(nativeSessionId, queue);
     if (todoPreparation) this.pendingTodoRuns.set(nativeSessionId, todoPreparation);
     this.activePermissionModes.set(nativeSessionId, permissionMode);
     this.ownedThreads.add(nativeSessionId);
     if (options?.brokerRunId) this.activeBrokerRunIds.set(nativeSessionId, options.brokerRunId);
     try {
+      let resumed: CodexThreadRunSettings | undefined;
       try {
         if (todoMcp) {
           if (this.freshTodoThreads.has(nativeSessionId)) {
@@ -1327,13 +1372,13 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
             // Cold threads pick up optional tools during their normal resume.
             // Loaded threads retain native rejoin semantics: no unsubscribe,
             // forced rebuild, readiness wait or background mutation races.
-            await this.client.request("thread/resume", {
+            resumed = await this.client.request<CodexThreadRunSettings>("thread/resume", {
               threadId: nativeSessionId, excludeTurns: true, config: codexTodoMcpConfiguration(todoMcp).config,
             });
           }
           this.todoMcp.set(nativeSessionId, { ...todoMcp, args: [...todoMcp.args], env: { ...todoMcp.env } });
         } else {
-          await this.client.request("thread/resume", { threadId: nativeSessionId, excludeTurns: true });
+          resumed = await this.client.request<CodexThreadRunSettings>("thread/resume", { threadId: nativeSessionId, excludeTurns: true });
         }
       } catch (error) {
         if (requiresTodoMcp) throw error;
@@ -1342,7 +1387,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
         if (!connection) throw new RuntimeSessionError(
           "原客户端仍持有此会话，且当前无法连接 Codex 桌面端。请保持桌面端运行后在原会话重试。", "SESSION_OCCUPIED",
         );
-        if (parsedImages.length || options?.goal || permissionMode !== "full-access") {
+        if (parsedImages.length || options?.goal || options?.codexMode || compact || review || permissionMode !== "full-access") {
           connection.close();
           throw new RuntimeSessionError(
             "原会话由 Codex 桌面端执行：当前支持文字追问，并沿用原客户端权限。图片、目标任务或单独的审批模式请在原客户端处理。", "OPERATION_NOT_SUPPORTED",
@@ -1352,6 +1397,9 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
         this.desktopContinuations.set(nativeSessionId, continuation);
         yield* continuation.run(input, options);
         return;
+      }
+      if ((compact || review) && resumed?.thread?.status?.type === "active") {
+        throw new RuntimeSessionError("请等待当前 Codex 回合结束", "SESSION_OCCUPIED");
       }
       todoPreparation?.signal.throwIfAborted();
       if (options?.goal) {
@@ -1368,7 +1416,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
             return result.inputs;
           })
         : [];
-      const skillInvocation = parseExplicitSkillInvocation(input);
+      const skillInvocation = review ? null : parseExplicitSkillInvocation(input);
       const skillPath = skillInvocation
         ? await this.resolveSkillPath(detail.cwd, skillInvocation.name)
         : null;
@@ -1377,35 +1425,63 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
         completedTurnIds: new Set(),
         startedTurnIds: new Set(),
         pendingNotifications: [],
+        ...(compact ? { awaitingCompaction: true } : {}),
         partial: false,
       };
       this.runUsages.set(nativeSessionId, runUsage);
       todoPreparation?.signal.throwIfAborted();
       if (this.pendingTodoRuns.get(nativeSessionId) === todoPreparation) this.pendingTodoRuns.delete(nativeSessionId);
-      const response = await this.client.request<{ turn: { id: string } }>("turn/start", {
-        threadId: nativeSessionId,
-        input: [
-          { type: "text", text, text_elements: [] },
-          ...(skillInvocation && skillPath
-            ? [{ type: "skill", name: skillInvocation.name, path: skillPath }]
-            : []),
-          ...imageInputs,
-        ],
-        ...(options?.model?.id ? { model: options.model.id } : {}),
-        ...(options?.reasoningEffort ? { effort: options.reasoningEffort } : {}),
-        ...codexTurnPermissionOptions(permissionMode, detail.cwd),
-      });
+      let turnId: string | undefined;
+      if (compact) {
+        await this.client.request("thread/compact/start", { threadId: nativeSessionId });
+        compactionStartTimer = setTimeout(() => {
+          if (runUsage.initialTurnId) return;
+          queue.push({ type: "error", code: "NATIVE_PROTOCOL_ERROR", message: "Codex 未确认上下文压缩已开始" });
+          queue.close();
+        }, 10_000);
+      } else if (review) {
+        const response = await this.client.request<{ turn: { id: string } }>("review/start", {
+          threadId: nativeSessionId, target: review, delivery: "inline",
+        });
+        turnId = response.turn.id;
+      } else {
+        let collaborationMode;
+        if (options?.codexMode) {
+          resumed ??= await this.client.request<CodexThreadRunSettings>("thread/resume", { threadId: nativeSessionId, excludeTurns: true });
+          const model = options.model?.id || resumed?.model;
+          if (!model) throw new RuntimeSessionError("请选择 Codex 模型后再切换计划模式", "OPERATION_NOT_SUPPORTED");
+          collaborationMode = {
+            mode: options.codexMode,
+            settings: { model, reasoning_effort: options.reasoningEffort ?? resumed?.reasoningEffort ?? null, developer_instructions: null },
+          };
+        }
+        const response = await this.client.request<{ turn: { id: string } }>("turn/start", {
+          threadId: nativeSessionId,
+          input: [
+            { type: "text", text, text_elements: [] },
+            ...(skillInvocation && skillPath ? [{ type: "skill", name: skillInvocation.name, path: skillPath }] : []),
+            ...imageInputs,
+          ],
+          ...(options?.model?.id ? { model: options.model.id } : {}),
+          ...(options?.reasoningEffort ? { effort: options.reasoningEffort } : {}),
+          ...(collaborationMode ? { collaborationMode } : {}),
+          ...codexTurnPermissionOptions(permissionMode, detail.cwd),
+        });
+        turnId = response.turn.id;
+      }
       imageDirectoryReferencedByTurn = imageDirectory !== null;
       this.freshTodoThreads.delete(nativeSessionId);
-      runUsage.initialTurnId = response.turn.id;
-      runUsage.startedTurnIds.add(response.turn.id);
+      if (turnId) {
+        runUsage.initialTurnId = turnId;
+        runUsage.startedTurnIds.add(turnId);
+      }
       // Notifications can precede the turn/start response. Replay only once the
       // response binds them to this run, so a late prior turn cannot settle it.
       const pendingNotifications = runUsage.pendingNotifications ?? [];
       runUsage.pendingNotifications = undefined;
       for (const notification of pendingNotifications) this.handleNotification(notification);
-      if (!this.activeTurnIds.has(nativeSessionId) && !runUsage.completedTurnIds.has(response.turn.id)) {
-        this.activeTurnIds.set(nativeSessionId, response.turn.id);
+      if (turnId && !this.activeTurnIds.has(nativeSessionId) && !runUsage.completedTurnIds.has(turnId)) {
+        this.activeTurnIds.set(nativeSessionId, turnId);
       }
       for await (const event of queue) yield event;
     } catch (error) {
@@ -1424,6 +1500,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       });
       yield { type: "error", message: normalized.message, code: normalized.code, ...this.runUsageMetadata(nativeSessionId) };
     } finally {
+      clearTimeout(compactionStartTimer);
       if (this.pendingTodoRuns.get(nativeSessionId) === todoPreparation) this.pendingTodoRuns.delete(nativeSessionId);
       this.desktopContinuations.get(nativeSessionId)?.close();
       this.desktopContinuations.delete(nativeSessionId);
@@ -1515,6 +1592,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
 
   async release(nativeSessionId: string): Promise<void> {
     this.ensureAvailable();
+    this.composerPredictions.clear(nativeSessionId);
     await this.client.request("thread/unsubscribe", { threadId: nativeSessionId });
     this.unconfirmedInterruptedTurnIds.delete(nativeSessionId);
   }
@@ -1662,11 +1740,8 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       }
     }
     try {
-      const response = await this.client.request<unknown>("skills/list", {
-        cwds: cwd ? [cwd] : [],
-        forceReload: false,
-      });
-      return findSkillPath(response, name);
+      const skills = await listCodexSkills(this.client, cwd);
+      return skills.find(skill => skill.name === name)?.path ?? null;
     } catch {
       // `$skill-name` remains a valid native hint when an older app-server
       // cannot enumerate skill paths.
@@ -1755,6 +1830,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     }
     if (message.method === "turn/started") {
       if (!runUsage || !notificationTurnId || runUsage.completedTurnIds.has(notificationTurnId)) return;
+      if (runUsage.awaitingCompaction && !runUsage.initialTurnId) runUsage.initialTurnId = notificationTurnId;
       if (!this.activeGoalThreads.has(threadId) && notificationTurnId !== runUsage.initialTurnId) return;
     } else if (message.method === "turn/completed" || message.method === "turn/interrupt") {
       if (!runUsage || !notificationTurnId || !runUsage.startedTurnIds.has(notificationTurnId)
@@ -1886,6 +1962,14 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     }
     if (message.method === "item/reasoning/textDelta") return;
 
+    if (message.method === "item/plan/delta" && typeof params.delta === "string") {
+      queue.push({ type: "text_chunk", text: params.delta, messagePhase: "final_answer",
+        ...(typeof params.itemId === "string" ? { itemId: params.itemId } : {}),
+        ...(eventTurnId ? { turnId: eventTurnId } : {}),
+      });
+      return;
+    }
+
     if (message.method === "item/agentMessage/delta" && typeof params.delta === "string") {
       const itemId = typeof params.itemId === "string" ? params.itemId : undefined;
       if (itemId && this.asyncInputItems.has(`${threadId}:${itemId}`)) return;
@@ -1916,6 +2000,16 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       return;
     }
     if (message.method === "item/completed") {
+      if (runUsage && eventTurnId === runUsage.initialTurnId && notificationItem?.type === "plan") {
+        runUsage.completedPlanText = codexPlanText(notificationItem);
+      }
+      if (notificationItem?.type === "exitedReviewMode" && typeof notificationItem.review === "string" && notificationItem.review.trim()) {
+        queue.push({ type: "text_chunk", text: notificationItem.review, messagePhase: "final_answer",
+          ...(notificationItem.id ? { itemId: notificationItem.id } : {}),
+          ...(eventTurnId ? { turnId: eventTurnId } : {}),
+        });
+        return;
+      }
       if (notificationItem?.type === "agentMessage" && typeof notificationItem.id === "string") {
         this.agentMessagePhases.delete(`${threadId}:${notificationItem.id}`);
       }
@@ -1981,10 +2075,12 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
           ...metadata,
         });
       } else {
-        const finalText = lastCodexAgentText(turn?.items ?? []);
+        const finalText = runUsage?.completedPlanText ?? lastCodexAgentText(turn?.items ?? []);
+        const completedTurnId = turn?.status === "completed" && finalText.trim() ? turn.id : undefined;
+        if (completedTurnId) this.composerPredictions.completed(threadId, completedTurnId);
         const contextUsage = codexContextUsageEvent(turn, ++this.contextUsageRequestIndex);
         if (contextUsage) queue.push(contextUsage);
-        queue.push({ type: "done", finalText, ...metadata, ...(turn?.status === "completed" && finalText.trim() ? { forkPoint: { turnId: turn.id } } : {}) });
+        queue.push({ type: "done", finalText, ...metadata, ...(completedTurnId ? { forkPoint: { turnId: completedTurnId } } : {}) });
       }
       queue.close();
       return;
@@ -2365,31 +2461,13 @@ function rolloutPaths(threads: CodexThread[], platform: NodeJS.Platform): string
 }
 
 export function parseExplicitSkillInvocation(input: string): { name: string; rest: string } | null {
-  const match = input.trim().match(/^\/([\w-]+)(?:\s+([\s\S]*))?$/);
-  if (!match || ["goal", "compact", "loop"].includes(match[1].toLowerCase())) return null;
-  return { name: match[1], rest: match[2]?.trim() ?? "" };
+  const match = input.trim().match(/^([/$])([\p{L}\p{N}_-]+)(?:\s+([\s\S]*))?$/u);
+  if (!match || (match[1] === "/" && ["goal", "compact", "loop"].includes(match[2].toLowerCase()))) return null;
+  return { name: match[2], rest: match[3]?.trim() ?? "" };
 }
 
 export function codexSkillPrompt({ name, rest }: NonNullable<ReturnType<typeof parseExplicitSkillInvocation>>): string {
   return rest ? `$${name} ${rest}` : `$${name}`;
-}
-
-function findSkillPath(value: unknown, name: string): string | null {
-  if (!value || typeof value !== "object") return null;
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      const found = findSkillPath(item, name);
-      if (found) return found;
-    }
-    return null;
-  }
-  const record = value as Record<string, unknown>;
-  if (record.name === name && typeof record.path === "string") return record.path;
-  for (const child of Object.values(record)) {
-    const found = findSkillPath(child, name);
-    if (found) return found;
-  }
-  return null;
 }
 
 export function codexTurnPermissionOptions(
@@ -2585,6 +2663,7 @@ function codexUserImagePaths(entries: Array<Record<string, unknown>> | undefined
 function mergeCodexSummaryUserMessages(
   turns: CodexTurn[],
   rolloutMessages: ReadonlyMap<string, CodexRolloutUserMessage[]>,
+  readHandoffs: () => { summaryText: string }[],
 ): CodexTurn[] {
   return turns.map((turn) => {
     const durable = rolloutMessages.get(turn.id);
@@ -2608,7 +2687,7 @@ function mergeCodexSummaryUserMessages(
       items: mergeCodexGoalInput([
         ...users,
         ...(turn.items ?? []).filter((item) => item.type !== "userMessage"),
-      ], goal && { type: "userMessage", id: goal.itemId, content: goal.content }),
+      ], goal && { type: "userMessage", id: goal.itemId, content: goal.content }, readHandoffs),
     };
   });
 }
@@ -2620,14 +2699,21 @@ function codexUserMessageText(entries: Array<Record<string, unknown>> | undefine
     .trim() ?? "";
 }
 
-function mergeCodexGoalInput(items: CodexItem[], goal?: CodexItem): CodexItem[] {
+function mergeCodexGoalInput(
+  items: CodexItem[], goal: CodexItem | undefined, readHandoffs: () => { summaryText: string }[],
+): CodexItem[] {
   if (!goal) return items;
   const inputIndex = items.findIndex((item) => item.type === "userMessage");
   const input = items[inputIndex];
   const goalText = codexUserMessageText(goal.content as Array<Record<string, unknown>> | undefined);
-  if (input && goalText === codexUserMessageText(input.content as Array<Record<string, unknown>> | undefined)) {
-    // Only the initial native input can replace the projected objective.
-    // Equal follow-up inputs in the same turn retain their own positions.
+  const inputText = codexUserMessageText(input?.content as Array<Record<string, unknown>> | undefined);
+  // The first input after switching engines carries the handoff; goal/set
+  // records just the objective. Keep the native item (including its images)
+  // so paging, query anchors and trace segments all count it once.
+  const skill = parseExplicitSkillInvocation(goalText);
+  if (input && (inputText === goalText || (goal.id && goal.id === input.id)
+    || (skill && inputText === codexSkillPrompt(skill))
+    || cleanEngineHistory([{ role: "user", content: inputText }], readHandoffs())[0].content === goalText)) {
     return items.map((item, index) => index === inputIndex ? { ...item, isGoal: true } : item);
   }
   return [{ ...goal, isGoal: true }, ...items];
@@ -2644,6 +2730,7 @@ function codexSummaryTurnsToMessages(
     let segmentIndex = 0;
     const legacyFinalAgentMessage = codexLegacyFinalAgentMessage(turn);
     for (const item of turn.items ?? []) {
+      const planText = codexPlanText(item);
       if (item.type === "userMessage") {
         const entries = item.content as Array<Record<string, unknown>> | undefined;
         const sourceText = codexUserMessageText(entries);
@@ -2668,6 +2755,8 @@ function codexSummaryTurnsToMessages(
         segmentIndex += 1;
       } else if (item.id && questionHistory.has(item.id)) {
         messages.push(...questionHistory.get(item.id)!);
+      } else if (planText) {
+        messages.push({ role: "assistant", content: planText });
       } else if (
         isCodexCoreAgentMessage(item, turn.status, legacyFinalAgentMessage)
         && typeof item.text === "string"
@@ -2754,6 +2843,7 @@ export async function codexTurnsToMessages(
   for (const turn of turns) {
     let segmentIndex = -1;
     for (const item of turn.items ?? []) {
+      const planText = codexPlanText(item);
       if (item.type === "contextCompaction") {
         messages.push({ role: "assistant", name: "__compaction_checkpoint__", content: JSON.stringify({ summary: "上下文已压缩" }) });
         continue;
@@ -2780,6 +2870,8 @@ export async function codexTurnsToMessages(
         }
       } else if (item.id && questionHistory.has(item.id)) {
         messages.push(...questionHistory.get(item.id)!);
+      } else if (planText) {
+        messages.push({ role: "assistant", content: planText });
       } else if (item.type === "agentMessage" && typeof item.text === "string" && item.text.trim()) {
         // Older runtimes can omit the structured questions. Keep their fallback
         // text out of an in-progress final answer.
@@ -3210,11 +3302,19 @@ function codexContextUsageEvent(turn: unknown, requestIndex: number): AgentEvent
 }
 
 function lastCodexAgentText(items: CodexItem[]): string {
+  let answer: string | undefined;
   for (let index = items.length - 1; index >= 0; index--) {
     const item = items[index];
-    if (item.type === "agentMessage" && item.delivery !== "async" && typeof item.text === "string") return item.text;
+    const composerResult = codexPlanText(item)
+      ?? (item.type === "exitedReviewMode" && typeof item.review === "string" ? item.review : undefined);
+    if (composerResult) return composerResult;
+    if (item.type === "agentMessage" && item.delivery !== "async" && typeof item.text === "string") answer ??= item.text;
   }
-  return "";
+  return answer ?? "";
+}
+
+function codexPlanText(item: CodexItem): string | undefined {
+  return item.type === "plan" && typeof item.text === "string" && item.text.trim() ? item.text : undefined;
 }
 
 function readCodexGoalStatus(value: unknown): CodexGoalStatus | null {

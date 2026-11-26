@@ -113,6 +113,36 @@ describe("AgentHttpGateway", () => {
     expect(bridge.request).toHaveBeenCalledTimes(2);
   });
 
+  it.each(["/tmp", "/private/tmp"])("opens the published copy of a missing or restricted image from %s", async prefix => {
+    const denied = Object.assign(new Error("路径不在允许范围内"), { code: "PATH_OUTSIDE_ROOT" });
+    const ticket = { ticketId: "copy", url: "/api/preview/copy" };
+    const bridge = { request: vi.fn().mockRejectedValueOnce(denied).mockResolvedValueOnce(ticket) };
+    const gateway = new AgentHttpGateway({} as never, {} as never, bridge);
+    await expect(gateway.fileWorkspaceRequest("fs:preview-open", { path: prefix + "/job/login.jpg" })).resolves.toBe(ticket);
+    expect(bridge.request).toHaveBeenLastCalledWith("fs:preview-open", { path: "~/.agentroam/artifacts/tmp/job/login.jpg" });
+  });
+
+  it("keeps the original reason when the image was never published", async () => {
+    const missing = Object.assign(new Error("找不到文件"), { code: "PATH_NOT_FOUND" });
+    const bridge = { request: vi.fn().mockRejectedValueOnce(missing).mockRejectedValueOnce({ code: "PATH_NOT_FOUND" }) };
+    const gateway = new AgentHttpGateway({} as never, {} as never, bridge);
+    await expect(gateway.fileWorkspaceRequest("fs:preview-open", { path: "/tmp/job/gone.png" })).rejects.toBe(missing);
+    expect(bridge.request).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    ["/tmp/job/note.txt", "PATH_OUTSIDE_ROOT"],
+    ["/tmp/../elsewhere/photo.jpg", "PATH_OUTSIDE_ROOT"],
+    ["/work/photo.png", "PATH_OUTSIDE_ROOT"],
+    ["/tmp/job/photo.png", "WEB_SHELL_TIMEOUT"],
+  ])("preserves the failure for %s with %s", async (path, code) => {
+    const error = Object.assign(new Error(code), { code });
+    const bridge = { request: vi.fn().mockRejectedValue(error) };
+    const gateway = new AgentHttpGateway({} as never, {} as never, bridge);
+    await expect(gateway.fileWorkspaceRequest("fs:preview-open", { path })).rejects.toBe(error);
+    expect(bridge.request).toHaveBeenCalledTimes(1);
+  });
+
   const originalEventSource = globalThis.EventSource;
 
   afterEach(() => {

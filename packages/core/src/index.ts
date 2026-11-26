@@ -96,6 +96,7 @@ export type { HarnessModelSettings, HarnessServiceStatus } from './infrastructur
 export * from "./domain/todo/index";
 export * from "./domain/notification/entities";
 export * from "./application/todo/index";
+export { enqueueTodoCompletion, processNextTodoCompletion } from "./infrastructure/SQLiteTodoCompletionQueue";
 export * from "./application/notification/NotificationService";
 export * from "./infrastructure/SQLiteTodoUnitOfWork";
 
