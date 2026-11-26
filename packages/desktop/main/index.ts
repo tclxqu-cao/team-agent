@@ -552,11 +552,69 @@ function stopWakeProc(): void {
   wakeLaunchGeneration += 1;
   wakeVoiceClient?.stopAsr();
   wakeVoiceClient = null;
+  stopWakeCpuWatchdog();
   if (wakeProc) {
     wakeProc.kill();
     wakeProc = null;
     wakeProcMode = null;
   }
+}
+
+// ── Helper CPU watchdog ──────────────────────────────────────────────────
+// The JXA helper can degrade into a busy-spin (leaked ObjC audio engines
+// keep pumping the run loop) without ever exiting, which the exit handler
+// never sees. Watch its CPU usage; sustained heat means kill, and the
+// existing exit path respawns a fresh helper.
+const WAKE_CPU_CHECK_INTERVAL_MS = 60_000;
+const WAKE_CPU_LIMIT_PERCENT = 35;
+const WAKE_CPU_MAX_STRIKES = 2;
+let wakeCpuStrikes = 0;
+let wakeCpuTimer: NodeJS.Timeout | null = null;
+
+async function sampleProcessCpuPercent(pid: number | undefined): Promise<number | null> {
+  if (pid === undefined) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    const ps = spawn("ps", ["-o", "%cpu=", "-p", String(pid)]);
+    let out = "";
+    ps.stdout?.on("data", (chunk: Buffer) => { out += chunk.toString("utf8"); });
+    ps.on("error", () => resolve(null));
+    ps.on("exit", () => {
+      const value = Number(out.trim());
+      resolve(Number.isFinite(value) ? value : null);
+    });
+  });
+}
+
+function stopWakeCpuWatchdog(): void {
+  if (wakeCpuTimer) {
+    clearInterval(wakeCpuTimer);
+    wakeCpuTimer = null;
+  }
+}
+
+function startWakeCpuWatchdog(proc: ChildProcess): void {
+  stopWakeCpuWatchdog();
+  wakeCpuStrikes = 0;
+  wakeCpuTimer = setInterval(() => {
+    void (async () => {
+      if (wakeProc !== proc) {
+        stopWakeCpuWatchdog();
+        return;
+      }
+      const cpu = await sampleProcessCpuPercent(proc.pid);
+      if (cpu === null || cpu < WAKE_CPU_LIMIT_PERCENT) {
+        wakeCpuStrikes = 0;
+        return;
+      }
+      wakeCpuStrikes += 1;
+      console.warn("[wake] helper cpu", cpu, "% (strike", wakeCpuStrikes, "of", WAKE_CPU_MAX_STRIKES, ")");
+      if (wakeCpuStrikes >= WAKE_CPU_MAX_STRIKES) {
+        console.warn("[wake] helper busy-spinning; killing for fresh restart");
+        proc.kill();
+      }
+    })();
+  }, WAKE_CPU_CHECK_INTERVAL_MS);
+  wakeCpuTimer.unref();
 }
 
 // ── Post-wake voice-command capture ──────────────────────────────────────
@@ -748,6 +806,7 @@ async function launchWakeListener(
   wakeProcMode = mode;
   wakeVoiceClient = useExternalAsr ? serviceClient : null;
   console.warn("[wake] helper spawned", { pid: proc.pid, mode, externalAsr: useExternalAsr });
+  startWakeCpuWatchdog(proc);
   // The Swift binary prints the protocol to stdout; JXA's console.log goes
   // to stderr. Parse both streams the same way.
   let buf = "";
@@ -851,6 +910,7 @@ async function launchWakeListener(
   });
   proc.on("exit", (code, signal) => {
     console.warn("[wake] helper exited, code:", code, "signal:", signal);
+    stopWakeCpuWatchdog();
     if (wakeProc === proc) {
       wakeProc = null;
       wakeProcMode = null;
