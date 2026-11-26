@@ -1,0 +1,726 @@
+packages/core/src/infrastructure/SQLiteDatabase.ts
+  s_59b653dc92917e::t_16d3584a5cbfcf 341-344
+packages/server/lib/todo-completion-worker.mjs
+  s_59b653dc92917e::t_b1349aaab84bbd 1-10,12-30,32-45
+  s_59b653dc92917e::t_90cf291cd9328d 11,31
+packages/cli/src/update/update-channel.ts
+  s_7ef1ac7905a81d::t_d0f3cb9560a510 8,12-13,17-27
+  s_7ef1ac7905a81d::t_46660fd066301c 28-29
+packages/server/app/api/agent/composer/route.ts
+  s_ad0266f1ffa17d::t_dd7220a424f3ce 1-35
+packages/cli/src/tunnel/tunnel-controller.ts
+  s_30a53aa7ebec40::t_0e1dd786cf825b 3-9,15,26-27,34-35,37,42-45,51-54,60-79,81-83,90-91,93,187-188,208-213,219
+  s_30a53aa7ebec40::t_1c03d49b1562c6 80,84-89,92
+  s_f9f0adebce2766::t_3d60b099423bd7 36,38-41,46-50
+  s_30a53aa7ebec40::t_dab05d91dc6742 159
+  s_30a53aa7ebec40::t_7b8c05c75e21bf 2,156-158,160-161
+  s_30a53aa7ebec40::t_1ffff858fa2cb8 214-218
+  s_f9f0adebce2766::t_4fbce443d2f412 55-59,194-199
+  s_4dd3bff5b942a5::t_38745a2198c618 200-201
+packages/cli/src/desktop-authorization.ts
+  s_4fc7b6e298bb24::t_bb31e25d2fbf8a 2-3,7,34,43-49,110-112,114,125,136
+  s_4fc7b6e298bb24::t_da654848ec26a6 132-133
+packages/desktop/renderer/components/UpdateNotice.css
+  s_7ef1ac7905a81d::t_8c525d757dadb5 1-45
+packages/desktop/renderer/lite/PermissionDialog.tsx
+  s_4fc7b6e298bb24::t_9ebb1e53d5082a 14
+  s_4fc7b6e298bb24::t_9cea70181f20e8 32
+packages/desktop/scripts/bundled-remote-component.mjs
+  s_4fc7b6e298bb24::t_cbcb8997267d40 1-28
+packages/server/lib/pwa-assets.mjs
+  s_30a53aa7ebec40::t_ff4337544aabd7 15-17
+packages/shared/src/contracts/agent-api.d.ts
+  s_ad0266f1ffa17d::t_dd7220a424f3ce 145-149,396-397
+packages/desktop/renderer/components/DesktopLiveSettings.tsx
+  s_4fc7b6e298bb24::t_9cea70181f20e8 148
+packages/server/public/pwa/manifest.webmanifest
+  s_30a53aa7ebec40::t_ff4337544aabd7 14-15
+packages/desktop/renderer/components/TunnelConnectionControl.test.tsx
+  s_f9f0adebce2766::t_2d9b300798e003 15
+  s_f9f0adebce2766::t_de44ef29117fb9 5-6,11-14,16-33
+packages/core/src/domain/live-view/remote-video-encode-admission.ts
+  s_4fc7b6e298bb24::t_e58dc895f976e0 8
+packages/native-runtime/src/agent-runtime/runtime-notification-outbox.ts
+  s_59b653dc92917e::t_e1852c5692d7e5 30
+  s_59b653dc92917e::t_e88d5ae28cb860 13,31-38,42-45,60-75
+packages/shared/src/browser/artifact-links.ts
+  s_b56f78d007e766::t_4ed87e17dc8bbb 9-17
+packages/server/lib/remote-control/helper-manager.mjs
+  s_4fc7b6e298bb24::t_487a31d13b9fb4 185,193-195,223-235
+  s_4fc7b6e298bb24::t_da654848ec26a6 84-87,180-184,186-192,196,210
+  s_4fc7b6e298bb24::t_8542bb1d389e65 236
+packages/server/lib/device-pairing-gateway.mjs
+  s_30a53aa7ebec40::t_bd3d54410c683a 188
+packages/desktop/renderer/components/SessionGoalQueue.tsx
+  s_b64e62c6723617::t_f1042073f3f25a 7,10-18,20,28,69,88,102-103,118
+  s_b64e62c6723617::t_f51b814cb99244 74
+packages/native-runtime/src/todo-mcp/tool-definitions.ts
+  s_59b653dc92917e::t_16d3584a5cbfcf 6,21
+  s_59b653dc92917e::t_20823ad01f7f23 13-15,19
+  s_59b653dc92917e::t_9ea5256bd3237c 7-12
+packages/server/lib/workspace-session-cache.ts
+  s_cf7b38132b5953::t_2509df92d074f4 11-27,64-71,74
+deploy/https-relay/Caddyfile
+  s_30a53aa7ebec40::t_016057d5443dff 1-6
+scripts/verify-macos-remote-install.mjs
+  s_4fc7b6e298bb24::t_efac83c45ebd04 25
+  s_4fc7b6e298bb24::t_97d746885d5acb 9,21-24,59-65,80
+packages/server/app/api/agent/run/route.ts
+  s_ad0266f1ffa17d::t_e3aa3f47e2489f 39,73
+packages/server/app/api/internal/todo-mcp/route.ts
+  s_59b653dc92917e::t_e88d5ae28cb860 1,11,25-34
+  s_59b653dc92917e::t_e1852c5692d7e5 24,35-37
+packages/desktop/renderer/App.tsx
+  s_7ef1ac7905a81d::t_8c525d757dadb5 1,301,1468,1472,1476-1481,1483,1485,1860-1865
+packages/core/src/infrastructure/SQLiteSessionStore.ts
+  s_59b653dc92917e::t_fd675fb98d3e9b 13,162-163
+packages/native-runtime/src/agent-runtime/unified-session-service.ts
+  s_ad0266f1ffa17d::t_8afc0880fb526e 23,135-143
+  s_ad0266f1ffa17d::t_628815d9dd2ffd 144
+packages/desktop/main/lite-index.ts
+  s_30a53aa7ebec40::t_d72ce07c2e5224 52,54,60
+  s_4fc7b6e298bb24::t_9ebb1e53d5082a 30-33
+  s_7ef1ac7905a81d::t_419e366b725e69 37-38
+  s_7ef1ac7905a81d::t_b8e2db4f56640f 10-11,14,35-36,39-44,49-51,87
+packages/core/src/domain/live-view/remote-video-policy.ts
+  s_4fc7b6e298bb24::t_e58dc895f976e0 8,35,40,42,62,98,102-111,113,115,120,168,191-192,228-229,245,255
+packages/native-runtime/src/agent-runtime/zcode-runtime-adapter.test.ts
+  s_ad0266f1ffa17d::t_080b81875a264d 689-699,703-721
+  s_ad0266f1ffa17d::t_246efc64c10517 700-702
+  s_b64e62c6723617::t_c81f91a7ca11e0 730-740
+packages/native-runtime/src/agent-runtime/codex-composer.test.ts
+  s_ad0266f1ffa17d::t_0a24f50398f7da 1-69
+packages/cli/src/service/service-controller.ts
+  s_30a53aa7ebec40::t_296c58e96b3589 56
+packages/mobile/android/app/src/main/java/com/agentroam/mobile/AppUpdatePlugin.java
+  s_7ef1ac7905a81d::t_79defb55bb4670 1-97,99-217
+  s_7ef1ac7905a81d::t_98cbdf2b3905f8 98
+packages/webapp/src/mobile/presentation/native-console.tsx
+  s_7ef1ac7905a81d::t_8052cd4a53e158 10,45
+packages/desktop/renderer/styles/global.css
+  s_b64e62c6723617::t_0114c66c363de2 4300-4302,4307-4328
+  s_b64e62c6723617::t_bef3becd9b345d 4303-4306
+packages/desktop/renderer/components/ChatHistoryStyle.test.ts
+  s_b64e62c6723617::t_7ac332691f8a70 5,153-160,162-164
+  s_b64e62c6723617::t_03b1ea762ff21c 161
+  s_b64e62c6723617::t_1b0ca2de02b4c1 165
+packages/mobile/android/app/src/main/AndroidManifest.xml
+  s_7ef1ac7905a81d::t_79defb55bb4670 42
+packages/native-runtime/src/agent-runtime/types.ts
+  s_ad0266f1ffa17d::t_e3aa3f47e2489f 236,244
+  s_ad0266f1ffa17d::t_8a62630040a21e 246-249,316-317
+  s_ad0266f1ffa17d::t_9029bcf3b3bc4d 245
+packages/native-runtime/src/agent-runtime/codex-app-server-client.ts
+  s_ad0266f1ffa17d::t_8a62630040a21e 105,107
+packages/core/src/application/todo/TodoApplicationService.test.ts
+  s_59b653dc92917e::t_43a9c7a6d91ba7 22-43
+packages/shared/src/infrastructure/http/agent-http-gateway.ts
+  s_ad0266f1ffa17d::t_dd7220a424f3ce 16,664-675
+  s_b56f78d007e766::t_f335dc011d865a 151
+  s_b56f78d007e766::t_4ed87e17dc8bbb 6,137,139-150,152-153
+  s_ad0266f1ffa17d::t_e3aa3f47e2489f 234
+  s_ad0266f1ffa17d::t_b34fc1fc4261fd 676
+packages/desktop/renderer/components/MobilePairingButton.tsx
+  s_30a53aa7ebec40::t_5124015c04b4a0 6,20,24,30,32,39,54-55,61
+packages/cli/src/update/update-command.test.ts
+  s_7ef1ac7905a81d::t_c25f295564691d 25,58,61,65-66
+packages/desktop/renderer/lib/shared-service.ts
+  s_30a53aa7ebec40::t_d72ce07c2e5224 7,17-18
+packages/core/src/domain/update/update-checker.test.ts
+  s_7ef1ac7905a81d::t_c25f295564691d 2-3,9-11,28,31,35,37,41-42,80,83-84,88,91-104,107-108,111-124,126-129
+  s_7ef1ac7905a81d::t_c13f611fba6d49 105-106,109-110
+scripts/audit-runtime-tarball.mjs
+  s_59b653dc92917e::t_b1349aaab84bbd 57
+  s_30a53aa7ebec40::t_ff4337544aabd7 71-72
+packages/desktop/renderer/components/tunnel-connection.css
+  s_30a53aa7ebec40::t_5124015c04b4a0 9,12-13
+  s_f9f0adebce2766::t_551a8ce9fe54f6 10-11
+packages/server/public/pwa/pairing-scan.js
+  s_30a53aa7ebec40::t_45ecce6565b98a 16-24,39-50,87-88,97-100
+  s_30a53aa7ebec40::t_ff4337544aabd7 52-55
+  s_30a53aa7ebec40::t_2226049abc7046 51
+packages/cli/src/tunnel/self-hosted-provider.ts
+  s_30a53aa7ebec40::t_4eecb7faa1a1a9 1,3-20,22-23,32-138
+  s_30a53aa7ebec40::t_83cac3fd1f57aa 2,21,25-31
+  s_30a53aa7ebec40::t_016057d5443dff 24
+packages/server/ws-server.mjs
+  s_59b653dc92917e::t_b1349aaab84bbd 9,1502,1506,1548-1549
+packages/native-runtime/src/agent-runtime/codex-runtime-adapter.ts
+  s_ad0266f1ffa17d::t_8afc0880fb526e 64,224,304,401-409,1331,1595,1743-1744,2079-2080,2083,2464-2466
+  s_b64e62c6723617::t_de7e6f3533e9be 10,269,334,340,883-887,2666,2690,2715-2716
+  s_ad0266f1ffa17d::t_093a2e4c035eb1 3305,3310-3311,3313
+  s_ad0266f1ffa17d::t_7a74ab4dd9f5e7 40,169,176-178,180-181,1337-1344,1357,1364,1375,1381,1390,1419,1428,1434-1471,1474-1477,1483-1484,1503,1833,1965-1971,2006-2012
+  s_ad0266f1ffa17d::t_5aaae03e401a2a 179,643,1401-1403,2733,2758-2759,2846,2873-2874,3308-3309,3316-3317
+  s_ad0266f1ffa17d::t_9e20b1916feeb6 170,2003-2005,2078
+  s_ad0266f1ffa17d::t_cea82137fac8b2 3314-3315
+  s_b64e62c6723617::t_1143032e80b535 605,612,666,741,847,864,2702-2704,2710
+  s_b64e62c6723617::t_55ba7c653d9844 2709,2711-2714
+  s_59b653dc92917e::t_2058a4a2bd0d97 1972
+packages/desktop/renderer/lite/api.ts
+  s_7ef1ac7905a81d::t_8c525d757dadb5 5,7
+  s_30a53aa7ebec40::t_d72ce07c2e5224 4,8-9
+packages/desktop/renderer/lib/composer-keyboard.ts
+  s_ad0266f1ffa17d::t_cbcc091751e561 4-6,15-16,20-30
+packages/server/lib/remote-control/macos-helper-permissions.mjs
+  s_4fc7b6e298bb24::t_72f9e04fd3b6b3 12-13,22-23
+  s_4fc7b6e298bb24::t_e5379ae19945b2 51-57,97
+  s_4fc7b6e298bb24::t_5ba4950b7232da 10-11,14-16,20,33-36,43,46,60,63,66-73,79,81,84,110
+  s_4fc7b6e298bb24::t_c4f3610b6688ce 1-9,17-19,21,24-32,37-42,44-45,47-50,58-59,61-62,64-65,74-78,80,82-83,85-87,93-96,98-100,108-109,111-113
+  s_4fc7b6e298bb24::t_487a31d13b9fb4 88-89,91-92
+  s_4fc7b6e298bb24::t_638550351ed0ea 90
+  s_4fc7b6e298bb24::t_da654848ec26a6 101-107
+packages/desktop/renderer/styles/composer.css
+  s_ad0266f1ffa17d::t_de465528bf851c 54-110,112-146
+  s_ad0266f1ffa17d::t_18ffb336a359bd 111
+packages/desktop/renderer/components/remote-video-playout.test.ts
+  s_4fc7b6e298bb24::t_fb475e41cda480 8-34
+packages/server/lib/workspace-session-cache.test.ts
+  s_cf7b38132b5953::t_2509df92d074f4 27-48
+packages/native-runtime/src/agent-runtime/claude-runtime-adapter.test.ts
+  s_b64e62c6723617::t_40dd94659c9fbb 803-809
+packages/webapp/src/infrastructure/http/agent-http-gateway.test.ts
+  s_b56f78d007e766::t_0480c4a5d83d24 116-145
+packages/desktop/renderer/components/remote-video-playout.ts
+  s_4fc7b6e298bb24::t_ff1cd91a3fc449 9,13-22,25-28
+  s_4fc7b6e298bb24::t_9e8dfa9ff39226 37
+packages/cli/src/node-runtime-manager.test.ts
+  s_4fc7b6e298bb24::t_4b7ef4f432383d 169-188,212-213
+packages/desktop/renderer/components/MessageMedia.tsx
+  s_b56f78d007e766::t_f335dc011d865a 10-14,27,40,51,56,91,94,101
+deploy/https-relay/relay.mjs
+  s_30a53aa7ebec40::t_ad65a8763377c5 1,3,5,7-12,14-20,22-61,64-68,71-76,78-81,86-87,91-160,173-178,185-203
+  s_30a53aa7ebec40::t_296c58e96b3589 2,69-70,82-85,88
+  s_30a53aa7ebec40::t_7b8c05c75e21bf 4,6,13,21
+  s_30a53aa7ebec40::t_b25f3b9f7064fb 62-63
+  s_30a53aa7ebec40::t_ba3276b9f3bd1d 77,89-90,161-172,179-184
+packages/server/lib/remote-control/remote-video-signal.test.ts
+  s_4fc7b6e298bb24::t_cf3f256d67a765 6-11
+packages/core/src/domain/update/update-checker.ts
+  s_7ef1ac7905a81d::t_3afd77574fe321 11,13-15,23,28,46,87-88,91,94,102-108,111,114-115,117-118,120-125,129-130
+  s_7ef1ac7905a81d::t_e405b1e3faee4c 89,112,119
+packages/server/lib/remote-control/infrastructure/native-video-encoder.mjs
+  s_4fc7b6e298bb24::t_6ffa4f416f2ceb 16,65,71-72,80-83,125-126
+  s_4fc7b6e298bb24::t_cf3f256d67a765 66-67
+  s_4fc7b6e298bb24::t_e3905a23ca4647 104-105
+  s_4fc7b6e298bb24::t_8b56fde0e498f0 57
+packages/cli/src/update/update-command.ts
+  s_7ef1ac7905a81d::t_d0f3cb9560a510 2-3,10,13,20-21,30,32-33,35,37-38,40,42-43,66-67,69-86,89-90
+  s_30a53aa7ebec40::t_a77f135d783c3a 61
+  s_7ef1ac7905a81d::t_e405b1e3faee4c 29,31,34,49-50
+packages/cli/src/tunnel/relay-orchestrator.ts
+  s_30a53aa7ebec40::t_296c58e96b3589 6,91,94-97
+  s_30a53aa7ebec40::t_02a42c83ba5fa8 40,43-44
+  s_30a53aa7ebec40::t_eca06d1d165dba 49-50
+  s_30a53aa7ebec40::t_a77f135d783c3a 55-68,70-85
+  s_30a53aa7ebec40::t_1ffff858fa2cb8 39,41-42,51
+packages/desktop/renderer/lib/composer-prediction.ts
+  s_ad0266f1ffa17d::t_cbcc091751e561 1-14
+packages/desktop/renderer/components/TunnelConnectionControl.tsx
+  s_30a53aa7ebec40::t_5124015c04b4a0 1,3,8-14,18-20,34-35,60,62
+  s_f9f0adebce2766::t_c97117bdf999a2 43-55,59
+  s_f9f0adebce2766::t_3e6a6e88702626 5,15-17,21-33,36-42,56-58,61
+  s_f9f0adebce2766::t_0ed6ea070e2afa 63
+packages/desktop/renderer/components/UpdateNotice.test.tsx
+  s_7ef1ac7905a81d::t_98cbdf2b3905f8 18-20
+packages/core/src/application/todo/TodoApplicationService.ts
+  s_59b653dc92917e::t_e1852c5692d7e5 6,18-21,26,32-37
+  s_b64e62c6723617::t_ce2097c1314ba7 22-25,27-31
+packages/cli/src/device-pairing.test.ts
+  s_f9f0adebce2766::t_dcecc63c02381e 3,8-28,49
+  s_30a53aa7ebec40::t_6ec098da329602 4,36-48
+packages/webapp/src/mobile/infrastructure/android-update.ts
+  s_7ef1ac7905a81d::t_cda2a9e0fcce69 22,73,81
+  s_7ef1ac7905a81d::t_8052cd4a53e158 1-21,23-72,74-80,82-84
+packages/desktop/renderer/components/ChatView.tsx
+  s_b64e62c6723617::t_0114c66c363de2 421-423
+  s_b64e62c6723617::t_4a1b2d9e63866e 1117,4356-4358
+  s_ad0266f1ffa17d::t_cea82137fac8b2 15,984-989,996,1273,1702-1710,1741-1747,4062-4065,6235-6241,6503-6504,6506,6512
+  s_ad0266f1ffa17d::t_e0fee53defb381 1728-1734,1748,1800-1809,1825,6189,6191-6195
+  s_b64e62c6723617::t_6bd0ef157de96f 121,5048
+  s_ad0266f1ffa17d::t_9e20b1916feeb6 1282,3216
+  s_b64e62c6723617::t_f51b814cb99244 1064-1068
+  s_ad0266f1ffa17d::t_ba87fb08e2aef0 127-128,1280-1281,1283-1294,1695-1697,1711-1726,1735-1736,1755,1764,1766-1771,1783-1790,1792-1794,1813-1814,1816-1818,1820,1835-1841,1843-1848,1850,1854-1864
+  s_b64e62c6723617::t_fa459c7db6a407 1578-1579,2802-2805,3255,3351-3352,3355,3463,3959,3987
+  s_f9f0adebce2766::t_7702e282025e9b 1810,1872,1897-1902,1908,1910-1914,1916-1920,6082-6085
+  s_f9f0adebce2766::t_6bf9c64390ef1f 1903-1907,1909,1915
+  s_b64e62c6723617::t_c9f40bf6ca2677 4420,4431
+  s_ad0266f1ffa17d::t_de465528bf851c 2875,3213-3215,3217-3219,4603,6177,6197-6199,6202-6209,6360,6511,6515-6516,6518-6529,6537,6548-6549,6551,6553-6555
+  s_46fd03fbd1f410::t_afee8e93973f62 5894
+  s_b64e62c6723617::t_337a7ae2be6860 1112-1116,4754-4759,4806-4869,5896
+  s_f9f0adebce2766::t_d00622e1bcb602 1811
+  s_f9f0adebce2766::t_ada9deff418764 1921
+  s_b64e62c6723617::t_92f274b757e33d 4870
+  s_ad0266f1ffa17d::t_137889412e229a 6242
+packages/cli/src/service/service-files.ts
+  s_30a53aa7ebec40::t_296c58e96b3589 35,41
+packages/webapp/src/mobile/presentation/AndroidUpdateNotice.tsx
+  s_7ef1ac7905a81d::t_8052cd4a53e158 1-9
+packages/desktop/renderer/components/ChatView.goal-mode.test.ts
+  s_46fd03fbd1f410::t_821c60dc6f7eeb 13-21
+  s_b64e62c6723617::t_f51b814cb99244 22-33
+packages/cli/src/cli.ts
+  s_30a53aa7ebec40::t_a77f135d783c3a 44
+  s_30a53aa7ebec40::t_c6a2d5db6a1642 45-46
+  s_7ef1ac7905a81d::t_d0f3cb9560a510 22,60,173-179,237-241
+  s_30a53aa7ebec40::t_2991c5696ceda8 11,47-48,101-105
+  s_30a53aa7ebec40::t_296c58e96b3589 377
+packages/cli/src/service/service-command.ts
+  s_30a53aa7ebec40::t_eca06d1d165dba 81,93
+  s_7ef1ac7905a81d::t_941d3f56fc2241 234
+packages/server/lib/remote-control/application/paced-video-sender.mjs
+  s_4fc7b6e298bb24::t_3932a663202508 9,19-21,105-118,146,217
+packages/desktop/main/runtime-bootstrap.test.ts
+  s_4fc7b6e298bb24::t_1a778ba69dd1bc 21-23,26-51
+  s_4fc7b6e298bb24::t_fe6a25f7292e25 52
+packages/cli/src/desktop-authorization.test.ts
+  s_4fc7b6e298bb24::t_bb31e25d2fbf8a 19
+  s_4fc7b6e298bb24::t_1a778ba69dd1bc 52,61,69,77-78,93,225
+packages/desktop/renderer/lib/queued-message-order.ts
+  s_b64e62c6723617::t_6bd0ef157de96f 70-106
+  s_b64e62c6723617::t_e3d77843dc21ad 169-175,316,319
+  s_b64e62c6723617::t_c9f40bf6ca2677 36-37,158-168,176-177,290-302,317-318
+packages/desktop/renderer/lib/composer-slash-token.ts
+  s_ad0266f1ffa17d::t_cbcc091751e561 8-11,15,23
+packages/server/lib/pairing-scan.test.ts
+  s_30a53aa7ebec40::t_3448b1d24a872f 1-2,71-113
+  s_30a53aa7ebec40::t_920a2f9a097790 114-115
+packages/desktop/main/shared-service.ts
+  s_30a53aa7ebec40::t_d72ce07c2e5224 6-8,114-115,155-156,174,176,187,190-193,199-207
+  s_f9f0adebce2766::t_640a686a912293 157-173,175,177,179-182,185-186,194-198,211-212
+  s_f9f0adebce2766::t_99767157a33dd5 183-184
+  s_30a53aa7ebec40::t_296c58e96b3589 215,231
+  s_f9f0adebce2766::t_056c3ad363a3c0 178
+packages/core/src/infrastructure/SQLiteTodoCompletionQueue.ts
+  s_59b653dc92917e::t_16d3584a5cbfcf 1-43,45-50,52-57,62-64
+  s_59b653dc92917e::t_9c3e828f3c193a 44,51,58-61
+packages/desktop/renderer/stores/agentStore.ts
+  s_b64e62c6723617::t_c9f40bf6ca2677 169-170
+packages/server/lib/remote-control/infrastructure/native-video-encoder.test.ts
+  s_4fc7b6e298bb24::t_cf3f256d67a765 9-24
+packages/cli/install/write-relay-default.mjs
+  s_30a53aa7ebec40::t_a77f135d783c3a 1-6
+packages/webapp/src/main.tsx
+  s_7ef1ac7905a81d::t_8052cd4a53e158 37,183,189
+  s_30a53aa7ebec40::t_ff4337544aabd7 71
+packages/webapp/index.html
+  s_30a53aa7ebec40::t_ff4337544aabd7 12
+packages/cli/src/device-pairing.ts
+  s_30a53aa7ebec40::t_2991c5696ceda8 11,40-49,51-55,57-72,105
+  s_f9f0adebce2766::t_4d955f14a6f359 50,56
+  s_30a53aa7ebec40::t_7dcf708591adc4 75-82,86,88-89,97-104
+  s_ee6fbf66274edd::t_77992058db2994 73,106
+packages/native-runtime/src/agent-runtime/claude-runtime-adapter.ts
+  s_b64e62c6723617::t_a7268d236b5376 1456-1457,1460-1464
+packages/native-runtime/src/agent-runtime/native-runtime-broker.test.ts
+  s_b64e62c6723617::t_9d95915f0a3c3b 1060-1063
+  s_b64e62c6723617::t_9e460ba37416ce 1057-1059,1064-1068
+  s_b64e62c6723617::t_91ee18be0d3f10 1024-1056,1069-1108
+packages/server/lib/remote-control/application/paced-video-sender.test.ts
+  s_4fc7b6e298bb24::t_cf3f256d67a765 10,18,25-39
+packages/server/lib/remote-control/remote-authorization.test.ts
+  s_4fc7b6e298bb24::t_dec4f5fb98547a 407,411,420
+packages/server/lib/remote-control/remote-authorization.mjs
+  s_4fc7b6e298bb24::t_6bcc365b6442e5 538
+  s_4fc7b6e298bb24::t_e3905a23ca4647 578
+packages/server/app/api/agent-host.ts
+  s_5e6099b7999b22::t_4b2bdd97a7b1f9 48,442,496-497,1072-1079
+packages/server/lib/pairing-page.mjs
+  s_30a53aa7ebec40::t_141c2aedca3f1f 3,6-7,74,77
+packages/server/lib/remote-control/helper-manager.test.ts
+  s_4fc7b6e298bb24::t_97d746885d5acb 9-39
+.github/workflows/desktop-release-verify.yml
+  s_4fc7b6e298bb24::t_428bcebe6a86f6 78,87,90-96
+packages/shared/src/contracts/tunnel-status.d.ts
+  s_30a53aa7ebec40::t_296c58e96b3589 4
+  s_30a53aa7ebec40::t_02a42c83ba5fa8 9-15
+packages/server/lib/remote-control/application/remote-video-session.mjs
+  s_4fc7b6e298bb24::t_6bcc365b6442e5 500-501,514
+  s_4fc7b6e298bb24::t_e3905a23ca4647 163-164,227-228
+  s_4fc7b6e298bb24::t_6ffa4f416f2ceb 222,265-268,308,321,330-331
+  s_4fc7b6e298bb24::t_8b56fde0e498f0 223,312
+packages/desktop/main/desktop-live-cli-proxy.test.ts
+  s_4fc7b6e298bb24::t_1a778ba69dd1bc 51-68
+packages/desktop/main/update-service.test.ts
+  s_7ef1ac7905a81d::t_0c07428eae5f62 2,5-34,43-61
+packages/server/lib/tunnel-control.mjs
+  s_30a53aa7ebec40::t_7bae6d595df5f2 1-4,7,12-41,48,51,65
+packages/cli/src/runtime-manager.ts
+  s_7ef1ac7905a81d::t_d0f3cb9560a510 19,84,108-109
+packages/desktop/renderer/lib/use-composer-prediction.ts
+  s_ad0266f1ffa17d::t_cbcc091751e561 1-40
+packages/native-runtime/src/todo-mcp/todo-mcp-server.test.ts
+  s_59b653dc92917e::t_16d3584a5cbfcf 88-89
+  s_59b653dc92917e::t_ff77da467443a2 84-87,96-101
+packages/server/native/remote-helper/service/VideoEncoder.swift
+  s_4fc7b6e298bb24::t_1eaa8799cb3abc 176-180,187,206-207
+  s_4fc7b6e298bb24::t_939c72d8b31c01 53,83,110,114-119
+  s_4fc7b6e298bb24::t_bd0a1507e4078c 61,103,160-162,273-274,278,280-285,313-331
+packages/server/native/remote-helper/service/Capture.swift
+  s_4fc7b6e298bb24::t_939c72d8b31c01 6-51
+packages/core/src/domain/update/app-release.ts
+  s_7ef1ac7905a81d::t_e405b1e3faee4c 28,34,51,56,74,91
+  s_7ef1ac7905a81d::t_3afd77574fe321 1-10,13-27,29-33,35-50,52-55,57-73,75-76,90,92-94,96-109
+  s_7ef1ac7905a81d::t_c13f611fba6d49 11-12,77-89,95
+packages/server/lib/remote-control/macos-helper-app.test.ts
+  s_4fc7b6e298bb24::t_efac83c45ebd04 49-51
+  s_4fc7b6e298bb24::t_638adf76f8ddea 22-24,47-48,271,282-290,292-302
+  s_4fc7b6e298bb24::t_729f87c2ab3d77 246-268
+  s_4fc7b6e298bb24::t_e5379ae19945b2 7,45-46,215-245,269-270,272-281,291,303-320
+  s_4dd3bff5b942a5::t_a57c7776c4cc3e 321
+packages/desktop/main/shared-service.test.ts
+  s_30a53aa7ebec40::t_bdad6d814745ea 177-192
+  s_f9f0adebce2766::t_2815f3add11020 193-212
+  s_30a53aa7ebec40::t_6ec098da329602 162
+  s_30a53aa7ebec40::t_54f10ac8d53880 160-161
+packages/desktop/renderer/lite/LiteApp.tsx
+  s_7ef1ac7905a81d::t_8c525d757dadb5 8,48
+  s_30a53aa7ebec40::t_5124015c04b4a0 7,17,20,24,45,51-52
+packages/server/app/api/sessions/[id]/route.ts
+  s_5e6099b7999b22::t_10601d3ce5e0da 72,76-81,105
+scripts/stage-cli-runtime.mjs
+  s_59b653dc92917e::t_b1349aaab84bbd 66
+packages/desktop/main/update-service.ts
+  s_7ef1ac7905a81d::t_ab7f99f2ebe35d 29-31
+  s_7ef1ac7905a81d::t_cda2a9e0fcce69 34-35
+  s_7ef1ac7905a81d::t_b75e1db1930c5b 3-4,7,13-14,16,27,32-33,36-37,43-46,56-59,62,65-67,69-72,74-89,91
+  s_7ef1ac7905a81d::t_b8e2db4f56640f 60-61,63,68
+packages/desktop/renderer/lib/pairing-route-options.ts
+  s_f9f0adebce2766::t_a392f15ff05fee 1-7,9-13,15-16,23,25,27-33
+  s_f9f0adebce2766::t_fa3f6f1b5d61e3 8,14,17-22,24,26
+packages/desktop/renderer/lib/queued-message-order.test.ts
+  s_b64e62c6723617::t_67ea5eee3e9b3b 125,134
+  s_b64e62c6723617::t_bf7d6cacb49c24 137-148
+  s_b64e62c6723617::t_d6a51dad12d1fe 12,113-120,135,149
+  s_ee6fbf66274edd::t_4b1bd25c5dd6c1 136
+deploy/https-relay/package.json
+  s_30a53aa7ebec40::t_4eecb7faa1a1a9 1-11
+packages/cli/src/tunnel/tunnel-controller.test.ts
+  s_f9f0adebce2766::t_467f40ca2b5b30 109,151-170
+  s_30a53aa7ebec40::t_1c03d49b1562c6 28-56
+  s_30a53aa7ebec40::t_765fde07a8e037 4
+  s_4dd3bff5b942a5::t_2efb6428b0d549 10,17,20,100-108
+packages/core/src/domain/update/update-release.ts
+  s_7ef1ac7905a81d::t_3afd77574fe321 30
+packages/mobile/android/app/src/main/java/com/agentroam/mobile/MainActivity.java
+  s_7ef1ac7905a81d::t_79defb55bb4670 3,6-12
+packages/server/lib/todo/completed-work.test.ts
+  s_59b653dc92917e::t_fd675fb98d3e9b 120-121
+  s_59b653dc92917e::t_3b95e812f88c45 1-119,122-133
+packages/desktop/renderer/lib/composer-keyboard.test.ts
+  s_ad0266f1ffa17d::t_0a24f50398f7da 24-33
+packages/core/src/application/todo/index.ts
+  s_59b653dc92917e::t_e1852c5692d7e5 4
+packages/server/lib/device-pairing.test.ts
+  s_30a53aa7ebec40::t_bbf5d808313170 223-225,229-235
+  s_30a53aa7ebec40::t_1c03d49b1562c6 226
+packages/native-runtime/src/agent-runtime/native-run-message-projection.test.ts
+  s_1b01aec8bc829c::t_f37c1ea9ed4620 20-21,53-65,67-74,78,86-92
+  s_1b01aec8bc829c::t_c8c8252a7814d9 12-17,45,66
+  s_59b653dc92917e::t_ce6b86b750e751 93
+packages/server/lib/tunnel-control.test.ts
+  s_30a53aa7ebec40::t_1c03d49b1562c6 33-34,38-54
+  s_30a53aa7ebec40::t_68abf9decf60e0 55
+packages/native-runtime/src/agent-runtime/zcode-client.ts
+  s_b64e62c6723617::t_c81f91a7ca11e0 614-618
+  s_ad0266f1ffa17d::t_c3967db60b801e 204,590
+  s_ad0266f1ffa17d::t_bbaf490c3d970e 50-54,151,200-202,206,542
+packages/desktop/renderer/lib/session-history.ts
+  s_b64e62c6723617::t_6bd0ef157de96f 760-762
+  s_b64e62c6723617::t_d2b5027c576724 448-450,471-511
+  s_b64e62c6723617::t_e3d77843dc21ad 763-764
+  s_b64e62c6723617::t_abd3096150869b 512-513
+packages/shared/src/domain/ports/agent-port.ts
+  s_ad0266f1ffa17d::t_dd7220a424f3ce 16
+packages/native-runtime/src/agent-runtime/codex-runtime-adapter.test.ts
+  s_b64e62c6723617::t_aa7a78d01b8486 6
+  s_ad0266f1ffa17d::t_5aaae03e401a2a 1063-1067
+  s_b64e62c6723617::t_10f9b002185123 3138,3156,3162,3164-3166,3168
+  s_ad0266f1ffa17d::t_dc9798951e818e 60-62,1023-1024,1027,1038-1041,1044-1062,1068
+  s_b64e62c6723617::t_8d6d6fa6e70f6f 3139-3145,3148-3155,3157-3161,3163,3167,3169-3171
+  s_b64e62c6723617::t_681ce9b2ab66a2 3146-3147
+  s_ad0266f1ffa17d::t_9e20b1916feeb6 1042-1043
+  s_ad0266f1ffa17d::t_ba8106192a2aae 1069
+packages/desktop/scripts/runtime-bootstrap-worker.ts
+  s_4fc7b6e298bb24::t_9ebb1e53d5082a 25-26,28-29,32
+  s_4fc7b6e298bb24::t_cbcb8997267d40 13,27
+packages/desktop/renderer/lib/ask-user-answer-display.test.ts
+  s_5e6099b7999b22::t_ffb488e848723d 7,32-41,46-47
+  s_5e6099b7999b22::t_2090e5fbc080f4 1-2,8,42-45
+  s_5e6099b7999b22::t_bf8982adcb28e2 48
+packages/cli/src/args.test.ts
+  s_30a53aa7ebec40::t_c8fd190ca315fb 6-9,11-13
+  s_f9f0adebce2766::t_994e5e23808f97 10
+  s_7ef1ac7905a81d::t_c25f295564691d 107,110-113
+scripts/generate-brand-icons.py
+  s_30a53aa7ebec40::t_ff4337544aabd7 17-21,26,28-30,32
+packages/core/src/domain/live-view/remote-video-receiver.test.ts
+  s_4fc7b6e298bb24::t_cf3f256d67a765 7-22
+packages/server/lib/notifications/customer-notifications.ts
+  s_59b653dc92917e::t_df0828003fdc3d 8-9,15-16,20-21
+  s_59b653dc92917e::t_16d3584a5cbfcf 2,17-18
+  s_59b653dc92917e::t_fd675fb98d3e9b 5,19
+packages/cli/package.json
+  s_30a53aa7ebec40::t_a77f135d783c3a 20
+packages/core/src/domain/live-view/remote-video-receiver.ts
+  s_4fc7b6e298bb24::t_e58dc895f976e0 18-19,21-22,24,27-39,46,55,67-70,74
+packages/desktop/main/runtime-bootstrap.ts
+  s_4fc7b6e298bb24::t_638550351ed0ea 10,15-26
+  s_4fc7b6e298bb24::t_9ebb1e53d5082a 13-14,27-34
+packages/desktop/main/lite-preload.ts
+  s_30a53aa7ebec40::t_d72ce07c2e5224 12-13
+  s_7ef1ac7905a81d::t_b8e2db4f56640f 4-11
+packages/server/lib/remote-control/macos-helper-app.mjs
+  s_4fc7b6e298bb24::t_72f9e04fd3b6b3 144-151
+  s_4fc7b6e298bb24::t_5ba4950b7232da 269,295
+  s_4fc7b6e298bb24::t_efac83c45ebd04 4,105-126,152,166-180,187-195
+  s_4fc7b6e298bb24::t_365fe0c22d094a 11,32,153,181,183-186,196-198,209-211,219-220,222,255,259,268,270,290-294,299
+packages/desktop/electron-builder-lite.yml
+  s_7ef1ac7905a81d::t_b8e2db4f56640f 21-22
+packages/core/src/index.ts
+  s_59b653dc92917e::t_16d3584a5cbfcf 99
+packages/cli/src/node-runtime-manager.ts
+  s_4fc7b6e298bb24::t_4b7ef4f432383d 17,238-239
+packages/core/src/application/todo/completed-work.test.ts
+  s_59b653dc92917e::t_43a9c7a6d91ba7 1-27
+packages/desktop/renderer/lib/session-history.test.ts
+  s_b64e62c6723617::t_d6a51dad12d1fe 698-707
+packages/server/app/api/update/check/route.ts
+  s_7ef1ac7905a81d::t_941d3f56fc2241 8-10
+packages/core/src/domain/model/entities.ts
+  s_5e6099b7999b22::t_10601d3ce5e0da 71,76,78-79
+packages/native-runtime/src/agent-runtime/native-runtime-broker.ts
+  s_b64e62c6723617::t_d2b5027c576724 4131-4133,4135-4138
+  s_b64e62c6723617::t_9cdba7163da5cc 174,1382-1386,1391,1641,3550
+  s_b64e62c6723617::t_c81f91a7ca11e0 1448-1450,1458,1460-1461
+  s_ad0266f1ffa17d::t_4cde376af366db 93,2115-2120,2122-2124,2889,2891-2894,3318-3323
+  s_1b01aec8bc829c::t_9408e066d741f6 3738-3772,3810,3814,3862,3864-3867
+  s_ad0266f1ffa17d::t_e3aa3f47e2489f 2517,4323-4327
+  s_ad0266f1ffa17d::t_dd7220a424f3ce 2121,2890
+  s_1b01aec8bc829c::t_d13a9d4a051530 3815-3817,3863
+  s_b64e62c6723617::t_e7574bf2343d3e 4109,4122-4127,4134
+  s_59b653dc92917e::t_e1852c5692d7e5 1122
+  s_b64e62c6723617::t_3afb0ab0453dc5 3324,4097-4108,4110-4121,4128-4130,4139-4142
+  s_b64e62c6723617::t_bad19afce89478 3325
+packages/desktop/main/lite-pairing.ts
+  s_30a53aa7ebec40::t_d72ce07c2e5224 8,16-22,37,44
+packages/desktop/renderer/components/UpdateNotice.tsx
+  s_7ef1ac7905a81d::t_1e446fe5e2e42f 30-36,47-48,50-51,53
+  s_7ef1ac7905a81d::t_8c525d757dadb5 3-5,12-21,23,27-29,37,41-42,44,57,61,64,67,73,78,81,85
+packages/core/src/domain/update/index.ts
+  s_7ef1ac7905a81d::t_3afd77574fe321 3
+packages/server/app/api/sessions/[id]/query-index/route.ts
+  s_5e6099b7999b22::t_10601d3ce5e0da 42,44
+packages/webapp/src/presentation/RemoteDesktopPage.tsx
+  s_4fc7b6e298bb24::t_9e8dfa9ff39226 37
+packages/desktop/main/desktop-installer.ts
+  s_7ef1ac7905a81d::t_b75e1db1930c5b 1,3-63,66-113
+  s_7ef1ac7905a81d::t_419e366b725e69 2,64-65
+packages/server/lib/remote-control/remote-video-signal.mjs
+  s_4fc7b6e298bb24::t_6ffa4f416f2ceb 143,183
+packages/desktop/renderer/lib/composer-prediction.test.ts
+  s_ad0266f1ffa17d::t_0a24f50398f7da 1-16
+packages/core/src/application/todo/completed-work.ts
+  s_59b653dc92917e::t_43a9c7a6d91ba7 11
+  s_59b653dc92917e::t_e1852c5692d7e5 1-10,12-17,19,26-28,31-34
+  s_59b653dc92917e::t_df0828003fdc3d 29-30
+  s_59b653dc92917e::t_e3821d16b403dc 18,20-25
+packages/cli/src/args.ts
+  s_7ef1ac7905a81d::t_d0f3cb9560a510 4,34,141-142,192-193
+  s_30a53aa7ebec40::t_296c58e96b3589 6,21,167-168,171-172,196
+  s_f9f0adebce2766::t_91c63119bdedb5 152
+  s_30a53aa7ebec40::t_5c83c6956dfcf5 3,31-32,149-151,153-154,198-200
+packages/desktop/main/desktop-live-cli-proxy.ts
+  s_4fc7b6e298bb24::t_9ebb1e53d5082a 72,101-104
+packages/server/lib/update-service.ts
+  s_7ef1ac7905a81d::t_cda2a9e0fcce69 1,4-6,20,31,33-35,37-38,44,55-60,65-74,83-87,106,109
+  s_7ef1ac7905a81d::t_ab7f99f2ebe35d 36
+packages/core/src/domain/session/SessionGoals.ts
+  s_ad0266f1ffa17d::t_e3aa3f47e2489f 9,32
+packages/server/app/layout.tsx
+  s_30a53aa7ebec40::t_ff4337544aabd7 5
+packages/server/native/remote-helper/main.swift
+  s_4fc7b6e298bb24::t_cf3f256d67a765 475
+  s_4fc7b6e298bb24::t_c1bcbff5eba000 260-261,263-265,267-270,272-282,284,289-299,302-308,329,331-353,355,358-375,418,434,473,476,484-489,494-499,501,505-506,508,513,527-528,537,591,596,620,626-627,631-635,637,645
+  s_4fc7b6e298bb24::t_6bcc365b6442e5 271
+packages/cli/src/network.ts
+  s_30a53aa7ebec40::t_02a42c83ba5fa8 3,7-13,17-20,25
+  s_f9f0adebce2766::t_2e03545104cf4d 14-16,21-24
+  s_ee6fbf66274edd::t_98f8657f5d8844 26
+packages/cli/src/update/update-worker.ts
+  s_7ef1ac7905a81d::t_d0f3cb9560a510 3-4,18-22,26,29,35-42,44-45,49,68,70,73-75
+  s_7ef1ac7905a81d::t_941d3f56fc2241 10,59-60,76-78,80-99
+  s_7ef1ac7905a81d::t_ab7f99f2ebe35d 11-12,30-34,65,69,79
+packages/server/lib/remote-control/infrastructure/werift-video-transport.mjs
+  s_4fc7b6e298bb24::t_6ffa4f416f2ceb 45,52,98
+packages/server/lib/native-runtime-service.ts
+  s_ad0266f1ffa17d::t_dd7220a424f3ce 33,85-86,200-206
+  s_ad0266f1ffa17d::t_c926654092e7de 207
+packages/desktop/renderer/lib/composer-slash-token.test.ts
+  s_ad0266f1ffa17d::t_0a24f50398f7da 26-31
+packages/server/lib/session-history-source.ts
+  s_5e6099b7999b22::t_ffb488e848723d 25
+  s_5e6099b7999b22::t_10601d3ce5e0da 1-24,26-39,41-42,44-46,82-83,94-95,97
+packages/native-runtime/src/agent-runtime/codex-composer.ts
+  s_ad0266f1ffa17d::t_7a74ab4dd9f5e7 49-59
+  s_ad0266f1ffa17d::t_8a62630040a21e 1-48,60-120
+packages/cli/src/tunnel/self-hosted-relay.integration.test.ts
+  s_30a53aa7ebec40::t_b25f3b9f7064fb 1-6,8-90,92-124,126-129,131-149
+  s_30a53aa7ebec40::t_7b8c05c75e21bf 7,91
+  s_30a53aa7ebec40::t_ba3276b9f3bd1d 125,130
+packages/desktop/scripts/bundled-remote-component.test.ts
+  s_4fc7b6e298bb24::t_aa98bddd915aa3 1-63
+packages/desktop/renderer/components/ChatComposerStyle.test.ts
+  s_f9f0adebce2766::t_dacdd2296a847c 86
+  s_f9f0adebce2766::t_c53ce225834962 84-85,87-92
+packages/cli/src/update/update-state.ts
+  s_30a53aa7ebec40::t_eca06d1d165dba 3,14
+  s_30a53aa7ebec40::t_a77f135d783c3a 16
+packages/desktop/scripts/bundled-runtime.mjs
+  s_4fc7b6e298bb24::t_9ebb1e53d5082a 6,23,29
+packages/desktop/renderer/components/BrowserLivePanel.tsx
+  s_4fc7b6e298bb24::t_2fa41fc709e8ca 1449-1460
+  s_4fc7b6e298bb24::t_9e8dfa9ff39226 47,226,307-308,728-730
+  s_4fc7b6e298bb24::t_6ffa4f416f2ceb 305-306,799-803,992,996,1013,1441-1448
+  s_4fc7b6e298bb24::t_e3905a23ca4647 997-998
+packages/cli/src/network.test.ts
+  s_f9f0adebce2766::t_290087a4dc1202 14
+  s_f9f0adebce2766::t_d179d3afed5cc2 2-13,15-17
+packages/core/src/domain/live-view/remote-video-types.ts
+  s_4fc7b6e298bb24::t_e3905a23ca4647 24-25
+  s_4fc7b6e298bb24::t_e58dc895f976e0 2,83
+packages/desktop/renderer/lib/use-codex-composer-catalog.ts
+  s_ad0266f1ffa17d::t_e0fee53defb381 10-12,15
+  s_ad0266f1ffa17d::t_cbcc091751e561 1-9,13-14,16-26
+packages/server/app/api/agent-host.test.ts
+  s_5e6099b7999b22::t_085aa7960f316e 724-726,730-733,735,738,749-750,776-777
+  s_5e6099b7999b22::t_25e558bfa295d0 35,709-723,727-729,734,736-737,739-748,751-775,778
+  s_5e6099b7999b22::t_412156ba47c105 779
+packages/desktop/main/preload.ts
+  s_30a53aa7ebec40::t_d72ce07c2e5224 293-294
+deploy/https-relay/README.md
+  s_30a53aa7ebec40::t_7a9722c51beed2 1-18
+deploy/https-relay/package-lock.json
+  s_30a53aa7ebec40::t_bd1ca3c5539fc7 1-34
+packages/native-runtime/src/todo-mcp/stdio.ts
+  s_b64e62c6723617::t_5d043d8311086a 5,8
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "911e1e00f6887d400ca124266f57151875e17a30",
+  "prompts": {},
+  "sessions": {
+    "s_1b01aec8bc829c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a21694-a536-7651-8857-aa7c16445064",
+        "model": "gpt-6.2-astra"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_30a53aa7ebec40": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a20c46-6028-7b10-b00a-b40d026206f2",
+        "model": "gpt-6.2-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_46fd03fbd1f410": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a21365-b220-7a40-954c-e2de524aaf3a",
+        "model": "gpt-6.2-astra"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_4dd3bff5b942a5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1f7de-114a-7943-a1b8-4808cd30696d",
+        "model": "gpt-6.2-astra"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_4fc7b6e298bb24": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a210b7-4445-7571-9fa2-e7a7f4c5b83f",
+        "model": "gpt-6.2-astra"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_59b653dc92917e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a216e3-bd25-77b0-9809-e1a8c58f1e30",
+        "model": "gpt-6.2-astra"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_5e6099b7999b22": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a2105b-5064-7cd1-bd88-b5069e9d62c7",
+        "model": "gpt-6.2-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_7ef1ac7905a81d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a21582-d5b0-7990-9338-6d202247e247",
+        "model": "gpt-6.2-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_ad0266f1ffa17d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a215b1-f2b3-7a41-a6cd-6eec15a1dd56",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.2-astra"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_b56f78d007e766": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a21201-2df1-7e70-b402-3a6151fb0fd4",
+        "model": "gpt-6.2-astra"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_b64e62c6723617": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a2136a-8435-7771-b333-e92d8d8d5dc1",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.2-astra"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_cf7b38132b5953": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a2173f-1320-7fc0-b225-b5427efe5425",
+        "model": "chat-gpt-omhk9/gpt-6.2-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_ee6fbf66274edd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a21368-9b6a-70f3-bcdb-3a673fa88767",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.2-astra"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    },
+    "s_f9f0adebce2766": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a21589-5851-75d0-a962-0a9996ea372f",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.2-astra"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}

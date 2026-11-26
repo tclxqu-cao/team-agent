@@ -1,0 +1,23 @@
+packages/server/lib/mesh/mesh-gateway.mjs
+  s_09a6be8e939422::t_6d57f82b408ae2 99,149
+packages/server/lib/mesh/mesh-gateway.test.ts
+  s_09a6be8e939422::t_415b955b082059 105-106,115,129-130,137
+scripts/e2e-mesh.mjs
+  s_09a6be8e939422::t_4b6a15f58d205a 230,232-233,235-236
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0c251e2ad151dcc779c488a70c965f9b33ab513e",
+  "prompts": {},
+  "sessions": {
+    "s_09a6be8e939422": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a20c77-e053-7cf0-b1f9-1cba9062bbe4",
+        "model": "gpt-6.2-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
