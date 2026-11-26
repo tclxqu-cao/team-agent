@@ -1,0 +1,21 @@
+packages/desktop/native/wakelistener.js
+  s_97952ea3cd0d5a::t_a2e8320dc2c328 4,22-32,38-40,52-78,80,83-85,95-100,111-118,125-127,134-144,146,170,176-181,185-187
+packages/desktop/main/index.ts
+  s_97952ea3cd0d5a::t_a2e8320dc2c328 555,563-619,809,913
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "26ca9b507124a35bd1db9a5a2b2cf4eba740bd37",
+  "prompts": {},
+  "sessions": {
+    "s_97952ea3cd0d5a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a21811-ad4b-70f2-bef4-381f67e24654",
+        "model": "ap-southeast-1-v5cjq-gptdy-17usoft-com/gpt-6.2-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
