@@ -1,6 +1,7 @@
 appId: com.agentroam.desktop
 productName: AgentRoam
 asar: true
+npmRebuild: false
 asarUnpack:
   - "**/node_modules/better-sqlite3/prebuilds/**/*"
 directories:
