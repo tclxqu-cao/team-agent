@@ -1,0 +1,25 @@
+packages/shared/src/infrastructure/http/http-update-api.ts
+  s_8ef7627c506162::t_2b3e494967a5c9 1-11
+packages/webapp/src/mobile/infrastructure/ios-update.test.ts
+  s_8ef7627c506162::t_bb1680bb65ad74 1-51
+packages/webapp/src/mobile/infrastructure/ios-update.ts
+  s_8ef7627c506162::t_c41087fbfcc84c 1-99
+packages/webapp/src/mobile/presentation/MobileUpdateNotice.tsx
+  s_8ef7627c506162::t_b3b2d6de6bbb7b 1-20
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "89029ec5d27bca2aa260760a266658582dd9b43b",
+  "prompts": {},
+  "sessions": {
+    "s_8ef7627c506162": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a21b38-7ff3-7580-8542-23f39a72e8c2",
+        "model": "codex/gpt-6.2-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
