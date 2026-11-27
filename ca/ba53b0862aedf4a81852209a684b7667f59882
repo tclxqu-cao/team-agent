@@ -1,0 +1,101 @@
+.github/workflows/desktop-release-verify.yml
+  s_c3b28b1dfd73f6::t_68402cebcc4697 18-21,78,81-83,100-105
+bun.lock
+  s_c3b28b1dfd73f6::t_0028d803f6185a 18,36-43,48,52,77,140,144,229,236,805-808
+deploy/https-relay/README.md
+  s_c3b28b1dfd73f6::t_78bfd806682066 8,16,18
+deploy/https-relay/relay.mjs
+  s_c3b28b1dfd73f6::t_bfa572f774a404 1-2,11,15,21-28,31,115-130,152-153,158-164,166-181,183,195,244-246
+package.json
+  s_c3b28b1dfd73f6::t_cf1c20bbf9205a 40-42
+packages/cli/install/write-relay-default.mjs
+  s_c3b28b1dfd73f6::t_ba2c40902f8533 4-5
+packages/cli/package.json
+  s_c3b28b1dfd73f6::t_52e7d9f952de7e 3,22,30-33,36-37
+packages/cli/src/tunnel/self-hosted-provider.ts
+  s_c3b28b1dfd73f6::t_a71a0e0b6b638f 1,11,98,104-120,122,128
+packages/cli/src/tunnel/self-hosted-relay.integration.test.ts
+  s_c3b28b1dfd73f6::t_fed502dd2ef837 1,14-18,96-150,152
+packages/cloudflared-darwin-arm64/manifest.json
+  s_c3b28b1dfd73f6::t_beb6aad26c367a 2
+packages/cloudflared-darwin-arm64/package.json
+  s_c3b28b1dfd73f6::t_87da6b708dfb6c 3
+packages/cloudflared-win32-x64/manifest.json
+  s_c3b28b1dfd73f6::t_ed3fc59cd01b58 2
+packages/cloudflared-win32-x64/package.json
+  s_c3b28b1dfd73f6::t_5159354277665a 3
+packages/desktop/asr-poc/download-model.sh
+  s_c3b28b1dfd73f6::t_edb9077f1ebd0c 5
+packages/desktop/main/index.ts
+  s_c3b28b1dfd73f6::t_0bf1b07002d5cc 1274
+packages/desktop/main/lite-index.ts
+  s_c3b28b1dfd73f6::t_abc24e0f9b8e03 85-89
+packages/desktop/package.json
+  s_c3b28b1dfd73f6::t_5136326ceb427c 3
+packages/desktop/renderer/components/ChatView.tsx
+  s_c3b28b1dfd73f6::t_045320c32d0ed5 5316
+packages/desktop/renderer/components/EmptySessionWelcome.test.tsx
+  s_c3b28b1dfd73f6::t_3315dbc8398025 27-31,105-112
+packages/desktop/renderer/components/EmptySessionWelcome.tsx
+  s_c3b28b1dfd73f6::t_f544b8800283de 3,6-8,24-37,57-67,71-89
+packages/desktop/renderer/components/UpdateNotice.css
+  s_c3b28b1dfd73f6::t_4bf9cbe7deb0b8 31,42-43,45-46,80,82
+packages/desktop/renderer/styles/global.css
+  s_c3b28b1dfd73f6::t_e8f41cd0d7547b 4015,4017-4018,4023-4024,4029-4035,4037,4041,4043-4048,4051,4054-4055,4057-4060,4062-4071,4075-4083,4086-4094,4097-4099,4102-4104,4107-4114,4117-4139,4143,4146,4152,4157,4159-4174,4182-4183,4228-4229,4232-4234,4237-4239,4242-4244,4248-4249,4254-4258,4261-4271,4275-4279,4285,4290-4291,4293
+packages/desktop/renderer/styles/new-session-window.css
+  s_c3b28b1dfd73f6::t_aff82c68df2b91 47-69
+packages/native-runtime/src/agent-runtime/codex-rollout-activity.ts
+  s_c3b28b1dfd73f6::t_9375c72bd17e1c 53-55,61,77-78,344,353-364,382-384,390,416-420,433-450,452,454-455,457-469,471-472,529-535
+packages/native-runtime/src/agent-runtime/codex-runtime-adapter.test.ts
+  s_c3b28b1dfd73f6::t_8f2de84d98f175 3451-3512
+packages/native-runtime/src/agent-runtime/codex-runtime-adapter.ts
+  s_c3b28b1dfd73f6::t_e9021951fdeae7 147,154-157,225,282,571-575,658,664,666-669,672-674,703,891,908-943,970-974,2799,2840,2844-2845,2848-2852,2857-2877,2952-2953,2995,3005-3007,3083-3086
+packages/runtime-darwin-arm64/manifest.json
+  s_c3b28b1dfd73f6::t_597c07645ce695 2,10
+packages/runtime-darwin-arm64/package.json
+  s_c3b28b1dfd73f6::t_f0c0bceaff565f 3
+packages/runtime-win32-x64/manifest.json
+  s_c3b28b1dfd73f6::t_5f24cac5485071 2,10-11
+packages/runtime-win32-x64/package.json
+  s_c3b28b1dfd73f6::t_907fecf466819c 3
+packages/tui-darwin-arm64/package.json
+  s_c3b28b1dfd73f6::t_366a308f7a01f3 3
+packages/tui-win32-x64/package.json
+  s_c3b28b1dfd73f6::t_102bc724c49256 3
+packages/voice-service/README.md
+  s_c3b28b1dfd73f6::t_b6f9830a23a45e 9,12-13,16-20,26-27,29
+packages/voice-service/scripts/download-kws-model.sh
+  s_c3b28b1dfd73f6::t_19697da2d3c6ab 4-5
+packages/voice-service/scripts/install-model.sh
+  s_c3b28b1dfd73f6::t_689a16fdf52e51 1-100
+packages/voice-service/scripts/model-checksums/asr.sha256
+  s_c3b28b1dfd73f6::t_4be8d7f4e6b376 1-4
+packages/voice-service/scripts/model-checksums/kws.sha256
+  s_c3b28b1dfd73f6::t_a808efea8cc127 1-4
+packages/voice-service/scripts/verify-models.mjs
+  s_c3b28b1dfd73f6::t_bd00fd0fd5fd67 1-31
+packages/webapp/src/mobile/presentation/unpaired-home.css
+  s_c3b28b1dfd73f6::t_f9008baafb9ba4 11
+scripts/audit-cli-tarball.mjs
+  s_c3b28b1dfd73f6::t_2b1a9cbc5e6bd6 84,92-97
+scripts/pack-package.mjs
+  s_c3b28b1dfd73f6::t_a683b07406cdbd 14-16
+scripts/stage-desktop-runtime.mjs
+  s_c3b28b1dfd73f6::t_a3f1611500cb37 1,18-19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "caba53b0862aedf4a81852209a684b7667f59882",
+  "prompts": {},
+  "sessions": {
+    "s_c3b28b1dfd73f6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a21bbb-c46b-7851-af90-965c46e13fa3",
+        "model": "codex/gpt-6.2-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
