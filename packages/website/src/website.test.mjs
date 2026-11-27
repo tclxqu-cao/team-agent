@@ -93,7 +93,7 @@ test("published fallback provides direct downloads for every supported platform"
     const assets = selectAssets(releaseSnapshot, edition);
     for (const platform of ["mac", "windows", "android"]) {
       const channel = platform === "android" ? "android" : edition === "lite" ? "desktop-lite" : "desktop";
-      const version = platform === "android" ? "0.2.0-preview.44" : platform === "windows" ? "0.2.0-preview.45" : "0.2.0-preview.46";
+      const version = platform === "android" ? "0.2.0-preview.44" : "0.2.0-preview.46";
       const tag = `${channel}-v${version}`;
       assert.equal(assets[platform].tag, tag);
       assert.ok(assets[platform].size > 1000000);
