@@ -1,0 +1,14 @@
+packages/desktop/electron-builder.yml
+  h_b0bf4228a0b7ec 4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0d397560c73faddc66f6e3500a7a88243649836e",
+  "prompts": {},
+  "humans": {
+    "h_b0bf4228a0b7ec": {
+      "author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
