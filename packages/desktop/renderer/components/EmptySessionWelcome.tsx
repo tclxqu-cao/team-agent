@@ -1,6 +1,10 @@
 import { AGENT_LABELS } from "../lib/agent-catalog";
 import { BookOpen, Lightbulb, Wrench } from "lucide-react";
+import type { CSSProperties } from "react";
 import type { AgentType } from "../../../shared/src/contracts/agent-api";
+
+const WELCOME_PORTRAIT = new URL("../assets/agentroam-welcome.webp", import.meta.url).href;
+const SPEAKING_MOUTH = new URL("../assets/agentroam-welcome-speaking.webp", import.meta.url).href;
 
 export const EMPTY_SESSION_STARTERS = [
   { prompt: "带我熟悉这个项目", Icon: BookOpen },
@@ -17,8 +21,20 @@ export function welcomeGreetingForHour(hour: number): { title: string; prompt: s
   if (hour >= 18 && hour < 23) return { title: "晚上好。", prompt: "今晚想一起做点什么？" };
   return { title: "夜深了。", prompt: "注意休息，重要的事可以先留给我。" };
 }
-
-
+function SpokenText({ text, start = 0 }: { text: string; start?: number }) {
+  return (
+    <>
+      <span className="empty-session-welcome__accessible-text">{text}</span>
+      <span aria-hidden="true">
+        {Array.from(text, (character, index) => (
+          <span key={index} className="empty-session-welcome__letter" style={{ "--letter-order": start + index } as CSSProperties}>
+            {character}
+          </span>
+        ))}
+      </span>
+    </>
+  );
+}
 
 interface EmptySessionWelcomeProps {
   agentType: AgentType;
@@ -38,27 +54,39 @@ export default function EmptySessionWelcome({
 }: EmptySessionWelcomeProps) {
   const agentLabel = AGENT_LABELS[agentType];
   const greeting = welcomeGreetingForHour((now ?? new Date()).getHours());
+  const prompt = connectionRequired ? "扫码连接电脑后，就能开始。" : ready ? greeting.prompt : "配置好 API Key 后，我就能开始。";
+  const titleLength = Array.from(greeting.title).length;
+  const promptLength = Array.from(prompt).length;
+  const promptStart = titleLength + 3;
+  const speakingTiming = {
+    "--speech-title-length": titleLength,
+    "--speech-prompt-length": promptLength,
+    "--speech-prompt-start": promptStart,
+    "--speech-title-beats": Math.round(titleLength / 3),
+    "--speech-prompt-beats": Math.round(promptLength / 3),
+  } as CSSProperties;
 
   return (
     <section className="empty-session-welcome" aria-labelledby="empty-session-welcome-title">
-      <div className="empty-session-welcome__core" aria-hidden="true">
-        <span className="empty-session-welcome__glow" />
-        <svg viewBox="0 0 120 120" role="presentation">
-          <circle className="empty-session-welcome__orbit empty-session-welcome__orbit--outer" cx="60" cy="60" r="44" />
-          <circle className="empty-session-welcome__orbit empty-session-welcome__orbit--inner" cx="60" cy="60" r="33" />
-          <rect className="empty-session-welcome__diamond" x="43" y="43" width="34" height="34" rx="2" />
-          <circle className="empty-session-welcome__pulse" cx="60" cy="60" r="3" />
-        </svg>
-      </div>
-
-      <div className="empty-session-welcome__copy">
-        <p className="empty-session-welcome__status">
-          {connectionRequired ? `${agentLabel} · 等待连接` : ready ? `${agentLabel} · 已准备好` : `${agentLabel} · 等待配置`}
-        </p>
-        <h2 id="empty-session-welcome-title">{greeting.title}</h2>
-        <p className="empty-session-welcome__prompt">
-          {connectionRequired ? "扫码连接电脑后，就能开始。" : ready ? greeting.prompt : "配置好 API Key 后，我就能开始。"}
-        </p>
+      <div className="empty-session-welcome__hero">
+        <div className="empty-session-welcome__portrait" aria-hidden="true">
+          <div className="empty-session-welcome__orbit" />
+          <div className="empty-session-welcome__portrait-motion">
+            <img className="empty-session-welcome__portrait-image" src={WELCOME_PORTRAIT} alt="" width={640} height={640} />
+            <img className="empty-session-welcome__mouth" src={SPEAKING_MOUTH} alt="" width={200} height={150} style={speakingTiming} />
+          </div>
+        </div>
+        <div className="empty-session-welcome__copy">
+          <div className="empty-session-welcome__bubble">
+            <h2 id="empty-session-welcome-title"><SpokenText text={greeting.title} /></h2>
+            <p className="empty-session-welcome__prompt">
+              <SpokenText text={prompt} start={promptStart} />
+            </p>
+          </div>
+          <p className="empty-session-welcome__status">
+            {connectionRequired ? `${agentLabel} · 等待连接` : ready ? `${agentLabel} · 已准备好` : `${agentLabel} · 等待配置`}
+          </p>
+        </div>
       </div>
 
       <div className="empty-session-welcome__starters" aria-label="开始一个任务">

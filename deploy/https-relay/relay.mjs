@@ -1,4 +1,5 @@
-import { createHash, randomBytes } from "node:crypto";
+import { constants, createHash, createPrivateKey, createPublicKey, privateDecrypt, randomBytes, timingSafeEqual } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { createServer, request } from "node:http";
 import { isIP } from "node:net";
 import { createRequire } from "node:module";
@@ -7,17 +8,27 @@ const require = createRequire(import.meta.url);
 
 const bearer = /^Bearer ([A-Za-z0-9_-]{43})$/;
 const streamPath = /^\/v1\/streams\/([a-f0-9]{32})$/;
+const registrationTimeoutMs = 8_000;
 const hopHeaders = new Set(["connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
   "proxy-connection", "te", "trailer", "transfer-encoding", "upgrade"]);
 
-export function createRelay({ publicOrigin, maxInstallations = 256, maxPerIp = 8, maxStreams = 64, streamTimeoutMs = 8_000, websocket = require("ws") }) {
+export function createRelay({ publicOrigin, privateKey, maxInstallations = 256, maxPerIp = 8, maxStreams = 64, streamTimeoutMs = 8_000, websocket = require("ws") }) {
   const origin = new URL(publicOrigin);
   if (origin.protocol !== "https:" || origin.port || origin.username || origin.password ||
       origin.pathname !== "/" || origin.search || origin.hash || !/^[a-z0-9.-]+$/.test(origin.hostname) || isIP(origin.hostname)) {
     throw new Error("PUBLIC_ORIGIN must be a public HTTPS origin on the default port");
   }
+  if (!privateKey) throw new Error("Relay registration private key is required");
+  const registrationKey = createPrivateKey(privateKey);
+  const keyBits = registrationKey.asymmetricKeyDetails?.modulusLength ?? 0;
+  if (registrationKey.asymmetricKeyType !== "rsa" || keyBits < 2048 || keyBits > 4096) {
+    throw new Error("Relay registration requires a 2048–4096 bit RSA private key");
+  }
+  const publicKey = createPublicKey(registrationKey).export({ type: "spki", format: "der" }).toString("base64url");
+  const proofLength = Math.ceil(Math.ceil(keyBits / 8) * 4 / 3);
   const root = origin.host;
   const clients = new Map();
+  const pendingControls = new Map();
   const { WebSocketServer, createWebSocketStream } = websocket;
   const ws = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024, perMessageDeflate: false });
 
@@ -101,6 +112,22 @@ export function createRelay({ publicOrigin, maxInstallations = 256, maxPerIp = 8
   }
 
   const server = createServer((req, res) => forward(req, res));
+
+  function verifiesRegistration(data, token, nonce) {
+    if (data.length > proofLength + 64) return false;
+    try {
+      const { type, proof } = JSON.parse(data.toString());
+      if (type !== "proof" || typeof proof !== "string" || proof.length !== proofLength || !/^[A-Za-z0-9_-]+$/.test(proof)) return false;
+      const received = privateDecrypt({
+        key: registrationKey, padding: constants.RSA_PKCS1_OAEP_PADDING, oaepHash: "sha256",
+      }, Buffer.from(proof, "base64url"));
+      const expected = Buffer.from(JSON.stringify(["agentroam", "https-relay-v1", token, nonce]));
+      return received.length === expected.length && timingSafeEqual(received, expected);
+    } catch {
+      return false;
+    }
+  }
+
   server.on("upgrade", (req, socket, head) => {
     const host = req.headers.host?.toLowerCase();
     if (host !== root) {
@@ -122,21 +149,38 @@ export function createRelay({ publicOrigin, maxInstallations = 256, maxPerIp = 8
     }
     const ip = sourceIp(req);
     if (req.url !== "/v1/connect" || !route || req.headers.origin || existing ||
-        clients.size >= maxInstallations || [...clients.values()].filter(client => client.ip === ip).length >= maxPerIp) {
+        clients.size + pendingControls.size >= maxInstallations ||
+        [...clients.values()].filter(client => client.ip === ip).length + [...pendingControls.values()].filter(peer => peer === ip).length >= maxPerIp) {
       socket.end("HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
       return;
     }
     ws.handleUpgrade(req, socket, head, (control) => {
-      const client = { socket: control, ip, pending: new Map(), streams: new Set(), responsive: true };
-      clients.set(route, client);
-      control.on("pong", () => { client.responsive = true; });
+      const nonce = randomBytes(32).toString("base64url");
+      const timer = setTimeout(() => control.terminate(), registrationTimeoutMs);
+      pendingControls.set(control, ip);
+      const clearPending = () => {
+        clearTimeout(timer);
+        pendingControls.delete(control);
+      };
       control.on("error", () => {});
-      control.once("close", () => {
-        clients.delete(route);
-        for (const deliver of client.pending.values()) deliver();
-        for (const stream of client.streams) stream.terminate();
+      control.once("close", clearPending);
+      control.once("message", (data) => {
+        if (clients.has(route) || !verifiesRegistration(data, token, nonce)) {
+          control.terminate();
+          return;
+        }
+        clearPending();
+        const client = { socket: control, ip, pending: new Map(), streams: new Set(), responsive: true };
+        clients.set(route, client);
+        control.on("pong", () => { client.responsive = true; });
+        control.once("close", () => {
+          clients.delete(route);
+          for (const deliver of client.pending.values()) deliver();
+          for (const stream of client.streams) stream.terminate();
+        });
+        control.send(JSON.stringify({ type: "ready", publicUrl: `https://${route}` }));
       });
-      control.send(JSON.stringify({ type: "ready", publicUrl: `https://${route}` }));
+      control.send(JSON.stringify({ type: "challenge", nonce, publicKey }));
     });
   });
   const heartbeat = setInterval(() => {
@@ -148,6 +192,7 @@ export function createRelay({ publicOrigin, maxInstallations = 256, maxPerIp = 8
   heartbeat.unref();
   server.once("close", () => clearInterval(heartbeat));
   return { server, close() {
+    for (const control of pendingControls.keys()) control.terminate();
     for (const client of clients.values()) client.socket.terminate();
     server.close();
   } };
@@ -196,7 +241,9 @@ function sourceIp(req) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const relay = createRelay({ publicOrigin: process.env.PUBLIC_ORIGIN });
+  const keyFile = process.env.RELAY_PRIVATE_KEY_FILE?.trim();
+  if (!keyFile) throw new Error("Set RELAY_PRIVATE_KEY_FILE to the relay registration private key");
+  const relay = createRelay({ publicOrigin: process.env.PUBLIC_ORIGIN, privateKey: readFileSync(keyFile) });
   relay.server.listen(Number(process.env.PORT || 18082), "127.0.0.1");
   process.once("SIGTERM", () => relay.close());
   process.once("SIGINT", () => relay.close());

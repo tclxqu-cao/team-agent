@@ -15,6 +15,10 @@ on:
         description: Test the Windows scheduler contract only
         type: boolean
         default: false
+      windows_only:
+        description: Require a Windows installer and checksums only
+        type: boolean
+        default: false
       tag:
         description: Desktop draft release tag
         required: true
@@ -71,9 +75,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.tag }}
+          WINDOWS_ONLY: ${{ inputs.windows_only }}
         run: |
           $assetDir = "$env:RUNNER_TEMP/release-assets"
-          gh release download $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --pattern '*.dmg' --pattern '*.apk' --pattern SHA256SUMS --dir $assetDir
+          $assets = @('--pattern', 'SHA256SUMS')
+          if ($env:WINDOWS_ONLY -ne 'true') { $assets += @('--pattern', '*.dmg', '--pattern', '*.apk') }
+          gh release download $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY @assets --dir $assetDir
           if ($LASTEXITCODE -ne 0) { throw 'Release asset download failed' }
           $verifiedNames = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
           foreach ($line in Get-Content "$assetDir/SHA256SUMS") {
@@ -90,9 +97,12 @@ jobs:
           $lite = $env:DESKTOP_EXECUTABLE -eq 'AgentRoam Lite.exe'
           $productPrefix = if ($lite) { 'AgentRoam-Lite' } else { 'AgentRoam' }
           $releaseVersion = $env:RELEASE_TAG -replace '^desktop(?:-lite)?-v', ''
-          $expectedNames = @("$productPrefix-$releaseVersion-arm64.dmg", "$productPrefix-Setup-$releaseVersion-x64.exe")
-          $androidAsset = "AgentRoam-$releaseVersion-android.apk"
-          if (!$lite -and (Test-Path (Join-Path $assetDir $androidAsset))) { $expectedNames += $androidAsset }
+          $expectedNames = @("$productPrefix-Setup-$releaseVersion-x64.exe")
+          if ($env:WINDOWS_ONLY -ne 'true') {
+            $expectedNames += "$productPrefix-$releaseVersion-arm64.dmg"
+            $androidAsset = "AgentRoam-$releaseVersion-android.apk"
+            if (!$lite -and (Test-Path (Join-Path $assetDir $androidAsset))) { $expectedNames += $androidAsset }
+          }
           if (!$verifiedNames.SetEquals([string[]]$expectedNames)) { throw 'Unexpected release assets in SHA256SUMS' }
       - name: Start the installed first-launch worker
         shell: pwsh

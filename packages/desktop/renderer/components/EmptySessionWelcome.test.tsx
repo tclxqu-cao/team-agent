@@ -24,6 +24,11 @@ describe("EmptySessionWelcome", () => {
     expect(html).toContain("上午好。");
     expect(html).toContain("今天想一起做点什么？");
     expect(html).toContain("Codex · 已准备好");
+    expect(html).toContain("agentroam-welcome.webp");
+    expect(html).toContain("agentroam-welcome-speaking.webp");
+    expect(html).toContain("--letter-order:0");
+    expect(html).toContain("--letter-order:7");
+    expect(html).toContain("--speech-prompt-start:7");
     for (const starter of EMPTY_SESSION_STARTERS) expect(html).toContain(starter.prompt);
     expect(html.match(/data-prompt=/g)).toHaveLength(3);
     expect(html).not.toContain("disabled");
@@ -97,10 +102,13 @@ describe("EmptySessionWelcome", () => {
     expect(source).not.toContain("handleSend");
   });
 
-  it("keeps the activation finite and provides a reduced-motion state", () => {
-    expect(css).toContain("@keyframes empty-session-core-enter");
-    expect(css).toContain("@keyframes empty-session-orbit-outer");
-    expect(css).toContain("@media (prefers-reduced-motion: reduce)");
-    expect(css).not.toMatch(/empty-session[^;{}]*animation[^;{}]*infinite/);
+  it("moves the portrait, animates the mouth with the letters, and respects reduced motion", () => {
+    expect(css).toContain("@keyframes empty-session-bubble-enter");
+    expect(css).toContain("@keyframes empty-session-letter-enter");
+    expect(css).toContain("@keyframes empty-session-portrait-idle");
+    expect(css).toContain("@keyframes empty-session-mouth-speak");
+    expect(css).toContain("var(--letter-order) * var(--speech-letter-step)");
+    expect(css).toContain("var(--speech-prompt-start) * var(--speech-letter-step)");
+    expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\) \{\s*\.empty-session-welcome__portrait-motion,\s*\.empty-session-welcome__mouth,\s*\.empty-session-welcome__copy,\s*\.empty-session-welcome__letter,[^}]+animation: none/);
   });
 });

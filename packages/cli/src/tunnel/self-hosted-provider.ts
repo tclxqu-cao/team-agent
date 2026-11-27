@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
+import { constants, createHash, createPublicKey, publicEncrypt, randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { link, readFile, unlink } from "node:fs/promises";
 import { connect } from "node:net";
@@ -8,6 +8,7 @@ import { writePrivateText } from "../service/service-files.js";
 import type { TunnelHandle, TunnelProvider } from "./tunnel-provider.js";
 
 const tokenPattern = /^[A-Za-z0-9_-]{43}$/;
+const publicKeyPattern = /^[A-Za-z0-9_-]{1,1024}$/;
 
 export function relayOrigin(value: string): URL {
   const url = new URL(value);
@@ -94,21 +95,37 @@ export class SelfHostedTunnelProvider implements TunnelProvider {
 
     try {
       await new Promise<void>((resolve, reject) => {
-        let ready = false;
+        let phase: "challenge" | "ready" | "online" = "challenge";
         control.on("error", reject);
         void exited.then(() => reject(new Error("自建 HTTPS 入口连接已断开")));
         control.on("message", chunk => {
           try {
             const message = JSON.parse(String(chunk));
-            if (!ready && message?.type === "ready" && message.publicUrl === publicUrl) {
-              ready = true;
+            if (phase === "challenge" && message?.type === "challenge") {
+              if (typeof message.nonce !== "string" || !tokenPattern.test(message.nonce) ||
+                  typeof message.publicKey !== "string" || !publicKeyPattern.test(message.publicKey)) {
+                throw new Error("自建 HTTPS 中继握手无效");
+              }
+              const key = createPublicKey({ key: Buffer.from(message.publicKey, "base64url"), type: "spki", format: "der" });
+              const keyBits = key.asymmetricKeyDetails?.modulusLength ?? 0;
+              if (key.asymmetricKeyType !== "rsa" || keyBits < 2048 || keyBits > 4096) {
+                throw new Error("自建 HTTPS 中继公钥无效");
+              }
+              const proof = publicEncrypt({
+                key, padding: constants.RSA_PKCS1_OAEP_PADDING, oaepHash: "sha256",
+              }, Buffer.from(JSON.stringify(["agentroam", "https-relay-v1", token, message.nonce]))).toString("base64url");
+              phase = "ready";
+              control.send(JSON.stringify({ type: "proof", proof }));
+            } else if (phase === "ready" && message?.type === "ready" && message.publicUrl === publicUrl) {
+              phase = "online";
               resolve();
-            } else if (ready && message?.type === "stream" && /^[a-f0-9]{32}$/.test(message.id) && streams.size < 64) {
+            } else if (phase === "online" && message?.type === "stream" && /^[a-f0-9]{32}$/.test(message.id) && streams.size < 64) {
               const socket = websocket(`/v1/streams/${message.id}`);
               streams.add(socket);
               socket.once("close", () => streams.delete(socket));
               connectToLoopback(socket, Number(local.port));
             } else {
+              reject(new Error("自建 HTTPS 中继握手或响应无效"));
               close();
             }
           } catch (error) {

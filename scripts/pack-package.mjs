@@ -11,6 +11,9 @@ if (!process.argv[2] || !auditor) throw new Error("usage: pack-package.mjs <pack
 
 const packageJson = JSON.parse(await readFile(resolve(packageDir, "package.json"), "utf8"));
 const fileName = `${packageJson.name.replace(/^@/, "").replaceAll("/", "-")}-${packageJson.version}.tgz`;
+if (packageJson.name === "agentroam") {
+  execFileSync(process.execPath, [resolve(packageDir, "install/write-relay-default.mjs"), "--release"], { cwd: root, stdio: "inherit" });
+}
 execFileSync("npm", [
   "pack",
   packageDir,

@@ -1,0 +1,4 @@
+dd784973fc9d2fabb3b800d6dcd20fc3b0ca84f8e2415afe54b032878e447f4d  encoder-epoch-12-avg-2-chunk-16-left-64.int8.onnx
+ed83454004d5bd16d831eaf00adcd181ed7734886aab6ef440f3ffa5aa3cfe3b  decoder-epoch-12-avg-2-chunk-16-left-64.int8.onnx
+f79760052b87239e325f0567c752ad3130b30d92effb847d4307743c20c59a24  joiner-epoch-12-avg-2-chunk-16-left-64.int8.onnx
+72316508d9119696145abc6f1f8cdc46287535c34e5ce7e595f845cb1499cf2e  tokens.txt

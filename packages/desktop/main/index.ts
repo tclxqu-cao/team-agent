@@ -1271,6 +1271,7 @@ function registerAiHubWakeShortcut(): void {
 }
 
 app.whenReady().then(async () => {
+  if (process.platform === "win32") Menu.setApplicationMenu(null);
   await sharedService.initialize();
   notificationSubscription.start();
   desktopLiveProxy.start();

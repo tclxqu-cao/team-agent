@@ -6,22 +6,27 @@ Standalone local or remote Chinese voice service for Customer Agent. It exposes 
 
 ASR uses `sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30`. The default `小智` wake word uses the dedicated `sherpa-onnx-kws-zipformer-wenetspeech-3.3M-2024-01-01` keyword spotter.
 
-Models are explicit local artifacts and remain Git-ignored. Install KWS with:
+From a clean checkout, run these commands at the repository root. Use Node 22.22 or newer with npm, and a Bash environment with `curl`, `tar` (bzip2), and `shasum`:
 
 ```bash
-packages/voice-service/scripts/download-kws-model.sh
+npm run voice:install
+npm run voice:verify
 ```
 
-The KWS installer pins the official GitHub release archive SHA-256 and atomically installs it after validating the model files and the partial-pinyin encoding for `小智`. Set `VOICE_KWS_ARCHIVE_URL` for an exact mirror or offline archive URL.
+`voice:install` downloads both official archives (~158 MiB total), checks their pinned SHA-256 hashes, and installs the verified models under the Git-ignored `packages/desktop/.agent-data` directory. A repeat run checks the existing weights, token tables, and `小智` keyword without downloading again. If an existing directory fails verification, move it aside and rerun the installer.
+
+`voice:verify` checks an existing installation offline and exits with an error if either model fails verification. Both commands can run before installing workspace dependencies.
+
+Set `VOICE_ASR_ARCHIVE_URL` or `VOICE_KWS_ARCHIVE_URL` to an exact mirror or local `file:///absolute/path/to/archive.tar.bz2` URL. Mirrors must match the pinned hashes. Use `HTTPS_PROXY` when GitHub downloads require a proxy. The installer and verifier both honor `VOICE_ASR_MODEL_DIR` and `VOICE_KWS_MODEL_DIR` for alternate installation paths.
 
 The sherpa-onnx runtime is Apache-2.0. Confirm the selected model's redistribution requirements before bundling weights in an application installer.
 
 ## Run Locally
 
+Once the workspace dependencies are installed, `voice:verify:runtime` builds the service and checks that both sherpa engines can process a short silent audio buffer. It runs without binding a port or using a microphone.
+
 ```bash
-bun run --cwd packages/voice-service build
-VOICE_ASR_MODEL_DIR="$PWD/packages/desktop/.agent-data/asr-models/sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30" \
-VOICE_KWS_MODEL_DIR="$PWD/packages/desktop/.agent-data/kws-models/sherpa-onnx-kws-zipformer-wenetspeech-3.3M-2024-01-01" \
+npm run voice:verify:runtime
 node packages/voice-service/dist/main.js
 ```
 

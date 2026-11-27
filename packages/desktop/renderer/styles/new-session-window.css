@@ -41,12 +41,32 @@
 }
 
 .new-session-window .empty-session-welcome {
-  height: 100%;
-  min-height: 0;
   padding: 8px 0;
 }
 
-.new-session-window .empty-session-welcome__core,
+.new-session-window .empty-session-welcome__hero {
+  display: block;
+  text-align: center;
+}
+
+.new-session-window .empty-session-welcome__copy {
+  margin: 0;
+  transform-origin: center;
+}
+
+.new-session-window .empty-session-welcome__bubble {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.new-session-window .empty-session-welcome__status {
+  margin-inline-start: 0;
+}
+
+.new-session-window .empty-session-welcome__portrait,
+.new-session-window .empty-session-welcome__bubble::before,
 .new-session-window .empty-session-welcome__starters {
   display: none;
 }

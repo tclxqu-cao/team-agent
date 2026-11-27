@@ -5313,7 +5313,7 @@ export default function ChatView({
                     ))}
                   </div>
                 )}
-                {isUser && !chatMsg.images?.length && chatMsg.presentation?.attachments && chatMsg.presentation.attachments.length > 0 && (
+                {!chatMsg.images?.length && chatMsg.presentation?.attachments && chatMsg.presentation.attachments.length > 0 && (
                   <div className="chat-message-attachments">
                     {chatMsg.presentation.attachments.map((attachment, idx) => (
                       attachment.imageId || attachment.dataUrl ? (

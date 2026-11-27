@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -14,6 +15,8 @@ const launcher = JSON.parse(await readFile(resolve(root, "packages/cli/package.j
 const runtime = JSON.parse(await readFile(resolve(root, "packages", runtimeDirectory, "package.json"), "utf8"));
 const inventory = JSON.parse(await readFile(resolve(root, "packages", runtimeDirectory, "manifest.json"), "utf8"));
 if (launcher.optionalDependencies[runtime.name] !== runtime.version || inventory.packageVersion !== runtime.version || inventory.target !== target || inventory.capabilities?.nativeConsole !== 1) throw new Error("Build matching native-console runtime packages before staging desktop");
+const launcherTarball = resolve(root, "packages/cli", `${launcher.name}-${launcher.version}.tgz`);
+execFileSync(process.execPath, [resolve(root, "scripts/audit-cli-tarball.mjs"), launcherTarball], { cwd: root, stdio: "inherit" });
 await rm(destination, { recursive: true, force: true });
 await mkdir(destination, { recursive: true });
 const packages = [];

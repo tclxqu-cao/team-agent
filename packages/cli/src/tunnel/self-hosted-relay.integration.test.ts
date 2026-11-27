@@ -1,3 +1,4 @@
+import { constants, createHash, createPublicKey, generateKeyPairSync, publicEncrypt, randomBytes } from "node:crypto";
 import { once } from "node:events";
 import { mkdtemp, rm, stat } from "node:fs/promises";
 import { createServer, request, type IncomingHttpHeaders, type Server } from "node:http";
@@ -10,6 +11,11 @@ import { createDevicePairingGateway } from "../../../server/lib/device-pairing-g
 import { SelfHostedTunnelProvider } from "./self-hosted-provider.js";
 
 const root = "https://connect.example.test";
+const { privateKey } = generateKeyPairSync("rsa", {
+  modulusLength: 2048,
+  privateKeyEncoding: { type: "pkcs8", format: "pem" },
+  publicKeyEncoding: { type: "spki", format: "pem" },
+});
 const cleanup: (() => void | Promise<void>)[] = [];
 afterEach(async () => {
   for (const close of cleanup.splice(0).reverse()) await close();
@@ -87,8 +93,63 @@ function phoneRequest(relayPort: number, origin: URL, path: string, options: {
 }
 
 describe("self-hosted HTTPS pairing", () => {
+  it("requires an encrypted proof bound to the installation and this connection", async () => {
+    const relay = createRelay({ publicOrigin: root, privateKey, websocket: { WebSocketServer, createWebSocketStream } });
+    const port = await listen(relay.server);
+    cleanup.push(() => relay.close());
+    const token = randomBytes(32).toString("base64url");
+    const route = new URL(`https://d-${createHash("sha256").update(token).digest("hex").slice(0, 32)}.${new URL(root).host}`);
+    const connect = (identity = token) => new WebSocket(`ws://127.0.0.1:${port}/v1/connect`, {
+      headers: { host: new URL(root).host, authorization: `Bearer ${identity}` },
+    });
+
+    const unknown = connect();
+    cleanup.push(() => unknown.terminate());
+    await once(unknown, "message");
+    expect((await phoneRequest(port, route, "/web")).status).toBe(404);
+    unknown.send(JSON.stringify({ type: "ready" }));
+    await once(unknown, "close");
+
+    const valid = connect();
+    cleanup.push(() => valid.terminate());
+    const challenge = JSON.parse(String((await once(valid, "message"))[0]));
+    expect(challenge.type).toBe("challenge");
+    const key = createPublicKey({ key: Buffer.from(challenge.publicKey, "base64url"), type: "spki", format: "der" });
+    const response = (identity: string, nonce: string, product = "agentroam") => JSON.stringify({
+      type: "proof",
+      proof: publicEncrypt({
+        key, padding: constants.RSA_PKCS1_OAEP_PADDING, oaepHash: "sha256",
+      }, Buffer.from(JSON.stringify([product, "https-relay-v1", identity, nonce]))).toString("base64url"),
+    });
+    const proof = response(token, challenge.nonce);
+    valid.send(proof);
+    expect(JSON.parse(String((await once(valid, "message"))[0]))).toEqual({ type: "ready", publicUrl: route.origin });
+    valid.close();
+    await once(valid, "close");
+
+    const replay = connect();
+    cleanup.push(() => replay.terminate());
+    const nextChallenge = JSON.parse(String((await once(replay, "message"))[0]));
+    expect(nextChallenge.nonce).not.toBe(challenge.nonce);
+    replay.send(proof);
+    await once(replay, "close");
+
+    const wrongIdentity = connect();
+    cleanup.push(() => wrongIdentity.terminate());
+    const freshChallenge = JSON.parse(String((await once(wrongIdentity, "message"))[0]));
+    wrongIdentity.send(response(randomBytes(32).toString("base64url"), freshChallenge.nonce));
+    await once(wrongIdentity, "close");
+
+    const otherProduct = connect();
+    cleanup.push(() => otherProduct.terminate());
+    const otherChallenge = JSON.parse(String((await once(otherProduct, "message"))[0]));
+    otherProduct.send(response(token, otherChallenge.nonce, "other-product"));
+    await once(otherProduct, "close");
+    expect((await phoneRequest(port, route, "/web")).status).toBe(404);
+  }, 10_000);
+
   it("routes HTTP, one-use QR authorization, SSE and WebSocket to the original installation", async () => {
-    const relay = createRelay({ publicOrigin: root, websocket: { WebSocketServer, createWebSocketStream } });
+    const relay = createRelay({ publicOrigin: root, privateKey, websocket: { WebSocketServer, createWebSocketStream } });
     const port = await listen(relay.server);
     cleanup.push(() => relay.close());
     const dial = (url: URL, options: WebSocket.ClientOptions) => new WebSocket(

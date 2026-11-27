@@ -28,7 +28,7 @@
   padding: 0 12px;
   border: 1px solid var(--border-default, #33434c);
   border-radius: 7px;
-  background: var(--bg-hover, #203440);
+  background: var(--bg-deep, #203440);
   color: var(--text-primary, #ecf2f4);
   font: inherit;
   font-size: 13px;
@@ -39,9 +39,11 @@
   flex-shrink: 0;
   -webkit-app-region: no-drag;
 }
-.update-check-button[data-update-available][data-pairing-action] {
+.update-check-button[data-update-available][data-pairing-action],
+.update-dialog__actions .update-dialog__primary {
   background: var(--accent, #70e5c4);
-  color: var(--text-on-accent, #10261f);
+  background: color-mix(in srgb, var(--accent, #70e5c4) 88%, var(--text-primary, #ecf2f4));
+  color: var(--text-inverse, #10261f);
   border-color: transparent;
 }
 @media (prefers-reduced-motion: no-preference) {
@@ -75,9 +77,9 @@
   z-index: 21002;
 }
 .update-dialog h2 { margin: 0 0 8px; font-size: 16px; line-height: 1.4; }
-.update-dialog p { margin: 6px 0; overflow-wrap: anywhere; font-size: 13px; line-height: 1.5; color: var(--text-muted, #b1c3cc); }
+.update-dialog p { margin: 6px 0; overflow-wrap: anywhere; font-size: 13px; line-height: 1.5; color: var(--text-secondary, #b1c3cc); }
 .update-dialog__actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
-.update-dialog__actions .update-dialog__primary { background: var(--accent, #70e5c4); color: var(--text-on-accent, #10261f); border-color: transparent; }
+.update-dialog__actions button:not(.update-dialog__primary):hover { background: var(--control-hover, #263b47); }
 .update-settings-control { display: flex; justify-content: flex-end; padding: 10px 16px 0; }
 
 @media (max-width: 600px) {

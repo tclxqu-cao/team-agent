@@ -81,11 +81,18 @@ for (const required of [
   "package/dist/service/windows-service-host.js",
   "package/dist/service/windows-task-service.js",
   "package/dist/tunnel/relay-orchestrator.js",
+  "package/dist/self-hosted-relay.json",
   "package/install/install-agentroam.sh",
   "package/install/install-agentroam.ps1",
   "package/install/README.md",
 ]) {
   if (!list.includes(required)) throw new Error(`missing launcher file: ${required}`);
+}
+
+const { url: relayUrl } = JSON.parse(execFileSync("tar", ["-xOf", tarball, "package/dist/self-hosted-relay.json"], { encoding: "utf8" }));
+const relay = typeof relayUrl === "string" ? URL.parse(relayUrl) : null;
+if (!relay || relay.protocol !== "https:" || relay.port || relay.origin !== relayUrl || !/^(?:[a-z0-9-]+\.)+[a-z][a-z0-9-]*$/.test(relay.hostname)) {
+  throw new Error("launcher tarball must include a default self-hosted HTTPS relay origin");
 }
 
 console.log(`launcher tarball audit passed: ${packageJson.name}@${packageJson.version}, ${list.length} entries`);

@@ -144,11 +144,16 @@ interface CodexTurn {
   id: string;
   status: string;
   items: CodexItem[];
+  generatedImagePaths?: string[];
   completionDurationMs?: number;
   error?: { message?: string } | null;
 }
 
 type CodexItem = Record<string, unknown> & { type: string; id?: string };
+
+type CodexRolloutHistoryReader = Pick<CodexRolloutUserMessageReader, "read"> & Partial<
+  Pick<CodexRolloutUserMessageReader, "readTimelineItems" | "readCompletionDurations" | "readGeneratedImages">
+>;
 
 interface PendingApproval {
   requestId: RpcId;
@@ -217,7 +222,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
   private readonly imageStorageRoot: string;
   private readonly rolloutActivityReader: Pick<CodexRolloutActivityReader, "readMany">;
   private readonly rolloutCommentaryReader: Pick<CodexRolloutCommentaryReader, "read">;
-  private readonly rolloutUserMessageReader: Pick<CodexRolloutUserMessageReader, "read"> & Partial<Pick<CodexRolloutUserMessageReader, "readTimelineItems" | "readCompletionDurations">>;
+  private readonly rolloutUserMessageReader: CodexRolloutHistoryReader;
   private readonly agentMessagePhases = new Map<string, "commentary" | "final_answer">();
   private readonly emittedInstantToolItems = new Map<string, Set<string>>();
   private readonly todoMcp = new Map<string, NativeTodoMcpConfiguration>();
@@ -274,7 +279,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     imageStorageRoot?: string;
     rolloutActivityReader?: Pick<CodexRolloutActivityReader, "readMany">;
     rolloutCommentaryReader?: Pick<CodexRolloutCommentaryReader, "read">;
-    rolloutUserMessageReader?: Pick<CodexRolloutUserMessageReader, "read"> & Partial<Pick<CodexRolloutUserMessageReader, "readTimelineItems" | "readCompletionDurations">>;
+    rolloutUserMessageReader?: CodexRolloutHistoryReader;
     codexExecutable?: string;
     environment?: NodeJS.ProcessEnv;
     homeDir?: string;
@@ -563,7 +568,11 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     const rolloutActivities = await this.rolloutActivityReader.readMany(
       this.platform === "win32" ? rolloutPaths([response.thread], this.platform) : openFiles,
     );
-    const turns = await this.withCompletionDurations(response.thread.turns, response.thread.path);
+    const turns = await this.withGeneratedImages(
+      await this.withCompletionDurations(response.thread.turns, response.thread.path),
+      nativeSessionId,
+      response.thread.path,
+    );
     return {
       ...this.toSummary(response.thread, openFiles, rolloutActivities),
       messages: await codexTurnsToMessages(turns, { nativeSessionId }),
@@ -646,14 +655,22 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     const skeleton: Array<{ turnId: string; role: "user" | "assistant"; compaction?: true }> = [];
     for (const turn of ascTurns) {
       const legacyFinalAgentMessage = codexLegacyFinalAgentMessage(turn);
+      let hasFinalAnswer = false;
       for (const item of turn.items ?? []) {
         if (item.type === "userMessage") skeleton.push({ turnId: turn.id, role: "user" });
         else if (item.type === "contextCompaction") skeleton.push({ turnId: turn.id, role: "assistant", compaction: true });
         else if (item.id && questionHistory.has(item.id)) {
           skeleton.push(...questionHistory.get(item.id)!.map(() => ({ turnId: turn.id, role: "assistant" as const })));
-        } else if (codexPlanText(item) || isCodexCoreAgentMessage(item, turn.status, legacyFinalAgentMessage)) {
+        } else if (codexPlanText(item)) {
           skeleton.push({ turnId: turn.id, role: "assistant" });
+        } else if (isCodexCoreAgentMessage(item, turn.status, legacyFinalAgentMessage)
+          && typeof item.text === "string" && item.text.trim()) {
+          skeleton.push({ turnId: turn.id, role: "assistant" });
+          hasFinalAnswer = true;
         }
+      }
+      if (!hasFinalAnswer && turn.generatedImagePaths?.length) {
+        skeleton.push({ turnId: turn.id, role: "assistant" });
       }
     }
     const skeletonMessages = codexSummaryTurnsToMessages(ascTurns, undefined, nativeSessionId, questionHistory);
@@ -683,6 +700,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       const hydratedTurn = {
         ...turn,
         items: hydratedItems,
+        generatedImagePaths: undefined,
       };
       const messages = (await codexTurnsToMessages([hydratedTurn], {
         nativeSessionId,
@@ -870,7 +888,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       });
       rolloutPath = detail.thread.path;
     }
-    if (!rolloutPath) return turns;
+    if (!rolloutPath) return this.withGeneratedImages(turns, nativeSessionId, rolloutPath);
     const userMessages = await this.rolloutUserMessageReader.read(rolloutPath);
     const merged = mergeCodexSummaryUserMessages(turns, userMessages, readHandoffs);
     const timelineItems = await this.rolloutUserMessageReader.readTimelineItems?.(rolloutPath) ?? [];
@@ -887,7 +905,42 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       const beforeInput = item.type === "contextCompaction" && !message.afterUserItemId;
       turn.items.splice(beforeInput ? 0 : (userIndex >= 0 ? userIndex : lastUserIndex) + 1, 0, item);
     }
-    return this.withCompletionDurations(merged, rolloutPath);
+    return this.withGeneratedImages(await this.withCompletionDurations(merged, rolloutPath), nativeSessionId, rolloutPath);
+  }
+
+  private async withGeneratedImages(
+    turns: CodexTurn[],
+    nativeSessionId: string,
+    rolloutPath: string | null,
+  ): Promise<CodexTurn[]> {
+    if (!nativeSessionId || basename(nativeSessionId) !== nativeSessionId || nativeSessionId === "." || nativeSessionId === "..") {
+      return turns;
+    }
+    const fromRollout = rolloutPath
+      ? await this.rolloutUserMessageReader.readGeneratedImages?.(rolloutPath)
+      : undefined;
+    const pathsByTurn = turns.map((turn) => [...new Set([
+      ...(fromRollout?.get(turn.id) ?? []),
+      ...(turn.items ?? []).flatMap((item) => item.type === "imageGeneration" && item.status === "completed"
+        && typeof item.savedPath === "string" ? [item.savedPath] : []),
+    ])]);
+    if (!pathsByTurn.some((paths) => paths.length)) return turns;
+
+    const generatedRoot = join(this.codexHome, "generated_images");
+    const threadRoot = join(generatedRoot, nativeSessionId);
+    const canonicalRoot = await realpath(generatedRoot).catch(() => null);
+    if (!canonicalRoot) return turns;
+    const canonicalThreadRoot = join(canonicalRoot, nativeSessionId);
+    return Promise.all(turns.map(async (turn, index) => {
+      const images: string[] = [];
+      for (const path of pathsByTurn[index]) {
+        if (!isAbsolute(path) || !resolve(path).startsWith(threadRoot + sep)) continue;
+        const canonicalPath = await realpath(path).catch(() => null);
+        if (canonicalPath?.startsWith(canonicalThreadRoot + sep)
+          && IMAGE_MIME_TYPES[extname(canonicalPath).toLowerCase()]) images.push(canonicalPath);
+      }
+      return images.length ? { ...turn, generatedImagePaths: [...new Set(images)] } : turn;
+    }));
   }
 
   private goalHandoffs(nativeSessionId: string) {
@@ -914,6 +967,11 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     const newestFirstPaths: string[] = [];
     const seen = new Set<string>();
     for (const turn of [...turns].reverse()) {
+      for (const path of [...(turn.generatedImagePaths ?? [])].reverse()) {
+        if (seen.has(path)) continue;
+        seen.add(path);
+        newestFirstPaths.push(path);
+      }
       for (const item of [...(turn.items ?? [])].reverse()) {
         if (item.type !== "userMessage") continue;
         const entries = item.content as Array<Record<string, unknown>> | undefined;
@@ -2738,6 +2796,7 @@ function codexSummaryTurnsToMessages(
   const messages: Message[] = [];
   for (const turn of turns) {
     let segmentIndex = 0;
+    let answer: Message | undefined;
     const legacyFinalAgentMessage = codexLegacyFinalAgentMessage(turn);
     for (const item of turn.items ?? []) {
       const planText = codexPlanText(item);
@@ -2778,15 +2837,42 @@ function codexSummaryTurnsToMessages(
           ...codexAgentMessagePresentation(item, turn.id),
           ...(turn.status === "completed" ? { forkPoint: { turnId: turn.id } } : {}),
         };
-        messages.push({
+        answer = {
           role: "assistant",
           content: item.text,
           ...(presentation ? { presentation } : {}),
-        });
+        };
+        messages.push(answer);
       }
+    }
+    if (turn.generatedImagePaths?.length) {
+      attachCodexGeneratedImages(messages, turn, answer, turn.generatedImagePaths.map((path) => (
+        imageAttachments?.get(path) ?? { type: "image", name: basename(path), unavailable: true }
+      )));
     }
   }
   return messages;
+}
+
+function attachCodexGeneratedImages(
+  messages: Message[],
+  turn: CodexTurn,
+  answer: Message | undefined,
+  attachments: MessageAttachment[],
+): void {
+  if (answer) {
+    answer.presentation = { ...answer.presentation, attachments };
+    return;
+  }
+  messages.push({
+    role: "assistant",
+    content: "",
+    presentation: {
+      nativeMessageId: `codex-generated-images:${turn.id}`,
+      attachments,
+      ...(turn.status === "completed" ? { forkPoint: { turnId: turn.id } } : {}),
+    },
+  });
 }
 
 function truncateUtf8(value: string, maxBytes: number): string {
@@ -2863,6 +2949,8 @@ export async function codexTurnsToMessages(
   const questionHistory = options.questionHistory ?? codexQuestionHistory(turns, options.nativeSessionId);
   for (const turn of turns) {
     let segmentIndex = -1;
+    let answer: Message | undefined;
+    const legacyFinalAgentMessage = codexLegacyFinalAgentMessage(turn);
     for (const item of turn.items ?? []) {
       const planText = codexPlanText(item);
       if (item.type === "contextCompaction") {
@@ -2904,7 +2992,7 @@ export async function codexTurnsToMessages(
               executionTrace: { turnId: turn.id, segmentIndex: Math.max(0, segmentIndex) },
             }
           : nativePresentation;
-        messages.push({
+        const message: Message = {
           role: "assistant",
           content: item.text,
           ...(codexTraceHistoryId(turn.id, "agent", item.id) ? {
@@ -2914,7 +3002,9 @@ export async function codexTurnsToMessages(
             ...presentation,
             ...(turn.status === "completed" && item.phase !== "commentary" ? { forkPoint: { turnId: turn.id } } : {}),
           },
-        });
+        };
+        messages.push(message);
+        if (isCodexCoreAgentMessage(item, turn.status, legacyFinalAgentMessage)) answer = message;
       } else if (item.type === "reasoning" && Array.isArray(item.summary)) {
         const reasoning = item.summary.flatMap((entry, sectionIndex) => (
           typeof entry === "string" && entry.trim()
@@ -2989,6 +3079,10 @@ export async function codexTurnsToMessages(
           });
         }
       }
+    }
+    if (turn.generatedImagePaths?.length) {
+      const attachments = await Promise.all(turn.generatedImagePaths.map(loadCodexImageAttachment));
+      attachCodexGeneratedImages(messages, turn, answer, attachments);
     }
   }
   return messages;

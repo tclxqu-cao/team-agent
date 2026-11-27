@@ -82,7 +82,11 @@ app.on("second-instance", () => { window?.restore(); window?.show(); window?.foc
 app.whenReady().then(async () => {
   await service.initialize();
   app.setAccessibilitySupportEnabled(true);
-  Menu.setApplicationMenu(Menu.buildFromTemplate([{ label: "AgentRoam Lite", submenu: [{ role: "about" }, { type: "separator" }, { role: "quit" }] }, { role: "editMenu" }, { role: "windowMenu" }]));
+  Menu.setApplicationMenu(process.platform === "win32" ? null : Menu.buildFromTemplate([
+    { label: "AgentRoam Lite", submenu: [{ role: "about" }, { type: "separator" }, { role: "quit" }] },
+    { role: "editMenu" },
+    { role: "windowMenu" },
+  ]));
   createWindow();
   updates.schedule();
 }).catch(error => { logger.error("lite startup failed", error); app.quit(); });

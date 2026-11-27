@@ -50,12 +50,15 @@ interface UserMessageCacheEntry {
   identity: string;
   size: number;
   mtimeMs: number;
-  trailing: Buffer;
+  trailing: Buffer[];
+  trailingBytes: number;
+  trailingLimit: number;
   trailingOverflow: boolean;
   turns: Map<string, CodexRolloutUserMessage[]>;
   itemIds: Set<string>;
   timelineItems: Map<string, CodexRolloutTimelineItem>;
   completionDurations: Map<string, number>;
+  generatedImages: Map<string, Set<string>>;
   goalKey?: string;
   pendingGoal?: { key: string; objective: string };
 }
@@ -71,6 +74,8 @@ interface ActivityCacheEntry {
 
 const DEFAULT_CHUNK_SIZE = 64 * 1024;
 const MAX_BUFFERED_LINE_BYTES = 256 * 1024;
+const MAX_IMAGE_GENERATION_LINE_BYTES = 32 * 1024 * 1024;
+const IMAGE_GENERATION_LINE_HEADER = /"type"\s*:\s*"item_completed".*"item"\s*:\s*\{\s*"type"\s*:\s*"(?:Extension"\s*,\s*"kind"\s*:\s*"image_gen\.generation|ImageGeneration)"/;
 const MAX_FINAL_ANSWER_LOOKBACK_BYTES = 1024 * 1024;
 const START_EVENTS = new Set(["task_started", "turn_started"]);
 const TERMINAL_EVENTS = new Set(["task_complete", "turn_complete", "turn_aborted"]);
@@ -336,6 +341,7 @@ export class CodexRolloutCommentaryReader {
  */
 export class CodexRolloutUserMessageReader {
   private readonly cache = new Map<string, UserMessageCacheEntry>();
+  private readonly pending = new Map<string, Promise<Map<string, CodexRolloutUserMessage[]>>>();
 
   constructor(private readonly chunkSize = DEFAULT_CHUNK_SIZE) {
     if (!Number.isInteger(chunkSize) || chunkSize <= 0) {
@@ -344,6 +350,18 @@ export class CodexRolloutUserMessageReader {
   }
 
   async read(path: string): Promise<Map<string, CodexRolloutUserMessage[]>> {
+    const current = this.pending.get(path);
+    if (current) return current;
+    const reading = this.readFile(path);
+    this.pending.set(path, reading);
+    try {
+      return await reading;
+    } finally {
+      this.pending.delete(path);
+    }
+  }
+
+  private async readFile(path: string): Promise<Map<string, CodexRolloutUserMessage[]>> {
     let handle: FileHandle | null = null;
     try {
       handle = await open(path, "r");
@@ -361,12 +379,15 @@ export class CodexRolloutUserMessageReader {
             identity,
             size: 0,
             mtimeMs: metadata.mtimeMs,
-            trailing: Buffer.alloc(0),
+            trailing: [],
+            trailingBytes: 0,
+            trailingLimit: MAX_BUFFERED_LINE_BYTES,
             trailingOverflow: false,
             turns: new Map(),
             itemIds: new Set(),
             timelineItems: new Map(),
             completionDurations: new Map(),
+            generatedImages: new Map(),
           };
       await this.readAppended(handle, entry, metadata.size);
       entry.size = metadata.size;
@@ -392,6 +413,11 @@ export class CodexRolloutUserMessageReader {
     return new Map(this.cache.get(path)?.completionDurations);
   }
 
+  async readGeneratedImages(path: string): Promise<Map<string, string[]>> {
+    await this.read(path);
+    return new Map(Array.from(this.cache.get(path)?.generatedImages ?? [], ([turnId, paths]) => [turnId, [...paths]]));
+  }
+
   private async readAppended(
     handle: FileHandle,
     entry: UserMessageCacheEntry,
@@ -404,28 +430,46 @@ export class CodexRolloutUserMessageReader {
       const { bytesRead } = await handle.read(chunk, 0, length, offset);
       if (bytesRead <= 0) break;
       offset += bytesRead;
-      let content = chunk.subarray(0, bytesRead);
-      if (entry.trailingOverflow) {
-        const newline = content.indexOf(0x0a);
-        if (newline < 0) continue;
-        content = content.subarray(newline + 1);
+      const content = chunk.subarray(0, bytesRead);
+      for (let start = 0; start < content.length;) {
+        const newline = content.indexOf(0x0a, start);
+        const part = content.subarray(start, newline < 0 ? content.length : newline);
+        if (!entry.trailingOverflow) {
+          if (newline >= 0 && entry.trailingBytes === 0 && part.length <= MAX_BUFFERED_LINE_BYTES) {
+            this.consumeLine(entry, part.toString("utf8"));
+          } else {
+            this.bufferLinePart(entry, part);
+            if (newline >= 0 && !entry.trailingOverflow) {
+              this.consumeLine(entry, Buffer.concat(entry.trailing, entry.trailingBytes).toString("utf8"));
+            }
+          }
+        }
+        if (newline < 0) break;
+        entry.trailing = [];
+        entry.trailingBytes = 0;
+        entry.trailingLimit = MAX_BUFFERED_LINE_BYTES;
         entry.trailingOverflow = false;
-      } else if (entry.trailing.length > 0) {
-        content = Buffer.concat([entry.trailing, content]);
+        start = newline + 1;
       }
-
-      const lastNewline = content.lastIndexOf(0x0a);
-      if (lastNewline < 0) {
-        entry.trailing = content.length <= MAX_BUFFERED_LINE_BYTES ? Buffer.from(content) : Buffer.alloc(0);
-        entry.trailingOverflow = content.length > MAX_BUFFERED_LINE_BYTES;
-        continue;
-      }
-      const complete = content.subarray(0, lastNewline).toString("utf8").split("\n");
-      for (const line of complete) this.consumeLine(entry, line);
-      const trailing = content.subarray(lastNewline + 1);
-      entry.trailing = trailing.length <= MAX_BUFFERED_LINE_BYTES ? Buffer.from(trailing) : Buffer.alloc(0);
-      entry.trailingOverflow = trailing.length > MAX_BUFFERED_LINE_BYTES;
     }
+  }
+
+  private bufferLinePart(entry: UserMessageCacheEntry, part: Buffer): void {
+    const size = entry.trailingBytes + part.length;
+    if (size > entry.trailingLimit && entry.trailingLimit === MAX_BUFFERED_LINE_BYTES) {
+      // Image generation includes a base64 body before savedPath. Allow a
+      // larger record only for that event and retain just the path after parsing.
+      const header = Buffer.concat([...entry.trailing, part], 4096).toString("utf8");
+      if (IMAGE_GENERATION_LINE_HEADER.test(header)) entry.trailingLimit = MAX_IMAGE_GENERATION_LINE_BYTES;
+    }
+    if (size > entry.trailingLimit) {
+      entry.trailing = [];
+      entry.trailingBytes = 0;
+      entry.trailingOverflow = true;
+      return;
+    }
+    entry.trailing.push(part);
+    entry.trailingBytes = size;
   }
 
   private consumeLine(entry: UserMessageCacheEntry, line: string): void {
@@ -482,6 +526,13 @@ export class CodexRolloutUserMessageReader {
       if (!turnId) return;
       const itemId = asString(item.id);
       const itemType = asString(item.type).toLowerCase();
+      if (item.status === "completed" && typeof item.savedPath === "string" && item.savedPath
+        && (itemType === "imagegeneration" || (itemType === "extension" && item.kind === "image_gen.generation"))) {
+        const paths = entry.generatedImages.get(turnId) ?? new Set<string>();
+        paths.add(item.savedPath);
+        entry.generatedImages.set(turnId, paths);
+        return;
+      }
       const isCompaction = itemType === "contextcompaction";
       const isAsyncQuestion = itemType === "agentmessage" && item.delivery === "async" && Array.isArray(item.questions);
       if (itemId && (isCompaction || isAsyncQuestion)) {

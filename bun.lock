@@ -15,7 +15,7 @@
     },
     "packages/cli": {
       "name": "agentroam",
-      "version": "0.2.0-preview.77",
+      "version": "0.2.0-preview.83",
       "bin": {
         "agentroam": "./bin/agentroam.mjs",
         "agent-tui": "./bin/agent-tui.mjs",
@@ -33,21 +33,23 @@
         "vitest": "^2.1.0",
       },
       "optionalDependencies": {
-        "@caoqu/agentroam-tui-win32-x64": "0.2.0-preview.71",
-        "agentroam-cloudflared-darwin-arm64": "0.2.0-preview.58",
-        "agentroam-cloudflared-win32-x64": "0.2.0-preview.58",
-        "agentroam-runtime-darwin-arm64": "0.2.0-preview.71",
-        "agentroam-runtime-win32-x64": "0.2.0-preview.71",
-        "agentroam-tui-darwin-arm64": "0.2.0-preview.71",
+        "@caoqu/agentroam-tui-win32-x64": "0.2.0-preview.83",
+        "agentroam-cloudflared-darwin-arm64": "0.2.0-preview.82",
+        "agentroam-cloudflared-win32-x64": "0.2.0-preview.82",
+        "agentroam-runtime-darwin-arm64": "0.2.0-preview.83",
+        "agentroam-runtime-win32-x64": "0.2.0-preview.83",
+        "agentroam-tailscale-darwin-arm64": "0.2.0-preview.77",
+        "agentroam-tailscale-win32-x64": "0.2.0-preview.77",
+        "agentroam-tui-darwin-arm64": "0.2.0-preview.83",
       },
     },
     "packages/cloudflared-darwin-arm64": {
       "name": "agentroam-cloudflared-darwin-arm64",
-      "version": "0.2.0-preview.76",
+      "version": "0.2.0-preview.82",
     },
     "packages/cloudflared-win32-x64": {
       "name": "agentroam-cloudflared-win32-x64",
-      "version": "0.2.0-preview.76",
+      "version": "0.2.0-preview.82",
     },
     "packages/computer-use": {
       "name": "@agent/computer-use",
@@ -72,7 +74,7 @@
     },
     "packages/desktop": {
       "name": "@agent/desktop",
-      "version": "0.2.0-preview.40",
+      "version": "0.2.0-preview.47",
       "dependencies": {
         "@agent/computer-use": "*",
         "@agent/core": "*",
@@ -135,11 +137,11 @@
     },
     "packages/runtime-darwin-arm64": {
       "name": "agentroam-runtime-darwin-arm64",
-      "version": "0.2.0-preview.77",
+      "version": "0.2.0-preview.83",
     },
     "packages/runtime-win32-x64": {
       "name": "agentroam-runtime-win32-x64",
-      "version": "0.2.0-preview.77",
+      "version": "0.2.0-preview.83",
     },
     "packages/sdk": {
       "name": "@agent/sdk",
@@ -224,14 +226,14 @@
     },
     "packages/tui-darwin-arm64": {
       "name": "agentroam-tui-darwin-arm64",
-      "version": "0.2.0-preview.77",
+      "version": "0.2.0-preview.83",
       "dependencies": {
         "better-sqlite3": "13.0.3",
       },
     },
     "packages/tui-win32-x64": {
       "name": "@caoqu/agentroam-tui-win32-x64",
-      "version": "0.2.0-preview.77",
+      "version": "0.2.0-preview.83",
       "dependencies": {
         "better-sqlite3": "13.0.3",
       },
@@ -799,6 +801,10 @@
     "agentroam-runtime-darwin-arm64": ["agentroam-runtime-darwin-arm64@workspace:packages/runtime-darwin-arm64"],
 
     "agentroam-runtime-win32-x64": ["agentroam-runtime-win32-x64@workspace:packages/runtime-win32-x64"],
+
+    "agentroam-tailscale-darwin-arm64": ["agentroam-tailscale-darwin-arm64@0.2.0-preview.77", "", { "os": "darwin", "cpu": "arm64" }, "sha512-tW1LTR0udITC7MSjH7WEuI8GvAhs+ruv06UwTShcxS27PqnuOuT94X9Hsb+dshfFHpCc7lBJnH84ArO8pcEFEw=="],
+
+    "agentroam-tailscale-win32-x64": ["agentroam-tailscale-win32-x64@0.2.0-preview.77", "", { "os": "win32", "cpu": "x64" }, "sha512-qTCzKAqkEwYtEnaxzXEO9mF3gz2mhLigeqJHy0qhCsM/mpa7tWEMLUIEK8TXqjqxtLT9+9KccHE6zDqVli4J9g=="],
 
     "agentroam-tui-darwin-arm64": ["agentroam-tui-darwin-arm64@workspace:packages/tui-darwin-arm64"],
 

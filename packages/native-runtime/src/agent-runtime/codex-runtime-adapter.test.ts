@@ -3448,6 +3448,68 @@ describe("Codex native paged history", () => {
     expect(refreshed.messages.map((message) => message.historyId)).toEqual(core.messages.map((message) => message.historyId));
   });
 
+  it("restores completed generated images to their original replies from oversized rollout records", async () => {
+    const root = await mkdtemp(join(tmpdir(), "codex-generated-images-"));
+    temporaryDirectories.push(root);
+    const generated = join(root, "generated_images", "cx-paged");
+    await mkdir(generated, { recursive: true });
+    const paths = [join(generated, "first.png"), join(generated, "second.png"), join(generated, "third.png")];
+    const outside = join(root, "outside.png");
+    await Promise.all([...paths, outside].map((path) => writeFile(path, "image")));
+    const record = (turnId: string, path: string, status = "completed") => JSON.stringify({
+      type: "event_msg",
+      payload: {
+        type: "item_completed", turn_id: turnId,
+        item: {
+          type: "Extension", kind: "image_gen.generation", status, id: path,
+          result: "a".repeat(512 * 1024), savedPath: path,
+        },
+      },
+    });
+    const rollout = join(root, "rollout.jsonl");
+    const second = record("with-text", paths[1]);
+    await writeFile(rollout, [
+      record("with-text", paths[0]),
+      record("with-text", paths[0]),
+      record("with-text", outside),
+      second.slice(0, 300 * 1024),
+    ].join("\n"));
+
+    const requests: Array<{ method: string; params: any }> = [];
+    const onlyImage = turn("only-image", 2);
+    onlyImage.items.pop();
+    const adapter = new CodexRuntimeAdapter({
+      environment: { CODEX_HOME: root },
+      client: pagingClientFor(requests, {
+        sourceTurns: [turn("with-text", 1), onlyImage],
+        threadPath: rollout,
+      }) as never,
+    });
+    const query = { limit: 10, view: "core", imageView: "source" } as const;
+    const partial = await adapter.getSessionPaged("cx-paged", query);
+    expect(partial.messages[1].presentation?.attachments?.map(image => image.name)).toEqual(["first.png"]);
+
+    await appendFile(rollout, [
+      second.slice(300 * 1024),
+      record("only-image", paths[2], "failed"),
+      record("only-image", paths[2]),
+      "",
+    ].join("\n"));
+    const detail = await adapter.getSessionPaged("cx-paged", query);
+    const replies = detail.messages.filter((message) => message.role === "assistant");
+    expect(replies.map((message) => message.content)).toEqual(["s-with-text", ""]);
+    const canonicalDirectory = await realpath(generated);
+    const expectedImage = (name: string) => ({
+      type: "image", name, localImagePath: join(canonicalDirectory, name),
+    });
+    expect(replies.map((message) => message.presentation?.attachments)).toEqual([
+      [expectedImage("first.png"), expectedImage("second.png")],
+      [expectedImage("third.png")],
+    ]);
+    expect(detail.history?.totalItems).toBe(4);
+    expect(requests.some((request) => request.params.itemsView === "full" || request.params.includeTurns === true)).toBe(false);
+  });
+
   it("returns native image sources for display without reading or withholding original image bodies", async () => {
     const root = await mkdtemp(join(tmpdir(), "codex-image-sources-"));
     temporaryDirectories.push(root);
