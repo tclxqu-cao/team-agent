@@ -1,0 +1,19 @@
+packages/webapp/src/mobile/presentation/unpaired-home.css
+  s_c864c58a06e63f::t_5189510e8ff5ad 1-12,23
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b60c6d165d6efb76992623177f226bf893545b9c",
+  "prompts": {},
+  "sessions": {
+    "s_c864c58a06e63f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a21bbc-a068-7e91-9cec-3de1afcb8cfa",
+        "model": "codex/gpt-6.2-sol"
+      },
+      "human_author": "无敌就是寂寞 <qu.cao@ly.com>"
+    }
+  }
+}
