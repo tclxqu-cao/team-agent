@@ -2,8 +2,8 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { resolveUpdate } from "./update-command.js";
-import { acquireUpdateLock, readUpdateState, updatePaths, writeUpdateState, type DurableUpdateState } from "./update-state.js";
+import { formatAvailableUpdate, resolveUpdateCandidate, resolveUpdate } from "./update-command.js";
+import { acquireUpdateLock, formatUpdateStatus, readUpdateState, updatePaths, writeUpdateState, type DurableUpdateState } from "./update-state.js";
 
 const sha256 = "c".repeat(64);
 const response = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
@@ -66,6 +66,17 @@ describe("resolveUpdate", () => {
       .resolves.toMatchObject({ targetVersion: "1.2.5-preview.1" });
   });
 
+  it("returns no candidate for a plain check and rejects an explicit version when up to date", async () => {
+    const fetcher = vi.fn().mockImplementation(() => Promise.resolve(response({ version: "1.2.3" })));
+    const options = { currentVersion: "1.2.3", target: "darwin-arm64" } as const;
+    await expect(resolveUpdateCandidate({ ...options, requestedVersion: null }, fetcher)).resolves.toBeNull();
+    await expect(resolveUpdateCandidate({ ...options, requestedVersion: "1.2.4" }, fetcher)).rejects.toThrow("already up to date");
+  });
+
+  it("names both versions and the install command in the terminal notice", () => {
+    expect(formatAvailableUpdate("1.2.3", "1.2.4-preview.1", process.stdout)).toContain("1.2.3 → 1.2.4-preview.1 · 运行 agentroam update 安装");
+  });
+
   it("writes durable state atomically and excludes concurrent workers", async () => {
     const dataDir = await mkdtemp(resolve(tmpdir(), "agentroam-update-state-"));
     const paths = updatePaths(dataDir);
@@ -76,6 +87,8 @@ describe("resolveUpdate", () => {
     };
     await writeUpdateState(paths.stateFile, state);
     await expect(readUpdateState(paths.stateFile)).resolves.toEqual(state);
+    expect(formatUpdateStatus(state)).toContain("1.0.0 → 1.1.0 · 正在下载");
+    expect(formatUpdateStatus({ ...state, phase: "failed", message: "校验失败" })).toContain("更新失败 · 校验失败");
     const release = await acquireUpdateLock(paths.lockFile);
     await expect(acquireUpdateLock(paths.lockFile)).rejects.toThrow("already running");
     await release();

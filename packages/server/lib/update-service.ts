@@ -17,10 +17,16 @@ export interface ServerUpdateServiceOptions {
 export class ServerUpdateService {
   private readonly checker: UpdateChecker | null;
   private readonly spawnImpl: typeof spawn;
+  private readonly unavailableStatus: UpdateStatus;
   private launchStatus: UpdateStatus | null = null;
 
   constructor(private readonly options: ServerUpdateServiceOptions) {
     this.spawnImpl = options.spawn ?? spawn;
+    this.unavailableStatus = {
+      phase: "unavailable",
+      currentVersion: options.currentVersion,
+      message: "当前电脑服务暂不支持在线更新。请使用 AgentRoam CLI 安装的电脑服务。",
+    };
     this.checker = options.platform
       ? options.checker ?? new UpdateChecker({ currentVersion: options.currentVersion, client: "cli", platform: options.platform })
       : null;
@@ -30,17 +36,17 @@ export class ServerUpdateService {
   async status(): Promise<UpdateStatus> {
     if (this.launchStatus?.phase === "downloading") return this.launchStatus;
     const durable = await this.readDurableStatus();
-    const checked = this.checker?.getStatus() ?? { phase: "unavailable", currentVersion: this.options.currentVersion };
+    const checked = this.checker?.getStatus() ?? this.unavailableStatus;
     const update = this.launchStatus ?? durable;
     if (!update || ACTIVE_UPDATE_PHASES.has(update.phase)) return update ?? checked;
-    if (checked.phase === "checking") return checked;
+    if (checked.phase === "checking" || checked.message || checked.phase === "up-to-date") return checked;
     if (checked.targetVersion && update.targetVersion && compareAgentRoamVersions(checked.targetVersion, update.targetVersion) > 0) return checked;
     return update;
   }
 
   requestCheck(): UpdateStatus {
-    if (!this.checker) return { phase: "unavailable", currentVersion: this.options.currentVersion };
-    void this.checker.refresh().catch(() => undefined);
+    if (!this.checker) return this.unavailableStatus;
+    void this.checker.refresh({ force: true }).catch(() => undefined);
     return this.launchStatus?.phase === "downloading" ? this.launchStatus : this.checker.getStatus();
   }
 
@@ -104,10 +110,12 @@ function platformKey(): UpdatePlatform | null {
 let singleton: ServerUpdateService | undefined;
 export function getUpdateService(): ServerUpdateService {
   const version = process.env.AGENTROAM_CLI_VERSION?.trim() || process.env.AGENTROAM_VERSION?.trim();
+  const dataDir = process.env.AGENTROAM_DATA_DIR?.trim();
+  const cliPath = process.env.AGENTROAM_CLI_PATH?.trim();
   return singleton ??= new ServerUpdateService({
     currentVersion: version || "0.0.0",
-    platform: version && parseAgentRoamVersion(version) ? platformKey() : null,
-    dataDir: process.env.AGENTROAM_DATA_DIR?.trim(),
-    cliPath: process.env.AGENTROAM_CLI_PATH?.trim(),
+    platform: cliPath && dataDir && version && parseAgentRoamVersion(version) ? platformKey() : null,
+    dataDir,
+    cliPath,
   });
 }

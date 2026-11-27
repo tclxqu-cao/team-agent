@@ -1,0 +1,828 @@
+import { describe, expect, it, vi } from "vitest";
+import type { OpencodeClient, Session } from "@opencode-ai/sdk";
+import {
+  OpenCodeRuntimeAdapter,
+  openCodeHistoryToMessages,
+  openCodeSessionToSummary,
+  resolveOpenCodeDataRoot,
+  type OpenCodeServerPort,
+} from "./opencode-runtime-adapter.js";
+import type { OpenCodeServerEvent } from "./opencode-server-client.js";
+import { OpenCodeV2EventCodec, v2Message } from "./opencode-v2-codec.js";
+import {
+  openCodeFormQuestion, openCodeQuestionId, OPENCODE_QUESTION_ASKED, OPENCODE_QUESTION_RESOLVED,
+  type OpenCodeQuestionRequest,
+} from "./opencode-questions.js";
+
+const session: Session = {
+  id: "ses_1",
+  projectID: "project-1",
+  directory: "/repo",
+  title: "OpenCode work",
+  version: "1.18.27",
+  time: { created: 1_700_000_000_000, updated: 1_700_000_001_000 },
+};
+
+function mockServer() {
+  let listener: ((event: OpenCodeServerEvent) => void) | undefined;
+  const client = {
+    questions: {
+      list: vi.fn(async (): Promise<OpenCodeQuestionRequest[]> => []),
+      reply: vi.fn(async (): Promise<void> => undefined),
+    },
+    project: { list: vi.fn(async () => ({ data: [{ id: "project-1", worktree: "/repo", time: { created: 1 } }] })) },
+    session: {
+      list: vi.fn(async () => ({ data: [session] })),
+      status: vi.fn(async () => ({ data: {} })),
+      get: vi.fn(async () => ({ data: session })),
+      messages: vi.fn(async () => ({ data: [] })),
+      create: vi.fn(async () => ({ data: session })),
+      fork: vi.fn(async () => ({ data: { ...session, id: "ses_fork", parentID: session.id } })),
+      promptAsync: vi.fn(async (_options?: Parameters<OpencodeClient["session"]["promptAsync"]>[0]) => ({ data: undefined })),
+      abort: vi.fn(async () => ({ data: true })),
+    },
+    postSessionIdPermissionsPermissionId: vi.fn(async () => ({ data: true })),
+  };
+  const server: OpenCodeServerPort = {
+    client: async () => client as unknown as OpencodeClient,
+    subscribe: (next) => { listener = next; return () => { listener = undefined; }; },
+    dispose: vi.fn(async () => undefined),
+  };
+  return {
+    client,
+    server,
+    emit(payload: OpenCodeServerEvent["payload"]) { listener?.({ directory: "/repo", payload }); },
+  };
+}
+
+async function drain(iterable: AsyncIterable<unknown>) {
+  const values = [];
+  for await (const value of iterable) values.push(value);
+  return values;
+}
+
+const questionRequest = openCodeFormQuestion({
+  id: "frm_1", sessionID: "ses_1", metadata: { kind: "question" }, fields: [
+    { key: "q0", type: "multiselect", description: "需要哪些功能？", options: [{ value: "subtitle", label: "字幕" }, { value: "chart", label: "图表" }] },
+    { key: "q1", type: "string", description: "其他要求？", options: [] },
+  ],
+})!;
+
+describe("OpenCode persisted execution failures", () => {
+  const providerError = { type: "provider.internal", status: 200,
+    message: "WorkBuddy AI: usage exceeds frequency limit (429: you can retry your request)" };
+  const failedAssistant = v2Message({ id: "msg_failed", type: "assistant", time: { created: 2, completed: 3 },
+    content: [], finish: "error", error: providerError }, "ses_1");
+  const user = v2Message({ id: "msg_user", type: "user", time: { created: 1 }, text: "render" }, "ses_1");
+  const failureEvent = { type: "error", code: "NATIVE_PROTOCOL_ERROR", message: providerError.message };
+
+  function failedServer(history = [user, failedAssistant]) {
+    const fixture = mockServer();
+    Object.assign(fixture.client.session, { messages: vi.fn(async () => ({ data: history })) });
+    return fixture;
+  }
+
+  it("restores an error-only assistant as an error event without fabricating assistant text", async () => {
+    const adapter = new OpenCodeRuntimeAdapter({ server: failedServer().server });
+    const detail = await adapter.getSession("ses_1");
+    expect(detail.events).toEqual([failureEvent]);
+    expect(detail.messages).toEqual([{ role: "user", content: "render" }]);
+    expect((await adapter.getSessionPaged("ses_1", { limit: 50 })).events).toEqual([failureEvent]);
+  });
+
+  it("keeps the terminal error on the latest page but not on an older history window", async () => {
+    const history = [
+      v2Message({ id: "msg_older", type: "user", text: "older" }, "ses_1"),
+      v2Message({ id: "msg_answer", type: "assistant", time: { created: 1 }, content: [{ type: "text", text: "answer" }] }, "ses_1"),
+      user, failedAssistant,
+    ];
+    const adapter = new OpenCodeRuntimeAdapter({ server: failedServer(history).server });
+    const latest = await adapter.getSessionPaged("ses_1", { limit: 1 });
+    expect(latest.events).toEqual([failureEvent]);
+    expect((await adapter.getSessionPaged("ses_1", { before: latest.history!.nextCursor! })).events).toEqual([]);
+  });
+
+  it("does not resurrect an old failure after a newer input, success, or during a running retry", async () => {
+    const nextUser = v2Message({ id: "msg_next", type: "user", text: "continue" }, "ses_1");
+    const success = v2Message({ id: "msg_ok", type: "assistant", time: { created: 4, completed: 5 }, content: [{ type: "text", text: "done" }] }, "ses_1");
+    for (const next of [nextUser, success]) {
+      const adapter = new OpenCodeRuntimeAdapter({ server: failedServer([user, failedAssistant, next]).server });
+      expect((await adapter.getSession("ses_1")).events).toEqual([]);
+    }
+    const fixture = failedServer();
+    Object.assign(fixture.client.session, { status: vi.fn(async () => ({ data: { ses_1: { type: "busy" } } })) });
+    expect((await new OpenCodeRuntimeAdapter({ server: fixture.server }).getSession("ses_1")).events).toEqual([]);
+  });
+
+  it("settles a live provider error and allows the next run to select another model", async () => {
+    const fixture = mockServer();
+    const adapter = new OpenCodeRuntimeAdapter({ server: fixture.server });
+    const first = drain(adapter.run("ses_1", "render"));
+    await vi.waitFor(() => expect(fixture.client.session.promptAsync).toHaveBeenCalledOnce());
+    fixture.emit({ type: "session.error", properties: { sessionID: "ses_1", error: { name: "APIError", data: { message: providerError.message, isRetryable: false } } } });
+    expect(await first).toEqual([failureEvent]);
+    const retry = drain(adapter.run("ses_1", "continue", undefined, undefined, undefined, {
+      model: { id: "zcode/GLM-5.3", providerID: "magpie" },
+    }));
+    await vi.waitFor(() => expect(fixture.client.session.promptAsync).toHaveBeenCalledTimes(2));
+    expect(fixture.client.session.promptAsync.mock.calls[1][0]?.body?.model)
+      .toEqual({ modelID: "zcode/GLM-5.3", providerID: "magpie" });
+    fixture.emit({ type: "session.idle", properties: { sessionID: "ses_1" } });
+    expect(await retry).toContainEqual(expect.objectContaining({ type: "done" }));
+  });
+
+  it("checks live occupancy and starts a run without reading large or unavailable history", async () => {
+    const fixture = mockServer();
+    fixture.client.session.messages.mockImplementation(async () => { throw new Error("terminated"); });
+    const adapter = new OpenCodeRuntimeAdapter({ server: fixture.server });
+    await expect(adapter.getSessionSummary("ses_1")).resolves.toMatchObject({ cwd: "/repo", occupancy: "available" });
+    const result = drain(adapter.run("ses_1", "continue"));
+    await vi.waitFor(() => expect(fixture.client.session.promptAsync).toHaveBeenCalledOnce());
+    expect(fixture.client.session.messages).not.toHaveBeenCalled();
+    expect(fixture.client.questions.list).not.toHaveBeenCalled();
+    fixture.emit({ type: "session.idle", properties: { sessionID: "ses_1" } });
+    await result;
+
+    Object.assign(fixture.client.session, { status: vi.fn(async () => ({ data: { ses_1: { type: "busy" } } })) });
+    await expect(drain(adapter.run("ses_1", "continue"))).rejects.toMatchObject({ code: "SESSION_OCCUPIED" });
+    expect(fixture.client.session.promptAsync).toHaveBeenCalledOnce();
+  });
+});
+
+describe("OpenCode mid-turn steering", () => {
+  it("admits steering on the existing run and ignores echoed user text in the assistant stream", async () => {
+    const fixture = mockServer();
+    const adapter = new OpenCodeRuntimeAdapter({ server: fixture.server });
+    const result = drain(adapter.run("ses_1", "start"));
+    await vi.waitFor(() => expect(fixture.client.session.promptAsync).toHaveBeenCalledOnce());
+    await expect(adapter.steer("ses_1", "change direction")).resolves.toBe(true);
+    const request = fixture.client.session.promptAsync.mock.calls[1][0]!;
+    const messageID = request.body!.messageID!;
+    expect(request).toEqual({ path: { id: "ses_1" }, query: { directory: "/repo" },
+      body: { messageID: expect.stringMatching(/^msg_/), parts: [{ type: "text", text: "change direction" }] },
+      throwOnError: true });
+    expect(messageID).not.toBe(fixture.client.session.promptAsync.mock.calls[0][0]?.body?.messageID);
+    await expect(adapter.steer("ses_1", "inspect image", undefined, ["data:image/png;base64,iVBORw0KGgoB"])).resolves.toBe(true);
+    expect(fixture.client.session.promptAsync.mock.calls[2][0]?.body?.parts).toEqual([
+      { type: "text", text: "inspect image" },
+      { type: "file", mime: "image/png", filename: "image-1.png", url: "data:image/png;base64,iVBORw0KGgoB" },
+    ]);
+    fixture.emit({ type: "message.part.updated", properties: { part: {
+      id: "steer-text", sessionID: "ses_1", messageID, type: "text", text: "change direction",
+    }, delta: "change direction" } });
+    expect(fixture.client.session.abort).not.toHaveBeenCalled();
+    fixture.emit({ type: "session.idle", properties: { sessionID: "ses_1" } });
+    expect(await result).not.toContainEqual({ type: "text_chunk", text: "change direction" });
+    await expect(adapter.steer("ses_1", "after completion")).resolves.toBe(false);
+  });
+
+  it("refuses idle, other-session, or empty input without submitting another prompt", async () => {
+    const fixture = mockServer();
+    const adapter = new OpenCodeRuntimeAdapter({ server: fixture.server });
+    await expect(adapter.steer("ses_1", "idle")).resolves.toBe(false);
+    expect(fixture.client.session.promptAsync).not.toHaveBeenCalled();
+    const result = drain(adapter.run("ses_1", "start"));
+    await vi.waitFor(() => expect(fixture.client.session.promptAsync).toHaveBeenCalledOnce());
+    await expect(adapter.steer("other", "wrong session")).resolves.toBe(false);
+    await expect(adapter.steer("ses_1", "  ")).resolves.toBe(false);
+    expect(fixture.client.session.promptAsync).toHaveBeenCalledOnce();
+    fixture.emit({ type: "session.idle", properties: { sessionID: "ses_1" } });
+    await result;
+  });
+
+  it("surfaces admission failures without cancelling the run and allows retry", async () => {
+    const fixture = mockServer();
+    const adapter = new OpenCodeRuntimeAdapter({ server: fixture.server });
+    const result = drain(adapter.run("ses_1", "start"));
+    await vi.waitFor(() => expect(fixture.client.session.promptAsync).toHaveBeenCalledOnce());
+    fixture.client.session.promptAsync.mockRejectedValueOnce(new Error("connection failed"));
+    await expect(adapter.steer("ses_1", "retry this")).rejects.toThrow("connection failed");
+    await expect(adapter.steer("ses_1", "retry this")).resolves.toBe(true);
+    expect(fixture.client.session.abort).not.toHaveBeenCalled();
+    fixture.emit({ type: "session.idle", properties: { sessionID: "ses_1" } });
+    await result;
+  });
+
+  it("does not submit steering after the original run finishes while awaiting the client", async () => {
+    const fixture = mockServer();
+    const adapter = new OpenCodeRuntimeAdapter({ server: fixture.server });
+    const result = drain(adapter.run("ses_1", "start"));
+    await vi.waitFor(() => expect(fixture.client.session.promptAsync).toHaveBeenCalledOnce());
+    let release!: (client: OpencodeClient) => void;
+    vi.spyOn(fixture.server, "client").mockImplementationOnce(() => new Promise(resolve => { release = resolve; }));
+    const steering = adapter.steer("ses_1", "too late");
+    fixture.emit({ type: "session.idle", properties: { sessionID: "ses_1" } });
+    await result;
+    release(fixture.client as unknown as OpencodeClient);
+    await expect(steering).resolves.toBe(false);
+    expect(fixture.client.session.promptAsync).toHaveBeenCalledOnce();
+  });
+});
+
+describe("OpenCode interactive questions", () => {
+  it("deduplicates question cards, collects multiple answers, and never auto-approves them", async () => {
+    const fixture = mockServer();
+    const resolved = vi.fn();
+    const adapter = new OpenCodeRuntimeAdapter({ server: fixture.server, onApprovalResolved: resolved });
+    const result = drain(adapter.run("ses_1", "hello", undefined, undefined, undefined, { permissionMode: "full-access", brokerRunId: "run_1" }));
+    await vi.waitFor(() => expect(fixture.client.session.promptAsync).toHaveBeenCalled());
+    for (let i = 0; i < 2; i++) fixture.emit({ type: OPENCODE_QUESTION_ASKED, properties: questionRequest });
+    expect(fixture.client.questions.reply).not.toHaveBeenCalled();
+    await expect(adapter.answerQuestion(openCodeQuestionId(questionRequest, 0), { answer: "图表, 字幕", selectedIndices: [1, 0] })).resolves.toBe(true);
+    expect(fixture.client.questions.reply).not.toHaveBeenCalled();
+    await expect(adapter.answerQuestion(openCodeQuestionId(questionRequest, 1), { answer: "保留留白" })).resolves.toBe(true);
+    expect(fixture.client.questions.reply).toHaveBeenCalledTimes(1);
+    expect(fixture.client.questions.reply).toHaveBeenCalledWith(questionRequest, [["chart", "subtitle"], ["保留留白"]], "/repo");
+    fixture.emit({ type: "session.idle", properties: { sessionID: "ses_1" } });
+    const events = await result;
+    expect(events.filter((event) => (event as { type: string }).type === "ask_user")).toEqual([
+      expect.objectContaining({ questionId: openCodeQuestionId(questionRequest, 0), multiSelect: true }),
+      expect.objectContaining({ questionId: openCodeQuestionId(questionRequest, 1), question: "其他要求？" }),
+    ]);
+    expect(resolved).toHaveBeenCalledWith(openCodeQuestionId(questionRequest, 0));
+    expect(resolved).toHaveBeenCalledWith(openCodeQuestionId(questionRequest, 1));
+    await expect(adapter.answerQuestion(openCodeQuestionId(questionRequest, 1), { answer: "重复" })).resolves.toBe(false);
+  });
+
+  it("recovers pending cards on full/latest history reads and preserves earlier answers when the final reply fails", async () => {
+    const fixture = mockServer();
+    fixture.client.questions.list.mockResolvedValue([questionRequest]);
+    const adapter = new OpenCodeRuntimeAdapter({ server: fixture.server });
+    const initial = await adapter.getSession("ses_1");
+    expect(initial.events).toHaveLength(2);
+    await adapter.answerQuestion(openCodeQuestionId(questionRequest, 0), { answer: "字幕", selectedIndices: [0] });
+    expect((await adapter.getSessionPaged("ses_1", { limit: 50 })).events).toEqual([
+      expect.objectContaining({ questionId: openCodeQuestionId(questionRequest, 1) }),
+    ]);
+    fixture.client.questions.reply.mockRejectedValueOnce(new Error("temporary disconnect"));
+    await expect(adapter.answerQuestion(openCodeQuestionId(questionRequest, 1), { answer: "slow" }))
+      .rejects.toMatchObject({ code: "QUESTION_ANSWER_FAILED" });
+    expect((await adapter.getSession("ses_1")).events).toHaveLength(1);
+    await expect(adapter.answerQuestion(openCodeQuestionId(questionRequest, 1), { answer: "fast" })).resolves.toBe(true);
+    expect(fixture.client.questions.reply).toHaveBeenLastCalledWith(questionRequest, [["subtitle"], ["fast"]], "/repo");
+    // A history list captured before the native reply must not revive a card.
+    expect((await adapter.getSession("ses_1")).events).toEqual([]);
+  });
+
+  it.each(["replied", "cancelled"])("clears cards when another client has %s the native Form, even without an owned run", async (kind) => {
+    const fixture = mockServer();
+    fixture.client.questions.list.mockResolvedValue([questionRequest]);
+    const resolved = vi.fn();
+    const adapter = new OpenCodeRuntimeAdapter({ server: fixture.server, onApprovalResolved: resolved });
+    await adapter.getSession("ses_1");
+    const codec = new OpenCodeV2EventCodec(new Map([["ses_1", "/repo"]]));
+    const [event] = codec.convert({ type: `form.${kind}`, data: { id: "frm_1", sessionID: "ses_1" } });
+    fixture.emit(event.payload as OpenCodeServerEvent["payload"]);
+    expect(resolved).toHaveBeenCalledTimes(2);
+    await expect(adapter.answerQuestion(openCodeQuestionId(questionRequest, 0), { answer: "字幕" })).resolves.toBe(false);
+    expect((await adapter.getSession("ses_1")).events).toEqual([]);
+  });
+
+  it("blocks invalid selections and concurrent submissions without consuming the pending card", async () => {
+    const fixture = mockServer();
+    const single = { ...questionRequest, questions: [{ ...questionRequest.questions[0], multiSelect: false }] };
+    fixture.client.questions.list.mockResolvedValue([single]);
+    const adapter = new OpenCodeRuntimeAdapter({ server: fixture.server });
+    await adapter.getSession("ses_1");
+    const id = openCodeQuestionId(single, 0);
+    for (const selectedIndices of [[9], [-1], [0, 1]]) {
+      await expect(adapter.answerQuestion(id, { answer: "bad", selectedIndices })).rejects.toMatchObject({ code: "QUESTION_ANSWER_FAILED" });
+    }
+    let release!: () => void;
+    fixture.client.questions.reply.mockImplementationOnce(() => new Promise<void>((resolve) => { release = resolve; }));
+    const first = adapter.answerQuestion(id, { answer: "字幕", selectedIndices: [0] });
+    await vi.waitFor(() => expect(fixture.client.questions.reply).toHaveBeenCalledTimes(1));
+    await expect(adapter.answerQuestion(id, { answer: "图表", selectedIndices: [1] })).rejects.toMatchObject({ code: "QUESTION_ANSWER_FAILED" });
+    release();
+    await expect(first).resolves.toBe(true);
+  });
+
+  it("accepts legacy question events and suppresses the ordinary running question tool", async () => {
+    const fixture = mockServer();
+    const adapter = new OpenCodeRuntimeAdapter({ server: fixture.server });
+    const result = drain(adapter.run("ses_1", "hello"));
+    await vi.waitFor(() => expect(fixture.client.session.promptAsync).toHaveBeenCalled());
+    fixture.emit({ type: "question.asked", properties: { id: "que_1", sessionID: "ses_1", questions: [{ question: "选择方案", options: [{ label: "A" }] }] } } as unknown as OpenCodeServerEvent["payload"]);
+    const tool = { id: "part_1", type: "tool" as const, sessionID: "ses_1", messageID: "msg_1", callID: "call_1", tool: "question",
+      state: { status: "running" as const, input: {}, title: "question", metadata: {}, time: { start: 1 } } };
+    fixture.emit({ type: "message.part.updated", properties: { part: tool } });
+    fixture.emit({ type: "session.idle", properties: { sessionID: "ses_1" } });
+    const events = await result;
+    expect(events.some((event) => (event as { type: string }).type === "ask_user")).toBe(true);
+    expect(events.some((event) => (event as { type: string }).type === "tool_call")).toBe(false);
+    const info = { id: "msg_1", sessionID: "ses_1", role: "assistant", time: { created: 1 } };
+    expect(openCodeHistoryToMessages([{ info, parts: [tool] }] as never)).toEqual([]);
+  });
+
+  it("updates question history when a pending tool completes in the same native message", async () => {
+    const fixture = mockServer();
+    const adapter = new OpenCodeRuntimeAdapter({ server: fixture.server });
+    const info = { id: "msg_1", sessionID: "ses_1", role: "assistant", time: { created: 1 } };
+    const tool = { id: "part_1", type: "tool", sessionID: "ses_1", messageID: "msg_1", callID: "call_1", tool: "question",
+      state: { status: "running", input: {}, title: "question", metadata: {}, time: { start: 1 } } };
+    fixture.client.session.messages.mockResolvedValue({ data: [{ info, parts: [tool] }] } as never);
+    expect((await adapter.getSession("ses_1")).messages).toEqual([]);
+    fixture.client.session.messages.mockResolvedValue({ data: [{ info, parts: [{ ...tool, state: { ...tool.state,
+      status: "completed", output: "User has answered: 字幕", metadata: { answers: [["字幕"]] }, time: { start: 1, end: 2 } } }] }] } as never);
+    expect((await adapter.getSession("ses_1")).messages).toContainEqual({ role: "tool", toolCallId: "call_1", content: "User has answered: 字幕" });
+  });
+
+  it("restores interrupted questions as settled cards instead of raw tool JSON", async () => {
+    const fixture = mockServer();
+    const adapter = new OpenCodeRuntimeAdapter({ server: fixture.server });
+    const info = { id: "msg_1", sessionID: "ses_1", role: "assistant", time: { created: 1, completed: 2 } };
+    const input = { questions: [
+      { question: "打开后看到什么？", options: [{ label: "白屏", description: "没有画面" }, { label: "静态画面" }] },
+      { question: "哪些设备？", multiple: true, options: [{ label: "手机" }, { label: "电脑" }] },
+    ] };
+    const tool = { id: "part_1", type: "tool", sessionID: "ses_1", messageID: "msg_1", callID: "call_1", tool: "question",
+      state: { status: "error", input, error: "Tool execution interrupted", metadata: {}, time: { start: 1, end: 2 } } };
+    fixture.client.session.messages.mockResolvedValue({ data: [{ info, parts: [
+      { type: "text", text: "请确认现象" }, tool,
+    ] }] } as never);
+    const detail = await adapter.getSessionPaged("ses_1", { limit: 50 });
+    expect(detail.messages).toHaveLength(3);
+    expect(detail.messages[0]).toMatchObject({ content: "请确认现象" });
+    expect(detail.messages[1]).toMatchObject({ role: "assistant", content: "", presentation: { question: {
+      question: "打开后看到什么？", status: "cancelled", options: [{ label: "白屏", description: "没有画面" }, { label: "静态画面", description: "" }],
+    } } });
+    expect(detail.messages[2]).toMatchObject({ presentation: { question: { question: "哪些设备？", multiSelect: true, status: "cancelled" } } });
+    expect(detail.messages.some((message) => message.toolCalls?.length || message.role === "tool")).toBe(false);
+    expect(detail.events).toEqual([]);
+    await expect(adapter.answerQuestion(detail.messages[1].presentation!.question!.questionId, { answer: "白屏" })).resolves.toBe(false);
+
+    fixture.client.session.messages.mockResolvedValue({ data: [{ info, parts: [{ ...tool, state: { ...tool.state,
+      status: "completed", output: "User has answered your questions", metadata: { answers: [["白屏"], ["手机", "电脑"]] },
+    } }] }] } as never);
+    const completed = await adapter.getSession("ses_1");
+    expect(completed.messages.map((message) => message.presentation?.question)).toEqual([
+      expect.objectContaining({ status: "answered", answer: "白屏" }),
+      expect.objectContaining({ status: "answered", answer: "手机, 电脑" }),
+    ]);
+  });
+});
+
+describe("OpenCode runtime mapping", () => {
+  it("uses OpenCode's XDG data directory for external history observation", () => {
+    expect(resolveOpenCodeDataRoot({ XDG_DATA_HOME: "/var/data" })).toBe("/var/data/opencode");
+  });
+  it("marks externally busy sessions as read-only and keeps model identity in the source", () => {
+    const summary = openCodeSessionToSummary(
+      { ...session, agent: "build", model: { providerID: "openai", id: "gpt-5" } } as Session,
+      { type: "busy" },
+    );
+    expect(summary).toMatchObject({
+      id: "runtime:opencode:c2VzXzE",
+      occupancy: "owned-externally",
+      canResume: false,
+      sourceLabel: "OpenCode · build · openai/gpt-5",
+    });
+  });
+
+  it("maps text, images, reasoning, and completed tools from history", () => {
+    const messages = openCodeHistoryToMessages([{
+      info: {
+        id: "msg_1", sessionID: session.id, role: "assistant", parentID: "user_1",
+        modelID: "gpt-5", providerID: "openai", mode: "build", path: { cwd: "/repo", root: "/repo" },
+        time: { created: 1 }, cost: 0, tokens: { input: 1, output: 1, reasoning: 1, cache: { read: 0, write: 0 } },
+      },
+      parts: [
+        { id: "text", sessionID: session.id, messageID: "msg_1", type: "text", text: "done" },
+        { id: "reason", sessionID: session.id, messageID: "msg_1", type: "reasoning", text: "thinking", time: { start: 1 } },
+        { id: "reason-2", sessionID: session.id, messageID: "msg_1", type: "reasoning", text: "verify", time: { start: 1 } },
+        { id: "image", sessionID: session.id, messageID: "msg_1", type: "file", mime: "image/png", filename: "x.png", url: "data:image/png;base64,AAAA" },
+        { id: "tool", sessionID: session.id, messageID: "msg_1", type: "tool", callID: "call_1", tool: "read", state: { status: "completed", input: { filePath: "a" }, output: "ok", title: "read", metadata: {}, time: { start: 1, end: 2 } } },
+      ],
+    }]);
+    expect(messages[0]).toMatchObject({ role: "assistant", content: "done", images: ["data:image/png;base64,AAAA"] });
+    expect(messages[0].presentation?.reasoning?.map((section) => section.sectionIndex)).toEqual([0, 0]);
+    expect(messages[0].presentation?.reasoning?.[0].text).toBe("thinking");
+    expect(messages[0].toolCalls?.[0]).toMatchObject({ id: "call_1", name: "read" });
+    expect(messages[1]).toEqual({ role: "tool", toolCallId: "call_1", content: "ok" });
+  });
+});
+
+describe("OpenCodeRuntimeAdapter", () => {
+  it("discovers, creates, and forks through the project-scoped API", async () => {
+    const fixture = mockServer();
+    const adapter = new OpenCodeRuntimeAdapter({ server: fixture.server });
+    await expect(adapter.discoverSessions()).resolves.toEqual([
+      expect.objectContaining({ nativeSessionId: "ses_1", agentType: "opencode" }),
+    ]);
+    await expect(adapter.create({ title: "x", cwd: "/repo" })).resolves.toMatchObject({ nativeSessionId: "ses_1" });
+    await expect(adapter.fork("ses_1")).resolves.toMatchObject({ nativeSessionId: "ses_fork", parentSessionId: "runtime:opencode:c2VzXzE" });
+    await expect(adapter.getSessionWatchPath("ses_1")).resolves.toMatch(/opencode\.db(?:-wal)?$/);
+  });
+
+  it("keeps the selected final answer by using the following message as the exclusive fork boundary", async () => {
+    const fixture = mockServer();
+    const history = [
+      { info: { id: "msg_1", role: "user", time: { created: 1 } }, parts: [{ type: "text", text: "q1" }] },
+      { info: { id: "msg_2", role: "assistant", time: { created: 2, completed: 3 } }, parts: [{ type: "text", text: "a1" }] },
+      { info: { id: "msg_3", role: "user", time: { created: 4 } }, parts: [{ type: "text", text: "q2" }] },
+    ];
+    fixture.client.session.messages.mockResolvedValue({ data: history } as never);
+    const adapter = new OpenCodeRuntimeAdapter({ server: fixture.server });
+    await adapter.fork("ses_1", { messageId: "msg_2" });
+    expect(fixture.client.session.fork).toHaveBeenCalledWith(expect.objectContaining({ body: { messageID: "msg_3" } }));
+    await expect(adapter.fork("ses_1", { messageId: "missing" })).rejects.toThrow();
+    expect(fixture.client.session.fork).toHaveBeenCalledTimes(1);
+  });
+
+  it("queries imported workspace sessions with the imported directory", async () => {
+    const fixture = mockServer();
+    const adapter = new OpenCodeRuntimeAdapter({ server: fixture.server });
+
+    await adapter.listWorkspaceSessionsByPath("/manual/repo");
+
+    expect(fixture.client.session.list).toHaveBeenCalledWith({
+      query: { directory: "/manual/repo" },
+      throwOnError: true,
+    });
+    expect(fixture.client.session.status).toHaveBeenCalledWith({
+      query: { directory: "/manual/repo" },
+      throwOnError: true,
+    });
+  });
+
+  it("streams assistant deltas once and terminates on idle", async () => {
+    const fixture = mockServer();
+    const adapter = new OpenCodeRuntimeAdapter({ server: fixture.server });
+    const result = drain(adapter.run("ses_1", "hello"));
+    await vi.waitFor(() => expect(fixture.client.session.promptAsync).toHaveBeenCalled());
+    expect(fixture.client.session.promptAsync).toHaveBeenCalledWith(expect.objectContaining({
+      body: expect.objectContaining({ messageID: expect.stringMatching(/^msg_/) }),
+    }));
+    fixture.emit({ type: "message.updated", properties: { info: {
+      id: "assistant_1", sessionID: "ses_1", role: "assistant", parentID: "user_1",
+      modelID: "gpt-5", providerID: "openai", mode: "build", path: { cwd: "/repo", root: "/repo" },
+      time: { created: 1 }, cost: 0, tokens: { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
+    } } });
+    fixture.emit({ type: "message.part.updated", properties: {
+      part: { id: "part_1", sessionID: "ses_1", messageID: "assistant_1", type: "text", text: "hello" }, delta: "hello",
+    } });
+    fixture.emit({ type: "message.part.updated", properties: {
+      part: { id: "part_1", sessionID: "ses_1", messageID: "assistant_1", type: "text", text: "hello world" }, delta: " world",
+    } });
+    fixture.emit({ type: "session.idle", properties: { sessionID: "ses_1" } });
+    await expect(result).resolves.toEqual([
+      { type: "text_chunk", text: "hello" },
+      { type: "text_chunk", text: " world" },
+      { type: "text_done" },
+      { type: "done", finalText: "hello world", forkPoint: { messageId: "assistant_1" } },
+    ]);
+  });
+
+  it("retains task calls and outputs in live and paged history without mixing child-session text", async () => {
+    const fixture = mockServer();
+    const adapter = new OpenCodeRuntimeAdapter({ server: fixture.server });
+    const result = drain(adapter.run("ses_1", "Inspect the question card"));
+    await vi.waitFor(() => expect(fixture.client.session.promptAsync).toHaveBeenCalled());
+    const input = { subagent_type: "explore", description: "Inspect the question card", prompt: "Trace its rendering" };
+    const output = '<task id="child-session" state="completed"><task_result>Found the handler</task_result></task>';
+    const task = {
+      id: "task-part", type: "tool" as const, sessionID: "ses_1", messageID: "parent-message", callID: "task-call", tool: "task",
+    };
+    fixture.emit({ type: "message.part.updated", properties: { part: {
+      id: "child-text", sessionID: "child-session", messageID: "child-message", type: "text", text: "private child transcript",
+    } } });
+    fixture.emit({ type: "message.part.updated", properties: { part: { ...task,
+      state: { status: "running", input, title: "Inspect the question card", metadata: {}, time: { start: 1 } },
+    } } });
+    const completed = { ...task, state: { status: "completed" as const, input, output, title: "Inspect the question card",
+      metadata: { parentSessionId: "ses_1", sessionId: "child-session" }, time: { start: 1, end: 2 } } };
+    fixture.emit({ type: "message.part.updated", properties: { part: completed } });
+    fixture.emit({ type: "session.idle", properties: { sessionID: "ses_1" } });
+    const events = await result;
+    expect(events).toContainEqual({ type: "tool_call", toolCall: { id: "task-call", name: "task", arguments: input } });
+    expect(events).toContainEqual(expect.objectContaining({ type: "tool_result", result: expect.objectContaining({
+      toolCallId: "task-call", content: output,
+    }) }));
+    expect(JSON.stringify(events)).not.toContain("private child transcript");
+
+    fixture.client.session.messages.mockResolvedValue({ data: [{
+      info: { id: "parent-message", sessionID: "ses_1", role: "assistant", time: { created: 1 } }, parts: [completed],
+    }] } as never);
+    const history = await adapter.getSessionPaged("ses_1", { limit: 50 });
+    expect(history.messages).toEqual([
+      expect.objectContaining({ role: "assistant", toolCalls: [{ id: "task-call", name: "task", arguments: input }] }),
+      expect.objectContaining({ role: "tool", toolCallId: "task-call", content: output }),
+    ]);
+  });
+
+  it("ignores malformed message events without losing a later idle event", async () => {
+    const fixture = mockServer();
+    const adapter = new OpenCodeRuntimeAdapter({ server: fixture.server });
+    const result = drain(adapter.run("ses_1", "hello"));
+    await vi.waitFor(() => expect(fixture.client.session.promptAsync).toHaveBeenCalled());
+
+    expect(() => fixture.emit({
+      type: "message.updated",
+      properties: {},
+    } as unknown as OpenCodeServerEvent["payload"])).not.toThrow();
+    expect(() => fixture.emit({
+      type: "message.part.updated",
+      properties: {},
+    } as unknown as OpenCodeServerEvent["payload"])).not.toThrow();
+    fixture.emit({ type: "session.idle", properties: { sessionID: "ses_1" } });
+
+    await expect(result).resolves.toEqual([
+      { type: "text_done" },
+      { type: "done", finalText: "" },
+    ]);
+  });
+
+  it("auto-approves safe requests but surfaces request-approval operations", async () => {
+    const fixture = mockServer();
+    const adapter = new OpenCodeRuntimeAdapter({ server: fixture.server });
+    const result = drain(adapter.run("ses_1", "hello", undefined, undefined, undefined, { permissionMode: "request-approval", brokerRunId: "run_1" }));
+    await vi.waitFor(() => expect(fixture.client.session.promptAsync).toHaveBeenCalled());
+    fixture.emit({ type: "permission.updated", properties: {
+      id: "perm_1", type: "bash", pattern: "git status", sessionID: "ses_1", messageID: "msg_1", title: "Run git status", metadata: {}, time: { created: 1 },
+    } });
+    await vi.waitFor(async () => {
+      const pending = await adapter.answerQuestion("native:run_1:perm_1", { answer: "允许一次" });
+      expect(pending).toBe(true);
+    });
+    fixture.emit({ type: "session.idle", properties: { sessionID: "ses_1" } });
+    const events = await result;
+    expect(events).toContainEqual(expect.objectContaining({ type: "ask_user", questionId: "native:run_1:perm_1" }));
+    expect(fixture.client.postSessionIdPermissionsPermissionId).toHaveBeenCalledWith(expect.objectContaining({ body: { response: "once" } }));
+  });
+
+  it("surfaces permission.asked as an approval card in request-approval mode", async () => {
+    const fixture = mockServer();
+    const adapter = new OpenCodeRuntimeAdapter({ server: fixture.server });
+    const result = drain(adapter.run("ses_1", "hello", undefined, undefined, undefined, {
+      permissionMode: "request-approval",
+      brokerRunId: "run_asked",
+    }));
+    await vi.waitFor(() => expect(fixture.client.session.promptAsync).toHaveBeenCalled());
+    fixture.emit({ id: "evt_asked", type: "permission.asked", properties: {
+      id: "perm_asked",
+      sessionID: "ses_1",
+      permission: "edit",
+      patterns: ["src/app.ts"],
+      metadata: { filepath: "/repo/src/app.ts", diff: "--- a/src/app.ts\n+++ b/src/app.ts\n" },
+      always: ["src/*"],
+    } });
+
+    await vi.waitFor(async () => {
+      expect(await adapter.answerQuestion("native:run_asked:perm_asked", { answer: "允许一次" })).toBe(true);
+    });
+    fixture.emit({ type: "session.idle", properties: { sessionID: "ses_1" } });
+
+    await expect(result).resolves.toContainEqual(expect.objectContaining({
+      type: "ask_user",
+      questionId: "native:run_asked:perm_asked",
+      question: expect.stringContaining("修改工作区文件"),
+    }));
+    expect(fixture.client.postSessionIdPermissionsPermissionId).toHaveBeenCalledWith(expect.objectContaining({
+      path: { id: "ses_1", permissionID: "perm_asked" },
+      body: { response: "once" },
+    }));
+  });
+
+  it.each(["auto-approval", "full-access"] as const)(
+    "auto-approves permission.asked workspace edits in %s mode",
+    async (permissionMode) => {
+      const fixture = mockServer();
+      const adapter = new OpenCodeRuntimeAdapter({ server: fixture.server });
+      const result = drain(adapter.run("ses_1", "hello", undefined, undefined, undefined, { permissionMode }));
+      await vi.waitFor(() => expect(fixture.client.session.promptAsync).toHaveBeenCalled());
+      fixture.emit({ id: `evt_${permissionMode}`, type: "permission.asked", properties: {
+        id: `perm_${permissionMode}`,
+        sessionID: "ses_1",
+        permission: "edit",
+        patterns: ["src/app.ts"],
+        metadata: { filepath: "/repo/src/app.ts", diff: "--- a/src/app.ts\n+++ b/src/app.ts\n" },
+        always: ["src/*"],
+      } });
+
+      await vi.waitFor(() => expect(fixture.client.postSessionIdPermissionsPermissionId).toHaveBeenCalledWith(
+        expect.objectContaining({ body: { response: "once" } }),
+      ));
+      fixture.emit({ type: "session.idle", properties: { sessionID: "ses_1" } });
+
+      const events = await result;
+      expect(events.some((event) => (event as { type?: string }).type === "ask_user")).toBe(false);
+    },
+  );
+
+  it.each([false, true])("classifies all v2 edit previews before auto-approval (external file: %s)", async (external) => {
+    const fixture = mockServer();
+    const adapter = new OpenCodeRuntimeAdapter({ server: fixture.server });
+    const result = drain(adapter.run("ses_1", "hello", undefined, undefined, undefined, { permissionMode: "auto-approval" }));
+    await vi.waitFor(() => expect(fixture.client.session.promptAsync).toHaveBeenCalled());
+    const paths = ["src/app.ts", external ? "/outside/private.ts" : "src/other.ts"];
+    const codec = new OpenCodeV2EventCodec(new Map([["ses_1", "/repo"]]));
+    const [event] = codec.convert({ type: "permission.asked", data: {
+      id: "perm_v2", sessionID: "ses_1", action: "edit", resources: paths,
+      metadata: { files: paths.map((file) => ({ file, patch: `--- ${file}\n+++ ${file}\n` })) },
+    } });
+    fixture.emit(event.payload as OpenCodeServerEvent["payload"]);
+    if (external) {
+      await vi.waitFor(async () => expect(await adapter.answerQuestion("opencode:ses_1:perm_v2", { answer: "拒绝" })).toBe(true));
+    } else {
+      await vi.waitFor(() => expect(fixture.client.postSessionIdPermissionsPermissionId).toHaveBeenCalled());
+    }
+    fixture.emit({ type: "session.idle", properties: { sessionID: "ses_1" } });
+    expect((await result).some((event) => (event as { type: string }).type === "ask_user")).toBe(external);
+    expect(fixture.client.postSessionIdPermissionsPermissionId).toHaveBeenCalledWith(expect.objectContaining({
+      body: { response: external ? "reject" : "once" },
+    }));
+  });
+
+  it("clears a pending approval when permission.replied uses the requestID field", async () => {
+    const fixture = mockServer();
+    const onApprovalResolved = vi.fn();
+    const adapter = new OpenCodeRuntimeAdapter({ server: fixture.server, onApprovalResolved });
+    const result = drain(adapter.run("ses_1", "hello", undefined, undefined, undefined, {
+      permissionMode: "request-approval",
+      brokerRunId: "run_reply",
+    }));
+    await vi.waitFor(() => expect(fixture.client.session.promptAsync).toHaveBeenCalled());
+    fixture.emit({ id: "evt_reply_asked", type: "permission.asked", properties: {
+      id: "perm_reply",
+      sessionID: "ses_1",
+      permission: "bash",
+      patterns: ["git status"],
+      metadata: {},
+      always: ["git status"],
+    } });
+    fixture.emit({ id: "evt_reply_replied", type: "permission.replied", properties: {
+      sessionID: "ses_1",
+      requestID: "perm_reply",
+      reply: "once",
+    } });
+    fixture.emit({ type: "session.idle", properties: { sessionID: "ses_1" } });
+
+    await result;
+    expect(onApprovalResolved).toHaveBeenCalledWith("native:run_reply:perm_reply");
+    await expect(adapter.answerQuestion("native:run_reply:perm_reply", { answer: "允许一次" })).resolves.toBe(false);
+  });
+
+  it("aborts the native session and closes the active stream", async () => {
+    const fixture = mockServer();
+    const adapter = new OpenCodeRuntimeAdapter({ server: fixture.server });
+    const result = drain(adapter.run("ses_1", "hello"));
+    await vi.waitFor(() => expect(fixture.client.session.promptAsync).toHaveBeenCalled());
+    await adapter.abort("ses_1");
+    await expect(result).resolves.toContainEqual({ type: "turn_aborted" });
+  });
+});
+
+describe("OpenCode model selection", () => {
+  it("sends the provider-scoped model with the prompt when provided", async () => {
+    const fixture = mockServer();
+    const adapter = new OpenCodeRuntimeAdapter({ server: fixture.server });
+    const result = drain(adapter.run("ses_1", "hello", undefined, undefined, undefined, {
+      model: { id: "gpt-5.6-sol", providerID: "openai" },
+    }));
+    await vi.waitFor(() => expect(fixture.client.session.promptAsync).toHaveBeenCalled());
+    expect(fixture.client.session.promptAsync).toHaveBeenCalledWith(expect.objectContaining({
+      body: expect.objectContaining({ model: { providerID: "openai", modelID: "gpt-5.6-sol" } }),
+    }));
+    fixture.emit({ type: "session.idle", properties: { sessionID: "ses_1" } });
+    await result;
+  });
+
+  it("omits the model field when the run carries none", async () => {
+    const fixture = mockServer();
+    const adapter = new OpenCodeRuntimeAdapter({ server: fixture.server });
+    const result = drain(adapter.run("ses_1", "hello"));
+    await vi.waitFor(() => expect(fixture.client.session.promptAsync).toHaveBeenCalled());
+    const call = (vi.mocked(fixture.client.session.promptAsync).mock.calls as unknown as Array<[{ body: Record<string, unknown> }]>)[0]?.[0];
+    expect(call.body.model).toBeUndefined();
+    fixture.emit({ type: "session.idle", properties: { sessionID: "ses_1" } });
+    await result;
+  });
+
+  it("flattens provider catalogs into provider-scoped picker models", async () => {
+    const fixture = mockServer();
+    (fixture.client as Record<string, unknown>).config = {
+      providers: vi.fn(async () => ({ data: {
+        providers: [
+          { id: "openai", name: "OpenAI", models: { "gpt-5.6-sol": { name: "GPT-5.6-Sol" }, "gpt-5-mini": {} } },
+          { id: "anthropic", name: "Anthropic", models: { "claude-opus-4-6": { name: "Claude Opus 4.6" } } },
+        ],
+      } })),
+    };
+    const adapter = new OpenCodeRuntimeAdapter({ server: fixture.server });
+    const models = await adapter.listModels();
+    expect(models).toEqual([
+      { id: "gpt-5.6-sol", providerID: "openai", providerDisplayName: "OpenAI", displayName: "GPT-5.6-Sol" },
+      { id: "gpt-5-mini", providerID: "openai", providerDisplayName: "OpenAI", displayName: "openai/gpt-5-mini" },
+      { id: "claude-opus-4-6", providerID: "anthropic", providerDisplayName: "Anthropic", displayName: "Claude Opus 4.6" },
+    ]);
+  });
+});
+
+describe("OpenCode native history paging", () => {
+  function pagingServer() {
+    const fixture = mockServer();
+    fixture.client.session.messages = vi.fn(async () => ({ data: [
+      {
+        info: {
+          id: "msg_1", sessionID: session.id, role: "user", parentID: null,
+          modelID: "gpt-5", providerID: "openai", mode: "build", path: { cwd: "/repo", root: "/repo" },
+          time: { created: 1 }, cost: 0, tokens: { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
+        },
+        parts: [{ id: "t1", sessionID: session.id, messageID: "msg_1", type: "text", text: "q1" }],
+      },
+      {
+        info: {
+          id: "msg_2", sessionID: session.id, role: "assistant", parentID: null,
+          modelID: "gpt-5", providerID: "openai", mode: "build", path: { cwd: "/repo", root: "/repo" },
+          time: { created: 2 }, cost: 0, tokens: { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
+        },
+        parts: [
+          { id: "t2", sessionID: session.id, messageID: "msg_2", type: "text", text: "a1" },
+          { id: "tool", sessionID: session.id, messageID: "msg_2", type: "tool", callID: "call_1", tool: "read", state: { status: "completed", input: { filePath: "a" }, output: "ok", title: "read", metadata: {}, time: { start: 1, end: 2 } } },
+        ],
+      },
+      {
+        info: {
+          id: "msg_3", sessionID: session.id, role: "user", parentID: null,
+          modelID: "gpt-5", providerID: "openai", mode: "build", path: { cwd: "/repo", root: "/repo" },
+          time: { created: 3 }, cost: 0, tokens: { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
+        },
+        parts: [{ id: "t3", sessionID: session.id, messageID: "msg_3", type: "text", text: "q2" }],
+      },
+      {
+        info: {
+          id: "msg_4", sessionID: session.id, role: "assistant", parentID: null,
+          modelID: "gpt-5", providerID: "openai", mode: "build", path: { cwd: "/repo", root: "/repo" },
+          time: { created: 4 }, cost: 0, tokens: { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
+        },
+        parts: [{ id: "t4", sessionID: session.id, messageID: "msg_4", type: "text", text: "a2" }],
+      },
+    ] }));
+    return fixture;
+  }
+
+  it("serves the latest window with shared cursor semantics", async () => {
+    const fixture = pagingServer();
+    const adapter = new OpenCodeRuntimeAdapter({ server: fixture.server });
+
+    const page = await adapter.getSessionPaged("ses_1", { limit: 2 });
+
+    expect(page.messages.map((message) => `${message.role}:${message.content}`)).toEqual([
+      "user:q2",
+      "assistant:a2",
+    ]);
+    expect(page.messages.every((message) => typeof message.historyId === "string" && message.historyId)).toBe(true);
+    expect(page.history).toMatchObject({
+      totalItems: 4,
+      hasMore: true,
+      nextCursor: "history.v1.2",
+      newerCursor: null,
+      kind: "latest",
+      delivery: "legacy-full",
+    });
+  });
+
+  it("serves older pages by cursor and keeps tool results beside their carrier", async () => {
+    const fixture = pagingServer();
+    const adapter = new OpenCodeRuntimeAdapter({ server: fixture.server });
+
+    const latest = await adapter.getSessionPaged("ses_1", { limit: 2 });
+    const older = await adapter.getSessionPaged("ses_1", { before: latest.history!.nextCursor! });
+
+    expect(older.messages.map((message) => message.role)).toEqual(["user", "assistant", "tool"]);
+    const toolResult = older.messages.find((message) => message.role === "tool");
+    expect(toolResult?.toolCallId).toBe("call_1");
+    expect(toolResult?.content).toBe("ok");
+    expect(older.history).toMatchObject({ totalItems: 4, hasMore: false, nextCursor: null });
+    expect(older.history?.revision).toBe(latest.history?.revision);
+  });
+
+  it("builds a query index over the same ordinal space", async () => {
+    const fixture = pagingServer();
+    const adapter = new OpenCodeRuntimeAdapter({ server: fixture.server });
+
+    const [page, index] = await Promise.all([
+      adapter.getSessionPaged("ses_1", { limit: 2 }),
+      adapter.getQueryIndex("ses_1"),
+    ]);
+
+    expect(index?.totalQueries).toBe(2);
+    expect(index?.entries.map((entry) => entry.preview)).toEqual(["q1", "q2"]);
+    expect(index?.revision).toBe(page.history?.revision);
+  });
+
+  it("reuses the converted history across requests until messages change", async () => {
+    const fixture = pagingServer();
+    const adapter = new OpenCodeRuntimeAdapter({ server: fixture.server });
+
+    const first = await adapter.getSession("ses_1");
+    const second = await adapter.getSession("ses_1");
+    expect(second.messages).toBe(first.messages);
+
+    const callsBefore = vi.mocked(fixture.client.session.messages).mock.calls.length;
+    const third = await adapter.getSession("ses_1");
+    // The server is still consulted (cheap local HTTP) but the conversion is cached.
+    expect(vi.mocked(fixture.client.session.messages).mock.calls.length).toBeGreaterThan(callsBefore);
+    expect(third.messages).toBe(first.messages);
+  });
+});

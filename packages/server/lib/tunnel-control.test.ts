@@ -50,8 +50,11 @@ describe("local desktop tunnel management", () => {
     expect(await choices.json()).toMatchObject({ routes: [{ id: "10.1.2.3" }] });
     const resolved = await f.request(`${path}?via=10.1.2.3`, { method: "POST", headers: f.headers });
     expect(await resolved.json()).toEqual({ accessUrl: "http://10.1.2.3:3000/web" });
+    const vpn = await f.request(`${path}?via=vpn`, { method: "POST", headers: f.headers });
+    expect(vpn.status).toBe(200);
+    expect(f.parent.send).toHaveBeenLastCalledWith(expect.objectContaining({ route: "vpn" }), expect.any(Function));
     expect((await f.request(`${path}?via=example.org`, { method: "POST", headers: f.headers })).status).toBe(400);
-    expect(f.parent.send).toHaveBeenCalledTimes(2);
+    expect(f.parent.send).toHaveBeenCalledTimes(3);
   });
   it("returns immediately, merges repeated clicks and exposes updated parent status", async () => {
     const f = await fixture();
@@ -73,6 +76,7 @@ describe("local desktop tunnel management", () => {
   it("reports unsupported unmanaged servers and disconnected parents without spawning anything", async () => {
     const f = await fixture(false);
     expect(await (await f.request("/api/desktop/tunnel", { headers: f.headers })).json()).toMatchObject({ phase: "unsupported" });
+    expect((await f.request("/api/desktop/tunnel/routes", { headers: f.headers })).status).toBe(503);
     expect((await f.request("/api/desktop/tunnel/connect", { method: "POST", headers: f.headers })).status).toBe(503);
     f.parent.connected = true;
     f.parent.emit("disconnect");

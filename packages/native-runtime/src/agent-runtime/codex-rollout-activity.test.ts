@@ -134,7 +134,7 @@ describe("readCodexRolloutFinalizingAnswer", () => {
     },
   });
 
-  it("finds a durable final answer before task_complete arrives", async () => {
+  it("recovers a raw final answer only with a matching visible message", async () => {
     const path = await temporaryRollout([
       event("task_started"),
       finalAnswer(),
@@ -142,7 +142,10 @@ describe("readCodexRolloutFinalizingAnswer", () => {
       "",
     ].join("\n"));
 
-    await expect(readCodexRolloutFinalizingAnswer(path)).resolves.toEqual({
+    await expect(readCodexRolloutFinalizingAnswer(path)).resolves.toBeNull();
+    await expect(readCodexRolloutFinalizingAnswer(path, (answer) => (
+      answer.turnId === "turn-1" && answer.itemId === "message-1"
+    ))).resolves.toEqual({
       turnId: "turn-1",
       itemId: "message-1",
       text: "durable final",
@@ -153,8 +156,8 @@ describe("readCodexRolloutFinalizingAnswer", () => {
     const completed = await temporaryRollout(`${event("task_started")}\n${finalAnswer()}\n${event("task_complete")}\n`);
     const restarted = await temporaryRollout(`${event("task_started")}\n${finalAnswer()}\n${event("task_started")}\n`);
 
-    await expect(readCodexRolloutFinalizingAnswer(completed)).resolves.toBeNull();
-    await expect(readCodexRolloutFinalizingAnswer(restarted)).resolves.toBeNull();
+    await expect(readCodexRolloutFinalizingAnswer(completed, () => true)).resolves.toBeNull();
+    await expect(readCodexRolloutFinalizingAnswer(restarted, () => true)).resolves.toBeNull();
   });
 
   it("recognizes the item_completed AgentMessage shape", async () => {

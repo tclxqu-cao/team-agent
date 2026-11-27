@@ -39,8 +39,10 @@ describe("UpdateChecker", () => {
     await checker.refresh();
     await checker.refresh();
     expect(fetcher).toHaveBeenCalledTimes(3);
+    await expect(checker.refresh({ force: true })).resolves.toMatchObject({ phase: "available", targetVersion: "1.1.0", message: "检查更新失败，请稍后重试。" });
+    expect(fetcher).toHaveBeenCalledTimes(5);
     now += UPDATE_CHECK_INTERVAL_MS;
-    await expect(checker.refresh()).resolves.toMatchObject({ phase: "available", targetVersion: "1.1.0" });
+    await expect(checker.refresh()).resolves.toMatchObject({ phase: "available", targetVersion: "1.1.0", message: "检查更新失败，请稍后重试。" });
   });
 
   it("schedules the first check between six and thirty seconds", () => {

@@ -12,7 +12,10 @@ import { readAppRelease, type AppUpdateTarget } from "./app-release.js";
 
 export const UPDATE_CHECK_INTERVAL_MS = 5 * 60_000;
 
-export type UpdateCheckerOptions = ({ client: "cli"; platform: UpdatePlatform } | AppUpdateTarget) & {
+export type UpdateCheckerOptions = (
+  { client: "cli"; platform: UpdatePlatform } | AppUpdateTarget
+  | { client: "ios"; readStoreVersion: () => Promise<string> }
+) & {
   currentVersion: string;
   fetch?: typeof globalThis.fetch;
   now?: () => number;
@@ -84,6 +87,14 @@ export class UpdateChecker {
     const previous = this.status;
     this.publish({ ...previous, phase: "checking", message: undefined });
     try {
+      if (this.options.client === "ios") {
+        const version = await this.options.readStoreVersion();
+        this.checkedAt = this.now();
+        const base = { currentVersion: this.options.currentVersion, checkedAt: this.checkedAt };
+        return this.publish(compareAgentRoamVersions(version, base.currentVersion) > 0
+          ? { ...base, phase: "available", targetVersion: version }
+          : { ...base, phase: "up-to-date" });
+      }
       const candidate = this.options.client === "cli"
         ? await this.readCliRelease(this.options.platform)
         : await readAppRelease(this.options, this.options.currentVersion, this.fetchImpl, this.timeoutMs);
@@ -94,8 +105,9 @@ export class UpdateChecker {
       return this.publish({ phase: "available", currentVersion: this.options.currentVersion, targetVersion: candidate.version, checkedAt: this.checkedAt, asset: candidate.asset });
     } catch {
       this.checkedAt = this.now();
-      if (["available", "up-to-date"].includes(previous.phase)) return this.publish({ ...previous, checkedAt: this.checkedAt });
-      return this.publish({ phase: "unavailable", currentVersion: this.options.currentVersion, checkedAt: this.checkedAt });
+      const failure = { checkedAt: this.checkedAt, message: "检查更新失败，请稍后重试。" };
+      if (["available", "up-to-date"].includes(previous.phase)) return this.publish({ ...previous, ...failure });
+      return this.publish({ phase: "unavailable", currentVersion: this.options.currentVersion, ...failure });
     }
   }
 

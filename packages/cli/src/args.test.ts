@@ -109,8 +109,11 @@ describe("parseArgs", () => {
     expect(parseArgs(["update", "1.2.3", "--data-dir", "./data"])).toMatchObject({ command: "update", updateVersion: "1.2.3" });
     expect(parseArgs(["update", "1.2.3-preview.1"]).updateVersion).toBe("1.2.3-preview.1");
     expect(parseArgs(["update", "--check"]).updateCheckOnly).toBe(true);
+    expect(parseArgs(["update", "--status"]).updateStatusOnly).toBe(true);
     expect(() => parseArgs(["update", "preview"])).toThrow("exact version");
     expect(() => parseArgs(["update", "1.2.3", "--check"])).toThrow("exact version");
+    expect(() => parseArgs(["update", "1.2.3", "--status"])).toThrow("exact version");
+    expect(() => parseArgs(["update", "--check", "--status"])).toThrow("exact version");
   });
 });
 

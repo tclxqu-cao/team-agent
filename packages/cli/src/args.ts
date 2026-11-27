@@ -32,6 +32,7 @@ export interface CliOptions {
   pairingListRoutes?: boolean;
   updateVersion?: string | null;
   updateCheckOnly?: boolean;
+  updateStatusOnly?: boolean;
   updateStateFile?: string | null;
   desktopDryRun?: boolean;
   desktopRestart?: boolean;
@@ -139,6 +140,7 @@ export function parseArgs(argv: string[]): CliOptions {
       return value;
     };
     if (arg === "--check" && command === "update") options.updateCheckOnly = true;
+    else if (arg === "--status" && command === "update") options.updateStatusOnly = true;
     else if (arg === "--restart" && command === "codex-desktop") options.desktopRestart = true;
     else if (arg === "--dry-run" && command === "codex-desktop") options.desktopDryRun = true;
     else if (arg === "--status" && command === "codex-desktop") options.desktopSharingStatus = true;
@@ -189,8 +191,11 @@ export function parseArgs(argv: string[]): CliOptions {
     throw cliError("--status and --repair cannot be combined with other desktop actions");
   }
 
-  if (command === "update" && updateVersion && (!parseAgentRoamVersion(updateVersion) || options.updateCheckOnly)) {
-    throw cliError("update accepts --check or an exact version (X.Y.Z or X.Y.Z-preview.N)");
+  if (command === "update" && (
+    (updateVersion && (!parseAgentRoamVersion(updateVersion) || options.updateCheckOnly || options.updateStatusOnly))
+    || (options.updateCheckOnly && options.updateStatusOnly)
+  )) {
+    throw cliError("update accepts --check, --status or an exact version (X.Y.Z or X.Y.Z-preview.N)");
   }
 
   if (options.testNoPairing && (command !== "start" || !options.localOnly || options.tunnelCommand || options.relayUrl || options.relay !== "auto")) throw cliError("--test-no-pairing requires start --local-only and cannot use a tunnel or background service");

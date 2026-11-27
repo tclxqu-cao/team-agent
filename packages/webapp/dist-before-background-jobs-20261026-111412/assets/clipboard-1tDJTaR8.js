@@ -1,0 +1,6 @@
+import{c as n}from"./index-N5jB3uOg.js";/**
+ * @license lucide-react v0.468.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */const r=n("ExternalLink",[["path",{d:"M15 3h6v6",key:"1q9fwt"}],["path",{d:"M10 14 21 3",key:"gplh6r"}],["path",{d:"M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6",key:"a6xqqp"}]]);function o(t){if(typeof document>"u"||!document.body||typeof document.execCommand!="function")return!1;const e=document.createElement("textarea");e.value=t,e.setAttribute("readonly",""),Object.assign(e.style,{position:"fixed",top:"0",left:"-9999px",width:"1px",height:"1px",fontSize:"16px",opacity:"0",pointerEvents:"none"}),document.body.appendChild(e);try{return e.focus(),e.select(),e.setSelectionRange(0,e.value.length),document.execCommand("copy")}catch{return!1}finally{e.remove()}}async function c(t){const e=typeof navigator>"u"?void 0:navigator.clipboard;if(typeof(e==null?void 0:e.writeText)=="function"&&(typeof isSecureContext>"u"||isSecureContext))try{return await e.writeText(t),!0}catch{}return o(t)}async function d(){const t=typeof navigator>"u"?void 0:navigator.clipboard;if(typeof(t==null?void 0:t.readText)!="function"||typeof isSecureContext<"u"&&!isSecureContext)return null;try{return await t.readText()}catch{return null}}export{r as E,c,d as r};

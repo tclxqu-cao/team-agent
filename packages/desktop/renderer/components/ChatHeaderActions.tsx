@@ -8,6 +8,7 @@ import { isWebShell } from "../web/webLayout";
 import type { DesktopLiveStatus } from "../../../shared/src/contracts/agent-api";
 import MobilePairingButton from "./MobilePairingButton";
 import HeaderActionMenu from "./HeaderActionMenu";
+import { UpdateCheckButton } from "./UpdateNotice";
 import RunningSessionsIcon from "../../../shared/src/console/RunningSessionsIcon";
 
 /**
@@ -90,6 +91,8 @@ export default function ChatHeaderActions({
   const desktopLivePending = useDesktopLiveSetupPending(Boolean(onOpenDesktopLive));
   const webAppActions = useContext(WebAppHeaderActionsContext);
   const navigationLayout = useUIStore((state) => state.navigationLayout);
+  const webShell = isWebShell();
+  const usesActionMenu = navigationLayout !== "classic" && !webShell;
   const releaseTitle = codexReleaseState === "releasing"
     ? "正在停止 AgentRoam 使用此会话"
     : codexReleaseState === "released"
@@ -162,7 +165,7 @@ export default function ChatHeaderActions({
         </button>
       )}
       {mobileEngineSwitcher && <div className="chat-header-engine-switcher">{mobileEngineSwitcher}</div>}
-      {onReleaseCodex && (
+      {webShell && onReleaseCodex && (
         <button
           type="button"
           onClick={onReleaseCodex}
@@ -178,7 +181,7 @@ export default function ChatHeaderActions({
               : <Unplug size={15} aria-hidden="true" />}
         </button>
       )}
-      <button
+      {!usesActionMenu && <button
         type="button"
         onClick={onHideToBackground}
         title={hideToBackgroundTitle}
@@ -189,7 +192,8 @@ export default function ChatHeaderActions({
           <rect x="3" y="4" width="18" height="14" rx="2" />
           <path d="m9 11 3 3 3-3M12 7v7M8 21h8" />
         </svg>
-      </button>
+      </button>}
+      {!usesActionMenu && !webShell && <UpdateCheckButton iconOnly className="ui-icon-button chat-header-action" />}
       <button
         type="button"
         onClick={(event) => onToggleAppearance(event.currentTarget.getBoundingClientRect())}
@@ -221,5 +225,8 @@ export default function ChatHeaderActions({
       </button>}
     </div>
   );
-  return navigationLayout !== "classic" && !isWebShell() ? <HeaderActionMenu>{actions}</HeaderActionMenu> : actions;
+  return usesActionMenu ? <>
+    <UpdateCheckButton iconOnly className="ui-icon-button chat-header-action" />
+    <HeaderActionMenu>{actions}</HeaderActionMenu>
+  </> : actions;
 }

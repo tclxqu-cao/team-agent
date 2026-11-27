@@ -1586,7 +1586,8 @@ export default function ChatView({
   const sessionLoadGenerationRef = useRef(0);
   const consumedNavigationHistoryRef = useRef<SessionHistorySeed | undefined>();
   const codexTraceLoadsRef = useRef(new Map<string, Promise<ChatMessage[]>>());
-  useEffect(() => { selectedSessionIdRef.current = selectedSessionId ?? null; }, [selectedSessionId]);
+  // Child trace effects can start loading as soon as the new session commits.
+  useLayoutEffect(() => { selectedSessionIdRef.current = selectedSessionId ?? null; }, [selectedSessionId]);
   useEffect(() => {
     runCompleteContextRef.current = { onRunComplete, selectedProjectId };
   }, [onRunComplete, selectedProjectId]);
@@ -3009,6 +3010,20 @@ export default function ChatView({
             ...(event.startedAt === undefined ? {} : { startedAt: event.startedAt }),
           };
           applyRuntimeProgress(progress, eventSid);
+          if (eventSid && progress.progressId === CONTEXT_COMPACTION_PROGRESS_ID
+            && progress.status === "completed" && event.itemId && historyAgentType(eventSid) === "codex") {
+            const id = `${progress.progressId}:${event.itemId}`;
+            if (!getMessagesForSession(eventSid).some(message => message.id === id)) {
+              addMessage({
+                id,
+                role: "assistant",
+                name: "__compaction_checkpoint__",
+                content: progress.label,
+                isCompactionSummary: true,
+                timestamp: Date.now(),
+              }, eventSid);
+            }
+          }
           if (isViewed) updateAgentActivity(progress.phase === "tool" ? "tools" : "thinking");
         }
         break;

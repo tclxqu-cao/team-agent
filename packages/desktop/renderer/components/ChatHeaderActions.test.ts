@@ -1,7 +1,13 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import ChatHeaderActions from "./ChatHeaderActions";
+import { isWebShell } from "../web/webLayout";
+
+vi.mock("../stores/uiStore", () => ({
+  useUIStore: (selector: (state: { navigationLayout: string }) => unknown) => selector({ navigationLayout: "classic" }),
+}));
+vi.mock("../web/webLayout", () => ({ isWebShell: vi.fn() }));
 
 const baseProps = {
   appearanceOpen: false,
@@ -12,6 +18,10 @@ const baseProps = {
 };
 
 describe("ChatHeaderActions", () => {
+  beforeEach(() => {
+    vi.mocked(isWebShell).mockReturnValue(false);
+  });
+
   it("renders global actions in the required order", () => {
     const html = renderToStaticMarkup(createElement(ChatHeaderActions, baseProps));
 
@@ -79,7 +89,8 @@ describe("ChatHeaderActions", () => {
     expect(visible).toContain("chat-header-action--files is-active");
   });
 
-  it("renders the Codex release action as an icon-only button", () => {
+  it("renders the Web Codex release action as an icon-only button", () => {
+    vi.mocked(isWebShell).mockReturnValue(true);
     const html = renderToStaticMarkup(createElement(ChatHeaderActions, {
       ...baseProps,
       onReleaseCodex: () => {},
@@ -91,6 +102,7 @@ describe("ChatHeaderActions", () => {
   });
 
   it("disables the Codex release action while releasing", () => {
+    vi.mocked(isWebShell).mockReturnValue(true);
     const html = renderToStaticMarkup(createElement(ChatHeaderActions, {
       ...baseProps,
       codexReleaseState: "releasing",
@@ -102,6 +114,7 @@ describe("ChatHeaderActions", () => {
   });
 
   it("states the Codex Desktop wait after AgentRoam stops using the session", () => {
+    vi.mocked(isWebShell).mockReturnValue(true);
     const html = renderToStaticMarkup(createElement(ChatHeaderActions, {
       ...baseProps,
       codexReleaseState: "released",

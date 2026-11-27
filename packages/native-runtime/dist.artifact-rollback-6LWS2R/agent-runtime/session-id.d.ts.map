@@ -1,0 +1,1 @@
+{"version":3,"file":"session-id.d.ts","sourceRoot":"","sources":["../../src/agent-runtime/session-id.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,SAAS,EAAE,MAAM,YAAY,CAAC;AAM5C,wBAAgB,sBAAsB,CACpC,SAAS,EAAE,SAAS,EACpB,eAAe,EAAE,MAAM,GACtB,MAAM,CAMR;AAED,wBAAgB,sBAAsB,CACpC,EAAE,EAAE,MAAM,GACT;IAAE,SAAS,EAAE,SAAS,CAAC;IAAC,eAAe,EAAE,MAAM,CAAA;CAAE,CAqBnD"}

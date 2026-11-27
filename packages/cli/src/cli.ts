@@ -19,8 +19,10 @@ import { runServiceCommand } from "./service/service-command.js";
 import { resolveServicePaths, writePrivateText } from "./service/service-files.js";
 import { TunnelController, attachTunnelControl } from "./tunnel/tunnel-controller.js";
 import type { RelaySelection } from "./tunnel/relay-orchestrator.js";
-import { currentCliPath, getAvailableUpdateVersion, startUpdate } from "./update/update-command.js";
+import { currentCliPath, formatAvailableUpdate, getAvailableUpdateVersion, startUpdate } from "./update/update-command.js";
+import { formatUpdateStatus, readUpdateState, updatePaths } from "./update/update-state.js";
 import { runUpdateWorker } from "./update/update-worker.js";
+import { updateBeforeStartup } from "./update/startup-update.js";
 import { lockInstanceStartup, stopPreviousInstances } from "./instance-takeover.js";
 import { runUnlockServiceCommand } from "./unlock-service.js";
 import { createCliErrorLog } from "./error-log.js";
@@ -57,7 +59,10 @@ export async function main(argv: string[]): Promise<void> {
   agentroam revoke <设备ID>          移除一台设备
   agentroam revoke --all            全部退出并取消待用配对码
   agentroam service install|start|stop|restart|status|url|logs|uninstall
-  agentroam update [--check | <版本>]  检查或安装 CLI 更新（支持预览版）
+  agentroam update                    安装可用的 CLI 更新（含预览版）
+  agentroam update --check            检查当前是否有新版本
+  agentroam update --status           查看最近一次手动更新的进度或结果
+  agentroam update <版本>             安装指定的可用更新
   首次启动时通过 AGENTROAM_MESH_ACTIVATION_CODE 提供一次性组网激活码
   agentroam mesh status             查看组网入网状态
   agentroam mesh onboard            加入自建 Headscale 控制面（安装后自动执行）
@@ -172,12 +177,18 @@ async function executeCommand(options: ReturnType<typeof parseArgs>, argv: strin
     if (target !== "darwin-arm64" && target !== "windows-amd64") throw new Error(`updates are unavailable for ${target}`);
     if (options.updateCheckOnly) {
       const available = await getAvailableUpdateVersion(VERSION);
-      console.log(available ? `AgentRoam CLI ${available} 可更新 · agentroam update` : `AgentRoam CLI ${VERSION} 已是最新版本`);
+      console.log(available ? formatAvailableUpdate(VERSION, available, process.stdout) : `AgentRoam CLI ${VERSION} 已是最新版本`);
       return;
     }
     const dataDir = argv.includes("--data-dir") ? options.dataDir : await installedDataDir(options.dataDir);
+    if (options.updateStatusOnly) {
+      const state = await readUpdateState(updatePaths(dataDir).stateFile);
+      console.log(state ? terminalText(formatUpdateStatus(state)) : "暂无 CLI 更新记录。");
+      return;
+    }
     const state = await startUpdate({ currentVersion: VERSION, requestedVersion: options.updateVersion ?? null, dataDir, target, cliPath: currentCliPath() });
-    console.log(`AgentRoam ${state.targetVersion} update started in the background.`);
+    console.log(state ? `AgentRoam CLI ${state.targetVersion} 已开始更新，可用 agentroam update --status 查看结果。`
+      : `AgentRoam CLI ${VERSION} 已是最新版本`);
     return;
   }
 
@@ -190,6 +201,11 @@ async function executeCommand(options: ReturnType<typeof parseArgs>, argv: strin
     return;
   }
 
+  const startupUpdate = process.env.AGENTROAM_SERVICE !== "1" && process.stderr.isTTY && !options.testNoPairing
+    && (target === "darwin-arm64" || target === "windows-amd64")
+    ? await updateBeforeStartup({ cliPath: currentCliPath(), currentVersion: VERSION, target, roots: options.roots }, argv)
+    : "current";
+  if (startupUpdate === "launched") return;
   console.log(`AgentRoam ${VERSION}\n✓ Node ${process.versions.node} · ${target}`);
   const sleepInhibitor = await withCliProgress("Preparing startup environment", () => acquireSleepInhibitor());
   const controller = new AbortController();
@@ -234,9 +250,9 @@ async function executeCommand(options: ReturnType<typeof parseArgs>, argv: strin
     if (controller.signal.aborted) { await runtime.close(); return; }
     void runtime.exited.then(() => controller.abort());
     await serviceReporter?.localReady(runtime.localUrl);
-    if (!serviceReporter && process.stderr.isTTY && (target === "darwin-arm64" || target === "windows-amd64")) {
+    if (startupUpdate === "unmanaged") {
       void getAvailableUpdateVersion(VERSION).then(version => {
-        if (version && !controller.signal.aborted) console.error(`AgentRoam CLI ${version} 可更新 · agentroam update`);
+        if (version && !controller.signal.aborted) console.error(formatAvailableUpdate(VERSION, version, process.stderr));
       }).catch(() => undefined);
     }
     if (!options.testNoPairing) {

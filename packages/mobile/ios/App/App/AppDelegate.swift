@@ -1,6 +1,47 @@
 import UIKit
 import Capacitor
 
+class AgentRoamBridgeViewController: CAPBridgeViewController {
+    override func capacitorDidLoad() {
+        bridge?.registerPluginInstance(AgentRoamAppUpdatePlugin())
+    }
+}
+
+@objc(AgentRoamAppUpdatePlugin)
+class AgentRoamAppUpdatePlugin: CAPPlugin, CAPBridgedPlugin {
+    let identifier = "AgentRoamAppUpdatePlugin"
+    let jsName = "AgentRoamAppUpdate"
+    let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "getInfo", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "openStore", returnType: CAPPluginReturnPromise)
+    ]
+
+    @objc func getInfo(_ call: CAPPluginCall) {
+        guard let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
+              let bundleId = Bundle.main.bundleIdentifier else {
+            call.reject("无法读取 iOS 应用版本")
+            return
+        }
+        var info = ["version": version, "bundleId": bundleId]
+        info["country"] = Locale.current.regionCode?.lowercased()
+        call.resolve(info)
+    }
+
+    @objc func openStore(_ call: CAPPluginCall) {
+        guard let id = call.getString("id"), id.range(of: "^[1-9][0-9]*$", options: .regularExpression) != nil,
+              let url = URL(string: "https://apps.apple.com/app/id\(id)") else {
+            call.reject("无效的 App Store 应用")
+            return
+        }
+        DispatchQueue.main.async {
+            UIApplication.shared.open(url) { opened in
+                if opened { call.resolve() }
+                else { call.reject("无法打开 App Store") }
+            }
+        }
+    }
+}
+
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
 

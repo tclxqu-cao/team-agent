@@ -1,0 +1,1 @@
+{"version":3,"file":"directory-context-menu.d.ts","sourceRoot":"","sources":["../../main/directory-context-menu.ts"],"names":[],"mappings":"AAGA,wBAAsB,uBAAuB,CAAC,KAAK,EAAE,OAAO,GAAG,OAAO,CAAC,MAAM,CAAC,CAoB7E;AAED,wBAAgB,sBAAsB,CAAC,QAAQ,GAAE,MAAM,CAAC,QAA2B,GAAG,MAAM,CAI3F;AAED,wBAAgB,wBAAwB,CACtC,SAAS,EAAE,MAAM,EACjB,MAAM,EAAE,CAAC,IAAI,EAAE,MAAM,KAAK,IAAI,GAC7B,IAAI,CAEN"}

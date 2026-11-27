@@ -5,7 +5,7 @@
 
 import dynamic from "next/dynamic";
 import { CONSOLE_CSS } from "../../../shared/src/console/console-styles";
-import { consoleFrameUrl, consoleOrigin } from "../../../shared/src/console/console-environment";
+import { consoleFrameUrl, consoleOrigin, nativeConsole } from "../../../shared/src/console/console-environment";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ExternalLink, Bot, CalendarDays, FolderOpen, PanelRight, X, LayoutGrid, MonitorUp, RefreshCw, UsersRound } from "lucide-react";
 import RunningSessionsIcon from "../../../shared/src/console/RunningSessionsIcon";
@@ -14,6 +14,9 @@ import ComputerSwitcher from "./ComputerSwitcher";
 import ComputerPagePane from "./ComputerPagePane";
 import type { ComputerPage } from "./ComputerPageDialog";
 import ResponsiveToolbar from "../../../shared/src/console/ResponsiveToolbar";
+import UpdateNotice, { UpdateCheckButton } from "../../../desktop/renderer/components/UpdateNotice";
+import { HttpClient } from "../../../shared/src/infrastructure/http/http-client";
+import { createHttpUpdateApi } from "../../../shared/src/infrastructure/http/http-update-api";
 import { moveToolbarAction } from "./toolbar-order";
 import { useComputerSettings } from "./useComputerSettings";
 import type { FileWorkspaceGateway } from "../../../core/src/application/file-workspace/FileWorkspaceGateway";
@@ -57,12 +60,18 @@ const FileTree = dynamic(() => import("./FileTree"), { ssr: false });
 const FilePreview = dynamic(() => import("./FilePreview"), { ssr: false });
 const AiHubPane = dynamic(() => import("./AiHubPane"), { ssr: false });
 const FlowStudioPane = dynamic(() => import("./FlowStudioPane"), { ssr: false, loading: () => <FlowStudioLoading /> });
+const computerUpdates = createHttpUpdateApi(new HttpClient());
 
 export default function WebConsolePage() {
   return (
     <AuthGate>
-      {(auth, onWorkspaceReady) => (
+      {(auth, onWorkspaceReady) => nativeConsole() ? (
         <AuthenticatedConsole auth={auth} onWorkspaceReady={onWorkspaceReady} />
+      ) : (
+        <UpdateNotice api={computerUpdates} product="电脑上的 AgentRoam CLI" scope="cli"
+          hint="更新期间当前连接的电脑服务会短暂重启。此页面会继续检查更新结果。" installLabel="更新这台电脑">
+          <AuthenticatedConsole auth={auth} onWorkspaceReady={onWorkspaceReady} />
+        </UpdateNotice>
       )}
     </AuthGate>
   );
@@ -763,6 +772,7 @@ function AuthenticatedConsole({
         </div>
         <button className="terminal-add" aria-label="新建终端页签" hidden={Boolean(selectedPage)} disabled={tabs.length >= 8} onClick={addTerminal}>＋</button>
         <div className="terminal-connection">
+          <UpdateCheckButton iconOnly={!nativeConsole()} />
           <ResponsiveToolbar
             sortingDisabled={!computerConfiguration.loaded || computerConfiguration.saving}
             onReorder={(source, target) => {

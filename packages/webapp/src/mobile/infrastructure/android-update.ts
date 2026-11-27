@@ -24,8 +24,8 @@ export class AndroidUpdateService implements UpdateNoticeApi {
   }
 
   async checkForUpdate(): Promise<UpdateStatus> {
-    if (!this.inFlight) await (await this.getChecker())?.refresh();
-    return this.getUpdateStatus();
+    const checked = !this.inFlight ? await (await this.getChecker())?.refresh({ force: true }) : null;
+    return checked?.message ? checked : this.getUpdateStatus();
   }
 
   installUpdate(): Promise<UpdateStatus> {
@@ -40,8 +40,16 @@ export class AndroidUpdateService implements UpdateNoticeApi {
   private getChecker(): Promise<UpdateChecker | null> {
     return this.checker ??= nativeUpdate.getInfo().then(({ version }) => {
       if (!parseAgentRoamVersion(version)) return null;
-      return new UpdateChecker({ currentVersion: version, client: "android", platform: "android", fetch: fetchReleaseMetadata, timeoutMs: 10_000 });
-    }).catch(() => null);
+      const checker = new UpdateChecker({ currentVersion: version, client: "android", platform: "android", fetch: fetchReleaseMetadata, timeoutMs: 10_000 });
+      checker.subscribe(status => {
+        if (!this.inFlight && (!this.operation || this.operation.targetVersion !== status.targetVersion)) this.notify(status);
+      });
+      checker.schedule();
+      return checker;
+    }).catch(() => {
+      this.checker = undefined;
+      return null;
+    });
   }
 
   private async install(): Promise<UpdateStatus> {
@@ -62,8 +70,12 @@ export class AndroidUpdateService implements UpdateNoticeApi {
 
   private publish(status: UpdateStatus): UpdateStatus {
     this.operation = status;
-    for (const listener of this.listeners) listener(status);
+    this.notify(status);
     return status;
+  }
+
+  private notify(status: UpdateStatus): void {
+    for (const listener of this.listeners) listener(status);
   }
 }
 

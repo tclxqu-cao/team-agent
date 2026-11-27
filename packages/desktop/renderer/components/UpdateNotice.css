@@ -3,43 +3,86 @@
   top: calc(14px + env(safe-area-inset-top, 0px));
   right: 18px;
   z-index: 21000;
-  display: flex;
+  display: block;
   width: min(360px, calc(100vw - 28px));
-  min-height: 58px;
   box-sizing: border-box;
-  align-items: center;
-  gap: 10px;
   border: 1px solid var(--border-default, #33434c);
   border-left: 3px solid var(--accent, #70e5c4);
   border-radius: 8px;
   background: var(--bg-surface, #16242d);
-  padding: 10px 10px 10px 13px;
+  padding: 12px 14px;
   box-shadow: var(--shadow-md, 0 4px 16px #0003);
   color: var(--text-primary, #ecf2f4);
   text-align: left;
+  font-size: 13px;
   -webkit-app-region: no-drag;
 }
 
-.update-notice--failed { border-left-color: var(--danger, #dc736e); }
-.update-notice__content { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 2px; }
-.update-notice__content strong { overflow-wrap: anywhere; font-size: 12px; line-height: 1.4; }
-.update-notice__content span { overflow-wrap: anywhere; color: var(--text-muted, #b1c3cc); font-size: 11px; line-height: 1.35; }
-.update-notice > button {
+.update-check-button:not(.file-drawer-toggle, .ui-icon-button),
+.update-dialog__actions button {
   display: inline-flex;
-  flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  border: 0;
-  padding: 0;
+  gap: 7px;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--border-default, #33434c);
+  border-radius: 7px;
+  background: var(--bg-hover, #203440);
+  color: var(--text-primary, #ecf2f4);
+  font: inherit;
+  font-size: 13px;
+  white-space: nowrap;
   cursor: pointer;
 }
-.update-notice > .update-notice__action { min-height: 36px; gap: 5px; border-radius: 6px; background: var(--accent, #70e5c4); padding: 0 10px; color: var(--text-on-accent, #10261f); font-size: 12px; }
-.update-notice > .update-notice__close { width: 32px; min-height: 32px; border-radius: 6px; background: transparent; color: var(--text-muted, #b1c3cc); }
-.update-notice > .update-notice__close:hover { background: var(--bg-hover, #203440); color: var(--text-primary, #ecf2f4); }
+.update-check-button {
+  flex-shrink: 0;
+  -webkit-app-region: no-drag;
+}
+.update-check-button[data-update-available][data-pairing-action] {
+  background: var(--accent, #70e5c4);
+  color: var(--text-on-accent, #10261f);
+  border-color: transparent;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .update-check-button[aria-busy="true"] svg { animation: update-check-spin 1s linear infinite; }
+  @keyframes update-check-spin { to { transform: rotate(360deg); } }
+}
+.update-check-button:disabled,
+.update-dialog__actions button:disabled { opacity: .55; cursor: default; }
+.update-check-button:focus-visible,
+.update-dialog__actions button:focus-visible { outline: 2px solid var(--accent, #70e5c4); outline-offset: 2px; }
+
+.update-dialog {
+  box-sizing: border-box;
+  width: min(390px, calc(100% - 32px));
+  margin: auto;
+  padding: 20px;
+  border: 1px solid var(--border-default, #33434c);
+  border-radius: 12px;
+  background: var(--bg-surface, #16242d);
+  color: var(--text-primary, #ecf2f4);
+  box-shadow: var(--shadow-md, 0 12px 36px #0005);
+  text-align: left;
+  -webkit-app-region: no-drag;
+}
+.update-dialog::backdrop { background: #0006; }
+.update-dialog-fallback-backdrop { position: fixed; inset: 0; z-index: 21001; background: #0006; }
+.update-dialog-fallback-backdrop + .update-dialog {
+  position: fixed;
+  inset: 50% auto auto 50%;
+  transform: translate(-50%, -50%);
+  z-index: 21002;
+}
+.update-dialog h2 { margin: 0 0 8px; font-size: 16px; line-height: 1.4; }
+.update-dialog p { margin: 6px 0; overflow-wrap: anywhere; font-size: 13px; line-height: 1.5; color: var(--text-muted, #b1c3cc); }
+.update-dialog__actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+.update-dialog__actions .update-dialog__primary { background: var(--accent, #70e5c4); color: var(--text-on-accent, #10261f); border-color: transparent; }
+.update-settings-control { display: flex; justify-content: flex-end; padding: 10px 16px 0; }
 
 @media (max-width: 600px) {
   .update-notice { top: calc(10px + env(safe-area-inset-top, 0px)); right: 10px; width: calc(100vw - 20px); }
-  .update-notice > .update-notice__action, .update-notice > .update-notice__close { min-height: 44px; }
+  .update-dialog__actions button { min-height: 44px; }
+  .terminal-connection > .update-check-button { min-height: 44px; }
+  .terminal-connection > .update-check-button.file-drawer-toggle { width: 40px; }
 }
-
-.update-notice--inline { position: static; width: 100%; margin-top: 14px; }

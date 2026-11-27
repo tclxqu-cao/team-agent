@@ -89,7 +89,7 @@ export type AgentEvent =
   | { type: "agent_done"; agentName: string; subSessionId: string; status: "completed" | "failed"; summary?: string; error?: string; code?: string; agentId?: string; parentSessionId?: string; durationMs?: number }
   | { type: "agent_progress"; agentName: string; subSessionId: string; text: string; agentId?: string; parentSessionId?: string; phase?: "thinking" | "assistant" | "tool"; toolName?: string }
   | { type: "reasoning_summary_delta"; itemId: string; sectionIndex: number; delta: string; turnId?: string }
-  | ({ type: "runtime_progress"; turnId?: string } & RuntimeProgress)
+  | ({ type: "runtime_progress"; turnId?: string; itemId?: string } & RuntimeProgress)
   | { type: "native_subagent_update"; activity: NativeSubagentActivity }
   | { type: "cron_update"; tasks: CronTask[] }
   | {

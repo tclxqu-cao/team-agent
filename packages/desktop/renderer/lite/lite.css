@@ -2,6 +2,7 @@
 * { box-sizing: border-box; }
 body { margin: 0; }
 .lite-shell { max-width: 480px; padding: 26px 30px 22px; margin: auto; text-align: center; }
+.lite-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .lite-brand { display: flex; justify-content: center; align-items: center; gap: 8px; color: #a8bbc4; font-size: 15px; }
 .lite-brand svg, .lite-brand b { color: #70e5c4; }
 .lite-brand b { margin-left: 5px; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; }

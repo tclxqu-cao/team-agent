@@ -1,0 +1,1 @@
+{"version":3,"file":"remote-video-encode-admission.d.ts","sourceRoot":"","sources":["../../../src/domain/live-view/remote-video-encode-admission.ts"],"names":[],"mappings":"AAAA,6FAA6F;AAC7F,wBAAgB,0BAA0B,CAAC,MAAM,EAAE,MAAM,GAAG;IAAE,gBAAgB,EAAE,MAAM,CAAA;CAAE,CAEvF;AAED,kFAAkF;AAClF,wBAAgB,2BAA2B,CAAC,MAAM,EAAE,MAAM,EAAE,MAAM,SAAW,GAAG,MAAM,CAGrF"}

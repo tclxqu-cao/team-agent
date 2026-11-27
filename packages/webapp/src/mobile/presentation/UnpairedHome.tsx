@@ -6,6 +6,7 @@ import { CONSOLE_CSS } from "../../../../shared/src/console/console-styles";
 import { resolveWebTheme } from "../../../../shared/src/console/themes";
 import EmptySessionWelcome from "../../../../desktop/renderer/components/EmptySessionWelcome";
 import AgentWorkspaceSwitcher from "../../../../desktop/renderer/components/AgentWorkspaceSwitcher";
+import { UpdateCheckButton } from "../../../../desktop/renderer/components/UpdateNotice";
 import "./unpaired-home.css";
 
 const SCAN_HINT = "请点击扫码按钮扫码";
@@ -46,7 +47,7 @@ export default function UnpairedHome({ onScan, initialFailure = "" }: { onScan()
     <div className="terminal-tabs">
       <div className="terminal-tab-list"><div className="terminal-tab active" role="tab" aria-disabled="true"><span>智能助手</span></div></div>
       <button type="button" className="terminal-add" aria-label="新建终端页签" aria-disabled="true">＋</button>
-      <div className="terminal-connection"><ResponsiveToolbar
+      <div className="terminal-connection"><UpdateCheckButton /><ResponsiveToolbar
         items={TOOLS.map(([label, Icon]) => ({ id: label, content: <button type="button" className="file-drawer-toggle" aria-label={label} aria-disabled="true"><Icon size={17} /></button> }))}
         avatar={<button type="button" data-pairing-action className="unpaired-scan" aria-label="扫码连接电脑" title="扫码连接电脑" disabled={scanning} onClick={() => void scan()}><Camera size={19} /><span>{scanning ? "连接中" : "扫码"}</span></button>}
       /></div>

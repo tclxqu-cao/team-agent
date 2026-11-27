@@ -23,7 +23,7 @@ export function createTunnelControlGateway({ desktop, parent = process }) {
     if (req.method !== "GET" && req.method !== "POST") return reply(405, { error: "Method not allowed" });
     if (!parent.connected || status.phase === "unsupported") return reply(503, { error: status.error || "当前后台不支持切换配对线路。" });
     const route = req.method === "POST" ? new URL(req.url, "http://localhost").searchParams.get("via") : undefined;
-    if (req.method === "POST" && !/^(self-hosted|cloudflare|lan|tailscale|(?:\d{1,3}\.){3}\d{1,3})$/.test(route ?? "")) return reply(400, { error: "配对线路无效。" });
+    if (req.method === "POST" && !/^(self-hosted|cloudflare|lan|tailscale|vpn|(?:\d{1,3}\.){3}\d{1,3})$/.test(route ?? "")) return reply(400, { error: "配对线路无效。" });
     if (pending.size >= 32) return reply(503, { error: "配对线路请求过多，请稍后重试。" });
     const id = randomUUID();
     const release = () => {

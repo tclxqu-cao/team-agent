@@ -1,5 +1,6 @@
 import { X } from "lucide-react";
 import type { CollaborationGroup } from "@agent/core/domain/collaboration/types";
+import { UpdateCheckButton } from "../UpdateNotice";
 
 interface DesktopWorkspaceTabsProps {
   groups: CollaborationGroup[];
@@ -23,5 +24,6 @@ export default function DesktopWorkspaceTabs({ groups, dashboardVisible, session
       {tab.closable && <button type="button" className="collab-desktop-tab-close" aria-label={`关闭${tab.name}`} title={`关闭${tab.name}页签`} onClick={() => onClose(tab.id)}><X size={13} aria-hidden="true" /></button>}
     </div>)}
     <div className="collab-desktop-tabs-drag-space" aria-hidden="true" />
+    {activeId !== "assistant" && <UpdateCheckButton iconOnly className="ui-icon-button" />}
   </nav>;
 }

@@ -1,0 +1,4063 @@
+import { parseSessionForkPoint } from "./session-fork-point.js";
+import { contextForkPoints, supportsContextFork } from "./context-session-fork.js";
+import { materializeContextHistory } from "./context-history-artifact.js";
+import { parseNativeGoalMutation, type NativeGoalMutation, type NativeSessionGoal } from "./native-session-goal.js";
+import type { SessionForkPoint } from "@agent/core";
+import { createHash, randomUUID } from "node:crypto";
+import { chmodSync, existsSync, mkdirSync, rmSync } from "node:fs";
+import { createConnection, createServer, type Server, type Socket } from "node:net";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
+import {
+  isNativeAgentType,
+  cancelQueuedSessionMessage,
+  cancelSessionGoal,
+  enqueueSessionGoal,
+  enqueueSessionMessage,
+  finishActiveSessionGoal,
+  mergeReasoningSummaryDelta,
+  createRunResult,
+  type RunResult,
+  type RunTerminalEvent,
+  NEW_SESSION_PLACEHOLDER_TITLE,
+  normalizeToolPermissionMode,
+  normalizeSessionMessageRunOptions,
+  paginateSessionHistory,
+  promoteNextSessionQueueItem,
+  queuedSessionMessages,
+  readSessionGoalState,
+  reorderQueuedSessionGoals,
+  reorderQueuedSessionMessages,
+  sessionQueueItemKind,
+  sessionHistoryMessageId,
+  SQLiteDatabase,
+  SQLiteEngineSwitchRepository,
+  EngineSwitchDelivery,
+  cleanEngineHistory,
+  renderContextHandoff,
+  scopedHistory,
+  SessionQueryIndexCache,
+  StaleSessionAnchorError,
+  updateQueuedSessionMessage,
+  type AgentEvent,
+  type Message,
+  type SessionGoal,
+  type SessionGoalState,
+  type SessionMessagePayload,
+  type SessionHistoryQuery,
+  type SessionQueryIndex,
+  type SessionToolResultBody,
+  type SessionToolResultRef,
+  type ToolPermissionMode,
+  logGlobal,
+} from "@agent/core";
+import { AsyncEventQueue } from "./async-event-queue.js";
+import { normalizeAgentWorkspacePath, workspacePageSize } from "./agent-workspace-index.js";
+import { ClaudeRuntimeAdapter } from "./claude-runtime-adapter.js";
+import { CopilotRuntimeAdapter } from "./copilot-runtime-adapter.js";
+import { isCopilotQuestionId } from "./copilot-approvals.js";
+import { CodexAppServerClient } from "./codex-app-server-client.js";
+import {
+  CodexSessionDiskCatalog,
+  type CodexDiskSessionCatalogEntry,
+  type CodexSessionCatalogRepository,
+} from "./codex-session-disk-catalog.js";
+import { CodexSessionCompatibilityService } from "./codex-session-compatibility.js";
+import { CodexRuntimeAdapter, codexTraceHistoryId } from "./codex-runtime-adapter.js";
+import { parseCodexAsyncQuestionId } from "./codex-questions.js";
+import { DeepSeekHarnessRuntimeAdapter } from "./deepseek-harness-runtime-adapter.js";
+import { isHarnessContextMessage, isHarnessSteeredMessage } from "./deepseek-harness-codec.js";
+import { parseHarnessQuestionId } from "./deepseek-harness-interaction-codec.js";
+import { isOpenCodeQuestionId } from "./opencode-questions.js";
+import { OpenCodeRuntimeAdapter } from "./opencode-runtime-adapter.js";
+import { OpenCodeServerClient } from "./opencode-server-client.js";
+import { QoderRuntimeAdapter } from "./qoder-runtime-adapter.js";
+import { ZCodeRuntimeAdapter } from "./zcode-runtime-adapter.js";
+import { WorkBuddyRuntimeAdapter } from "./workbuddy-runtime-adapter.js";
+import { decodeUnifiedSessionId, encodeUnifiedSessionId } from "./session-id.js";
+import type {
+  AgentRuntimeAdapter,
+  AgentType,
+  AgentWorkspace,
+  CreateRuntimeSessionOptions,
+  EngineThreadSessionSummary,
+  ImportedAgentWorkspace,
+  ImportedAgentWorkspaceRepository,
+  ImportAgentWorkspaceResult,
+  NativeReasoningEffort,
+  RuntimeHealth,
+  RuntimeBackgroundJob,
+  RuntimeBackgroundJobOutput,
+  RuntimeBackgroundJobStopResult,
+  RuntimeModelInfo,
+  RuntimeModelSelection,
+  RuntimeQuestionAnswer,
+  RuntimeRunOptions,
+  SessionCompatibility,
+  SessionOccupancy,
+  UnifiedSessionDetail,
+  UnifiedSessionSummary,
+  WorkspacePage,
+  WorkspaceQuery,
+  WorkspaceSessionQuery,
+} from "./types.js";
+import { RuntimeSessionError } from "./types.js";
+import {
+  shouldReuseSessionDetailCache,
+  UnifiedSessionService,
+} from "./unified-session-service.js";
+
+const BROKER_SOCKET_NAME = "native-runtime.sock";
+const BROKER_RESTART_MESSAGE = "Native runtime restarted; this turn was interrupted. You can send again.";
+const EXTERNAL_OBSERVATION_DEBOUNCE_MS = 5_000;
+const TERMINAL_RETENTION_MS = 10 * 60_000;
+const ABORT_FALLBACK_MS = 3_000;
+const RELEASE_SETTLE_TIMEOUT_MS = ABORT_FALLBACK_MS + 1_000;
+
+type NativeAgentType = Exclude<AgentType, "customer-agent">;
+export type NativeRuntimeController = "web" | "desktop";
+
+export interface NativeRuntimeAbortOptions {
+  expectedRunId?: string;
+  source?: string;
+  trigger?: "button" | "keyboard" | "api";
+}
+
+export interface BrokerRunEvent {
+  runId: string;
+  sequence: number;
+  event: AgentEvent;
+}
+
+export interface BrokerRunStart {
+  runId: string;
+  snapshotRevision: number;
+  permissionMode: ToolPermissionMode;
+}
+
+export interface BrokerGoalEnqueueResult {
+  state: SessionGoalState;
+  started?: BrokerRunStart;
+}
+
+export interface BrokerMessageSteerResult {
+  steered: boolean;
+  state: SessionGoalState;
+}
+
+export interface BrokerQueuedMessageInput {
+  sourceMessageId: string;
+  content: string;
+  messagePayload?: SessionMessagePayload;
+}
+
+export interface NativeRuntimeBrokerSnapshot {
+  sessionId: string;
+  runId: string | null;
+  /** Durable queue item that owns this run, when admitted from the queue. */
+  queueItemId?: string;
+  snapshotRevision: number;
+  events: BrokerRunEvent[];
+  controller: NativeRuntimeController | null;
+  /** Durable explicit cancellation intent; cleared only by a new admitted run. */
+  manuallyStopped?: boolean;
+}
+
+export interface NativeRuntimeBrokerCallbacks {
+  onApprovalResolved(questionId: string): void;
+  importedWorkspaceRepository: ImportedAgentWorkspaceRepository;
+  codexSessionCatalogRepository: CodexSessionCatalogRepository;
+}
+
+export type NativeRuntimeBrokerRuntimeFactory = (
+  callbacks: NativeRuntimeBrokerCallbacks,
+) => UnifiedSessionService;
+
+export interface NativeRuntimeBrokerOptions {
+  directory?: string;
+  runtimeFactory?: NativeRuntimeBrokerRuntimeFactory;
+  /** Start an independent host; closing this client must not stop native runs. */
+  startHost?: (directory: string) => Promise<void>;
+  now?: () => number;
+}
+
+interface BrokerRunRecord {
+  sessionId: string;
+  runId: string;
+  agentType: NativeAgentType;
+  nativeSessionId: string;
+  input: string;
+  permissionMode: ToolPermissionMode;
+  controller: NativeRuntimeController;
+  status: "active" | "terminal";
+  nextSequence: number;
+  createdAt: number;
+  terminalAt: number | null;
+  goalId: string | null;
+}
+
+interface BrokerRunAdmission {
+  run: BrokerRunRecord;
+  autoTitle: string | null;
+}
+
+interface BrokerLockRecord {
+  sessionId: string;
+  occupancy: SessionOccupancy;
+  revision: number;
+  sampleState: "occupied" | "clean" | null;
+  sampleAt: number | null;
+}
+
+interface BrokerResponse {
+  id: string;
+  ok: boolean;
+  result?: unknown;
+  error?: { message: string; code?: string };
+}
+
+interface BrokerRequest {
+  id: string;
+  method: string;
+  params: Record<string, unknown>;
+}
+
+interface BrokerSubscription {
+  sessionId: string;
+  runId: string | null;
+  afterSequence: number;
+}
+
+interface LocalBrokerSubscription extends BrokerSubscription {
+  listener: (event: BrokerRunEvent) => void;
+}
+
+interface StoredRunRow {
+  session_id: string;
+  run_id: string;
+  agent_type: NativeAgentType;
+  native_session_id: string;
+  input: string;
+  permission_mode: ToolPermissionMode;
+  controller: NativeRuntimeController;
+  status: "active" | "terminal";
+  next_sequence: number;
+  created_at: number;
+  terminal_at: number | null;
+  goal_id?: string | null;
+}
+
+interface StoredEventRow {
+  run_id: string;
+  sequence: number;
+  payload: string;
+}
+
+interface StoredTurnCompletionRow {
+  run_id: string;
+  session_id: string;
+  input: string;
+  final_text: string;
+  duration_ms: number;
+  completed_at: number;
+  result?: string | null;
+}
+
+interface StoredImportedWorkspaceRow {
+  workspace_id: string;
+  agent_type: NativeAgentType;
+  normalized_path: string;
+  name: string;
+  created_at: number;
+}
+
+interface StoredLockRow {
+  session_id: string;
+  occupancy: SessionOccupancy;
+  revision: number;
+  sample_state: "occupied" | "clean" | null;
+  sample_at: number | null;
+}
+
+interface StoredCodexCatalogRow {
+  canonical_path: string;
+  size: number;
+  mtime_ns: string;
+  native_session_id: string;
+  probeable: number;
+  producer_version: string | null;
+  cwd: string;
+  created: string;
+  updated: string;
+  parent_session_id: string | null;
+  format_key: string | null;
+  compatibility: string;
+}
+
+interface SnapshotProjection {
+  run: BrokerRunRecord | null;
+  events: BrokerRunEvent[];
+}
+
+/**
+ * Durable state owned by exactly one local broker. The socket makes this a
+ * cross-process boundary while SQLite makes page reloads independent of a
+ * particular Next.js route or Electron renderer instance.
+ */
+class NativeRuntimeBrokerState implements ImportedAgentWorkspaceRepository, CodexSessionCatalogRepository {
+  readonly todoOutbox: RuntimeNotificationOutbox;
+  private readonly database: SQLiteDatabase;
+  private closed = false;
+  readonly engineSwitch: SQLiteEngineSwitchRepository;
+
+  constructor(
+    directory: string,
+    private readonly now: () => number,
+  ) {
+    mkdirSync(directory, { recursive: true, mode: 0o700 });
+    try { chmodSync(directory, 0o700); } catch { /* Best effort on filesystems without POSIX modes. */ }
+    this.database = new SQLiteDatabase(directory);
+    this.todoOutbox = new RuntimeNotificationOutbox(this.database.db);
+    this.engineSwitch = new SQLiteEngineSwitchRepository(this.database.db);
+    this.database.db.exec(`
+      CREATE TABLE IF NOT EXISTS native_runtime_message_receipt (
+        session_id TEXT NOT NULL, source_message_id TEXT NOT NULL, queue_item_id TEXT NOT NULL,
+        item TEXT NOT NULL, status TEXT NOT NULL, run_id TEXT, terminal_sequence INTEGER, terminal_event TEXT, steering_turn_id TEXT,
+        PRIMARY KEY(session_id, source_message_id), UNIQUE(session_id, queue_item_id)
+      );
+      CREATE TABLE IF NOT EXISTS native_runtime_policy (
+        session_id TEXT PRIMARY KEY,
+        permission_mode TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS native_runtime_run (
+        run_id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        agent_type TEXT NOT NULL,
+        native_session_id TEXT NOT NULL,
+        input TEXT NOT NULL,
+        permission_mode TEXT NOT NULL,
+        controller TEXT NOT NULL,
+        status TEXT NOT NULL,
+        next_sequence INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        terminal_at INTEGER,
+        goal_id TEXT
+      );
+      CREATE TABLE IF NOT EXISTS native_runtime_stop_intent (
+        session_id TEXT PRIMARY KEY, stopped_at INTEGER NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS native_runtime_active_run_per_session
+        ON native_runtime_run(session_id) WHERE status = 'active';
+      CREATE INDEX IF NOT EXISTS native_runtime_runs_by_session
+        ON native_runtime_run(session_id, created_at DESC);
+      CREATE TABLE IF NOT EXISTS native_runtime_turn_completion (
+        run_id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        input TEXT NOT NULL,
+        final_text TEXT NOT NULL,
+        duration_ms INTEGER NOT NULL,
+        completed_at INTEGER NOT NULL,
+        result TEXT
+      );
+      CREATE INDEX IF NOT EXISTS native_runtime_turn_completion_by_session
+        ON native_runtime_turn_completion(session_id, completed_at ASC, run_id ASC);
+      CREATE TABLE IF NOT EXISTS native_runtime_event (
+        run_id TEXT NOT NULL,
+        sequence INTEGER NOT NULL,
+        payload TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY(run_id, sequence)
+      );
+      CREATE TABLE IF NOT EXISTS native_runtime_approval (
+        question_id TEXT PRIMARY KEY,
+        run_id TEXT NOT NULL,
+        state TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        resolved_at INTEGER
+      );
+      CREATE INDEX IF NOT EXISTS native_runtime_approval_by_run
+        ON native_runtime_approval(run_id, state);
+      CREATE TABLE IF NOT EXISTS native_runtime_lock (
+        session_id TEXT PRIMARY KEY,
+        occupancy TEXT NOT NULL,
+        revision INTEGER NOT NULL,
+        sample_state TEXT,
+        sample_at INTEGER,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS native_runtime_goal_state (
+        session_id TEXT PRIMARY KEY,
+        payload TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS native_runtime_pending_session (
+        session_id TEXT PRIMARY KEY,
+        payload TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS native_runtime_session_title (
+        session_id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        auto_title_pending INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS native_runtime_hidden_session (
+        session_id TEXT PRIMARY KEY,
+        hidden_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS native_runtime_imported_workspace (
+        workspace_id TEXT PRIMARY KEY,
+        agent_type TEXT NOT NULL,
+        normalized_path TEXT NOT NULL,
+        name TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        UNIQUE(agent_type, normalized_path)
+      );
+      CREATE INDEX IF NOT EXISTS native_runtime_imported_workspace_order
+        ON native_runtime_imported_workspace(agent_type, created_at ASC, workspace_id ASC);
+      CREATE TABLE IF NOT EXISTS native_runtime_workspace_root_alias (
+        agent_type TEXT NOT NULL,
+        workspace_id TEXT NOT NULL,
+        normalized_path TEXT NOT NULL,
+        PRIMARY KEY(agent_type, workspace_id, normalized_path)
+      );
+      CREATE TABLE IF NOT EXISTS codex_session_catalog (
+        canonical_path TEXT PRIMARY KEY,
+        size INTEGER NOT NULL,
+        mtime_ns TEXT NOT NULL,
+        native_session_id TEXT NOT NULL,
+        probeable INTEGER NOT NULL,
+        producer_version TEXT,
+        cwd TEXT NOT NULL,
+        created TEXT NOT NULL,
+        updated TEXT NOT NULL,
+        parent_session_id TEXT,
+        format_key TEXT,
+        compatibility TEXT NOT NULL,
+        schema_version INTEGER NOT NULL,
+        registry_version INTEGER NOT NULL,
+        reader_version TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS codex_session_catalog_native_id
+        ON codex_session_catalog(native_session_id);
+    `);
+    const runColumns = this.database.db.prepare("PRAGMA table_info(native_runtime_run)").all() as Array<{ name: string }>;
+    if (!runColumns.some((column) => column.name === "goal_id")) {
+      this.database.db.exec("ALTER TABLE native_runtime_run ADD COLUMN goal_id TEXT");
+    }
+    const completionColumns = this.database.db.prepare("PRAGMA table_info(native_runtime_turn_completion)").all() as Array<{ name: string }>;
+    if (!completionColumns.some((column) => column.name === "result")) {
+      this.database.db.exec("ALTER TABLE native_runtime_turn_completion ADD COLUMN result TEXT");
+    }
+    const receiptColumns = this.database.db.prepare("PRAGMA table_info(native_runtime_message_receipt)").all() as Array<{ name: string }>;
+    if (!receiptColumns.some(column => column.name === "steering_turn_id")) {
+      this.database.db.exec("ALTER TABLE native_runtime_message_receipt ADD COLUMN steering_turn_id TEXT");
+    }
+  }
+
+  close(): void {
+    this.todoOutbox.close();
+    if (this.closed) return;
+    this.closed = true;
+    this.database.close();
+  }
+
+  load(options: {
+    schemaVersion: number;
+    registryVersion: number;
+    readerVersion: string;
+  }): CodexDiskSessionCatalogEntry[] {
+    const rows = this.database.db.prepare(`
+      SELECT canonical_path, size, mtime_ns, native_session_id, probeable,
+             producer_version, cwd, created, updated, parent_session_id,
+             format_key, compatibility
+      FROM codex_session_catalog
+      WHERE schema_version = ? AND registry_version = ? AND reader_version = ?
+      ORDER BY updated DESC, native_session_id ASC
+    `).all(options.schemaVersion, options.registryVersion, options.readerVersion) as StoredCodexCatalogRow[];
+    return rows.flatMap((row) => {
+      try {
+        return [{
+          canonicalPath: row.canonical_path,
+          size: row.size,
+          mtimeNs: row.mtime_ns,
+          nativeSessionId: row.native_session_id,
+          probeable: row.probeable === 1,
+          ...(row.producer_version ? { producerVersion: row.producer_version } : {}),
+          cwd: row.cwd,
+          created: row.created,
+          updated: row.updated,
+          ...(row.parent_session_id ? { parentSessionId: row.parent_session_id } : {}),
+          ...(row.format_key ? { formatKey: row.format_key } : {}),
+          compatibility: JSON.parse(row.compatibility) as SessionCompatibility,
+        } satisfies CodexDiskSessionCatalogEntry];
+      } catch {
+        return [];
+      }
+    });
+  }
+
+  replace(entries: readonly CodexDiskSessionCatalogEntry[], options: {
+    schemaVersion: number;
+    registryVersion: number;
+    readerVersion: string;
+  }): void {
+    const replaceAll = this.database.db.transaction(() => {
+      this.database.db.prepare("DELETE FROM codex_session_catalog").run();
+      const insert = this.database.db.prepare(`
+        INSERT INTO codex_session_catalog(
+          canonical_path, size, mtime_ns, native_session_id, probeable,
+          producer_version, cwd, created, updated, parent_session_id,
+          format_key, compatibility, schema_version, registry_version, reader_version
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      for (const entry of entries) {
+        insert.run(
+          entry.canonicalPath,
+          entry.size,
+          entry.mtimeNs,
+          entry.nativeSessionId,
+          entry.probeable ? 1 : 0,
+          entry.producerVersion ?? null,
+          entry.cwd,
+          entry.created,
+          entry.updated,
+          entry.parentSessionId ?? null,
+          entry.formatKey ?? null,
+          JSON.stringify(entry.compatibility),
+          options.schemaVersion,
+          options.registryVersion,
+          options.readerVersion,
+        );
+      }
+    });
+    replaceAll();
+  }
+
+  updateCompatibility(
+    canonicalPath: string,
+    size: number,
+    mtimeNs: string,
+    compatibility: SessionCompatibility,
+  ): void {
+    this.database.db.prepare(`
+      UPDATE codex_session_catalog SET compatibility = ?
+      WHERE canonical_path = ? AND size = ? AND mtime_ns = ?
+    `).run(JSON.stringify(compatibility), canonicalPath, size, mtimeNs);
+  }
+
+  list(agentType: NativeAgentType): ImportedAgentWorkspace[] {
+    const rows = this.database.db.prepare(`
+      SELECT workspace_id, agent_type, normalized_path, name, created_at
+      FROM native_runtime_imported_workspace
+      WHERE agent_type = ?
+      ORDER BY created_at ASC, workspace_id ASC
+    `).all(agentType) as StoredImportedWorkspaceRow[];
+    return rows.map(toImportedWorkspace);
+  }
+
+  findByPath(agentType: NativeAgentType, normalizedPath: string): ImportedAgentWorkspace | null {
+    const row = this.database.db.prepare(`
+      SELECT workspace_id, agent_type, normalized_path, name, created_at
+      FROM native_runtime_imported_workspace
+      WHERE agent_type = ? AND normalized_path = ?
+    `).get(agentType, normalizedPath) as StoredImportedWorkspaceRow | undefined;
+    return row ? toImportedWorkspace(row) : null;
+  }
+
+  findImportedWorkspace(agentType: NativeAgentType, workspaceId: string): ImportedAgentWorkspace | null {
+    const row = this.database.db.prepare(`
+      SELECT workspace_id, agent_type, normalized_path, name, created_at
+      FROM native_runtime_imported_workspace
+      WHERE agent_type = ? AND workspace_id = ?
+    `).get(agentType, workspaceId) as StoredImportedWorkspaceRow | undefined;
+    return row ? toImportedWorkspace(row) : null;
+  }
+
+  save(workspace: ImportedAgentWorkspace): { workspace: ImportedAgentWorkspace; existing: boolean } {
+    const result = this.database.db.prepare(`
+      INSERT OR IGNORE INTO native_runtime_imported_workspace(
+        workspace_id, agent_type, normalized_path, name, created_at
+      ) VALUES (?, ?, ?, ?, ?)
+    `).run(
+      workspace.workspaceId,
+      workspace.agentType,
+      workspace.normalizedPath,
+      workspace.name,
+      workspace.createdAt,
+    );
+    return {
+      workspace: this.findByPath(workspace.agentType, workspace.normalizedPath) ?? workspace,
+      existing: result.changes === 0,
+    };
+  }
+
+  listWorkspaceRootAliases(agentType: NativeAgentType, workspaceId: string): string[] {
+    const rows = this.database.db.prepare(`
+      SELECT normalized_path FROM native_runtime_workspace_root_alias
+      WHERE agent_type = ? AND workspace_id = ? ORDER BY normalized_path ASC
+    `).all(agentType, workspaceId) as Array<{ normalized_path: string }>;
+    return rows.map((row) => row.normalized_path);
+  }
+
+  saveWorkspaceRootAlias(agentType: NativeAgentType, workspaceId: string, normalizedPath: string): void {
+    this.database.db.prepare(`
+      INSERT OR IGNORE INTO native_runtime_workspace_root_alias(agent_type, workspace_id, normalized_path)
+      VALUES (?, ?, ?)
+    `).run(agentType, workspaceId, normalizedPath);
+  }
+
+  recoverInterruptedRuns(endInterruptedGoals = false): void {
+    const runs = this.database.db.prepare(
+      "SELECT * FROM native_runtime_run WHERE status = 'active'",
+    ).all() as StoredRunRow[];
+    for (const row of runs) {
+      this.appendTerminal(row.run_id, {
+        type: "error",
+        code: "NATIVE_PROTOCOL_ERROR",
+        message: BROKER_RESTART_MESSAGE,
+      });
+      const activeItem = this.getGoalState(row.session_id).active;
+      if (
+        row.goal_id
+        && activeItem?.id === row.goal_id
+        && (endInterruptedGoals || sessionQueueItemKind(activeItem) === "message")
+      ) {
+        const reason = sessionQueueItemKind(activeItem) === "message"
+          ? "Native runtime restarted during this message."
+          : BROKER_RESTART_MESSAGE;
+        this.finishGoal(row.session_id, row.goal_id, "failed", reason);
+      }
+    }
+    this.pruneExpiredTerminals();
+  }
+
+  getPermissionMode(sessionId: string): ToolPermissionMode {
+    const row = this.database.db.prepare(
+      "SELECT permission_mode FROM native_runtime_policy WHERE session_id = ?",
+    ).get(sessionId) as { permission_mode?: unknown } | undefined;
+    return normalizeToolPermissionMode(row?.permission_mode);
+  }
+
+  setPermissionMode(sessionId: string, permissionMode: ToolPermissionMode): ToolPermissionMode {
+    const mode = normalizeToolPermissionMode(permissionMode);
+    this.database.db.prepare(`
+      INSERT INTO native_runtime_policy(session_id, permission_mode, updated_at)
+      VALUES (?, ?, ?)
+      ON CONFLICT(session_id) DO UPDATE SET permission_mode=excluded.permission_mode, updated_at=excluded.updated_at
+    `).run(sessionId, mode, this.now());
+    return mode;
+  }
+
+  trackPendingAutoTitle(sessionId: string, title: string): void {
+    if (title !== NEW_SESSION_PLACEHOLDER_TITLE) return;
+    this.database.db.prepare(`
+      INSERT OR IGNORE INTO native_runtime_session_title(
+        session_id, title, auto_title_pending, updated_at
+      ) VALUES (?, ?, 1, ?)
+    `).run(sessionId, title, this.now());
+  }
+
+  getDisplayTitle(sessionId: string): string | null {
+    const row = this.database.db.prepare(
+      "SELECT title FROM native_runtime_session_title WHERE session_id = ?",
+    ).get(sessionId) as { title?: string } | undefined;
+    return row?.title ?? null;
+  }
+
+  listPendingSessions(): UnifiedSessionSummary[] {
+    const rows = this.database.db.prepare(
+      "SELECT payload FROM native_runtime_pending_session ORDER BY updated_at DESC",
+    ).all() as Array<{ payload: string }>;
+    return rows.flatMap((row) => {
+      const parsed = parsePendingSession(row.payload);
+      return parsed ? [parsed] : [];
+    });
+  }
+
+  savePendingSession(session: UnifiedSessionSummary): void {
+    this.database.db.prepare(`
+      INSERT INTO native_runtime_pending_session(session_id, payload, updated_at)
+      VALUES (?, ?, ?)
+      ON CONFLICT(session_id) DO UPDATE SET payload=excluded.payload, updated_at=excluded.updated_at
+    `).run(session.id, JSON.stringify(session), this.now());
+  }
+
+  deletePendingSession(sessionId: string): void {
+    this.database.db.prepare(
+      "DELETE FROM native_runtime_pending_session WHERE session_id = ?",
+    ).run(sessionId);
+  }
+
+  assertSessionCanHide(sessionId: string): void {
+    if (this.activeRun(sessionId)) {
+      throw new RuntimeSessionError("Session is currently running", "SESSION_OCCUPIED");
+    }
+  }
+
+  hideSession(sessionId: string): void {
+    const hide = this.database.db.transaction(() => {
+      this.assertSessionCanHide(sessionId);
+      this.database.db.prepare(`
+        INSERT OR IGNORE INTO native_runtime_hidden_session(session_id, hidden_at)
+        VALUES (?, ?)
+      `).run(sessionId, this.now());
+      this.database.db.prepare(
+        "DELETE FROM native_runtime_pending_session WHERE session_id = ?",
+      ).run(sessionId);
+      this.database.db.prepare(
+        "DELETE FROM native_runtime_goal_state WHERE session_id = ?",
+      ).run(sessionId);
+      this.database.db.prepare(
+        "DELETE FROM native_runtime_turn_completion WHERE session_id = ?",
+      ).run(sessionId);
+    });
+    hide();
+  }
+
+  isSessionHidden(sessionId: string): boolean {
+    return Boolean(this.database.db.prepare(
+      "SELECT 1 AS hidden FROM native_runtime_hidden_session WHERE session_id = ?",
+    ).get(sessionId));
+  }
+
+  filterHiddenSessions(sessions: UnifiedSessionSummary[]): UnifiedSessionSummary[] {
+    const hiddenIds = new Set((this.database.db.prepare(
+      "SELECT session_id FROM native_runtime_hidden_session",
+    ).all() as Array<{ session_id: string }>).map((row) => row.session_id));
+    return sessions.filter((session) => !hiddenIds.has(session.id));
+  }
+
+  assertSessionVisible(sessionId: string): void {
+    if (this.isSessionHidden(sessionId)) {
+      throw new RuntimeSessionError(`Native session not found: ${sessionId}`, "SESSION_NOT_FOUND");
+    }
+  }
+
+  getGoalState(sessionId: string): SessionGoalState {
+    const row = this.database.db.prepare(
+      "SELECT payload FROM native_runtime_goal_state WHERE session_id = ?",
+    ).get(sessionId) as { payload?: string } | undefined;
+    if (!row?.payload) return readSessionGoalState(undefined);
+    try {
+      return readSessionGoalState({ goalState: JSON.parse(row.payload) });
+    } catch {
+      return readSessionGoalState(undefined);
+    }
+  }
+
+  enqueueGoal(sessionId: string, objective: string, sourceMessageId?: string): SessionGoalState {
+    return this.database.db.transaction(() => {
+      this.assertEngineThreadRunnable(sessionId);
+      return this.updateGoalState(sessionId, (state) => enqueueSessionGoal(state, {
+      id: randomUUID(),
+      sessionId,
+      objective,
+      sourceMessageId,
+      now: this.now(),
+      }));
+    })();
+  }
+
+  enqueueMessage(sessionId: string, input: BrokerQueuedMessageInput): SessionGoalState {
+    return this.database.db.transaction(() => {
+      this.assertEngineThreadRunnable(sessionId);
+      const state = this.getGoalState(sessionId);
+      const receipt = this.database.db.prepare(
+        "SELECT item,status FROM native_runtime_message_receipt WHERE session_id=? AND source_message_id=?"
+      ).get(sessionId, input.sourceMessageId) as { item: string; status: import("@agent/core").SessionGoal["status"] } | undefined;
+      if (receipt) {
+        if ([state.active, ...state.queued, ...state.history].some(item => item?.sourceMessageId === input.sourceMessageId)) return state;
+        const item = { ...JSON.parse(receipt.item), status: receipt.status === "queued" ? "failed" : receipt.status };
+        return { ...state, history: [...state.history, item] };
+      }
+      const next = this.updateGoalState(sessionId, current => enqueueSessionMessage(current, {
+        id: randomUUID(), sessionId, objective: input.content, sourceMessageId: input.sourceMessageId,
+        messagePayload: input.messagePayload, now: this.now(), activate: !this.activeRun(sessionId),
+      }));
+      const item = [next.active, ...next.queued, ...next.history].find(item => item?.sourceMessageId === input.sourceMessageId);
+      if (!item) throw new RuntimeSessionError("Message receipt was not persisted", "NATIVE_PROTOCOL_ERROR");
+      this.database.db.prepare(
+        "INSERT INTO native_runtime_message_receipt(session_id,source_message_id,queue_item_id,item,status) VALUES(?,?,?,?,?)"
+      ).run(sessionId, input.sourceMessageId, item.id, JSON.stringify(item), item.status);
+      return next;
+    })();
+  }
+
+  startedMessage(sessionId: string, sourceMessageId: string): boolean {
+    return !!this.database.db.prepare(
+      "SELECT 1 FROM native_runtime_message_receipt WHERE session_id=? AND source_message_id=? AND run_id IS NOT NULL"
+    ).get(sessionId, sourceMessageId);
+  }
+
+  todoContextForRun(run: BrokerRunRecord, context: RuntimeTodoContext | undefined): RuntimeTodoContext | undefined {
+    if (!context?.executionId) return context;
+    if (!run.goalId) return undefined;
+    // The scheduler uses the occurrence id as the durable message source id.
+    const receipt = this.database.db.prepare(`
+      SELECT 1 FROM native_runtime_message_receipt
+      WHERE session_id=? AND source_message_id=? AND queue_item_id=? AND run_id=?
+    `).get(run.sessionId, context.executionId, run.goalId, run.runId);
+    return receipt ? context : undefined;
+  }
+
+  reorderGoals(sessionId: string, orderedIds: readonly string[]): SessionGoalState {
+    return this.updateGoalState(sessionId, (state) => reorderQueuedSessionGoals(state, orderedIds));
+  }
+
+  reorderMessages(sessionId: string, orderedIds: readonly string[]): SessionGoalState {
+    return this.updateGoalState(sessionId, (state) => reorderQueuedSessionMessages(state, orderedIds));
+  }
+
+  updateMessage(
+    sessionId: string,
+    messageId: string,
+    content: string,
+    messagePayload?: SessionMessagePayload,
+  ): SessionGoalState {
+    return this.updateGoalState(sessionId, (state) => updateQueuedSessionMessage(
+      state,
+      messageId,
+      content,
+      messagePayload,
+      this.now(),
+    ));
+  }
+
+  cancelGoal(sessionId: string, goalId: string): SessionGoalState {
+    return this.updateGoalState(sessionId, (state) => cancelSessionGoal(state, goalId, this.now()));
+  }
+
+  cancelMessage(sessionId: string, messageId: string): SessionGoalState {
+    return this.updateGoalState(sessionId, (state) => cancelQueuedSessionMessage(state, messageId));
+  }
+
+  completeSteeredMessage(sessionId: string, messageId: string, runId: string | null): SessionGoalState {
+    return this.database.db.transaction(() => {
+      const next = this.updateGoalState(sessionId, state => {
+        const item = state.queued.find(candidate => candidate.id === messageId && candidate.kind === "message");
+        if (!item) return state;
+        return { ...state, queued: state.queued.filter(candidate => candidate.id !== messageId), history: [
+          ...state.history,
+          { ...item, status: "completed" as const, position: 0, updatedAt: this.now(), lastReason: "steered" },
+        ] };
+      });
+      const item = next.history.find(candidate => candidate.id === messageId && candidate.lastReason === "steered");
+      const nativeTurn = runId ? this.database.db.prepare(
+        "SELECT json_extract(payload,'$.turnId') AS turn_id FROM native_runtime_event WHERE run_id=? AND json_extract(payload,'$.turnId') IS NOT NULL ORDER BY sequence ASC LIMIT 1",
+      ).get(runId) as { turn_id: string } | undefined : undefined;
+      if (item) this.database.db.prepare(
+        "UPDATE native_runtime_message_receipt SET item=?,status='completed',run_id=?,steering_turn_id=? WHERE session_id=? AND queue_item_id=?",
+      ).run(JSON.stringify(item), runId, nativeTurn?.turn_id ?? null, sessionId, messageId);
+      return next;
+    })();
+  }
+
+  private restoreSteeredMessages(sessionId: string, messages: Message[]): Message[] {
+    const queuedIds = new Set(this.getGoalState(sessionId).queued.map(item => `copilot-steering:${item.id}`));
+    const restored = messages.filter(message => !message.historyId || !queuedIds.has(message.historyId));
+    const rows = this.database.db.prepare(
+      "SELECT item,run_id,steering_turn_id FROM native_runtime_message_receipt WHERE session_id=? AND status='completed' ORDER BY rowid ASC",
+    ).all(sessionId) as Array<{ item: string; run_id: string | null; steering_turn_id: string | null }>;
+    for (const row of rows) {
+      let item: SessionGoal;
+      try { item = JSON.parse(row.item); } catch { continue; }
+      if (item.lastReason !== "steered") continue;
+      const historyId = item.sourceMessageId || `copilot-steered:${item.id}`;
+      if (restored.some(message => message.historyId === historyId)) continue;
+      const run = row.run_id ? this.getRunById(row.run_id) : null;
+      const name = `__native_steered:${row.run_id ?? item.id}`;
+      let anchor = -1;
+      for (let index = 0; index < restored.length; index += 1) {
+        const message = restored[index];
+        if (message.name === name || (row.steering_turn_id && message.historyId?.startsWith(`${row.steering_turn_id}:`))) anchor = index;
+      }
+      if (anchor < 0 && run) {
+        let userIndex = -1;
+        for (let index = 0; index < restored.length; index += 1) {
+          if (restored[index].role === "user" && restored[index].content === run.input) userIndex = index;
+        }
+        if (userIndex >= 0) {
+          const nextUser = restored.findIndex((message, index) => index > userIndex && message.role === "user");
+          anchor = nextUser < 0 ? restored.length - 1 : nextUser - 1;
+        }
+      }
+      restored.splice(anchor < 0 ? restored.length : anchor + 1, 0, {
+        role: "user", content: item.objective, historyId, name, images: item.messagePayload?.images,
+      });
+    }
+    return restored;
+  }
+
+  finishGoal(sessionId: string, goalId: string, outcome: "completed" | "failed", reason?: string): SessionGoalState {
+    return this.updateGoalState(sessionId, (state) => (
+      state.active?.id === goalId
+        ? finishActiveSessionGoal(state, outcome, this.now(), reason)
+        : state
+    ));
+  }
+
+  promoteNextItem(sessionId: string): SessionGoalState {
+    return this.updateGoalState(sessionId, (state) => promoteNextSessionQueueItem(state, this.now()));
+  }
+
+  deferMessageAdmission(sessionId: string, messageId: string): SessionGoalState {
+    return this.database.db.transaction(() => {
+      const state = this.getGoalState(sessionId);
+      const item = state.active;
+      if (item?.id !== messageId || item.kind !== "message" || this.activeRun(sessionId)) return state;
+      const receipt = this.database.db.prepare(
+        "SELECT run_id FROM native_runtime_message_receipt WHERE session_id=? AND queue_item_id=?",
+      ).get(sessionId, messageId) as { run_id: string | null } | undefined;
+      if (receipt?.run_id) return state;
+      const pending = { ...item, status: "queued" as const, updatedAt: this.now() };
+      const next = this.updateGoalState(sessionId, () => readSessionGoalState({ goalState: {
+        active: null,
+        queued: [pending, ...state.queued].map((entry, position) => ({ ...entry, position })),
+        history: state.history,
+      } }));
+      this.database.db.prepare(
+        "UPDATE native_runtime_message_receipt SET item=?,status='queued' WHERE session_id=? AND queue_item_id=? AND run_id IS NULL",
+      ).run(JSON.stringify(pending), sessionId, messageId);
+      return next;
+    })();
+  }
+
+  queuedMessages(sessionId: string): SessionGoal[] {
+    return queuedSessionMessages(this.getGoalState(sessionId));
+  }
+
+  listResumableQueueItems(): SessionGoal[] {
+    const rows = this.database.db.prepare(
+      "SELECT session_id, payload FROM native_runtime_goal_state",
+    ).all() as Array<{ session_id: string; payload: string }>;
+    return rows.flatMap((row) => {
+      try {
+        let state = readSessionGoalState({ goalState: JSON.parse(row.payload) });
+        if (!state.active && state.queued.length > 0) state = this.promoteNextItem(row.session_id);
+        return state.active ? [state.active] : [];
+      } catch {
+        return [];
+      }
+    });
+  }
+
+  private updateGoalState(
+    sessionId: string,
+    update: (state: SessionGoalState) => SessionGoalState,
+  ): SessionGoalState {
+    const transaction = this.database.db.transaction(() => {
+      const next = update(this.getGoalState(sessionId));
+      this.database.db.prepare(`
+        INSERT INTO native_runtime_goal_state(session_id, payload, updated_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT(session_id) DO UPDATE SET payload=excluded.payload, updated_at=excluded.updated_at
+      `).run(sessionId, JSON.stringify(next), this.now());
+      return next;
+    });
+    return transaction();
+  }
+
+  admit(input: {
+    sessionId: string;
+    agentType: NativeAgentType;
+    nativeSessionId: string;
+    message: string;
+    controller: NativeRuntimeController;
+    goalId?: string;
+  }): BrokerRunAdmission {
+    const create = this.database.db.transaction(() => {
+      this.assertEngineThreadRunnable(input.sessionId);
+      if (input.goalId && this.database.db.prepare(
+        "SELECT 1 FROM native_runtime_message_receipt WHERE session_id=? AND queue_item_id=? AND run_id IS NOT NULL"
+      ).get(input.sessionId, input.goalId)) throw new RuntimeSessionError("This message has already been admitted", "SESSION_ALREADY_RUNNING");
+      const active = this.database.db.prepare(
+        "SELECT run_id FROM native_runtime_run WHERE session_id = ? AND status = 'active'",
+      ).get(input.sessionId) as { run_id?: string } | undefined;
+      if (active?.run_id) {
+        throw new RuntimeSessionError("Session is already running", "SESSION_ALREADY_RUNNING");
+      }
+      const createdAt = this.now();
+      let autoTitle: string | null = null;
+      if (input.message.trim()) {
+        const title = input.message.slice(0, 60);
+        const renamed = this.database.db.prepare(`
+          UPDATE native_runtime_session_title
+          SET title = ?, auto_title_pending = 0, updated_at = ?
+          WHERE session_id = ? AND auto_title_pending = 1
+        `).run(title, createdAt, input.sessionId);
+        if (renamed.changes > 0) autoTitle = title;
+      }
+      const run: BrokerRunRecord = {
+        sessionId: input.sessionId,
+        runId: randomUUID(),
+        agentType: input.agentType,
+        nativeSessionId: input.nativeSessionId,
+        input: input.message,
+        permissionMode: this.getPermissionMode(input.sessionId),
+        controller: input.controller,
+        status: "active",
+        nextSequence: 0,
+        createdAt,
+        terminalAt: null,
+        goalId: input.goalId ?? null,
+      };
+      this.database.db.prepare(`
+        INSERT INTO native_runtime_run(
+          run_id, session_id, agent_type, native_session_id, input, permission_mode,
+          controller, status, next_sequence, created_at, terminal_at, goal_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        run.runId,
+        run.sessionId,
+        run.agentType,
+        run.nativeSessionId,
+        run.input,
+        run.permissionMode,
+        run.controller,
+        run.status,
+        run.nextSequence,
+        run.createdAt,
+        run.terminalAt,
+        run.goalId,
+      );
+      this.transitionLock(input.sessionId, "owned-by-customer-agent", null, null);
+      if (run.goalId) this.database.db.prepare(
+        "UPDATE native_runtime_message_receipt SET status='active',run_id=? WHERE session_id=? AND queue_item_id=?"
+      ).run(run.runId, run.sessionId, run.goalId);
+      return { run, autoTitle };
+    });
+    return create();
+  }
+
+  appendEvent(runId: string, event: AgentEvent): BrokerRunEvent | null {
+    const append = this.database.db.transaction(() => {
+      const run = this.getRunById(runId);
+      if (!run || run.status !== "active") return null;
+      const eventAt = this.now();
+      let recordedEvent = event;
+      if (isTerminalEvent(event)) {
+        const stop = this.database.db.prepare("SELECT stopped_at FROM native_runtime_stop_intent WHERE session_id = ?").get(run.sessionId) as { stopped_at: number } | undefined;
+        const context = { runId, durationMs: Math.max(0, eventAt - run.createdAt) };
+        const classified = createRunResult(event, context);
+        // Stop intent alone does not confirm cancellation (e.g. confirmation
+        // timeout, startup rejection, transport loss or broker restart).
+        const result = event.type === "done" && !!stop && stop.stopped_at >= run.createdAt
+          ? createRunResult(event, { ...context, cancelled: true })
+          : classified;
+        recordedEvent = { ...event, durationMs: result.durationMs, usage: result.usage, result };
+      }
+      const sequence = run.nextSequence + 1;
+      this.todoOutbox.append(run.sessionId, runId, sequence, recordedEvent, eventAt,
+        () => this.todoContextForRun(run, this.todoOutbox.get(run.sessionId)));
+      this.database.db.prepare(
+        "INSERT INTO native_runtime_event(run_id, sequence, payload, created_at) VALUES (?, ?, ?, ?)",
+      ).run(runId, sequence, JSON.stringify(recordedEvent), eventAt);
+      this.database.db.prepare(
+        "UPDATE native_runtime_run SET next_sequence = ? WHERE run_id = ?",
+      ).run(sequence, runId);
+      if (recordedEvent.type === "ask_user") {
+        this.database.db.prepare(`
+          INSERT INTO native_runtime_approval(question_id, run_id, state, created_at, resolved_at)
+          VALUES (?, ?, 'pending', ?, NULL)
+          ON CONFLICT(question_id) DO NOTHING
+        `).run(recordedEvent.questionId, runId, eventAt);
+      }
+      if (isTerminalEvent(recordedEvent)) {
+        const previousEvents = this.database.db.prepare("SELECT payload FROM native_runtime_event WHERE run_id = ? ORDER BY sequence ASC").all(runId) as Array<{ payload: string }>;
+        const finalText = recordedEvent.type === "done" ? recordedEvent.finalText
+          : previousEvents.map(({ payload }) => parseAgentEvent(payload)).flatMap((entry) => entry?.type === "text_chunk" ? [entry.text] : []).join("");
+        this.database.db.prepare(`
+          INSERT OR IGNORE INTO native_runtime_turn_completion(
+            run_id, session_id, input, final_text, duration_ms, completed_at, result
+          ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          run.runId,
+          run.sessionId,
+          run.input,
+          finalText,
+          recordedEvent.durationMs,
+          eventAt,
+          JSON.stringify(recordedEvent.result),
+        );
+        if (run.goalId) this.database.db.prepare(
+          "UPDATE native_runtime_message_receipt SET status=?,run_id=?,terminal_sequence=?,terminal_event=? WHERE session_id=? AND queue_item_id=?"
+        ).run(recordedEvent.result?.status === "cancelled" ? "cancelled" : recordedEvent.type === "done" ? "completed" : recordedEvent.type === "error" && ["NATIVE_ABORTED", "USER_ABORTED", "RUN_CANCELLED"].includes(recordedEvent.code ?? "") ? "cancelled" : "failed",
+          run.runId, sequence, JSON.stringify(recordedEvent), run.sessionId, run.goalId);
+        this.finalizeRun(run, eventAt);
+      }
+      return { runId, sequence, event: recordedEvent } satisfies BrokerRunEvent;
+    });
+    return append();
+  }
+
+  appendTerminal(runId: string, event: RunTerminalEvent): BrokerRunEvent | null {
+    const current = this.getRunById(runId);
+    if (!current || current.status !== "active") return null;
+    return this.appendEvent(runId, event);
+  }
+
+  getSnapshot(sessionId: string, afterSequence = 0): NativeRuntimeBrokerSnapshot {
+    const projection = this.projection(sessionId, afterSequence);
+    return {
+      sessionId,
+      runId: projection.run?.runId ?? null,
+      ...(projection.run?.goalId ? { queueItemId: projection.run.goalId } : {}),
+      snapshotRevision: projection.run?.nextSequence ?? 0,
+      events: projection.events,
+      controller: projection.run?.status === "active" ? projection.run.controller : null,
+      manuallyStopped: !!this.database.db.prepare("SELECT 1 FROM native_runtime_stop_intent WHERE session_id=?").get(sessionId),
+    };
+  }
+
+  /** Source-correlated history; a later turn must not hide this message's result. */
+  messageSnapshot(sessionId: string, sourceMessageId: string, afterSequence = 0, queueItemId?: string) {
+    const state = this.getGoalState(sessionId);
+    const receipt = this.database.db.prepare(
+      "SELECT * FROM native_runtime_message_receipt WHERE session_id=? AND source_message_id=?"
+    ).get(sessionId, sourceMessageId) as { item: string; status: import("@agent/core").SessionGoal["status"]; queue_item_id: string;
+      run_id: string | null; terminal_sequence: number | null; terminal_event: string | null } | undefined;
+    const item = [state.active, ...state.queued, ...state.history].find(entry => entry?.sourceMessageId === sourceMessageId)
+      ?? (receipt ? { ...JSON.parse(receipt.item), status: receipt.status } as import("@agent/core").SessionGoal : null);
+    const itemId = item?.id ?? queueItemId;
+    const row = itemId ? this.database.db.prepare(
+      "SELECT run_id, status FROM native_runtime_run WHERE session_id=? AND goal_id=? ORDER BY created_at DESC LIMIT 1"
+    ).get(sessionId, itemId) as { run_id: string; status: string } | undefined : undefined;
+    const rows = row ? this.database.db.prepare(
+      "SELECT run_id, sequence, payload FROM native_runtime_event WHERE run_id=? AND sequence>? ORDER BY sequence ASC"
+    ).all(row.run_id, afterSequence) as StoredEventRow[] : [];
+    const events = rows.flatMap((entry): BrokerRunEvent[] => {
+      const event = parseAgentEvent(entry.payload);
+      if (!event || event.type === "ask_user" && !this.isApprovalVisible(event.questionId)) return [];
+      return [{ runId: entry.run_id, sequence: entry.sequence, event }];
+    });
+    if (receipt?.terminal_event && receipt.run_id && receipt.terminal_sequence && receipt.terminal_sequence > afterSequence
+      && !events.some(event => event.sequence === receipt.terminal_sequence)) {
+      const terminal = parseAgentEvent(receipt.terminal_event);
+      if (terminal) events.push({ runId: receipt.run_id, sequence: receipt.terminal_sequence, event: terminal });
+    }
+    return { item, runId: row?.run_id ?? receipt?.run_id ?? null, runStatus: row?.status ?? (receipt?.terminal_event ? "terminal" : null), events };
+  }
+
+  recordStopIntent(sessionId: string): void {
+    this.database.db.prepare("INSERT INTO native_runtime_stop_intent(session_id,stopped_at) VALUES(?,?) ON CONFLICT(session_id) DO UPDATE SET stopped_at=excluded.stopped_at").run(sessionId, this.now());
+  }
+  clearStopIntent(sessionId: string): void {
+    this.database.db.prepare("DELETE FROM native_runtime_stop_intent WHERE session_id=?").run(sessionId);
+  }
+
+  projection(sessionId: string, afterSequence = 0): SnapshotProjection {
+    const run = this.getLatestRetainedRun(sessionId);
+    if (!run) return { run: null, events: [] };
+    const rows = this.database.db.prepare(`
+      SELECT run_id, sequence, payload FROM native_runtime_event
+      WHERE run_id = ? AND sequence > ? ORDER BY sequence ASC
+    `).all(run.runId, afterSequence) as StoredEventRow[];
+    const events = rows.flatMap((row): BrokerRunEvent[] => {
+      const event = parseAgentEvent(row.payload);
+      if (!event || (event.type === "ask_user" && !this.isApprovalVisible(event.questionId))) return [];
+      return [{ runId: row.run_id, sequence: row.sequence, event }];
+    });
+    return { run, events };
+  }
+
+  claimApproval(questionId: string): BrokerRunRecord | null {
+    const claim = this.database.db.transaction(() => {
+      const row = this.database.db.prepare(`
+        SELECT approval.run_id
+        FROM native_runtime_approval approval
+        JOIN native_runtime_run run ON run.run_id = approval.run_id
+        WHERE approval.question_id = ? AND approval.state = 'pending' AND run.status = 'active'
+      `).get(questionId) as { run_id?: string } | undefined;
+      if (!row?.run_id) return null;
+      const changed = this.database.db.prepare(`
+        UPDATE native_runtime_approval SET state = 'claimed'
+        WHERE question_id = ? AND state = 'pending'
+      `).run(questionId).changes;
+      return changed === 1 ? this.getRunById(row.run_id) : null;
+    });
+    return claim();
+  }
+
+  resolveApproval(questionId: string): BrokerRunEvent | null {
+    const runId = this.database.db.transaction(() => {
+      const row = this.database.db.prepare(`
+        SELECT run_id FROM native_runtime_approval
+        WHERE question_id = ? AND state IN ('pending', 'claimed')
+      `).get(questionId) as { run_id?: string } | undefined;
+      if (!row?.run_id) return null;
+      const changed = this.database.db.prepare(`
+        UPDATE native_runtime_approval SET state = 'resolved', resolved_at = ?
+        WHERE question_id = ? AND state IN ('pending', 'claimed')
+      `).run(this.now(), questionId).changes;
+      return changed === 1 ? row.run_id : null;
+    })();
+    return runId
+      ? this.appendEvent(runId, { type: "approval_resolved", questionId })
+      : null;
+  }
+
+  restoreApproval(questionId: string): void {
+    this.database.db.prepare(`
+      UPDATE native_runtime_approval SET state = 'pending', resolved_at = NULL
+      WHERE question_id = ? AND state = 'claimed'
+    `).run(questionId);
+  }
+
+  changeController(sessionId: string, controller: NativeRuntimeController): NativeRuntimeBrokerSnapshot {
+    this.database.db.prepare(`
+      UPDATE native_runtime_run SET controller = ? WHERE session_id = ? AND status = 'active'
+    `).run(controller, sessionId);
+    return this.getSnapshot(sessionId);
+  }
+
+  activeRun(sessionId: string): BrokerRunRecord | null {
+    const row = this.database.db.prepare(
+      "SELECT * FROM native_runtime_run WHERE session_id = ? AND status = 'active'",
+    ).get(sessionId) as StoredRunRow | undefined;
+    return row ? toRunRecord(row) : null;
+  }
+
+  hasActiveRuns(): boolean {
+    const row = this.database.db.prepare(
+      "SELECT 1 AS active FROM native_runtime_run WHERE status = 'active' LIMIT 1",
+    ).get() as { active?: number } | undefined;
+    return row?.active === 1;
+  }
+
+  sessionRunActivity(sessionId: string): { runId: string; active: boolean; updated: string } | null {
+    const row = this.database.db.prepare(
+      "SELECT run_id, status, created_at, terminal_at FROM native_runtime_run WHERE session_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1",
+    ).get(sessionId) as { run_id: string; status: string; created_at: number; terminal_at: number | null } | undefined;
+    return row ? { runId: row.run_id, active: row.status === "active", updated: new Date(row.terminal_at ?? row.created_at).toISOString() } : null;
+  }
+
+  sessionIdForRun(runId: string): string | null {
+    return this.getRunById(runId)?.sessionId ?? null;
+  }
+
+  recordExplicitExternalOwnership(sessionId: string): void {
+    if (this.activeRun(sessionId)) return;
+    this.transitionLock(sessionId, "owned-externally", "occupied", this.now());
+  }
+
+  observeDiscovery(sessionId: string, externallyOccupied: boolean): BrokerLockRecord {
+    if (this.activeRun(sessionId)) {
+      return this.transitionLock(sessionId, "owned-by-customer-agent", null, null);
+    }
+    const lock = this.getLock(sessionId);
+    const nextSample = externallyOccupied ? "occupied" : "clean";
+    const now = this.now();
+    if (lock.sampleState === nextSample && lock.sampleAt !== null && now - lock.sampleAt >= EXTERNAL_OBSERVATION_DEBOUNCE_MS) {
+      const nextOccupancy: SessionOccupancy = externallyOccupied ? "owned-externally" : "available";
+      return this.transitionLock(sessionId, nextOccupancy, nextSample, now);
+    }
+    // Keep the first timestamp while the sample agrees. Frequent polling must
+    // not postpone confirmation forever; only a changed sample starts a new window.
+    const sampleAt = lock.sampleState === nextSample && lock.sampleAt !== null ? lock.sampleAt : now;
+    this.database.db.prepare(`
+      INSERT INTO native_runtime_lock(session_id, occupancy, revision, sample_state, sample_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(session_id) DO UPDATE SET sample_state=excluded.sample_state, sample_at=excluded.sample_at, updated_at=excluded.updated_at
+    `).run(sessionId, lock.occupancy, lock.revision, nextSample, sampleAt, now);
+    return { ...lock, sampleState: nextSample, sampleAt };
+  }
+
+  applySummary(summary: UnifiedSessionSummary, options: { includeQueue?: boolean } = {}): UnifiedSessionSummary {
+    const observed = summary.occupancy === "owned-externally";
+    const lock = this.observeDiscovery(summary.id, observed);
+    const policy = this.getPermissionMode(summary.id);
+    const active = this.activeRun(summary.id);
+    const occupancy = active ? "owned-by-customer-agent" : lock.occupancy;
+    return {
+      ...summary,
+      title: this.getDisplayTitle(summary.id) ?? summary.title,
+      occupancy,
+      status: active ? "running" : summary.status,
+      canResume: !summary.readOnly && occupancy !== "owned-externally"
+        && (summary.compatibility === undefined || summary.compatibility.status === "direct"),
+      canDelete: !active,
+      permissionMode: policy,
+      occupancyRevision: lock.revision,
+      controller: active?.controller ?? null,
+      ...(options.includeQueue === false ? {} : { goalState: this.getGoalState(summary.id) }),
+      messageQueueVersion: 1,
+    };
+  }
+
+  assertEngineThreadRunnable(sessionId: string): void {
+    const key = this.engineSwitch.records.threadOfSession(sessionId) ?? `engine-thread:${sessionId}`;
+    if (this.engineSwitch.isLocked(key)) throw new RuntimeSessionError("会话正在切换引擎，请稍后重试", "STALE_THREAD");
+    const thread = this.engineSwitch.threads.get(key);
+    if (thread && thread.currentSessionId !== sessionId) {
+      throw new RuntimeSessionError("此线程已切换到另一个引擎，请从当前会话继续", "STALE_THREAD");
+    }
+  }
+
+  applyDetail(detail: UnifiedSessionDetail, options: { mergeProjection?: boolean; includePendingQuestions?: boolean; windowed?: boolean } = {}): UnifiedSessionDetail {
+    const canForkWithHistory = supportsContextFork(detail.agentType);
+    const fork = canForkWithHistory
+      ? this.engineSwitch.handoffs.forkForSession(detail.id) : null;
+    const threadKey = this.engineSwitch.records.threadOfSession(detail.id);
+    const handoffs = threadKey ? this.engineSwitch.handoffs.summariesForThread(threadKey) : [];
+    if (fork) handoffs.push(fork);
+    if (handoffs.length) detail = { ...detail, messages: cleanEngineHistory(detail.messages, handoffs) };
+    const summary = this.applySummary(detail);
+    const projection = this.projection(detail.id);
+    // Windowed pages that exclude the session tail must not merge the retained
+    // run: the merge anchors on the run's user message and appends the whole
+    // live turn when it is absent, which would inject tail content into an
+    // older page (the legacy path merges before cutting the window).
+    const mergeProjection = options.mergeProjection ?? true;
+    const projectedMessages = mergeProjection
+      ? mergeProjectionMessages(detail.messages, projection.run, projection.events)
+      : detail.messages;
+    const storedCompletions = this.database.db.prepare(`
+      SELECT run_id, session_id, input, final_text, duration_ms, completed_at, result
+      FROM native_runtime_turn_completion
+      WHERE session_id = ?
+      ORDER BY completed_at ASC, run_id ASC
+    `).all(detail.id) as StoredTurnCompletionRow[];
+    // VS Code owns Copilot execution across gateway restarts. Losing this
+    // observer cannot turn its still-live/native-completed turn into a failure.
+    const interruptedCopilotRuns = detail.agentType === "copilot" ? new Set((this.database.db.prepare(`
+      SELECT run.run_id FROM native_runtime_run run
+      WHERE run.session_id = ? AND EXISTS (
+        SELECT 1 FROM native_runtime_event event WHERE event.run_id = run.run_id
+          AND json_extract(event.payload, '$.type') = 'error'
+          AND json_extract(event.payload, '$.message') = ?
+      )
+    `).all(detail.id, BROKER_RESTART_MESSAGE) as Array<{ run_id: string }>).map(row => row.run_id)) : null;
+    const completionRows = interruptedCopilotRuns
+      ? storedCompletions.filter(row => !interruptedCopilotRuns.has(row.run_id))
+      : storedCompletions;
+    const windowed = options.windowed ?? (!!detail.history && (detail.history.delivery === "core" || detail.history.delivery === "trace"
+      || detail.history.olderCursor != null || detail.history.newerCursor != null
+      || detail.history.totalItems > detail.messages.length));
+    const latestCompletion = completionRows.at(-1);
+    let completionMessages = projectedMessages;
+    if (!windowed && projection.run?.status !== "active" && latestCompletion
+      && !projectedMessages.some((message) => message.role === "user" && message.content === latestCompletion.input)) {
+      const result = readCompletionResult(latestCompletion);
+      if (result && result.status !== "completed" && result.reason !== "unknown_error") {
+        // This input was accepted by the broker even if native startup failed
+        // before its transcript existed. Never synthesize an assistant answer.
+        completionMessages = [...projectedMessages, {
+          role: "user", content: latestCompletion.input, name: `__native_run:${latestCompletion.run_id}`,
+          presentation: { runResult: result },
+        }];
+      }
+    }
+    const completedMessages = applyTurnCompletions(completionMessages, completionRows, { windowed });
+    const harnessInputReceipt = detail.agentType === "deepseek-harness" && mergeProjection && projection.run?.goalId
+      ? this.database.db.prepare(`
+        SELECT source_message_id FROM native_runtime_message_receipt
+        WHERE session_id = ? AND queue_item_id = ? AND run_id = ?
+      `).get(detail.id, projection.run.goalId, projection.run.runId) as { source_message_id: string } | undefined
+      : undefined;
+    const messages = detail.agentType === "copilot"
+      ? this.restoreSteeredMessages(detail.id, completedMessages)
+      : detail.agentType === "deepseek-harness" && mergeProjection
+      ? restoreHarnessRunInputIdentity(completedMessages, projection.run, harnessInputReceipt?.source_message_id)
+      : completedMessages;
+    let snapshotTurnId: string | null = null;
+    for (const { event } of projection.events) {
+      if ("turnId" in event && typeof event.turnId === "string" && event.turnId) snapshotTurnId = event.turnId;
+    }
+    return {
+      ...detail,
+      ...summary,
+      messages: canForkWithHistory
+        ? contextForkPoints([...(fork?.forkHistory ?? []), ...messages], summary.status === "running")
+        : messages,
+      events: detail.agentType === "copilot"
+        ? [...(mergeProjection ? projection.events.flatMap(({ event }) =>
+          event.type === "ask_user" || event.type === "approval_resolved"
+            || (event.type === "error" && event.message === BROKER_RESTART_MESSAGE) ? [] : [event]) : []), ...detail.events]
+        : detail.agentType === "opencode"
+        ? [...detail.events, ...projection.events.flatMap(({ event }) => {
+          if ((event.type === "ask_user" || event.type === "approval_resolved") && isOpenCodeQuestionId(event.questionId)) return [];
+          return mergeProjection || (options.includePendingQuestions && event.type === "ask_user") ? [event] : [];
+        })]
+        : detail.agentType === "deepseek-harness"
+        ? [...detail.events.filter(event => event.type !== "runtime_progress"),
+          ...projection.events.flatMap(({ event }) => event.type === "ask_user" || event.type === "approval_resolved" ? [] : [event]),
+          // A native job may outlive a completed turn; its current snapshot is authoritative.
+          ...detail.events.filter(event => event.type === "runtime_progress")]
+        : mergeProjection
+        ? projection.events.map(({ event }) => event)
+        : options.includePendingQuestions
+          ? [...detail.events, ...projection.events.flatMap(({ event }) => event.type === "ask_user" ? [event] : [])]
+          : detail.events,
+      snapshotRevision: projection.run?.nextSequence ?? 0,
+      snapshotRunId: projection.run?.runId ?? null,
+      snapshotRunStatus: projection.run?.status ?? null,
+      snapshotTurnId,
+    };
+  }
+
+  private getRunById(runId: string): BrokerRunRecord | null {
+    const row = this.database.db.prepare(
+      "SELECT * FROM native_runtime_run WHERE run_id = ?",
+    ).get(runId) as StoredRunRow | undefined;
+    return row ? toRunRecord(row) : null;
+  }
+
+  private getLatestRetainedRun(sessionId: string): BrokerRunRecord | null {
+    const row = this.database.db.prepare(`
+      SELECT * FROM native_runtime_run
+      WHERE session_id = ? AND (status = 'active' OR terminal_at >= ?)
+      ORDER BY CASE status WHEN 'active' THEN 0 ELSE 1 END, created_at DESC LIMIT 1
+    `).get(sessionId, this.now() - TERMINAL_RETENTION_MS) as StoredRunRow | undefined;
+    return row ? toRunRecord(row) : null;
+  }
+
+  private isApprovalVisible(questionId: string): boolean {
+    const row = this.database.db.prepare(
+      "SELECT state FROM native_runtime_approval WHERE question_id = ?",
+    ).get(questionId) as { state?: string } | undefined;
+    return row?.state === "pending" || row?.state === "claimed";
+  }
+
+  private finalizeRun(run: BrokerRunRecord, terminalAt: number): void {
+    this.database.db.prepare(`
+      UPDATE native_runtime_run SET status = 'terminal', terminal_at = ? WHERE run_id = ?
+    `).run(terminalAt, run.runId);
+    this.database.db.prepare(`
+      UPDATE native_runtime_approval SET state = 'resolved', resolved_at = ?
+      WHERE run_id = ? AND state IN ('pending', 'claimed')
+    `).run(terminalAt, run.runId);
+    this.transitionLock(run.sessionId, "available", null, null);
+  }
+
+  private getLock(sessionId: string): BrokerLockRecord {
+    const row = this.database.db.prepare(
+      "SELECT * FROM native_runtime_lock WHERE session_id = ?",
+    ).get(sessionId) as StoredLockRow | undefined;
+    return row ? {
+      sessionId: row.session_id,
+      occupancy: row.occupancy,
+      revision: row.revision,
+      sampleState: row.sample_state,
+      sampleAt: row.sample_at,
+    } : {
+      sessionId,
+      occupancy: "available",
+      revision: 0,
+      sampleState: null,
+      sampleAt: null,
+    };
+  }
+
+  private transitionLock(
+    sessionId: string,
+    occupancy: SessionOccupancy,
+    sampleState: "occupied" | "clean" | null,
+    sampleAt: number | null,
+  ): BrokerLockRecord {
+    const previous = this.getLock(sessionId);
+    const revision = previous.occupancy === occupancy ? previous.revision : previous.revision + 1;
+    const now = this.now();
+    this.database.db.prepare(`
+      INSERT INTO native_runtime_lock(session_id, occupancy, revision, sample_state, sample_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(session_id) DO UPDATE SET
+        occupancy=excluded.occupancy,
+        revision=excluded.revision,
+        sample_state=excluded.sample_state,
+        sample_at=excluded.sample_at,
+        updated_at=excluded.updated_at
+    `).run(sessionId, occupancy, revision, sampleState, sampleAt, now);
+    return { sessionId, occupancy, revision, sampleState, sampleAt };
+  }
+
+  private pruneExpiredTerminals(): void {
+    const cutoff = this.now() - TERMINAL_RETENTION_MS;
+    const oldRuns = this.database.db.prepare(
+      "SELECT run_id FROM native_runtime_run WHERE status = 'terminal' AND terminal_at < ?",
+    ).all(cutoff) as Array<{ run_id: string }>;
+    const prune = this.database.db.transaction(() => {
+      for (const row of oldRuns) {
+        this.database.db.prepare("DELETE FROM native_runtime_event WHERE run_id = ?").run(row.run_id);
+        this.database.db.prepare("DELETE FROM native_runtime_approval WHERE run_id = ?").run(row.run_id);
+        this.database.db.prepare("DELETE FROM native_runtime_run WHERE run_id = ?").run(row.run_id);
+      }
+    });
+    prune();
+  }
+}
+
+function activityMetadata(session: UnifiedSessionSummary): UnifiedSessionSummary {
+  return { id: session.id, agentType: session.agentType, nativeSessionId: session.nativeSessionId,
+    title: session.title, cwd: session.cwd, projectId: session.projectId, parentSessionId: session.parentSessionId,
+    created: session.created, updated: session.updated, status: session.status, occupancy: session.occupancy,
+    sourceLabel: session.sourceLabel, canResume: session.canResume, canDelete: session.canDelete,
+    readOnly: session.readOnly, compatibility: session.compatibility };
+}
+
+export class NativeRuntimeBrokerHost {
+  private readonly state: NativeRuntimeBrokerState;
+  private readonly runtime: UnifiedSessionService;
+  private readonly activeExecutions = new Map<string, Promise<void>>();
+  private readonly queueAdmissions = new Map<
+    string,
+    { itemId: string; promise: Promise<BrokerRunStart | undefined> }
+  >();
+  private readonly subscribers = new Map<Socket, BrokerSubscription>();
+  private readonly localSubscribers = new Set<LocalBrokerSubscription>();
+  private readonly pendingCreations = new Map<string, UnifiedSessionSummary>();
+  private readonly recentRunSessions = new Map<string, UnifiedSessionSummary>();
+  private readonly cancellationConfirmationTimeouts = new Set<string>();
+  private readonly queryIndexCache = new SessionQueryIndexCache();
+  private server: Server | null = null;
+  private ownsSocket = false;
+  private stopped = false;
+  private readonly abortFallbackTimers = new Set<ReturnType<typeof setTimeout>>();
+
+  constructor(
+    readonly directory: string,
+    runtime: UnifiedSessionService | NativeRuntimeBrokerRuntimeFactory,
+    now: () => number = Date.now,
+    private readonly packageVersion?: string,
+  ) {
+    this.state = new NativeRuntimeBrokerState(directory, now);
+    this.runtime = typeof runtime === "function"
+      ? runtime({
+          onApprovalResolved: (questionId) => this.handleApprovalResolved(questionId),
+          importedWorkspaceRepository: this.state,
+          codexSessionCatalogRepository: this.state,
+        })
+      : runtime;
+    const pendingSessions = this.state.listPendingSessions();
+    for (const pending of pendingSessions) this.pendingCreations.set(pending.id, pending);
+    this.runtime.restoreDrafts?.(pendingSessions);
+  }
+
+  get socketPath(): string {
+    return resolveNativeRuntimeSocketPath(this.directory);
+  }
+
+  async start(options: { endInterruptedGoals?: boolean } = {}): Promise<void> {
+    if (this.server) return;
+    mkdirSync(this.directory, { recursive: true, mode: 0o700 });
+    try { chmodSync(this.directory, 0o700); } catch { /* Best effort. */ }
+    if (isFilesystemSocket(this.socketPath) && existsSync(this.socketPath)) {
+      const error = new Error(`Native runtime broker socket is already in use: ${this.socketPath}`) as NodeJS.ErrnoException;
+      error.code = "EADDRINUSE";
+      throw error;
+    }
+    const server = createServer((socket) => this.handleSocket(socket));
+    await new Promise<void>((resolve, reject) => {
+      const onError = (error: Error) => {
+        server.removeListener("listening", onListening);
+        reject(error);
+      };
+      const onListening = () => {
+        server.removeListener("error", onError);
+        resolve();
+      };
+      server.once("error", onError);
+      server.once("listening", onListening);
+      server.listen(this.socketPath);
+    });
+    if (isFilesystemSocket(this.socketPath)) {
+      try { chmodSync(this.socketPath, 0o600); } catch { /* Best effort. */ }
+    }
+    this.server = server;
+    this.ownsSocket = true;
+    // Do this only after this host owns the socket. A losing startup race must
+    // never interrupt a still-live turn owned by another process.
+    this.state.recoverInterruptedRuns(options.endInterruptedGoals);
+    for (const item of this.state.listResumableQueueItems()) {
+      void this.startQueueItem(item, "web");
+    }
+  }
+
+  async stop(): Promise<void> {
+    this.stopped = true;
+    for (const timer of this.abortFallbackTimers) clearTimeout(timer);
+    this.abortFallbackTimers.clear();
+    const server = this.server;
+    this.server = null;
+    for (const socket of this.subscribers.keys()) socket.destroy();
+    this.subscribers.clear();
+    this.localSubscribers.clear();
+    if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
+    if (this.ownsSocket && isFilesystemSocket(this.socketPath) && existsSync(this.socketPath)) {
+      rmSync(this.socketPath, { force: true });
+    }
+    this.ownsSocket = false;
+    try {
+      await this.runtime.dispose();
+    } finally {
+      this.state.close();
+    }
+  }
+
+  async health(): Promise<RuntimeHealth[]> {
+    return this.runtime.health();
+  }
+
+  async list(projectId?: string): Promise<UnifiedSessionSummary[]> {
+    return this.state
+      .filterHiddenSessions(this.mergePending(await this.runtime.list(projectId), projectId))
+      .map((session) => this.state.applySummary(session));
+  }
+
+  async liveSessions(): Promise<{ sessions: UnifiedSessionSummary[]; agentTypes: AgentType[] }> {
+    const live = await this.runtime.liveSessions();
+    const rows = new Map([...live.sessions, ...this.pendingCreations.values()].map(session => [session.id, session]));
+    for (const [id, remembered] of this.recentRunSessions) {
+      const activity = this.state.sessionRunActivity(id);
+      const row = rows.get(id) ?? remembered;
+      const external = live.sessions.some(session => session.id === id && session.status === "running" && session.occupancy === "owned-externally");
+      if (activity) rows.set(id, { ...row, updated: activity.updated > row.updated ? activity.updated : row.updated,
+        status: activity.active || external ? "running" : remembered.status === "running" ? "idle" : remembered.status });
+    }
+    const recent = Date.now() - 60_000;
+    const sessions = this.state.filterHiddenSessions([...rows.values()].filter(session => session.status === "running"
+      || this.pendingCreations.has(session.id) || this.recentRunSessions.has(session.id)
+      || Date.parse(session.created) >= recent || Date.parse(session.updated) >= recent));
+    return { sessions: sessions.map(session => this.state.applySummary(activityMetadata(session), { includeQueue: false })), agentTypes: live.agentTypes };
+  }
+
+  listWorkspaces(agentType: NativeAgentType, query?: WorkspaceQuery): Promise<WorkspacePage<AgentWorkspace>> {
+    return this.runtime.listWorkspaces(agentType, query);
+  }
+
+  importWorkspace(
+    agentType: NativeAgentType,
+    path: string,
+    name?: string,
+  ): Promise<ImportAgentWorkspaceResult> {
+    return this.runtime.importWorkspace(agentType, path, name);
+  }
+
+  async listWorkspaceSessions(
+    agentType: NativeAgentType,
+    workspaceId: string,
+    query?: WorkspaceSessionQuery,
+  ): Promise<WorkspacePage<UnifiedSessionSummary>> {
+    const limit = workspacePageSize(query?.limit);
+    const discovered: UnifiedSessionSummary[] = [];
+    const seenSessionIds = new Set<string>();
+    const seenCursors = new Set<string>();
+    let cursor = query?.cursor ?? null;
+    let nextCursor: string | null = cursor;
+    let watermark: string | null = null;
+    let stale = false;
+    let refreshing = false;
+    let firstPage = true;
+
+    while (firstPage || (nextCursor && this.state.filterHiddenSessions(discovered).length < limit)) {
+      if (cursor) {
+        if (seenCursors.has(cursor)) {
+          throw new RuntimeSessionError("Workspace pagination cursor did not advance", "NATIVE_PROTOCOL_ERROR");
+        }
+        seenCursors.add(cursor);
+      }
+      const visibleCount = this.state.filterHiddenSessions(discovered).length;
+      const page = await this.runtime.listWorkspaceSessions(agentType, workspaceId, {
+        ...query,
+        cursor,
+        limit: Math.max(1, limit - visibleCount),
+        refresh: firstPage && query?.refresh === true,
+      });
+      if (firstPage) watermark = page.watermark;
+      stale ||= page.stale === true;
+      refreshing ||= page.refreshing === true;
+      for (const session of page.data) {
+        if (seenSessionIds.has(session.id)) continue;
+        seenSessionIds.add(session.id);
+        discovered.push(session);
+      }
+      nextCursor = page.nextCursor;
+      cursor = nextCursor;
+      firstPage = false;
+    }
+
+    const imported = this.state.findImportedWorkspace(agentType, workspaceId);
+    return {
+      nextCursor,
+      watermark,
+      ...(stale ? { stale: true } : {}),
+      ...(refreshing ? { refreshing: true } : {}),
+      data: this.state.filterHiddenSessions(this.mergePending(
+        discovered,
+        undefined,
+        (session) => session.agentType === agentType && (
+          session.projectId === workspaceId
+          || Boolean(imported && session.cwd && normalizeAgentWorkspacePath(session.cwd) === imported.normalizedPath)
+        ),
+      )).map((session) => this.state.applySummary(session)),
+    };
+  }
+
+  async refresh(projectId?: string): Promise<UnifiedSessionSummary[]> {
+    return this.state
+      .filterHiddenSessions(this.mergePending(await this.runtime.refresh(projectId), projectId))
+      .map((session) => this.state.applySummary(session));
+  }
+
+  async create(options: CreateRuntimeSessionOptions & { agentType: NativeAgentType }): Promise<UnifiedSessionSummary> {
+    const c = options.todoContext;
+    if (!c?.executionId) return this.createRuntimeSession(options);
+    const previous = this.state.todoOutbox.sessionForExecution(c);
+    if (previous) return this.getSummary(previous);
+    const key = `${c.serviceId}:${c.ownerId}:${c.executionId}`;
+    const existing = this.todoDraftCreations.get(key); if (existing) return existing;
+    const operation = this.createRuntimeSession(options); this.todoDraftCreations.set(key, operation);
+    try { return await operation; } finally { this.todoDraftCreations.delete(key); }
+  }
+  private readonly todoDraftCreations = new Map<string, Promise<UnifiedSessionSummary>>();
+  private async createRuntimeSession(options: CreateRuntimeSessionOptions & { agentType: NativeAgentType }): Promise<UnifiedSessionSummary> {
+    console.log(`[broker-host ${new Date().toISOString().slice(11,23)}] create enter: agentType=${options.agentType} cwd=${options.cwd}`);
+    try {
+      const injection = options.todoContext ? await prepareTodoInjection(options.todoContext, options.agentType).catch(error => { if (options.todoContext?.executionId) throw error; return undefined; }) : undefined;
+      if (options.todoContext?.executionId && injection?.status !== "configured") throw new Error("Scheduled Todo MCP injection is unavailable for this Agent");
+      const created = await this.runtime.create({ ...options, ...(injection?.status === "configured" ? { todoMcp: injection.configuration } : {}) });
+      if (options.todoContext) this.state.todoOutbox.set(created.id, options.todoContext);
+      console.log(`[broker-host ${new Date().toISOString().slice(11,23)}] create exit: ${created.id}`);
+      this.pendingCreations.set(created.id, created);
+      if (supportsPersistedDraft(created.agentType)) this.state.savePendingSession(created);
+      this.state.trackPendingAutoTitle(created.id, options.title);
+      return this.state.applySummary(created);
+    } catch (error) {
+      console.log(`[broker-host] create failed:`, error instanceof Error ? error.message : String(error));
+      throw error;
+    }
+  }
+
+  async fork(id: string, point?: SessionForkPoint): Promise<UnifiedSessionSummary> {
+    this.state.assertSessionVisible(id);
+    if (supportsContextFork(decodeNativeSessionId(id).agentType)) return this.forkFromHistory(id, point);
+    const forked = point ? await this.runtime.fork(id, point) : await this.runtime.fork(id);
+    this.pendingCreations.set(forked.id, forked);
+    return this.state.applySummary(forked);
+  }
+
+  private async forkFromHistory(id: string, point?: SessionForkPoint): Promise<UnifiedSessionSummary> {
+    const source = await this.get(id);
+    const agentType = decodeNativeSessionId(id).agentType;
+    let end = source.messages.length - 1;
+    for (; end >= 0; end--) {
+      const candidate = source.messages[end].presentation?.forkPoint?.messageId;
+      if (candidate && (!point || point.messageId === candidate)) break;
+    }
+    if (end < 0) throw new RuntimeSessionError("该轮次不存在或尚未完成，请刷新会话后重试", "INVALID_SESSION_ID");
+    if (!source.cwd) throw new RuntimeSessionError("源会话没有本地工作目录", "OPERATION_NOT_SUPPORTED");
+    const handoffId = randomUUID();
+    const inherited = scopedHistory(source.messages.slice(0, end + 1), handoffId).map(message => {
+      if (message.presentation?.question?.status !== "pending") return message;
+      return { ...message, presentation: { ...message.presentation, question: { ...message.presentation.question, status: "cancelled" as const } } };
+    });
+    const workStateText = `工作目录：${source.cwd}`;
+    let target: UnifiedSessionSummary | undefined;
+    try {
+      const historyFile = await materializeContextHistory(this.directory, { id: handoffId, messages: inherited, workStateText });
+      const rendered = renderContextHandoff(inherited, source.title, agentType, { purpose: "fork", historyFile, workStateText });
+      target = await this.createRuntimeSession({
+        agentType, cwd: source.cwd, projectId: source.projectId, title: `${source.title}（副本）`,
+      });
+      if (target.id === source.id || target.agentType !== agentType) {
+        throw new RuntimeSessionError("引擎未返回独立的副本会话", "NATIVE_PROTOCOL_ERROR");
+      }
+      this.state.engineSwitch.handoffs.insert({
+        id: handoffId, threadKey: `fork:${target.id}`, fromSessionId: id, fromAgentType: agentType,
+        toSessionId: target.id, toAgentType: agentType, strategy: "full", status: "pending",
+        createdBy: "user", created: new Date().toISOString(), consumedAt: null,
+        historyFile, forkHistory: inherited, ...rendered,
+      });
+      return target;
+    } catch (error) {
+      if (target && target.id !== source.id) {
+        this.pendingCreations.delete(target.id);
+        this.state.hideSession(target.id);
+      }
+      rmSync(join(this.directory, ".agent-data", "engine-handoffs", handoffId), { recursive: true, force: true });
+      throw error;
+    }
+  }
+
+  async delete(sessionId: string): Promise<void> {
+    if (this.state.isSessionHidden(sessionId)) return;
+    this.state.assertSessionCanHide(sessionId);
+    if (decodeUnifiedSessionId(sessionId).agentType === "codex") {
+      await this.runtime.archive(sessionId);
+    }
+    this.state.hideSession(sessionId);
+    this.pendingCreations.delete(sessionId);
+    this.runtime.invalidate(sessionId);
+  }
+
+  async get(id: string, query?: SessionHistoryQuery): Promise<UnifiedSessionDetail> {
+    this.state.assertSessionVisible(id);
+    if (query) {
+      // Adapter-native windowed read (Codex turn paging): skips the full
+      // transcript read and serves one self-consistent ordinal space for
+      // cursors, historyIds and anchors. Only tail-inclusive pages merge the
+      // retained run — the merge anchors on the run's user message and would
+      // append the whole live turn to an older page that lacks it.
+      // The service returns null when paging is unsupported. Stale cursors and
+      // runtime failures must reach the caller, which can recover its window.
+      const native = await this.runtime.getPagedDetail?.(id, query);
+      if (native) {
+        const progressiveDelivery = native.history?.delivery === "core"
+          || native.history?.delivery === "trace";
+        return this.state.applyDetail(native, {
+          windowed: true,
+          mergeProjection: !progressiveDelivery && native.history?.newerCursor == null,
+          // Restore only actionable cards before advancing the SSE cursor.
+          // Tool/commentary history must remain in the lazy trace path.
+          includePendingQuestions: native.history?.delivery === "core" && native.history.newerCursor == null,
+        });
+      }
+    }
+    try {
+      // Reconcile retained run events against the complete transcript before
+      // paging, otherwise the run input can be projected once per page.
+      const detail = await this.runtime.getUnpaginated(id, shouldReuseSessionDetailCache(query));
+      const projected = this.state.applyDetail(detail);
+      this.queryIndexCache.getOrCreate(id, projected.messages);
+      return restoreHarnessPagedInputIdentity(query
+        ? { ...projected, ...paginateSessionHistory(projected.messages, projected.events, query, {
+            includePendingQuestions: true,
+          }) }
+        : projected);
+    } catch (error) {
+      const pending = this.pendingCreations.get(id);
+      if (!pending) throw error;
+      const projected = this.state.applyDetail({ ...pending, messages: [], events: [] });
+      return restoreHarnessPagedInputIdentity(query
+        ? { ...projected, ...paginateSessionHistory(projected.messages, projected.events, query, {
+            includePendingQuestions: true,
+          }) }
+        : projected);
+    }
+  }
+
+  async getSummary(id: string): Promise<EngineThreadSessionSummary> {
+    this.state.assertSessionVisible(id);
+    const summary = this.state.applySummary(await this.runtime.getRunSummary(id));
+    const { messages: _messages, events: _events, ...metadata } = summary as UnifiedSessionSummary & Partial<UnifiedSessionDetail>;
+    return metadata;
+  }
+
+  async getQueryIndex(id: string): Promise<SessionQueryIndex> {
+    this.state.assertSessionVisible(id);
+    // Adapter-native ordinal space (e.g. Codex turn paging) wins when present;
+    // cursors and anchors must not mix with the legacy full-read space.
+    const native = await this.runtime.getQueryIndexNative?.(id).catch(() => null);
+    if (native) return native;
+    try {
+      const detail = await this.runtime.getUnpaginated(id, true);
+      const projected = this.state.applyDetail(detail);
+      const index = this.queryIndexCache.getOrCreate(id, projected.messages);
+      return projected.agentType === "deepseek-harness" ? restoreHarnessInputQueryIdentity(index, projected.messages) : index;
+    } catch (error) {
+      const pending = this.pendingCreations.get(id);
+      if (!pending) throw error;
+      const projected = this.state.applyDetail({ ...pending, messages: [], events: [] });
+      const index = this.queryIndexCache.getOrCreate(id, projected.messages);
+      return projected.agentType === "deepseek-harness" ? restoreHarnessInputQueryIdentity(index, projected.messages) : index;
+    }
+  }
+
+  async getSessionToolResult(
+    id: string,
+    ref: Pick<SessionToolResultRef, "turnId" | "itemId" | "revision">,
+  ): Promise<SessionToolResultBody> {
+    this.state.assertSessionVisible(id);
+    return this.runtime.getSessionToolResult(id, ref);
+  }
+
+  async getSessionWatchPath(id: string): Promise<string | null> {
+    this.state.assertSessionVisible(id);
+    return this.runtime.getSessionWatchPath(id);
+  }
+
+  async startRun(
+    sessionId: string,
+    input: string,
+    images?: string[],
+    controller: NativeRuntimeController = "web",
+    goalId?: string,
+    agentIds?: string[],
+    agentName?: string,
+    runOverrides?: Pick<RuntimeRunOptions, "model" | "reasoningEffort">,
+    admissionOptions: { deferIfCodexRunning?: boolean } = {},
+  ): Promise<BrokerRunStart> {
+    this.state.assertSessionVisible(sessionId);
+    const settlingExecution = this.activeExecutions.get(sessionId);
+    if (settlingExecution && !this.state.activeRun(sessionId)) {
+      await settlingExecution;
+    }
+    const decoded = decodeNativeSessionId(sessionId);
+    let runSummary: UnifiedSessionSummary;
+    try {
+      const detail = await this.runtime.getRunSummary(sessionId);
+      runSummary = detail;
+      if (this.cancellationConfirmationTimeouts.has(sessionId)) {
+        if (detail.status === "running") {
+          throw new RuntimeSessionError("Codex session is still stopping", "SESSION_ALREADY_RUNNING");
+        }
+        this.cancellationConfirmationTimeouts.delete(sessionId);
+      }
+      if (
+        admissionOptions.deferIfCodexRunning
+        && decoded.agentType === "codex"
+        && detail.status === "running"
+      ) {
+        throw new RuntimeSessionError("Codex session is already running", "SESSION_ALREADY_RUNNING");
+      }
+      // Codex occupancy is advisory; the attempted takeover either succeeds
+      // (clearing the stale marker) or fails authoritatively inside the run,
+      // where this broker can fork-and-forward the message. Compatibility and
+      // genuinely unresumable sessions are still refused here.
+      const occupancyAdvisory = decoded.agentType === "codex";
+      const externalGuide = decoded.agentType === "zcode" && detail.externalGuideSupported === true && detail.status === "running" && !detail.readOnly;
+      if (!occupancyAdvisory && !externalGuide && (!detail.canResume || detail.occupancy === "owned-externally")) {
+        this.state.recordExplicitExternalOwnership(sessionId);
+        throw new RuntimeSessionError("Session is currently owned by another client", "SESSION_OCCUPIED");
+      }
+    } catch (error) {
+      if (error instanceof RuntimeSessionError && error.code === "SESSION_OCCUPIED") {
+        this.state.recordExplicitExternalOwnership(sessionId);
+      }
+      throw error;
+    }
+    const admission = this.state.admit({
+      sessionId,
+      agentType: decoded.agentType,
+      nativeSessionId: decoded.nativeSessionId,
+      message: input,
+      controller,
+      goalId,
+    });
+    this.recentRunSessions.delete(sessionId);
+    this.recentRunSessions.set(sessionId, activityMetadata(runSummary!));
+    if (this.recentRunSessions.size > 256) this.recentRunSessions.delete(this.recentRunSessions.keys().next().value!);
+    this.state.clearStopIntent(sessionId);
+    if (decoded.agentType === "codex" && admission.autoTitle) {
+      await this.runtime.rename(sessionId, admission.autoTitle).catch(() => undefined);
+    }
+    const run = admission.run;
+    const execution = this.executeRun(run, images, agentIds, agentName, runOverrides);
+    this.activeExecutions.set(sessionId, execution);
+    const clearExecution = () => {
+      if (this.activeExecutions.get(sessionId) === execution) {
+        this.activeExecutions.delete(sessionId);
+      }
+    };
+    void execution.then(clearExecution, clearExecution);
+    return {
+      runId: run.runId,
+      snapshotRevision: run.nextSequence,
+      permissionMode: run.permissionMode,
+    };
+  }
+
+  async listModels(agentType: NativeAgentType): Promise<RuntimeModelInfo[]> {
+    return this.runtime.listModels(agentType);
+  }
+
+  async getGoals(
+    sessionId: string,
+    controller: NativeRuntimeController = "web",
+    resume = true,
+  ): Promise<SessionGoalState> {
+    let state = this.state.getGoalState(sessionId);
+    if (!resume) return state;
+    if (!state.active && state.queued.length > 0 && !this.state.activeRun(sessionId)) {
+      state = this.state.promoteNextItem(sessionId);
+    }
+    if (state.active && !this.state.activeRun(sessionId)) {
+      if (!await this.canResumeTimedOutQueue(sessionId)) return this.state.deferMessageAdmission(sessionId, state.active.id);
+      await this.startQueueItemAfterSettling(state.active, controller);
+    }
+    return this.state.getGoalState(sessionId);
+  }
+
+  async enqueueGoal(
+    sessionId: string,
+    objective: string,
+    sourceMessageId?: string,
+    controller: NativeRuntimeController = "web",
+  ): Promise<BrokerGoalEnqueueResult> {
+    decodeNativeSessionId(sessionId);
+    const hadActive = Boolean(this.state.getGoalState(sessionId).active);
+    const state = this.state.enqueueGoal(sessionId, objective, sourceMessageId);
+    if (hadActive || !state.active) return { state };
+    if (!await this.canResumeTimedOutQueue(sessionId)) return { state };
+    const started = await this.startQueueItemAfterSettling(state.active, controller);
+    return {
+      state: this.state.getGoalState(sessionId),
+      ...(started ? { started } : {}),
+    };
+  }
+
+  reorderGoals(sessionId: string, orderedIds: readonly string[]): SessionGoalState {
+    decodeNativeSessionId(sessionId);
+    return this.state.reorderGoals(sessionId, orderedIds);
+  }
+
+  async enqueueMessage(
+    sessionId: string,
+    input: BrokerQueuedMessageInput,
+    controller: NativeRuntimeController = "web",
+  ): Promise<BrokerGoalEnqueueResult> {
+    decodeNativeSessionId(sessionId);
+    const state = this.state.enqueueMessage(sessionId, input);
+    if (this.state.startedMessage(sessionId, input.sourceMessageId)) return { state };
+    if (!state.active || this.state.activeRun(sessionId)) return { state };
+    if (!await this.canResumeTimedOutQueue(sessionId)) return {
+      state: this.state.deferMessageAdmission(sessionId, state.active.id),
+    };
+    if (this.state.startedMessage(sessionId, input.sourceMessageId)) return { state: this.state.enqueueMessage(sessionId, input) };
+    const started = await this.startQueueItemAfterSettling(state.active, controller);
+    return {
+      state: this.state.getGoalState(sessionId),
+      ...(started ? { started } : {}),
+    };
+  }
+
+  reorderMessages(sessionId: string, orderedIds: readonly string[]): SessionGoalState {
+    decodeNativeSessionId(sessionId);
+    return this.state.reorderMessages(sessionId, orderedIds);
+  }
+
+  updateMessage(
+    sessionId: string,
+    messageId: string,
+    content: string,
+    messagePayload?: SessionMessagePayload,
+  ): SessionGoalState {
+    decodeNativeSessionId(sessionId);
+    return this.state.updateMessage(sessionId, messageId, content, messagePayload);
+  }
+
+  cancelMessage(sessionId: string, messageId: string): SessionGoalState {
+    decodeNativeSessionId(sessionId);
+    return this.state.cancelMessage(sessionId, messageId);
+  }
+
+  async steerMessage(sessionId: string, messageId: string): Promise<BrokerMessageSteerResult> {
+    const native = decodeNativeSessionId(sessionId);
+    const item = this.state.queuedMessages(sessionId).find((message) => message.id === messageId);
+    if (!item) {
+      return { steered: true, state: this.state.getGoalState(sessionId) };
+    }
+    if (native.agentType === "zcode" && item.messagePayload?.images?.length) {
+      throw new RuntimeSessionError("ZCode 暂不支持插入图片消息，原消息已保留在队列中", "OPERATION_NOT_SUPPORTED");
+    }
+    const copilot = native.agentType === "copilot";
+    const durableSteering = copilot || native.agentType === "zcode";
+    const runId = this.state.activeRun(sessionId)?.runId ?? null;
+    const steered = item.messagePayload?.images?.length
+      ? await this.runtime.steer(sessionId, item.objective, durableSteering ? messageId : undefined, item.messagePayload.images)
+      : durableSteering
+      ? await this.runtime.steer(sessionId, item.objective, messageId)
+      : await this.runtime.steer(sessionId, item.objective);
+    return {
+      steered,
+      state: steered
+        ? durableSteering
+          ? this.state.completeSteeredMessage(sessionId, messageId, runId)
+          : this.state.cancelMessage(sessionId, messageId)
+        : this.state.getGoalState(sessionId),
+    };
+  }
+
+  async cancelGoal(
+    sessionId: string,
+    goalId: string,
+    controller: NativeRuntimeController = "web",
+  ): Promise<SessionGoalState> {
+    decodeNativeSessionId(sessionId);
+    const wasActive = this.state.getGoalState(sessionId).active?.id === goalId;
+    const activeRun = this.state.activeRun(sessionId);
+    const state = this.state.cancelGoal(sessionId, goalId);
+    if (wasActive && activeRun?.goalId === goalId) {
+      await this.runtime.abort(sessionId).catch(() => undefined);
+      if (!this.state.activeRun(sessionId) && state.active) void this.startQueueItem(state.active, controller);
+    } else if (wasActive && !activeRun && state.active) {
+      void this.startQueueItem(state.active, controller);
+    }
+    return state;
+  }
+
+  subscribe(sessionId: string, afterSequence: number, listener: (event: BrokerRunEvent) => void): () => void {
+    const snapshot = this.state.getSnapshot(sessionId, afterSequence);
+    for (const event of snapshot.events) listener(event);
+    const subscription: LocalBrokerSubscription = {
+      sessionId,
+      runId: snapshot.runId,
+      afterSequence: snapshot.snapshotRevision,
+      listener,
+    };
+    this.localSubscribers.add(subscription);
+    return () => this.localSubscribers.delete(subscription);
+  }
+
+  snapshot(sessionId: string, afterSequence = 0): NativeRuntimeBrokerSnapshot {
+    return this.state.getSnapshot(sessionId, afterSequence);
+  }
+  messageSnapshot(sessionId: string, sourceMessageId: string, afterSequence = 0, queueItemId?: string) {
+    return this.state.messageSnapshot(sessionId, sourceMessageId, afterSequence, queueItemId);
+  }
+
+  async answerQuestion(questionId: string, answer: RuntimeQuestionAnswer): Promise<boolean> {
+    // Desktop async questions survive their originating Broker run.
+    if (parseCodexAsyncQuestionId(questionId)) {
+      const resolved = await this.runtime.answerQuestion(questionId, answer);
+      if (resolved) this.handleApprovalResolved(questionId);
+      return resolved;
+    }
+    // Harness owns foreground waterfalls and durable continued questions.
+    // They may belong to Desktop or a finished turn, with no active Broker run.
+    if (parseHarnessQuestionId(questionId)) return this.runtime.answerQuestion(questionId, answer);
+    // OpenCode's authoritative pending Form can be recovered without a Broker
+    // run, and its stable card identity survives browser refreshes.
+    if (isOpenCodeQuestionId(questionId)) return this.runtime.answerQuestion(questionId, answer);
+    if (isCopilotQuestionId(questionId)) {
+      const resolved = await this.runtime.answerQuestion(questionId, answer);
+      if (resolved) this.handleApprovalResolved(questionId);
+      return resolved;
+    }
+    const run = this.state.claimApproval(questionId);
+    if (!run) return false;
+    try {
+      const resolved = await this.runtime.answerQuestion(questionId, answer);
+      if (resolved) {
+        this.handleApprovalResolved(questionId);
+        return true;
+      }
+    } catch (error) {
+      if (error instanceof RuntimeSessionError && error.code === "QUESTION_ANSWER_FAILED") {
+        this.state.restoreApproval(questionId);
+        throw error;
+      }
+      // The app-server request can disappear after a native runtime restart.
+      // Treat that as an interrupted turn rather than leaving a claimed card
+      // that can no longer be answered after a page refresh.
+    }
+
+    const terminal = this.state.appendTerminal(run.runId, {
+      type: "error",
+      code: "APPROVAL_EXPIRED",
+      message: "This approval request is no longer active; the native turn was interrupted. You can send again.",
+    });
+    if (terminal) this.broadcast(terminal);
+    throw new RuntimeSessionError(
+      "This approval request is no longer active; the native turn was interrupted.",
+      "APPROVAL_EXPIRED",
+    );
+  }
+
+  async abort(sessionId?: string, options: NativeRuntimeAbortOptions = {}): Promise<void> {
+    if (!sessionId) return;
+    const run = this.state.activeRun(sessionId);
+    const currentRunId = run?.runId ?? this.state.getSnapshot(sessionId).runId;
+    if (options.expectedRunId && options.expectedRunId !== currentRunId) {
+      logGlobal("warn", "native-broker", "ignored stop for a different native run", undefined, {
+        sessionId, runId: currentRunId, ...options,
+      });
+      throw new RuntimeSessionError("当前会话已进入新一轮，请确认当前任务后再停止", "STALE_SESSION_ANCHOR");
+    }
+    logGlobal("warn", "native-broker", "native stop requested", undefined, {
+      sessionId, runId: currentRunId, controller: run?.controller, pid: process.pid,
+      source: options.source ?? "broker-client", trigger: options.trigger ?? "api",
+      expectedRunId: options.expectedRunId,
+    });
+    this.state.recordStopIntent(sessionId);
+    await this.runtime.abort(sessionId);
+    // Codex confirms cancellation through its turn lifecycle. Keeping that run
+    // authoritative also keeps immediate follow-ups durably queued while the
+    // native turn is still stopping instead of exposing a false idle window.
+    if (run && !this.stopped && decodeNativeSessionId(sessionId).agentType !== "codex") {
+      const timer = setTimeout(() => {
+        this.abortFallbackTimers.delete(timer);
+        if (this.stopped) return;
+        const terminal = this.state.appendTerminal(run.runId, {
+          type: "error",
+          code: "NATIVE_PROTOCOL_ERROR",
+          message: "Native turn was interrupted before the runtime confirmed completion.",
+        });
+        if (terminal) this.broadcast(terminal);
+      }, ABORT_FALLBACK_MS);
+      this.abortFallbackTimers.add(timer);
+      timer.unref?.();
+    }
+  }
+
+  async release(sessionId: string): Promise<void> {
+    const decoded = decodeNativeSessionId(sessionId);
+    if (decoded.agentType !== "codex") {
+      throw new RuntimeSessionError(
+        "Only Codex sessions can be released to the native client",
+        "OPERATION_NOT_SUPPORTED",
+      );
+    }
+
+    const queue = this.state.getGoalState(sessionId);
+    for (const item of queue.queued) {
+      if (sessionQueueItemKind(item) === "message") this.state.cancelMessage(sessionId, item.id);
+      else this.state.cancelGoal(sessionId, item.id);
+    }
+    if (queue.active) this.state.cancelGoal(sessionId, queue.active.id);
+
+    const settlingExecution = this.activeExecutions.get(sessionId);
+    if (this.state.activeRun(sessionId)) await this.abort(sessionId);
+    if (settlingExecution) {
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(resolve, RELEASE_SETTLE_TIMEOUT_MS);
+        void settlingExecution.then(
+          () => { clearTimeout(timer); resolve(); },
+          (error) => { clearTimeout(timer); reject(error); },
+        );
+      });
+    }
+    if (this.state.activeRun(sessionId)) {
+      throw new RuntimeSessionError("Codex session is still stopping", "SESSION_ALREADY_RUNNING");
+    }
+    await this.runtime.release(sessionId);
+    this.cancellationConfirmationTimeouts.delete(sessionId);
+  }
+
+  steer(sessionId: string, input: string): Promise<boolean> {
+    return this.runtime.steer(sessionId, input);
+  }
+
+  async setNativeMode(sessionId: string, preset: string): Promise<UnifiedSessionSummary> {
+    this.state.assertSessionVisible(sessionId);
+    // Native adapters own whether their permission writer may run during a turn.
+    return this.state.applySummary(await this.runtime.setNativeMode(sessionId, preset));
+  }
+
+  async setNativePermissionPreset(sessionId: string, preset: string): Promise<UnifiedSessionSummary> {
+    this.state.assertSessionVisible(sessionId);
+    // Native adapters own whether their permission writer may run during a turn.
+    return this.state.applySummary(await this.runtime.setNativePermissionPreset(sessionId, preset));
+  }
+
+  async getNativeGoal(sessionId: string): Promise<NativeSessionGoal | null> {
+    this.state.assertSessionVisible(sessionId);
+    return this.runtime.getNativeGoal(sessionId);
+  }
+
+  async listBackgroundJobs(sessionId: string): Promise<RuntimeBackgroundJob[]> {
+    this.state.assertSessionVisible(sessionId);
+    return this.runtime.listBackgroundJobs(sessionId);
+  }
+
+  async getBackgroundJobOutput(sessionId: string, jobId: string): Promise<RuntimeBackgroundJobOutput> {
+    this.state.assertSessionVisible(sessionId);
+    return this.runtime.getBackgroundJobOutput(sessionId, jobId);
+  }
+
+  async stopBackgroundJob(sessionId: string, jobId: string): Promise<RuntimeBackgroundJobStopResult> {
+    this.state.assertSessionVisible(sessionId);
+    return this.runtime.stopBackgroundJob(sessionId, jobId);
+  }
+
+  async mutateNativeGoal(sessionId: string, mutation: NativeGoalMutation): Promise<NativeSessionGoal | null> {
+    this.state.assertSessionVisible(sessionId);
+    return this.runtime.mutateNativeGoal(sessionId, parseNativeGoalMutation(mutation));
+  }
+
+  setPermissionMode(sessionId: string, permissionMode: ToolPermissionMode): UnifiedSessionSummary {
+    if (decodeNativeSessionId(sessionId).agentType === "deepseek-harness") {
+      throw new RuntimeSessionError("DeepSeek Harness uses its native permission presets", "OPERATION_NOT_SUPPORTED");
+    }
+    const run = this.state.activeRun(sessionId);
+    const mode = this.state.setPermissionMode(sessionId, permissionMode);
+    const base: UnifiedSessionSummary = {
+      id: sessionId,
+      agentType: decodeNativeSessionId(sessionId).agentType,
+      nativeSessionId: decodeNativeSessionId(sessionId).nativeSessionId,
+      title: "Native session",
+      cwd: "",
+      created: new Date().toISOString(),
+      updated: new Date().toISOString(),
+      status: run ? "running" : "idle",
+      occupancy: run ? "owned-by-customer-agent" : "available",
+      sourceLabel: "Native runtime broker",
+      canResume: true,
+      canDelete: false,
+      permissionMode: mode,
+    };
+    return this.state.applySummary(base);
+  }
+
+  handoff(sessionId: string, controller: NativeRuntimeController): NativeRuntimeBrokerSnapshot {
+    return this.state.changeController(sessionId, controller);
+  }
+
+  private async executeRun(
+    run: BrokerRunRecord,
+    images?: string[],
+    agentIds?: string[],
+    agentName?: string,
+    runOverrides?: Pick<RuntimeRunOptions, "model" | "reasoningEffort">,
+  ): Promise<void> {
+    let terminalSeen = false;
+    let completed = false;
+    try {
+      const delivery = new EngineSwitchDelivery(this.state.engineSwitch).prepare(run.sessionId, run.input, images);
+      const activeItem = run.goalId ? this.state.getGoalState(run.sessionId).active : null;
+      const options: RuntimeRunOptions = {
+        permissionMode: run.permissionMode,
+        brokerRunId: run.runId,
+        ...(runOverrides?.model ? { model: runOverrides.model } : {}),
+        ...(runOverrides?.reasoningEffort ? { reasoningEffort: runOverrides.reasoningEffort } : {}),
+        ...(run.goalId && activeItem?.id === run.goalId && sessionQueueItemKind(activeItem) === "goal" ? {
+          goal: {
+            id: run.goalId,
+            objective: activeItem.objective,
+          },
+        } : {}),
+      };
+      const sessionTodoContext = this.state.todoOutbox.get(run.sessionId);
+      const todoContext = this.state.todoContextForRun(run, sessionTodoContext);
+      if (sessionTodoContext?.executionId && !todoContext && run.agentType === "zcode") options.todoMcp = null;
+      if (todoContext) {
+        await this.state.todoOutbox.bindRun(todoContext, run.runId);
+        let todoInjectionUnavailable = false;
+        try {
+          const injection = await prepareTodoInjection(todoContext, run.agentType);
+          if (injection.status === "configured") options.todoMcp = injection.configuration;
+          else if (todoContext.executionId) throw new Error(injection.reason);
+          else todoInjectionUnavailable = true;
+        } catch (error) {
+          if (todoContext.executionId) throw error;
+          todoInjectionUnavailable = true;
+        }
+        if (todoInjectionUnavailable) {
+          const warning = this.state.appendEvent(run.runId, {
+            type: "runtime_progress", progressId: "todo-mcp:unavailable", phase: "status", status: "failed",
+            label: "个人待办工具未接入",
+            detail: "当前会话未能连接个人待办服务，本轮不能确认创建了 AgentRoam 日历待办。",
+          });
+          if (warning) this.broadcast(warning);
+        }
+        const modelId = todoContext.model;
+        if (modelId && !options.model) {
+          options.model = { id: modelId };
+          if (run.agentType === "zcode") {
+            // Native model IDs can contain "/", so resolve the provider from the catalog.
+            const models = await this.runtime.listModels(run.agentType);
+            const providers = new Set(models
+              .filter(model => model.id === modelId)
+              .map(model => model.providerID)
+              .filter(Boolean));
+            const [providerID] = providers;
+            if (!providerID) {
+              throw new RuntimeSessionError(`Scheduled ZCode model "${modelId}" is no longer available`, "NATIVE_PROTOCOL_ERROR");
+            }
+            if (providers.size > 1) {
+              throw new RuntimeSessionError(`Scheduled ZCode model "${modelId}" matches multiple providers`, "NATIVE_PROTOCOL_ERROR");
+            }
+            options.model.providerID = providerID;
+          }
+        }
+      }
+      for await (const event of this.runtime.run(run.sessionId, delivery.input, delivery.images, agentIds, agentName, options)) {
+        try { delivery.confirm(event); }
+        catch (error) { logGlobal("warn", "native-broker", "Failed to persist context delivery; retained for retry", error, { runId: run.runId }); }
+        if (event.type === "error" && event.code === "CANCEL_CONFIRMATION_TIMEOUT") {
+          this.cancellationConfirmationTimeouts.add(run.sessionId);
+        }
+        const recorded = this.state.appendEvent(run.runId, event);
+        if (recorded) this.broadcast(recorded);
+        // Adapters surface many startup failures as terminal AgentEvents rather
+        // than throwing. Preserve a confirmed external owner after the local
+        // run is finalized, otherwise discovery can incorrectly show this
+        // session as available until its next debounced scan.
+        if (event.type === "error" && event.code === "SESSION_OCCUPIED") {
+          this.state.recordExplicitExternalOwnership(run.sessionId);
+        }
+        if (recorded && isTerminalEvent(recorded.event)) {
+          terminalSeen = true;
+          completed = recorded.event.type === "done";
+        }
+      }
+      if (!terminalSeen) {
+        logGlobal("error", "native-broker", "native run ended without a terminal event", undefined, {
+          sessionId: run.sessionId,
+          runId: run.runId,
+        });
+        const recorded = this.state.appendTerminal(run.runId, {
+          type: "error",
+          code: "NATIVE_PROTOCOL_ERROR",
+          message: "Native runtime stopped without a terminal event.",
+        });
+        if (recorded) this.broadcast(recorded);
+      } else if (completed) {
+        this.pendingCreations.delete(run.sessionId);
+        this.state.deletePendingSession(run.sessionId);
+      }
+    } catch (error) {
+      const externallyOwned = error instanceof RuntimeSessionError && error.code === "SESSION_OCCUPIED";
+      logGlobal("error", "native-broker", "native run failed", error, {
+        sessionId: run.sessionId,
+        runId: run.runId,
+        externallyOwned,
+      });
+      const recorded = this.state.appendTerminal(run.runId, {
+        type: "error",
+        code: error instanceof RuntimeSessionError ? error.code : "NATIVE_PROTOCOL_ERROR",
+        message: error instanceof Error ? error.message : "Native runtime failed",
+      });
+      if (recorded) this.broadcast(recorded);
+      // appendTerminal releases this broker-owned run first. Only then can an
+      // app-server writer-lock failure become an authoritative external lock.
+      if (externallyOwned) this.state.recordExplicitExternalOwnership(run.sessionId);
+    } finally {
+      if (this.cancellationConfirmationTimeouts.has(run.sessionId)) {
+        if (run.goalId) {
+          this.state.finishGoal(
+            run.sessionId,
+            run.goalId,
+            "failed",
+            "Codex cancellation confirmation timed out.",
+          );
+        }
+        return;
+      }
+      if (run.goalId) {
+        const events = this.state.getSnapshot(run.sessionId).events;
+        const terminal = [...events].reverse().find(({ event }) => isTerminalEvent(event))?.event;
+        const outcome = terminal?.type === "done" ? "completed" : "failed";
+        const reason = terminal?.type === "error" ? terminal.message : undefined;
+        const next = this.state.finishGoal(run.sessionId, run.goalId, outcome, reason).active;
+        if (next && !this.state.activeRun(run.sessionId)) void this.startQueueItem(next, run.controller);
+      } else {
+        let pendingItem = this.state.getGoalState(run.sessionId).active;
+        if (!pendingItem && !this.state.activeRun(run.sessionId)) {
+          pendingItem = this.state.promoteNextItem(run.sessionId).active;
+        }
+        if (pendingItem && !this.state.activeRun(run.sessionId)) void this.startQueueItem(pendingItem, run.controller);
+      }
+    }
+  }
+
+  private async startQueueItemAfterSettling(
+    item: SessionGoal,
+    controller: NativeRuntimeController,
+  ): Promise<BrokerRunStart | undefined> {
+    const settlingExecution = this.activeExecutions.get(item.sessionId);
+    if (settlingExecution && !this.state.activeRun(item.sessionId)) {
+      // executeRun owns queue admission while its adapter is still cleaning
+      // up. Waiting here lets its finally block start the item exactly once.
+      await settlingExecution;
+      return undefined;
+    }
+    return this.startQueueItem(item, controller);
+  }
+
+  private async canResumeTimedOutQueue(sessionId: string): Promise<boolean> {
+    if (!this.cancellationConfirmationTimeouts.has(sessionId)) return true;
+    try {
+      const detail = await this.runtime.get(sessionId);
+      if (detail.status === "running") return false;
+      this.cancellationConfirmationTimeouts.delete(sessionId);
+      return true;
+    } catch {
+      // A failed status read cannot prove that Codex released the old turn.
+      return false;
+    }
+  }
+
+  private async startQueueItem(
+    item: SessionGoal,
+    controller: NativeRuntimeController,
+  ): Promise<BrokerRunStart | undefined> {
+    if (this.state.activeRun(item.sessionId)) return undefined;
+    if (!await this.canResumeTimedOutQueue(item.sessionId)) {
+      this.state.deferMessageAdmission(item.sessionId, item.id);
+      return undefined;
+    }
+    const existing = this.queueAdmissions.get(item.sessionId);
+    if (existing) {
+      if (existing.itemId === item.id) return existing.promise;
+      await existing.promise;
+      if (this.state.activeRun(item.sessionId)) return undefined;
+      return this.startQueueItem(item, controller);
+    }
+
+    const admission = (async () => {
+      try {
+        return await this.startRun(
+          item.sessionId,
+          item.objective,
+          item.messagePayload?.images,
+          controller,
+          item.id,
+          item.messagePayload?.agentIds,
+          item.messagePayload?.agentName,
+          item.messagePayload?.runOptions,
+          { deferIfCodexRunning: true },
+        );
+      } catch (error) {
+        if (error instanceof RuntimeSessionError && error.code === "SESSION_ALREADY_RUNNING") {
+          // A shared Codex app-server can keep the native turn alive across a
+          // broker restart. Retain this durable queue item until the next
+          // reconciliation observes the native turn as idle.
+          this.state.deferMessageAdmission(item.sessionId, item.id);
+          return undefined;
+        }
+        logGlobal("error", "native-broker", "goal queue run failed", error, {
+          sessionId: item.sessionId,
+          goalId: item.id,
+        });
+        const state = this.state.finishGoal(
+          item.sessionId,
+          item.id,
+          "failed",
+          error instanceof Error ? error.message : String(error),
+        );
+        if (state.active) void this.startQueueItem(state.active, controller);
+        return undefined;
+      }
+    })();
+    this.queueAdmissions.set(item.sessionId, { itemId: item.id, promise: admission });
+    const clearAdmission = () => {
+      if (this.queueAdmissions.get(item.sessionId)?.promise === admission) {
+        this.queueAdmissions.delete(item.sessionId);
+      }
+    };
+    void admission.then(clearAdmission, clearAdmission);
+    return admission;
+  }
+
+  private handleApprovalResolved(questionId: string): void {
+    const event = this.state.resolveApproval(questionId);
+    if (event) this.broadcast(event);
+  }
+
+  private mergePending(
+    discovered: UnifiedSessionSummary[],
+    projectId?: string,
+    pendingFilter: (session: UnifiedSessionSummary) => boolean = () => true,
+  ): UnifiedSessionSummary[] {
+    const seen = new Set(discovered.map((session) => session.id));
+    const reconciled = discovered.map((session) => {
+      const pending = this.pendingCreations.get(session.id);
+      const materialized = pending && isMaterializedPendingSession(session);
+      if (materialized) {
+        this.pendingCreations.delete(session.id);
+        this.state.deletePendingSession(session.id);
+      }
+      if (!pending) return session;
+      return materialized
+        ? mergePendingSessionContext(session, pending)
+        : mergePendingSessionContext(pending, session);
+    });
+    const pending = [...this.pendingCreations.values()].filter((session) => (
+        !seen.has(session.id) && pendingFilter(session)
+      )).sort((left, right) => right.updated.localeCompare(left.updated));
+    const merged = [...pending, ...reconciled];
+    return projectId === undefined
+      ? merged
+      : merged.filter((session) => session.projectId === projectId);
+  }
+
+  private handleSocket(socket: Socket): void {
+    let buffer = "";
+    socket.setEncoding("utf8");
+    socket.on("data", (chunk: string) => {
+      buffer += chunk;
+      let newline = buffer.indexOf("\n");
+      while (newline >= 0) {
+        const line = buffer.slice(0, newline).trim();
+        buffer = buffer.slice(newline + 1);
+        if (line) this.handleSocketLine(socket, line);
+        newline = buffer.indexOf("\n");
+      }
+    });
+    socket.on("close", () => this.subscribers.delete(socket));
+    socket.on("error", () => this.subscribers.delete(socket));
+  }
+
+  private handleSocketLine(socket: Socket, line: string): void {
+    let request: BrokerRequest;
+    try {
+      request = JSON.parse(line) as BrokerRequest;
+    } catch {
+      socket.end();
+      return;
+    }
+    if (!request.id || !request.method || !request.params || typeof request.params !== "object") {
+      this.write(socket, { id: request.id || "", ok: false, error: { message: "Invalid broker request" } });
+      socket.end();
+      return;
+    }
+    if (request.method === "subscribe") {
+      const sessionId = stringParam(request.params, "sessionId");
+      const afterSequence = numberParam(request.params, "afterSequence") ?? 0;
+      if (!sessionId) {
+        this.write(socket, { id: request.id, ok: false, error: { message: "sessionId is required" } });
+        socket.end();
+        return;
+      }
+      const snapshot = this.state.getSnapshot(sessionId, afterSequence);
+      this.subscribers.set(socket, {
+        sessionId,
+        runId: snapshot.runId,
+        afterSequence: snapshot.snapshotRevision,
+      });
+      this.write(socket, { id: request.id, ok: true, result: { snapshotRevision: snapshot.snapshotRevision } });
+      for (const event of snapshot.events) this.write(socket, { type: "event", event });
+      return;
+    }
+    void this.handleRequest(request).then(
+      (result) => {
+        this.write(socket, { id: request.id, ok: true, result });
+        socket.end();
+      },
+      (error) => {
+        this.write(socket, { id: request.id, ok: false, error: serializeBrokerError(error) });
+        socket.end();
+      },
+    );
+  }
+
+  private async handleRequest(request: BrokerRequest): Promise<unknown> {
+    const sessionId = stringParam(request.params, "sessionId");
+    switch (request.method) {
+      case "ping": return { ok: true, pid: process.pid, packageVersion: this.packageVersion };
+      case "health": return this.health();
+      case "listWorkspaces": return this.listWorkspaces(
+        nativeAgentTypeParam(request.params, "agentType"),
+        workspaceQueryParam(request.params),
+      );
+      case "importWorkspace": return this.importWorkspace(
+        nativeAgentTypeParam(request.params, "agentType"),
+        requiredStringParam(request.params, "path"),
+        stringParam(request.params, "name") || undefined,
+      );
+      case "listWorkspaceSessions": return this.listWorkspaceSessions(
+        nativeAgentTypeParam(request.params, "agentType"),
+        requiredStringParam(request.params, "workspaceId"),
+        workspaceSessionQueryParam(request.params),
+      );
+      case "list": return this.list(stringParam(request.params, "projectId") || undefined);
+      case "liveSessions": return this.liveSessions();
+      case "refresh": return this.refresh(stringParam(request.params, "projectId") || undefined);
+      case "create": return this.create({
+        ...(request.params.todoContext ? { todoContext: request.params.todoContext as RuntimeTodoContext } : {}),
+        agentType: nativeAgentTypeParam(request.params, "agentType"),
+        title: stringParam(request.params, "title") || "New session",
+        cwd: stringParam(request.params, "cwd") || "",
+        ...(stringParam(request.params, "projectId") ? { projectId: stringParam(request.params, "projectId")! } : {}),
+      });
+      case "fork": return this.fork(requireSessionId(sessionId));
+      case "forkAt": return this.fork(requireSessionId(sessionId), parseSessionForkPoint(request.params.point));
+      case "delete": return this.delete(requireSessionId(sessionId));
+      case "get": return this.get(requireSessionId(sessionId), queryParam(request.params));
+      case "getSummary": return this.getSummary(requireSessionId(sessionId));
+      case "getToolResult": return this.getSessionToolResult(
+        requireSessionId(sessionId),
+        toolResultRefParam(request.params),
+      );
+      case "getQueryIndex": return this.getQueryIndex(requireSessionId(sessionId));
+      case "watchPath": return this.getSessionWatchPath(requireSessionId(sessionId));
+      case "startRun": return this.startRun(
+        requireSessionId(sessionId),
+        stringParam(request.params, "input") || "",
+        arrayOfStrings(request.params.images),
+        controllerParam(request.params.controller),
+        undefined,
+        undefined,
+        undefined,
+        runOverridesParam(request.params),
+      );
+      case "listModels": return this.listModels(nativeAgentTypeParam(request.params, "agentType"));
+      case "bindTodoContext": {
+        this.state.todoOutbox.set(requireSessionId(sessionId), request.params.context as RuntimeTodoContext);
+        return { ok: true };
+      }
+      case "snapshot": return this.snapshot(requireSessionId(sessionId), numberParam(request.params, "afterSequence") ?? 0);
+      case "messageSnapshot": return this.state.messageSnapshot(requireSessionId(sessionId),
+        requiredStringParam(request.params, "sourceMessageId"), numberParam(request.params, "afterSequence") ?? 0,
+        stringParam(request.params, "queueItemId") || undefined);
+      case "getGoals": return this.getGoals(
+        requireSessionId(sessionId),
+        controllerParam(request.params.controller),
+        request.params.resume !== false,
+      );
+      case "enqueueGoal": return this.enqueueGoal(
+        requireSessionId(sessionId),
+        stringParam(request.params, "objective") || "",
+        stringParam(request.params, "sourceMessageId") || undefined,
+        controllerParam(request.params.controller),
+      );
+      case "enqueueMessage": return this.enqueueMessage(
+        requireSessionId(sessionId),
+        {
+          sourceMessageId: requiredStringParam(request.params, "sourceMessageId"),
+          content: requiredStringParam(request.params, "content"),
+          messagePayload: messagePayloadParam(request.params.messagePayload),
+        },
+        controllerParam(request.params.controller),
+      );
+      case "reorderGoals": return this.reorderGoals(
+        requireSessionId(sessionId),
+        arrayOfStrings(request.params.orderedIds) ?? [],
+      );
+      case "reorderMessages": return this.reorderMessages(
+        requireSessionId(sessionId),
+        arrayOfStrings(request.params.orderedIds) ?? [],
+      );
+      case "updateMessage": return this.updateMessage(
+        requireSessionId(sessionId),
+        requiredStringParam(request.params, "messageId"),
+        requiredStringParam(request.params, "content"),
+        messagePayloadParam(request.params.messagePayload),
+      );
+      case "cancelMessage": return this.cancelMessage(
+        requireSessionId(sessionId),
+        requiredStringParam(request.params, "messageId"),
+      );
+      case "steerMessage": return this.steerMessage(
+        requireSessionId(sessionId),
+        requiredStringParam(request.params, "messageId"),
+      );
+      case "cancelGoal": return this.cancelGoal(
+        requireSessionId(sessionId),
+        stringParam(request.params, "goalId") || "",
+        controllerParam(request.params.controller),
+      );
+      case "answer": return this.answerQuestion(
+        stringParam(request.params, "questionId") || "",
+        { answer: stringParam(request.params, "answer") || "", selectedIndices: arrayOfNumbers(request.params.selectedIndices) },
+      );
+      case "abort": return this.abort(sessionId || undefined, {
+        expectedRunId: stringParam(request.params, "expectedRunId") || undefined,
+        source: stringParam(request.params, "source") || undefined,
+        trigger: request.params.trigger === "button" || request.params.trigger === "keyboard" ? request.params.trigger : "api",
+      });
+      case "release": return this.release(requireSessionId(sessionId));
+      case "steer": return this.steer(requireSessionId(sessionId), stringParam(request.params, "input") || "");
+      case "setPermissionMode": return this.setPermissionMode(
+        requireSessionId(sessionId),
+        normalizeToolPermissionMode(request.params.permissionMode),
+      );
+      case "setNativeMode": return this.setNativeMode(
+        requireSessionId(sessionId),
+        requiredStringParam(request.params, "preset"),
+      );
+      case "setNativePermissionPreset": return this.setNativePermissionPreset(
+        requireSessionId(sessionId),
+        requiredStringParam(request.params, "preset"),
+      );
+      case "getNativeGoal": return this.getNativeGoal(requireSessionId(sessionId));
+      case "listBackgroundJobs": return this.listBackgroundJobs(requireSessionId(sessionId));
+      case "getBackgroundJobOutput": return this.getBackgroundJobOutput(requireSessionId(sessionId), requiredStringParam(request.params, "jobId"));
+      case "stopBackgroundJob": return this.stopBackgroundJob(requireSessionId(sessionId), requiredStringParam(request.params, "jobId"));
+      case "mutateNativeGoal": return this.mutateNativeGoal(requireSessionId(sessionId), parseNativeGoalMutation(request.params.mutation));
+      case "handoff": return this.handoff(requireSessionId(sessionId), controllerParam(request.params.controller));
+      default: throw new RuntimeSessionError(`Unsupported broker method: ${request.method}`, "OPERATION_NOT_SUPPORTED");
+    }
+  }
+
+  private broadcast(event: BrokerRunEvent): void {
+    const sessionId = this.state.sessionIdForRun(event.runId);
+    if (!sessionId) return;
+    if (["done", "error", "turn_aborted"].includes(event.event.type)) {
+      const remembered = this.recentRunSessions.get(sessionId);
+      const activity = this.state.sessionRunActivity(sessionId);
+      if (remembered && activity?.runId === event.runId && !activity.active) {
+        this.recentRunSessions.set(sessionId, { ...remembered, updated: activity.updated,
+          status: event.event.type === "error" ? "failed" : event.event.type === "done" ? "completed" : "idle" });
+      }
+    }
+    for (const [socket, subscription] of this.subscribers) {
+      if (subscription.sessionId !== sessionId) continue;
+      // A browser may attach while the retained previous run is terminal and
+      // then start a new turn. Sequence numbers are run-local, so reset the
+      // cursor when the broker moves this subscription to that new run.
+      if (subscription.runId !== event.runId) {
+        subscription.runId = event.runId;
+        subscription.afterSequence = 0;
+      }
+      if (event.sequence <= subscription.afterSequence) continue;
+      subscription.afterSequence = event.sequence;
+      this.write(socket, { type: "event", event });
+    }
+    for (const subscription of this.localSubscribers) {
+      if (subscription.sessionId !== sessionId) continue;
+      if (subscription.runId !== event.runId) {
+        subscription.runId = event.runId;
+        subscription.afterSequence = 0;
+      }
+      if (event.sequence <= subscription.afterSequence) continue;
+      subscription.afterSequence = event.sequence;
+      subscription.listener(event);
+    }
+  }
+
+  private write(socket: Socket, value: unknown): void {
+    if (socket.destroyed || !socket.writable) return;
+    socket.write(`${JSON.stringify(value)}\n`);
+  }
+}
+
+/** Broker client used by the Web server and Electron main process. */
+export class NativeRuntimeBrokerClient {
+  private ensurePromise: Promise<void> | null = null;
+
+  constructor(private readonly options: NativeRuntimeBrokerOptions = {}) {}
+
+  get directory(): string {
+    return resolveNativeRuntimeDirectory(this.options.directory);
+  }
+
+  async health(): Promise<RuntimeHealth[]> {
+    return this.request<RuntimeHealth[]>("health", {});
+  }
+
+  async list(projectId?: string): Promise<UnifiedSessionSummary[]> {
+    return this.request("list", projectId ? { projectId } : {});
+  }
+
+  listWorkspaces(agentType: NativeAgentType, query: WorkspaceQuery = {}): Promise<WorkspacePage<AgentWorkspace>> {
+    return this.request("listWorkspaces", { agentType, ...query });
+  }
+
+  importWorkspace(
+    agentType: NativeAgentType,
+    path: string,
+    name?: string,
+  ): Promise<ImportAgentWorkspaceResult> {
+    return this.request("importWorkspace", { agentType, path, ...(name ? { name } : {}) });
+  }
+
+  listWorkspaceSessions(
+    agentType: NativeAgentType,
+    workspaceId: string,
+    query: WorkspaceSessionQuery = {},
+  ): Promise<WorkspacePage<UnifiedSessionSummary>> {
+    return this.request("listWorkspaceSessions", { agentType, workspaceId, ...query });
+  }
+
+  async refresh(projectId?: string): Promise<UnifiedSessionSummary[]> {
+    return this.request("refresh", projectId ? { projectId } : {});
+  }
+
+  liveSessions(): Promise<{ sessions: UnifiedSessionSummary[]; agentTypes: AgentType[] }> {
+    return this.request("liveSessions", {});
+  }
+
+  async create(options: CreateRuntimeSessionOptions & { agentType: NativeAgentType }): Promise<UnifiedSessionSummary> {
+    return this.request("create", { ...options });
+  }
+
+  async fork(id: string, point?: SessionForkPoint): Promise<UnifiedSessionSummary> {
+    // A separate RPC verb makes old hosts reject a point instead of ignoring it.
+    return point
+      ? this.request("forkAt", { sessionId: id, point })
+      : this.request("fork", { sessionId: id });
+  }
+
+  async delete(id: string): Promise<void> {
+    await this.request("delete", { sessionId: id });
+  }
+
+  async get(id: string, query?: SessionHistoryQuery): Promise<UnifiedSessionDetail> {
+    return this.request("get", { sessionId: id, ...(query ?? {}) });
+  }
+
+  async getSummary(id: string): Promise<EngineThreadSessionSummary> {
+    return this.request("getSummary", { sessionId: id });
+  }
+
+  async getQueryIndex(id: string): Promise<SessionQueryIndex> {
+    return this.request("getQueryIndex", { sessionId: id });
+  }
+
+  async getSessionToolResult(
+    id: string,
+    ref: Pick<SessionToolResultRef, "turnId" | "itemId" | "revision">,
+  ): Promise<SessionToolResultBody> {
+    return this.request("getToolResult", { sessionId: id, ...ref });
+  }
+
+  async getSessionWatchPath(id: string): Promise<string | null> {
+    return this.request("watchPath", { sessionId: id });
+  }
+
+  async startRun(
+    id: string,
+    input: string,
+    images?: string[],
+    controller: NativeRuntimeController = "web",
+    runOverrides?: Pick<RuntimeRunOptions, "model" | "reasoningEffort">,
+  ): Promise<BrokerRunStart> {
+    return this.request("startRun", {
+      sessionId: id,
+      input,
+      images,
+      controller,
+      ...(runOverrides ? { runOverrides } : {}),
+    });
+  }
+
+  async listModels(agentType: NativeAgentType): Promise<RuntimeModelInfo[]> {
+    return this.request("listModels", { agentType });
+  }
+
+  async *run(
+    id: string,
+    input: string,
+    images?: string[],
+    _agentIds?: string[],
+    _agentName?: string,
+    controller: NativeRuntimeController = "desktop",
+    runOverrides?: Pick<RuntimeRunOptions, "model" | "reasoningEffort">,
+  ): AsyncIterable<AgentEvent> {
+    const started = await this.startRun(id, input, images, controller, runOverrides);
+    yield {
+      type: "run_admitted",
+      _nativeRunId: started.runId,
+      _nativeSequence: 0,
+    } as unknown as AgentEvent;
+    const queue = new AsyncEventQueue<AgentEvent>();
+    const unsubscribe = await this.subscribe(id, 0, (event) => {
+      if (event.runId !== started.runId) return;
+      queue.push({
+        ...event.event,
+        _nativeRunId: event.runId,
+        _nativeSequence: event.sequence,
+      } as unknown as AgentEvent);
+      if (isTerminalEvent(event.event)) queue.close();
+    });
+    try {
+      for await (const event of queue) yield event;
+    } finally {
+      unsubscribe();
+    }
+  }
+
+  async subscribe(id: string, afterSequence: number, listener: (event: BrokerRunEvent) => void): Promise<() => void> {
+    await this.ensureHost();
+    const socket = await openBrokerSocket(resolveNativeRuntimeSocketPath(this.directory));
+    const requestId = randomUUID();
+    let settled = false;
+    let buffer = "";
+    const ready = new Promise<void>((resolve, reject) => {
+      const finish = (error?: Error) => {
+        if (settled) return;
+        settled = true;
+        if (error) reject(error);
+        else resolve();
+      };
+      socket.setEncoding("utf8");
+      socket.on("data", (chunk: string) => {
+        buffer += chunk;
+        let newline = buffer.indexOf("\n");
+        while (newline >= 0) {
+          const line = buffer.slice(0, newline).trim();
+          buffer = buffer.slice(newline + 1);
+          if (line) {
+            try {
+              const message = JSON.parse(line) as BrokerResponse | { type?: string; event?: BrokerRunEvent };
+              if ("id" in message && message.id === requestId) {
+                if (!message.ok) finish(toBrokerError(message.error));
+                else finish();
+              } else if ("type" in message && message.type === "event" && message.event) {
+                listener(message.event);
+              }
+            } catch {
+              finish(new RuntimeSessionError("Malformed broker response", "NATIVE_PROTOCOL_ERROR"));
+            }
+          }
+          newline = buffer.indexOf("\n");
+        }
+      });
+      socket.once("error", (error) => finish(error));
+      socket.once("close", () => {
+        if (!settled) finish(new RuntimeSessionError("Native runtime broker disconnected", "RUNTIME_UNAVAILABLE"));
+      });
+    });
+    socket.write(`${JSON.stringify({ id: requestId, method: "subscribe", params: { sessionId: id, afterSequence } })}\n`);
+    await ready;
+    return () => socket.end();
+  }
+
+  async snapshot(id: string, afterSequence = 0): Promise<NativeRuntimeBrokerSnapshot> {
+    return this.request("snapshot", { sessionId: id, afterSequence });
+  }
+  async bindTodoContext(id: string, context: RuntimeTodoContext): Promise<void> {
+    await this.request("bindTodoContext", { sessionId: id, context });
+  }
+
+  async messageSnapshot(id: string, sourceMessageId: string, afterSequence = 0, queueItemId?: string): Promise<{
+    item: import("@agent/core").SessionGoal | null; runId: string | null; runStatus: string | null; events: BrokerRunEvent[];
+  }> {
+    return this.request("messageSnapshot", { sessionId: id, sourceMessageId, afterSequence, queueItemId });
+  }
+
+  async getGoals(id: string, controller: NativeRuntimeController = "web", resume = true): Promise<SessionGoalState> {
+    return this.request("getGoals", { sessionId: id, controller, resume });
+  }
+
+  async enqueueGoal(
+    id: string,
+    objective: string,
+    sourceMessageId?: string,
+    controller: NativeRuntimeController = "web",
+  ): Promise<BrokerGoalEnqueueResult> {
+    return this.request("enqueueGoal", { sessionId: id, objective, sourceMessageId, controller });
+  }
+
+  async enqueueMessage(
+    id: string,
+    input: BrokerQueuedMessageInput,
+    controller: NativeRuntimeController = "web",
+  ): Promise<BrokerGoalEnqueueResult> {
+    return this.request("enqueueMessage", { sessionId: id, ...input, controller });
+  }
+
+  async reorderGoals(id: string, orderedIds: readonly string[]): Promise<SessionGoalState> {
+    return this.request("reorderGoals", { sessionId: id, orderedIds: [...orderedIds] });
+  }
+
+  async reorderMessages(id: string, orderedIds: readonly string[]): Promise<SessionGoalState> {
+    return this.request("reorderMessages", { sessionId: id, orderedIds: [...orderedIds] });
+  }
+
+  async updateMessage(
+    id: string,
+    messageId: string,
+    content: string,
+    messagePayload?: SessionMessagePayload,
+  ): Promise<SessionGoalState> {
+    return this.request("updateMessage", { sessionId: id, messageId, content, messagePayload });
+  }
+
+  async cancelMessage(id: string, messageId: string): Promise<SessionGoalState> {
+    return this.request("cancelMessage", { sessionId: id, messageId });
+  }
+
+  async steerMessage(id: string, messageId: string): Promise<BrokerMessageSteerResult> {
+    return this.request("steerMessage", { sessionId: id, messageId });
+  }
+
+  async cancelGoal(
+    id: string,
+    goalId: string,
+    controller: NativeRuntimeController = "web",
+  ): Promise<SessionGoalState> {
+    return this.request("cancelGoal", { sessionId: id, goalId, controller });
+  }
+
+  async answerQuestion(questionId: string, answer: RuntimeQuestionAnswer): Promise<boolean> {
+    return this.request("answer", { questionId, answer: answer.answer, selectedIndices: answer.selectedIndices });
+  }
+
+  async abort(id?: string, options: NativeRuntimeAbortOptions = {}): Promise<void> {
+    await this.request("abort", { ...(id ? { sessionId: id } : {}), ...options });
+  }
+
+  async release(id: string): Promise<void> {
+    await this.request("release", { sessionId: id });
+  }
+
+  async steer(id: string, input: string): Promise<boolean> {
+    return this.request("steer", { sessionId: id, input });
+  }
+
+  async setPermissionMode(id: string, permissionMode: ToolPermissionMode): Promise<UnifiedSessionSummary> {
+    return this.request("setPermissionMode", { sessionId: id, permissionMode });
+  }
+
+  async setNativeMode(id: string, preset: string): Promise<UnifiedSessionSummary> {
+    return this.request("setNativeMode", { sessionId: id, preset });
+  }
+
+  async setNativePermissionPreset(id: string, preset: string): Promise<UnifiedSessionSummary> {
+    return this.request("setNativePermissionPreset", { sessionId: id, preset });
+  }
+
+  async getNativeGoal(id: string): Promise<NativeSessionGoal | null> {
+    return this.request("getNativeGoal", { sessionId: id });
+  }
+
+  async listBackgroundJobs(id: string): Promise<RuntimeBackgroundJob[]> {
+    return this.request("listBackgroundJobs", { sessionId: id });
+  }
+
+  async getBackgroundJobOutput(id: string, jobId: string): Promise<RuntimeBackgroundJobOutput> {
+    return this.request("getBackgroundJobOutput", { sessionId: id, jobId });
+  }
+
+  async stopBackgroundJob(id: string, jobId: string): Promise<RuntimeBackgroundJobStopResult> {
+    return this.request("stopBackgroundJob", { sessionId: id, jobId });
+  }
+
+  async mutateNativeGoal(id: string, mutation: NativeGoalMutation): Promise<NativeSessionGoal | null> {
+    return this.request("mutateNativeGoal", { sessionId: id, mutation });
+  }
+
+  async handoff(id: string, controller: NativeRuntimeController): Promise<NativeRuntimeBrokerSnapshot> {
+    return this.request("handoff", { sessionId: id, controller });
+  }
+
+  private async request<T>(method: string, params: Record<string, unknown>): Promise<T> {
+    await this.ensureHost();
+    return this.requestRaw<T>(method, params);
+  }
+
+  private async ensureHost(): Promise<void> {
+    if (this.ensurePromise) return this.ensurePromise;
+    this.ensurePromise = (async () => {
+      try {
+        await this.requestRaw("ping", {});
+        return;
+      } catch {
+        const factory = this.options.runtimeFactory;
+        if (!factory && !this.options.startHost) throw new RuntimeSessionError("Native runtime broker is unavailable", "RUNTIME_UNAVAILABLE");
+        const directory = this.directory;
+        const socketPath = resolveNativeRuntimeSocketPath(directory);
+        if (isFilesystemSocket(socketPath) && existsSync(socketPath)) {
+          try {
+            await this.requestRaw("ping", {});
+            return;
+          } catch {
+            // The path was not accepting connections twice, so it is a stale
+            // Unix socket rather than a live broker owned by another surface.
+            rmSync(socketPath, { force: true });
+          }
+        }
+        if (this.options.startHost) {
+          await this.options.startHost(directory);
+          await this.requestRaw("ping", {});
+          return;
+        }
+        const hosts = brokerHosts();
+        let host = hosts.get(directory);
+        if (!host) {
+          host = new NativeRuntimeBrokerHost(directory, factory!, this.options.now);
+          try {
+            await host.start();
+            hosts.set(directory, host);
+          } catch (error) {
+            await host.stop().catch(() => undefined);
+            if (!isAddressInUse(error)) throw error;
+          }
+        }
+        await this.requestRaw("ping", {});
+      }
+    })().finally(() => { this.ensurePromise = null; });
+    return this.ensurePromise;
+  }
+
+  private async requestRaw<T>(method: string, params: Record<string, unknown>): Promise<T> {
+    const socket = await openBrokerSocket(resolveNativeRuntimeSocketPath(this.directory));
+    const requestId = randomUUID();
+    return new Promise<T>((resolve, reject) => {
+      let buffer = "";
+      let settled = false;
+      const finish = (error?: Error, value?: T) => {
+        if (settled) return;
+        settled = true;
+        socket.destroy();
+        if (error) reject(error);
+        else resolve(value as T);
+      };
+      socket.setEncoding("utf8");
+      socket.on("data", (chunk: string) => {
+        buffer += chunk;
+        const newline = buffer.indexOf("\n");
+        if (newline < 0) return;
+        const line = buffer.slice(0, newline).trim();
+        if (!line) return;
+        try {
+          const response = JSON.parse(line) as BrokerResponse;
+          if (response.id !== requestId) return;
+          if (!response.ok) finish(toBrokerError(response.error));
+          else finish(undefined, response.result as T);
+        } catch {
+          finish(new RuntimeSessionError("Malformed broker response", "NATIVE_PROTOCOL_ERROR"));
+        }
+      });
+      socket.once("error", (error) => finish(error));
+      socket.once("close", () => {
+        if (!settled) finish(new RuntimeSessionError("Native runtime broker disconnected", "RUNTIME_UNAVAILABLE"));
+      });
+      socket.write(`${JSON.stringify({ id: requestId, method, params })}\n`);
+    });
+  }
+}
+
+/** Adapter facade for a UnifiedSessionService that does not own native processes. */
+export class BrokerRuntimeAdapter implements AgentRuntimeAdapter {
+  constructor(
+    readonly agentType: NativeAgentType,
+    private readonly client: NativeRuntimeBrokerClient,
+  ) {}
+
+  async health(): Promise<RuntimeHealth> {
+    const health = await this.client.health();
+    return health.find((entry) => entry.agentType === this.agentType)
+      ?? { agentType: this.agentType, available: false, label: this.agentType, error: "Native runtime is unavailable" };
+  }
+
+  async discoverSessions(): Promise<UnifiedSessionSummary[]> {
+    return (await this.client.list()).filter((session) => session.agentType === this.agentType);
+  }
+
+  listWorkspaces(query?: WorkspaceQuery): Promise<WorkspacePage<AgentWorkspace>> {
+    return this.client.listWorkspaces(this.agentType, query);
+  }
+
+  importWorkspace(path: string, name?: string): Promise<ImportAgentWorkspaceResult> {
+    return this.client.importWorkspace(this.agentType, path, name);
+  }
+
+  listWorkspaceSessions(
+    workspaceId: string,
+    query?: WorkspaceSessionQuery,
+  ): Promise<WorkspacePage<UnifiedSessionSummary>> {
+    return this.client.listWorkspaceSessions(this.agentType, workspaceId, query);
+  }
+
+  getSession(nativeSessionId: string): Promise<UnifiedSessionDetail> {
+    return this.client.get(encodeUnifiedSessionId(this.agentType, nativeSessionId));
+  }
+
+  getSessionToolResult(
+    nativeSessionId: string,
+    ref: Pick<SessionToolResultRef, "turnId" | "itemId" | "revision">,
+  ): Promise<SessionToolResultBody> {
+    return this.client.getSessionToolResult(encodeUnifiedSessionId(this.agentType, nativeSessionId), ref);
+  }
+
+  getSessionWatchPath(nativeSessionId: string): Promise<string | null> {
+    return this.client.getSessionWatchPath(encodeUnifiedSessionId(this.agentType, nativeSessionId));
+  }
+
+  create(options: CreateRuntimeSessionOptions): Promise<UnifiedSessionSummary> {
+    return this.client.create({ ...options, agentType: this.agentType });
+  }
+
+  fork(nativeSessionId: string, point?: SessionForkPoint): Promise<UnifiedSessionSummary> {
+    return this.client.fork(encodeUnifiedSessionId(this.agentType, nativeSessionId), point);
+  }
+
+  delete(nativeSessionId: string): Promise<void> {
+    return this.client.delete(encodeUnifiedSessionId(this.agentType, nativeSessionId));
+  }
+
+  run(
+    nativeSessionId: string,
+    input: string,
+    images?: string[],
+    _agentIds?: string[],
+    _agentName?: string,
+    options?: RuntimeRunOptions,
+  ): AsyncIterable<AgentEvent> {
+    return this.client.run(
+      encodeUnifiedSessionId(this.agentType, nativeSessionId),
+      input,
+      images,
+      undefined,
+      undefined,
+      "desktop",
+      options?.model || options?.reasoningEffort
+        ? { ...(options.model ? { model: options.model } : {}), ...(options.reasoningEffort ? { reasoningEffort: options.reasoningEffort } : {}) }
+        : undefined,
+    );
+  }
+
+  listModels(): Promise<RuntimeModelInfo[]> {
+    return this.client.listModels(this.agentType);
+  }
+
+  steer(nativeSessionId: string, input: string): Promise<boolean> {
+    return this.client.steer(encodeUnifiedSessionId(this.agentType, nativeSessionId), input);
+  }
+
+  abort(nativeSessionId: string): Promise<void> {
+    return this.client.abort(encodeUnifiedSessionId(this.agentType, nativeSessionId));
+  }
+
+  release(nativeSessionId: string): Promise<void> {
+    return this.client.release(encodeUnifiedSessionId(this.agentType, nativeSessionId));
+  }
+
+  answerQuestion(questionId: string, answer: RuntimeQuestionAnswer): Promise<boolean> {
+    return this.client.answerQuestion(questionId, answer);
+  }
+}
+
+export function createNativeRuntimeBrokerClient(options: NativeRuntimeBrokerOptions = {}): NativeRuntimeBrokerClient {
+  return new NativeRuntimeBrokerClient(options);
+}
+
+/**
+ * Builds the direct runtime only for the process which successfully becomes
+ * broker host. Every other process receives the broker adapter facade above.
+ */
+export function createNativeRuntimeBrokerHostRuntime(
+  codexExecutable?: string,
+  callbacks?: Partial<NativeRuntimeBrokerCallbacks>,
+  opencodeExecutable?: string,
+): UnifiedSessionService {
+  const codexClient = new CodexAppServerClient({ executable: codexExecutable || "codex" });
+  const codexAdapter = new CodexRuntimeAdapter({
+    client: codexClient,
+    codexExecutable: codexExecutable || "codex",
+    onApprovalResolved: callbacks?.onApprovalResolved,
+  });
+  const codexCompatibility = callbacks?.codexSessionCatalogRepository
+    ? new CodexSessionCompatibilityService(
+        codexAdapter,
+        new CodexSessionDiskCatalog({
+          sessionRoot: join(
+            process.env.CODEX_HOME?.trim() || join(homedir(), ".codex"),
+            "sessions",
+          ),
+          readerVersion: "0.153.0",
+          repository: callbacks.codexSessionCatalogRepository,
+        }),
+      )
+    : undefined;
+  const opencodeServer = new OpenCodeServerClient({
+    executable: opencodeExecutable || "opencode",
+    unavailableError: process.env.AGENT_OPENCODE_RUNTIME_ERROR,
+  });
+  const service = new UnifiedSessionService([
+    codexAdapter,
+    new ClaudeRuntimeAdapter(),
+    new DeepSeekHarnessRuntimeAdapter(),
+    new QoderRuntimeAdapter(),
+    new ZCodeRuntimeAdapter(),
+    new WorkBuddyRuntimeAdapter(),
+    new CopilotRuntimeAdapter(),
+    new OpenCodeRuntimeAdapter({
+      server: opencodeServer,
+      executable: opencodeExecutable || "opencode",
+      unavailableError: process.env.AGENT_OPENCODE_RUNTIME_ERROR,
+      onApprovalResolved: callbacks?.onApprovalResolved,
+    }),
+  ], () => Promise.resolve([]), callbacks?.importedWorkspaceRepository, codexCompatibility);
+  codexCompatibility?.setOnCompatibilityChanged(() => service.invalidateCodexCompatibility());
+  codexCompatibility?.start();
+  return service;
+}
+
+export function resolveNativeRuntimeDirectory(explicit?: string): string {
+  return explicit
+    || process.env.AGENT_NATIVE_RUNTIME_DIR?.trim()
+    || join(homedir(), ".agentroam", "native-runtime");
+}
+
+export function resolveNativeRuntimeSocketPath(
+  directory: string,
+  platform: NodeJS.Platform = process.platform,
+): string {
+  if (platform !== "win32") return join(directory, BROKER_SOCKET_NAME);
+  const scope = createHash("sha256")
+    .update(resolve(directory).toLowerCase())
+    .digest("hex")
+    .slice(0, 24);
+  return `\\\\.\\pipe\\agentroam-native-runtime-${scope}`;
+}
+
+function isFilesystemSocket(socketPath: string): boolean {
+  return !socketPath.startsWith("\\\\.\\pipe\\");
+}
+
+function brokerHosts(): Map<string, NativeRuntimeBrokerHost> {
+  const globalWithHosts = globalThis as typeof globalThis & {
+    __agentroamNativeRuntimeBrokerHosts?: Map<string, NativeRuntimeBrokerHost>;
+  };
+  if (!globalWithHosts.__agentroamNativeRuntimeBrokerHosts) {
+    globalWithHosts.__agentroamNativeRuntimeBrokerHosts = new Map();
+  }
+  return globalWithHosts.__agentroamNativeRuntimeBrokerHosts;
+}
+
+function decodeNativeSessionId(id: string): { agentType: NativeAgentType; nativeSessionId: string } {
+  let decoded: { agentType: AgentType; nativeSessionId: string };
+  try {
+    decoded = decodeUnifiedSessionId(id);
+  } catch (error) {
+    if (error instanceof RuntimeSessionError) throw error;
+    throw new RuntimeSessionError(`Invalid native session id: ${id}`, "INVALID_SESSION_ID");
+  }
+  if (decoded.agentType === "customer-agent") {
+    throw new RuntimeSessionError("Customer Agent sessions are not handled by the native broker", "INVALID_SESSION_ID");
+  }
+  return decoded as { agentType: NativeAgentType; nativeSessionId: string };
+}
+
+function toRunRecord(row: StoredRunRow): BrokerRunRecord {
+  return {
+    sessionId: row.session_id,
+    runId: row.run_id,
+    agentType: row.agent_type,
+    nativeSessionId: row.native_session_id,
+    input: row.input,
+    permissionMode: normalizeToolPermissionMode(row.permission_mode),
+    controller: row.controller,
+    status: row.status,
+    nextSequence: row.next_sequence,
+    createdAt: row.created_at,
+    terminalAt: row.terminal_at,
+    goalId: row.goal_id ?? null,
+  };
+}
+
+function toImportedWorkspace(row: StoredImportedWorkspaceRow): ImportedAgentWorkspace {
+  return {
+    workspaceId: row.workspace_id,
+    agentType: row.agent_type,
+    normalizedPath: row.normalized_path,
+    name: row.name,
+    createdAt: row.created_at,
+  };
+}
+
+/** Link the accepted Harness input to its durable queue receipt, including across reloads. */
+export function restoreHarnessRunInputIdentity(
+  messages: Message[],
+  run: BrokerRunRecord | null,
+  sourceMessageId: string | undefined,
+): Message[] {
+  if (run?.agentType !== "deepseek-harness" || !run.goalId || !sourceMessageId) return messages;
+  // Same-turn clarifications may repeat the original words. Only the initial
+  // input owns the queue receipt; those later messages retain native identities.
+  let inputIndex = -1;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message.role !== "user" || isHarnessContextMessage(message) || isHarnessSteeredMessage(message)) continue;
+    if (message.content === run.input) inputIndex = index;
+    break;
+  }
+  const name = `__native_harness_input:${sourceMessageId}`;
+  if (inputIndex < 0 || (messages[inputIndex].historyId === sourceMessageId && messages[inputIndex].name === name)) return messages;
+  return messages.map((message, index) => index === inputIndex ? { ...message, historyId: sourceMessageId, name } : message);
+}
+
+function harnessInputSourceId(message: Message): string | undefined {
+  const prefix = "__native_harness_input:";
+  return message.role === "user" && message.name?.startsWith(prefix) ? message.name.slice(prefix.length) : undefined;
+}
+
+/** Generic history paging assigns ordinal IDs; retain the accepted Harness input's receipt. */
+export function restoreHarnessPagedInputIdentity(detail: UnifiedSessionDetail): UnifiedSessionDetail {
+  if (detail.agentType !== "deepseek-harness") return detail;
+  return { ...detail, messages: detail.messages.map(message => {
+    const sourceId = harnessInputSourceId(message);
+    return sourceId && message.historyId !== sourceId ? { ...message, historyId: sourceId } : message;
+  }) };
+}
+
+/** Query navigation and the returned page must target the same message ID. */
+export function restoreHarnessInputQueryIdentity(index: SessionQueryIndex, messages: Message[]): SessionQueryIndex {
+  const aliases = new Map<string, string>();
+  let visibleIndex = 0;
+  for (const message of messages) {
+    if (message.role !== "user" && message.role !== "assistant") continue;
+    const sourceId = harnessInputSourceId(message);
+    if (sourceId) aliases.set(sessionHistoryMessageId(visibleIndex, message), sourceId);
+    visibleIndex += 1;
+  }
+  if (!aliases.size) return index;
+  return { ...index, entries: index.entries.map(entry => {
+    const sourceId = aliases.get(entry.messageId);
+    return sourceId ? { ...entry, messageId: sourceId } : entry;
+  }) };
+}
+
+export function mergeProjectionMessages(
+  messages: Message[],
+  run: BrokerRunRecord | null,
+  events: BrokerRunEvent[],
+): Message[] {
+  if (!run) return messages;
+  if (
+    run.status === "terminal"
+    && events.some(({ event }) => event.type === "error" && event.code === "SESSION_OCCUPIED")
+    && !events.some(({ event }) => (
+      event.type === "text_chunk"
+      || event.type === "reasoning_summary_delta"
+      || event.type === "tool_call"
+    ))
+  ) {
+    return messages;
+  }
+  const isHarness = run.agentType === "deepseek-harness";
+  const preserveNativeOrder = isHarness || run.agentType === "qoder" || run.agentType === "zcode" || run.agentType === "workbuddy" || run.agentType === "copilot";
+  const isRunUser = (message: Message) => message.role === "user"
+    && (!isHarness || (!isHarnessContextMessage(message) && !isHarnessSteeredMessage(message)));
+  const projected = [...messages];
+  let runUserIndex = -1;
+  for (let index = projected.length - 1; index >= 0; index -= 1) {
+    const message = projected[index];
+    if (!isRunUser(message) || message.content !== run.input) continue;
+    runUserIndex = index;
+    break;
+  }
+  const hasPersistedRunInput = runUserIndex >= 0;
+  let nextUserIndex = projected.length;
+  for (let index = runUserIndex + 1; hasPersistedRunInput && index < projected.length; index += 1) {
+    if (!isRunUser(projected[index])) continue;
+    nextUserIndex = index;
+    break;
+  }
+  const persistedAssistantText = hasPersistedRunInput
+    ? projected
+      .slice(runUserIndex + 1, nextUserIndex)
+      .filter((message) => message.role === "assistant")
+      .map((message) => message.content)
+      .join("")
+    : null;
+  const nativeTurn = preserveNativeOrder && hasPersistedRunInput ? projected.slice(runUserIndex + 1, nextUserIndex) : [];
+  const completedCodexTurns = new Set<string>();
+  const codexHistoryIds = new Set<string>();
+  if (run.agentType === "codex" && run.status === "terminal") {
+    for (const message of messages) {
+      if (message.role !== "assistant" || !message.content.trim()) continue;
+      if (message.historyId) codexHistoryIds.add(message.historyId);
+      const turnId = message.presentation?.forkPoint?.turnId;
+      if (turnId) completedCodexTurns.add(turnId);
+    }
+  }
+  const nativeReasoning = nativeTurn.flatMap((message) => (
+    (message.presentation?.reasoning ?? []).map((section) => ({ message, section }))
+  ));
+  const persistedReasoningText = nativeReasoning.map(({ section }) => section.text).join("");
+  let consumedReasoningText = 0;
+  let insertionIndex = hasPersistedRunInput ? runUserIndex + 1 : projected.length;
+  let consumedAssistantText = 0;
+  if (!hasPersistedRunInput) {
+    projected.push({ role: "user", content: run.input, name: `__native_run:${run.runId}` });
+    insertionIndex = projected.length;
+  }
+  const eventMessages: Message[] = [];
+  let activeAssistantIndex: number | null = null;
+  for (const { event } of events) {
+    // Harness commits each model step before its tools; later text belongs after their results.
+    if (isHarness && (event.type === "text_done" || event.type === "tool_result")) {
+      activeAssistantIndex = null;
+      continue;
+    }
+    // Older ZCode runs recorded the raw tool before its dedicated question card.
+    if (run.agentType === "zcode" && event.type === "tool_call" && event.toolCall.name === "AskUserQuestion") continue;
+    if (event.type === "reasoning_summary_delta") {
+      const name = `__native_reasoning:${run.runId}:${event.itemId}`;
+      let index = eventMessages.findIndex((message) => message.name === name);
+      if (index < 0) {
+        index = eventMessages.length;
+        eventMessages.push({ role: "assistant", content: "", name, presentation: { reasoning: [] } });
+      }
+      const message = eventMessages[index];
+      eventMessages[index] = {
+        ...message,
+        presentation: {
+          ...message.presentation,
+          reasoning: mergeReasoningSummaryDelta(message.presentation?.reasoning, event),
+        },
+      };
+      activeAssistantIndex = null;
+      continue;
+    }
+    if (event.type !== "text_chunk" && event.type !== "tool_call") continue;
+    if (event.type === "text_chunk" && event.turnId && completedCodexTurns.has(event.turnId)) {
+      // Persisted Codex items include their own identity. History can also
+      // contain compaction notices and other text absent from the stream.
+      const historyId = codexTraceHistoryId(event.turnId, "agent", event.itemId);
+      if (historyId && codexHistoryIds.has(historyId)) continue;
+    }
+    if (activeAssistantIndex === null) {
+      activeAssistantIndex = eventMessages.length;
+      eventMessages.push({ role: "assistant", content: "", name: `__native_run:${run.runId}` });
+    }
+    const message = eventMessages[activeAssistantIndex];
+    eventMessages[activeAssistantIndex] = event.type === "text_chunk"
+      ? { ...message, content: message.content + event.text }
+      : { ...message, toolCalls: [...(message.toolCalls ?? []), event.toolCall] };
+  }
+  for (const message of eventMessages) {
+    const reasoning = message.presentation?.reasoning;
+    if (reasoning?.length) {
+      const text = reasoning.map((section) => section.text).join("");
+      const remaining = persistedReasoningText.slice(consumedReasoningText);
+      // Some native protocols give live reasoning a different ID from JSONL.
+      // Reconcile ordered text only inside this run's persisted user turn.
+      if (text && remaining.startsWith(text)) {
+        consumedReasoningText += text.length;
+        let offset = 0;
+        for (const entry of nativeReasoning) {
+          if (offset < consumedReasoningText) {
+            insertionIndex = Math.max(insertionIndex, projected.indexOf(entry.message) + 1);
+          }
+          offset += entry.section.text.length;
+        }
+        continue;
+      }
+      const last = nativeReasoning.at(-1);
+      const index = last ? projected.indexOf(last.message) : -1;
+      if (remaining && text.startsWith(remaining) && last && index >= 0) {
+        const suffix = text.slice(remaining.length);
+        projected[index] = {
+          ...last.message,
+          presentation: {
+            ...last.message.presentation,
+            reasoning: (last.message.presentation?.reasoning ?? []).map((section) => section === last.section
+              ? { ...section, text: section.text + suffix }
+              : section),
+          },
+        };
+        consumedReasoningText = persistedReasoningText.length;
+        insertionIndex = Math.max(insertionIndex, index + 1);
+        continue;
+      }
+      const historyIndex = projected.findIndex((entry) => (
+        (!preserveNativeOrder || !hasPersistedRunInput || nativeTurn.includes(entry))
+        && entry.presentation?.reasoning?.some(
+          (section) => reasoning.some((candidate) => candidate.itemId === section.itemId),
+        )
+      ));
+      if (historyIndex < 0) {
+        if (preserveNativeOrder) {
+          projected.splice(insertionIndex, 0, message);
+          insertionIndex += 1;
+        } else projected.push(message);
+      } else {
+        const historyMessage = projected[historyIndex];
+        const historyReasoning = historyMessage.presentation?.reasoning ?? [];
+        const merged = [...historyReasoning];
+        for (const candidate of reasoning) {
+          const index = merged.findIndex((section) => (
+            section.itemId === candidate.itemId && section.sectionIndex === candidate.sectionIndex
+          ));
+          if (index < 0) merged.push(candidate);
+          else if (candidate.text.startsWith(merged[index].text)) merged[index] = candidate;
+        }
+        projected[historyIndex] = {
+          ...historyMessage,
+          presentation: {
+            ...historyMessage.presentation,
+            reasoning: merged.sort((left, right) => left.sectionIndex - right.sectionIndex),
+          },
+        };
+        if (hasPersistedRunInput) insertionIndex = Math.max(insertionIndex, historyIndex + 1);
+      }
+      continue;
+    }
+    const missing = missingProjectionMessage(
+      projected,
+      message,
+      persistedAssistantText?.slice(consumedAssistantText) ?? null,
+    );
+    consumedAssistantText += missing.consumedAssistantText;
+    let textOffset = 0;
+    const toolIds = new Set(message.toolCalls?.map((tool) => tool.id));
+    for (const entry of nativeTurn) {
+      const consumedText = entry.role === "assistant" && entry.content
+        && textOffset < consumedAssistantText;
+      if (entry.role === "assistant") textOffset += entry.content.length;
+      if (consumedText || entry.toolCalls?.some((tool) => toolIds.has(tool.id))
+        || (entry.toolCallId && toolIds.has(entry.toolCallId))) {
+        insertionIndex = Math.max(insertionIndex, projected.indexOf(entry) + 1);
+      }
+    }
+    if (missing.message) {
+      if (preserveNativeOrder) {
+        projected.splice(insertionIndex, 0, missing.message);
+        insertionIndex += 1;
+      } else projected.push(missing.message);
+    }
+  }
+  return projected;
+}
+
+interface NativeTurnCandidate {
+  turnIndex: number;
+  userIndex: number;
+  assistantIndex: number;
+  input: string;
+  finalText: string;
+  combinedText: string;
+  runId?: string;
+}
+
+function readCompletionResult(row: StoredTurnCompletionRow): RunResult | undefined {
+  try { return row.result ? JSON.parse(row.result) as RunResult : undefined; }
+  catch { return undefined; }
+}
+
+function applyTurnCompletions(
+  messages: Message[],
+  rows: StoredTurnCompletionRow[],
+  options: { windowed?: boolean } = {},
+): Message[] {
+  const turns: NativeTurnCandidate[] = [];
+  let turnIndex = 0;
+  for (let userIndex = 0; userIndex < messages.length; userIndex += 1) {
+    const userMessage = messages[userIndex];
+    if (userMessage.role !== "user") continue;
+    let nextUserIndex = messages.length;
+    for (let index = userIndex + 1; index < messages.length; index += 1) {
+      if (messages[index].role === "user") {
+        nextUserIndex = index;
+        break;
+      }
+    }
+    let assistantIndex = -1;
+    for (let index = userIndex + 1; index < nextUserIndex; index += 1) {
+      const candidate = messages[index];
+      if (
+        candidate.role === "assistant"
+        && candidate.content.trim()
+        && !candidate.toolCalls?.length
+        && candidate.presentation?.agentMessagePhase !== "commentary"
+      ) {
+        assistantIndex = index;
+      }
+    }
+    const turnMessages = messages.slice(userIndex + 1, nextUserIndex);
+    turns.push({
+      turnIndex,
+      userIndex,
+      assistantIndex,
+      input: userMessage.content,
+      finalText: assistantIndex >= 0 ? messages[assistantIndex].content : "",
+      combinedText: turnMessages.filter((message) => message.role === "assistant").map((message) => message.content).join(""),
+      runId: userMessage.name?.startsWith("__native_run:") ? userMessage.name.slice("__native_run:".length)
+        : userMessage.presentation?.runResult?.runId ?? turnMessages.find((message) => message.presentation?.runResult)?.presentation?.runResult?.runId,
+    });
+    turnIndex += 1;
+  }
+
+  const matchableRows = rows.flatMap((row) => {
+    const result = readCompletionResult(row);
+    const candidateIndexes = turns.flatMap((turn, index) => {
+      if (turn.runId) return turn.runId === row.run_id ? [index] : [];
+      // A page-local unique text match may still refer to an identical off-page turn.
+      if (options.windowed || turn.input !== row.input) return [];
+      const textMatches = result?.status && result.status !== "completed"
+        ? turn.combinedText === row.final_text || turn.finalText === row.final_text
+        // Native runtimes stream commentary and final text into the same run receipt.
+        : turn.assistantIndex >= 0 && (turn.finalText === row.final_text || turn.combinedText === row.final_text);
+      return textMatches ? [index] : [];
+    });
+    return candidateIndexes.length > 0 ? [{ row, result, candidateIndexes }] : [];
+  });
+  if (matchableRows.length === 0) return messages;
+
+  const earliest: number[] = [];
+  let previous = -1;
+  for (const entry of matchableRows) {
+    const selected = entry.candidateIndexes.find((candidate) => candidate > previous);
+    if (selected === undefined) return messages;
+    earliest.push(selected);
+    previous = selected;
+  }
+
+  const latest = new Array<number>(matchableRows.length);
+  let next = turns.length;
+  for (let index = matchableRows.length - 1; index >= 0; index -= 1) {
+    const candidates = matchableRows[index].candidateIndexes;
+    const selected = [...candidates].reverse().find((candidate) => candidate < next);
+    if (selected === undefined) return messages;
+    latest[index] = selected;
+    next = selected;
+  }
+
+  const completed = [...messages];
+  for (let index = 0; index < matchableRows.length; index += 1) {
+    if (earliest[index] !== latest[index]) continue;
+    const { row, result } = matchableRows[index];
+    const durationMs = row.duration_ms;
+    if (!Number.isFinite(durationMs) || durationMs < 0) continue;
+    const turn = turns[earliest[index]];
+    const messageIndex = turn.assistantIndex >= 0 ? turn.assistantIndex : turn.userIndex;
+    const message = completed[messageIndex];
+    completed[messageIndex] = {
+      ...message,
+      presentation: {
+        ...message.presentation,
+        ...(!result || result.status === "completed" ? { completionDurationMs: durationMs } : {}),
+        ...(result ? { runResult: result } : {}),
+      },
+    };
+  }
+  return completed;
+}
+
+function missingProjectionMessage(
+  messages: Message[],
+  candidate: Message,
+  persistedAssistantText: string | null,
+): { message: Message | null; consumedAssistantText: number } {
+  const assistantMessages = messages.filter((message) => message.role === "assistant");
+  let content = candidate.content;
+  let consumedAssistantText = 0;
+  if (content && persistedAssistantText !== null) {
+    if (content.startsWith(persistedAssistantText)) {
+      consumedAssistantText = persistedAssistantText.length;
+      content = content.slice(consumedAssistantText);
+    } else if (persistedAssistantText.startsWith(content)) {
+      consumedAssistantText = content.length;
+      content = "";
+    }
+  } else if (content && assistantMessages.some((message) => message.content === content)) {
+    content = "";
+  }
+  const projectedToolIds = new Set(assistantMessages.flatMap(
+    (message) => message.toolCalls?.map((toolCall) => toolCall.id) ?? [],
+  ));
+  const toolCalls = candidate.toolCalls?.filter((toolCall) => !projectedToolIds.has(toolCall.id));
+  return {
+    consumedAssistantText,
+    message: !content && !toolCalls?.length
+      ? null
+      : {
+          ...candidate,
+          content,
+          toolCalls: toolCalls?.length ? toolCalls : undefined,
+        },
+  };
+}
+
+function mergePendingSessionContext(
+  discovered: UnifiedSessionSummary,
+  pending: UnifiedSessionSummary,
+): UnifiedSessionSummary {
+  return {
+    ...discovered,
+    cwd: discovered.cwd || pending.cwd,
+    projectId: discovered.projectId ?? pending.projectId,
+  };
+}
+
+function isMaterializedPendingSession(session: UnifiedSessionSummary): boolean {
+  if (session.compatibility !== undefined) return false;
+  return session.agentType !== "claude-code" || session.sourceLabel !== "Claude Code SDK";
+}
+
+function supportsPersistedDraft(agentType: unknown): boolean {
+  return agentType === "claude-code" || agentType === "qoder" || agentType === "zcode" || agentType === "workbuddy";
+}
+
+function parsePendingSession(value: string): UnifiedSessionSummary | null {
+  try {
+    const parsed = JSON.parse(value) as Partial<UnifiedSessionSummary>;
+    if (
+      !supportsPersistedDraft(parsed.agentType)
+      || typeof parsed.id !== "string"
+      || typeof parsed.nativeSessionId !== "string"
+      || typeof parsed.title !== "string"
+      || typeof parsed.cwd !== "string"
+      || typeof parsed.created !== "string"
+      || typeof parsed.updated !== "string"
+      || (parsed.status !== "idle" && parsed.status !== "running")
+      || !["available", "owned-externally", "owned-by-customer-agent"].includes(parsed.occupancy ?? "")
+      || typeof parsed.sourceLabel !== "string"
+      || typeof parsed.canResume !== "boolean"
+      || typeof parsed.canDelete !== "boolean"
+    ) return null;
+    return parsed as UnifiedSessionSummary;
+  } catch {
+    return null;
+  }
+}
+
+function parseAgentEvent(value: string): AgentEvent | null {
+  try {
+    const parsed = JSON.parse(value) as AgentEvent;
+    return parsed && typeof parsed === "object" && typeof parsed.type === "string" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function isTerminalEvent(event: AgentEvent): event is RunTerminalEvent {
+  return event.type === "done" || event.type === "error" || event.type === "turn_aborted";
+}
+
+function serializeBrokerError(error: unknown): { message: string; code?: string } {
+  return {
+    message: error instanceof Error ? error.message : String(error),
+    ...(error instanceof RuntimeSessionError || error instanceof StaleSessionAnchorError
+      ? { code: error.code }
+      : {}),
+  };
+}
+
+function toBrokerError(error?: { message: string; code?: string }): RuntimeSessionError {
+  const code = error?.code;
+  if (code && isRuntimeErrorCode(code)) return new RuntimeSessionError(error?.message || "Native runtime broker failed", code);
+  return new RuntimeSessionError(error?.message || "Native runtime broker failed", "NATIVE_PROTOCOL_ERROR");
+}
+
+function isRuntimeErrorCode(value: string): value is ConstructorParameters<typeof RuntimeSessionError>[1] {
+  return [
+    "INVALID_SESSION_ID",
+    "SESSION_NOT_FOUND",
+    "BACKGROUND_JOB_NOT_FOUND",
+    "SESSION_OCCUPIED",
+    "SESSION_ALREADY_RUNNING",
+    "RUNTIME_UNAVAILABLE",
+    "OPERATION_NOT_SUPPORTED",
+    "APPROVAL_EXPIRED",
+    "QUESTION_ANSWER_FAILED",
+    "CODEX_SESSION_VERSION_INCOMPATIBLE",
+    "STALE_SESSION_ANCHOR",
+    "NATIVE_GOAL_CONFLICT",
+    "NATIVE_PROTOCOL_ERROR",
+  ].includes(value);
+}
+
+function requireSessionId(value: string | null): string {
+  if (!value) throw new RuntimeSessionError("sessionId is required", "INVALID_SESSION_ID");
+  return value;
+}
+
+function stringParam(params: Record<string, unknown>, key: string): string | null {
+  return typeof params[key] === "string" ? params[key] : null;
+}
+
+function requiredStringParam(params: Record<string, unknown>, key: string): string {
+  const value = stringParam(params, key);
+  if (!value) throw new RuntimeSessionError(`${key} is required`, "INVALID_SESSION_ID");
+  return value;
+}
+
+function numberParam(params: Record<string, unknown>, key: string): number | null {
+  return typeof params[key] === "number" && Number.isSafeInteger(params[key]) ? params[key] : null;
+}
+
+function arrayOfStrings(value: unknown): string[] | undefined {
+  return Array.isArray(value) && value.every((entry) => typeof entry === "string") ? value : undefined;
+}
+
+function arrayOfNumbers(value: unknown): number[] | undefined {
+  return Array.isArray(value) && value.every((entry) => typeof entry === "number") ? value : undefined;
+}
+
+function messagePayloadParam(value: unknown): SessionMessagePayload | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const payload = value as Record<string, unknown>;
+  const images = arrayOfStrings(payload.images);
+  const agentIds = arrayOfStrings(payload.agentIds);
+  const agentName = typeof payload.agentName === "string" ? payload.agentName : undefined;
+  const runOptions = normalizeSessionMessageRunOptions(payload.runOptions);
+  return {
+    ...(images?.length ? { images } : {}),
+    ...(agentIds?.length ? { agentIds } : {}),
+    ...(agentName ? { agentName } : {}),
+    ...(runOptions ? { runOptions } : {}),
+  };
+}
+
+function nativeAgentTypeParam(params: Record<string, unknown>, key: string): NativeAgentType {
+  const value = stringParam(params, key);
+  if (isNativeAgentType(value)) return value;
+  throw new RuntimeSessionError("A native agent type is required", "INVALID_SESSION_ID");
+}
+
+function controllerParam(value: unknown): NativeRuntimeController {
+  if (value === "desktop" || value === "web") return value;
+  return "web";
+}
+
+const NATIVE_REASONING_EFFORTS: readonly NativeReasoningEffort[] = ["low", "medium", "high", "xhigh", "max"];
+
+function runOverridesParam(params: Record<string, unknown>): Pick<RuntimeRunOptions, "model" | "reasoningEffort"> | undefined {
+  const raw = params.runOverrides;
+  if (!raw || typeof raw !== "object") return undefined;
+  const overrides = raw as Record<string, unknown>;
+  const modelRaw = overrides.model;
+  let model: RuntimeModelSelection | undefined;
+  if (modelRaw && typeof modelRaw === "object") {
+    const candidate = modelRaw as Record<string, unknown>;
+    if (typeof candidate.id === "string" && candidate.id !== "") {
+      model = {
+        id: candidate.id,
+        ...(typeof candidate.providerID === "string" && candidate.providerID !== "" ? { providerID: candidate.providerID } : {}),
+      };
+    }
+  }
+  const reasoningEffort = NATIVE_REASONING_EFFORTS.find((effort) => effort === overrides.reasoningEffort);
+  if (!model && !reasoningEffort) return undefined;
+  return {
+    ...(model ? { model } : {}),
+    ...(reasoningEffort ? { reasoningEffort } : {}),
+  };
+}
+
+function queryParam(params: Record<string, unknown>): SessionHistoryQuery | undefined {
+  const before = stringParam(params, "before") || undefined;
+  const after = stringParam(params, "after") || undefined;
+  const anchor = stringParam(params, "anchor") || undefined;
+  const limit = numberParam(params, "limit") ?? undefined;
+  const view = params.view === "core" || params.view === "trace" ? params.view : undefined;
+  const revision = stringParam(params, "revision") || undefined;
+  const turnId = stringParam(params, "turnId") || undefined;
+  return before || after || anchor || limit !== undefined || view || revision || turnId
+    ? { before, after, anchor, limit, view, revision, turnId }
+    : undefined;
+}
+
+function toolResultRefParam(
+  params: Record<string, unknown>,
+): Pick<SessionToolResultRef, "turnId" | "itemId" | "revision"> {
+  const turnId = stringParam(params, "turnId");
+  const itemId = stringParam(params, "itemId");
+  const revision = stringParam(params, "revision");
+  if (!turnId || !itemId || !revision) {
+    throw new RuntimeSessionError("A complete tool result reference is required", "INVALID_SESSION_ID");
+  }
+  return { turnId, itemId, revision };
+}
+
+function workspaceQueryParam(params: Record<string, unknown>): WorkspaceQuery {
+  return {
+    cursor: stringParam(params, "cursor"),
+    limit: numberParam(params, "limit") ?? undefined,
+    refresh: params.refresh === true,
+    since: stringParam(params, "since"),
+  };
+}
+
+function workspaceSessionQueryParam(params: Record<string, unknown>): WorkspaceSessionQuery {
+  return {
+    cursor: stringParam(params, "cursor"),
+    limit: numberParam(params, "limit") ?? undefined,
+    refresh: params.refresh === true,
+  };
+}
+
+function isAddressInUse(error: unknown): boolean {
+  return Boolean(error && typeof error === "object" && (error as NodeJS.ErrnoException).code === "EADDRINUSE");
+}
+
+function openBrokerSocket(path: string): Promise<Socket> {
+  return new Promise<Socket>((resolve, reject) => {
+    const socket = createConnection(path);
+    const timer = setTimeout(() => {
+      socket.destroy();
+      reject(new RuntimeSessionError("Timed out connecting to native runtime broker", "RUNTIME_UNAVAILABLE"));
+    }, 2_000);
+    socket.once("connect", () => {
+      clearTimeout(timer);
+      socket.removeListener("error", onError);
+      resolve(socket);
+    });
+    const onError = (error: Error) => {
+      clearTimeout(timer);
+      reject(error);
+    };
+    socket.once("error", onError);
+  });
+}
+import { RuntimeNotificationOutbox } from "./runtime-notification-outbox";
+import { prepareTodoInjection, type RuntimeTodoContext } from "./runtime-tool-injection";

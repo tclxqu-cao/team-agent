@@ -25,7 +25,7 @@ export interface CodexRolloutUserMessage {
   content: Array<Record<string, unknown>>;
 }
 
-export interface CodexRolloutAsyncMessage {
+export interface CodexRolloutTimelineItem {
   turnId: string;
   afterUserItemId?: string;
   item: Record<string, unknown> & { type: string; id: string };
@@ -54,7 +54,7 @@ interface UserMessageCacheEntry {
   trailingOverflow: boolean;
   turns: Map<string, CodexRolloutUserMessage[]>;
   itemIds: Set<string>;
-  asyncMessages: Map<string, CodexRolloutAsyncMessage>;
+  timelineItems: Map<string, CodexRolloutTimelineItem>;
   completionDurations: Map<string, number>;
   goalKey?: string;
   pendingGoal?: { key: string; objective: string };
@@ -95,20 +95,19 @@ export function codexRolloutActivityFromLine(line: Buffer | string): CodexRollou
 }
 
 /**
- * Reads only the rollout tail and returns a final answer that is newer than
- * the latest start/terminal boundary. This covers the short interval where
- * the final response_item is durable but task_complete has not arrived yet.
+ * Recovers a visible final reply before task_complete. Raw model output can
+ * include a compaction summary with the same final_answer phase.
  */
 export async function readCodexRolloutFinalizingAnswer(
   path: string,
-  maxBytes = MAX_FINAL_ANSWER_LOOKBACK_BYTES,
+  isVisibleAnswer?: (answer: CodexRolloutFinalAnswer) => boolean,
 ): Promise<CodexRolloutFinalAnswer | null> {
   let handle: FileHandle | null = null;
   try {
     handle = await open(path, "r");
     const metadata = await handle.stat();
     if (!metadata.isFile() || metadata.size === 0) return null;
-    const length = Math.min(metadata.size, Math.max(1, maxBytes));
+    const length = Math.min(metadata.size, MAX_FINAL_ANSWER_LOOKBACK_BYTES);
     const start = metadata.size - length;
     const buffer = Buffer.allocUnsafe(length);
     const { bytesRead } = await handle.read(buffer, 0, length, start);
@@ -118,7 +117,7 @@ export async function readCodexRolloutFinalizingAnswer(
     if (start > 0) lines.shift();
 
     for (let index = lines.length - 1; index >= 0; index -= 1) {
-      const signal = codexRolloutTailSignalFromLine(lines[index]);
+      const signal = codexRolloutTailSignalFromLine(lines[index], isVisibleAnswer);
       if (signal.boundary) return null;
       if (signal.finalAnswer) return signal.finalAnswer;
     }
@@ -130,7 +129,10 @@ export async function readCodexRolloutFinalizingAnswer(
   }
 }
 
-function codexRolloutTailSignalFromLine(line: string): {
+function codexRolloutTailSignalFromLine(
+  line: string,
+  isVisibleAnswer?: (answer: CodexRolloutFinalAnswer) => boolean,
+): {
   boundary: boolean;
   finalAnswer: CodexRolloutFinalAnswer | null;
 } {
@@ -143,11 +145,15 @@ function codexRolloutTailSignalFromLine(line: string): {
         return { boundary: true, finalAnswer: null };
       }
       if (payload.type === "item_completed") {
-        return { boundary: false, finalAnswer: finalAnswerFromItem(payload.item, payload.turn_id) };
+        const item = asRecord(payload.item);
+        const finalAnswer = asString(item.type).toLowerCase() === "agentmessage"
+          ? finalAnswerFromItem(item, payload.turn_id) : null;
+        return { boundary: false, finalAnswer };
       }
     }
-    if (record.type === "response_item") {
-      return { boundary: false, finalAnswer: finalAnswerFromItem(payload, payload.turn_id) };
+    if (record.type === "response_item" && isVisibleAnswer) {
+      const candidate = finalAnswerFromItem(payload, payload.turn_id);
+      if (candidate && isVisibleAnswer(candidate)) return { boundary: false, finalAnswer: candidate };
     }
   } catch {
     // A writer can leave an incomplete final JSONL record between file events.
@@ -160,7 +166,7 @@ function finalAnswerFromItem(value: unknown, fallbackTurnId: unknown): CodexRoll
   const type = typeof item.type === "string" ? item.type.toLowerCase() : "";
   const role = typeof item.role === "string" ? item.role.toLowerCase() : "";
   if ((type !== "agentmessage" && type !== "message") || (role && role !== "assistant")) return null;
-  if (item.phase !== "final_answer") return null;
+  if (item.phase !== "final_answer" || item.delivery === "async") return null;
   const turnId = asString(asRecord(item.internal_chat_message_metadata_passthrough).turn_id)
     || asString(item.turn_id)
     || asString(fallbackTurnId);
@@ -359,7 +365,7 @@ export class CodexRolloutUserMessageReader {
             trailingOverflow: false,
             turns: new Map(),
             itemIds: new Set(),
-            asyncMessages: new Map(),
+            timelineItems: new Map(),
             completionDurations: new Map(),
           };
       await this.readAppended(handle, entry, metadata.size);
@@ -376,9 +382,9 @@ export class CodexRolloutUserMessageReader {
     }
   }
 
-  async readAsyncMessages(path: string): Promise<CodexRolloutAsyncMessage[]> {
+  async readTimelineItems(path: string): Promise<CodexRolloutTimelineItem[]> {
     await this.read(path);
-    return [...(this.cache.get(path)?.asyncMessages.values() ?? [])];
+    return [...(this.cache.get(path)?.timelineItems.values() ?? [])];
   }
 
   async readCompletionDurations(path: string): Promise<Map<string, number>> {
@@ -475,16 +481,19 @@ export class CodexRolloutUserMessageReader {
         || asString(asRecord(item.internal_chat_message_metadata_passthrough).turn_id);
       if (!turnId) return;
       const itemId = asString(item.id);
-      if (asString(item.type).toLowerCase() === "agentmessage" && item.delivery === "async"
-        && itemId && Array.isArray(item.questions)) {
-        entry.asyncMessages.set(itemId, {
+      const itemType = asString(item.type).toLowerCase();
+      const isCompaction = itemType === "contextcompaction";
+      const isAsyncQuestion = itemType === "agentmessage" && item.delivery === "async" && Array.isArray(item.questions);
+      if (itemId && (isCompaction || isAsyncQuestion)) {
+        if (isCompaction && entry.timelineItems.has(itemId)) return;
+        entry.timelineItems.set(itemId, {
           turnId,
           afterUserItemId: entry.turns.get(turnId)?.at(-1)?.itemId,
-          item: { ...item, type: "agentMessage", id: itemId },
+          item: isCompaction ? { type: "contextCompaction", id: itemId } : { ...item, type: "agentMessage", id: itemId },
         });
         return;
       }
-      if (asString(item.type).toLowerCase() !== "usermessage" || !Array.isArray(item.content)) return;
+      if (itemType !== "usermessage" || !Array.isArray(item.content)) return;
       if (itemId && entry.itemIds.has(itemId)) return;
       if (itemId) entry.itemIds.add(itemId);
       const messages = entry.turns.get(turnId) ?? [];

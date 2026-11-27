@@ -25,7 +25,7 @@ import { fetchEngineThreadIndex, activeThreadSession, foldEngineThreadSessions, 
 import DesktopWorkspaceTabs from "./components/collaboration/DesktopWorkspaceTabs";
 import type { CollaborationGroup } from "@agent/core/domain/collaboration/types";
 import { COLLABORATION_OPEN_TYPE, readCollaborationCreate } from "../../core/src/domain/web-console/CollaborationTabBridge";
-import UpdateNotice from "./components/UpdateNotice";
+import UpdateNotice, { UpdateCheckButton } from "./components/UpdateNotice";
 import DesktopLiveControlBanner from "./components/DesktopLiveControlBanner";
 import { renewVoiceConversation } from "./lib/voice-command";
 import {
@@ -1845,6 +1845,9 @@ export default function App() {
   };
 
   return (
+    <UpdateNotice api={window.agentApi} enabled={document.body.dataset.nativeApp !== "1" && (!webShell || window.parent === window)}
+      product={webShell ? "AgentRoam CLI" : "AgentRoam"} scope={webShell ? "cli" : "desktop"}
+      hint={webShell ? "更新期间电脑服务会短暂重启" : undefined}>
     <div className={`app-shell${sidebarHidden ? " is-sidebar-collapsed" : ""}${sidebarDragging ? " is-sidebar-dragging" : ""}${hasWorkspaceTabs ? " has-workspace-tabs" : ""}`}
       data-desktop-platform={!webShell && /Mac/.test(navigator.platform) ? "darwin" : undefined}
       style={{
@@ -1857,12 +1860,6 @@ export default function App() {
       boxSizing: "border-box",
       paddingTop: hasWorkspaceTabs ? 52 : 0,
     }}>
-      {document.body.dataset.nativeApp !== "1" && <UpdateNotice
-        api={window.agentApi}
-        product={webShell ? "AgentRoam CLI" : "AgentRoam"}
-        scope={webShell ? "cli" : "desktop"}
-        hint={webShell ? "更新期间电脑服务会短暂重启" : undefined}
-      />}
       <SupervisionNotifier onOpen={openSessionDashboard}/>
       {collaborationCreateOpen && createPortal(<CollaborationCreateDialog
         cwd={selectedWorkspacePath || undefined}
@@ -2808,7 +2805,10 @@ export default function App() {
               </div>
 
               <div style={{ flex: 1, overflow: "auto" }}><Suspense fallback={<SessionLoading label="正在打开设置" />}>
-                {settingsTab === "settings" && <SettingsPanel />}
+                {settingsTab === "settings" && <>
+                  {webShell && document.body.dataset.nativeApp !== "1" && <div className="update-settings-control"><UpdateCheckButton /></div>}
+                  <SettingsPanel />
+                </>}
                 {settingsTab === "mcp" && <MCPServerList />}
                 {settingsTab === "memory" && <MemoryViewer />}
                 {settingsTab === "skill" && <SkillManager />}
@@ -3037,5 +3037,6 @@ export default function App() {
         document.body,
       )}
     </div>
+    </UpdateNotice>
   );
 }

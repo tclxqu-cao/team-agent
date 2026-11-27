@@ -56,6 +56,7 @@ export default function ComputerSwitcher({ username, connected, accent, accentTe
   const [availability, setAvailability] = useState<Record<string, ComputerAvailability>>({});
   const current = computers.find(computer => computer.origin === origin);
   const pages = configuration.settings.savedPages ?? [];
+  const toolOptions = mobile || nativeConsole() ? TOOL_OPTIONS.filter(({ id }) => id !== "flow") : TOOL_OPTIONS;
 
   useEffect(() => {
     if (configuration.loaded && selectedPageId) onUpdatePage(configuration.settings.savedPages?.find(page => page.id === selectedPageId) ?? null);
@@ -195,7 +196,7 @@ export default function ComputerSwitcher({ username, connected, accent, accentTe
         <button type="button" className="computer-menu-item" onClick={() => setView("tools")}><SlidersHorizontal size={17} /><span>配置顶部工具</span><ChevronRight size={16} /></button>
       </>}
       {view === "tools" && <div className="computer-tools-list">
-        {TOOL_OPTIONS.map(({ id, name, Icon }) => <label key={id} className="computer-tool-option"><Icon size={17} aria-hidden="true" /><span>{name}</span><input type="checkbox" aria-label={`显示${name}`} checked={configuration.settings.visibleTools.includes(id)} disabled={!configuration.loaded || configuration.saving} onChange={event => {
+        {toolOptions.map(({ id, name, Icon }) => <label key={id} className="computer-tool-option"><Icon size={17} aria-hidden="true" /><span>{name}</span><input type="checkbox" aria-label={`显示${name}`} checked={configuration.settings.visibleTools.includes(id)} disabled={!configuration.loaded || configuration.saving} onChange={event => {
           const tools = configuration.settings.visibleTools;
           void configuration.setVisibleTools(event.target.checked ? [...tools, id] : tools.filter(tool => tool !== id)).catch(() => {});
         }} /></label>)}

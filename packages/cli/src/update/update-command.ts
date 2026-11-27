@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { unlink } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
+import { styleText } from "node:util";
 import { updatePaths, writeUpdateState, type DurableUpdateState } from "./update-state.js";
 import {
   parseChannelVersion,
@@ -17,13 +18,23 @@ const REGISTRY_BASE = "https://registry.npmjs.org/agentroam";
 export interface StartUpdateOptions { currentVersion: string; requestedVersion: string | null; dataDir: string; target: "darwin-arm64" | "windows-amd64"; cliPath: string; }
 
 export async function resolveUpdate(options: StartUpdateOptions, fetchImpl: typeof fetch = fetch) {
-  const target = await getAvailableUpdateVersion(options.currentVersion, fetchImpl);
-  if (!target) throw new Error("AgentRoam is already up to date");
-  if (options.requestedVersion && options.requestedVersion !== target) throw new Error("requested version is not the current npm candidate");
+  const release = await resolveUpdateCandidate(options, fetchImpl);
+  if (!release) throw new Error("AgentRoam is already up to date");
+  return release;
+}
+
+export async function resolveUpdateCandidate(
+  { currentVersion, requestedVersion, target }: Pick<StartUpdateOptions, "currentVersion" | "requestedVersion" | "target">,
+  fetchImpl: typeof fetch = fetch,
+) {
+  const version = await getAvailableUpdateVersion(currentVersion, fetchImpl);
+  if (!version && requestedVersion) throw new Error("AgentRoam is already up to date");
+  if (!version) return null;
+  if (requestedVersion && requestedVersion !== version) throw new Error("requested version is not the current npm candidate");
   const response = await fetchWithTimeout(fetchImpl, buildCliInstallManifestUrl());
   if (!response.ok) throw new Error("CLI install manifest is unavailable");
-  const asset = validateCliInstallManifest(await response.json(), options.target);
-  return { targetVersion: target, fileName: asset.fileName, sha256: asset.sha256 };
+  const asset = validateCliInstallManifest(await response.json(), target);
+  return { targetVersion: version, fileName: asset.fileName, sha256: asset.sha256 };
 }
 
 // Offer the highest published version across the two npm channels.
@@ -43,8 +54,13 @@ export async function getAvailableUpdateVersion(currentVersion: string, fetchImp
   return compareAgentRoamVersions(best, currentVersion) > 0 ? best : null;
 }
 
-export async function startUpdate(options: StartUpdateOptions): Promise<DurableUpdateState> {
-  const release = await resolveUpdate(options);
+export function formatAvailableUpdate(currentVersion: string, targetVersion: string, stream: NodeJS.WriteStream): string {
+  return `${styleText("yellow", "发现 AgentRoam CLI 新版本", { stream })} ${currentVersion} → ${targetVersion} · 运行 agentroam update 安装`;
+}
+
+export async function startUpdate(options: StartUpdateOptions): Promise<DurableUpdateState | null> {
+  const release = await resolveUpdateCandidate(options);
+  if (!release) return null;
   const paths = updatePaths(options.dataDir);
   const service = await readServiceConfig(resolveServicePaths(undefined, options.dataDir));
   if (service && resolve(service.dataDir) !== resolve(options.dataDir)) throw new Error("AgentRoam service uses a different data directory");

@@ -42,9 +42,11 @@ describe("Codex compaction feedback", () => {
   it("reports actual start and completion notifications", () => {
     for (const [method, label, status] of [
       ["item/started", "正在压缩上下文", "running"],
-      ["item/completed", "上下文已压缩，继续处理", "completed"],
+      ["item/completed", "上下文已压缩", "completed"],
     ]) {
-      expect(codexProgressNotificationToEvent({ method, params: { item: { type: "contextCompaction", id: "compact-1" } } })).toMatchObject({ type: "runtime_progress", progressId: "context-compaction", label, status });
+      expect(codexProgressNotificationToEvent({ method, params: { item: { type: "contextCompaction", id: "compact-1" } } })).toMatchObject({
+        type: "runtime_progress", progressId: "context-compaction", itemId: "compact-1", label, status,
+      });
     }
   });
 });
@@ -158,6 +160,7 @@ describe("Codex home and Windows occupancy", () => {
       }),
     ]);
     expect(request).toHaveBeenCalledWith("thread/list", expect.objectContaining({
+      modelProviders: [],
       sortKey: "recency_at",
       sortDirection: "desc",
     }));
@@ -329,6 +332,7 @@ describe("Codex project workspace index", () => {
     });
     expect(requests.find((entry) => entry.method === "thread/list")?.params).toMatchObject({
       cwd: [root],
+      modelProviders: [],
       sortKey: "recency_at",
       sortDirection: "desc",
     });
@@ -417,6 +421,7 @@ describe("Codex project workspace index", () => {
       params: {
         cursor: null,
         limit: 25,
+        modelProviders: [],
         sortKey: "recency_at",
         sortDirection: "desc",
         cwd: [root],
@@ -516,6 +521,7 @@ describe("Codex project workspace index", () => {
     expect(discoveryRestart).not.toHaveBeenCalled();
     expect(discoveryClient.request).toHaveBeenNthCalledWith(2, "thread/list", expect.objectContaining({
       cursor: "page-2",
+      modelProviders: [],
       sortKey: "recency_at",
     }));
   });
@@ -3306,6 +3312,77 @@ describe("Codex native paged history", () => {
     expect(detail.messages.map((message) => message.content)).toEqual(["q-live", "durable final"]);
     expect(detail.history).toMatchObject({ totalItems: 2, pageSize: 2, delivery: "core" });
     expect(requests.filter((request) => request.params.itemsView === "full")).toHaveLength(0);
+  });
+
+  it("restores completed compactions in order without exposing their raw output or ending an active turn", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "codex-compaction-history-"));
+    temporaryDirectories.push(directory);
+    const path = join(directory, "rollout.jsonl");
+    const turnId = "live";
+    const firstInput = turn(turnId, 1).items[0];
+    const firstMarker = { type: "contextCompaction", id: "compact-1" };
+    const followUp = { type: "UserMessage", id: "u-follow", content: [{ type: "text", text: "继续" }] };
+    const completedItem = (item: Record<string, unknown>) => JSON.stringify({
+      type: "event_msg", payload: { type: "item_completed", turn_id: turnId, item },
+    });
+    const activeTurn = {
+      id: turnId,
+      status: "inProgress",
+      items: [firstInput, firstMarker, { ...followUp, type: "userMessage" }],
+    };
+    await writeFile(path, [
+      JSON.stringify({ type: "event_msg", payload: { type: "task_started", turn_id: turnId } }),
+      completedItem({ ...firstInput, type: "UserMessage" }),
+      JSON.stringify({
+        type: "response_item",
+        payload: {
+          type: "message", id: "compaction-output", role: "assistant", phase: "final_answer",
+          content: [{ type: "output_text", text: "Private context handoff" }],
+          internal_chat_message_metadata_passthrough: { turn_id: turnId },
+        },
+      }),
+      "",
+    ].join("\n"));
+    const requests: Array<{ method: string; params: any }> = [];
+    const adapter = new CodexRuntimeAdapter({
+      client: pagingClientFor(requests, {
+        sourceTurns: [activeTurn], threadStatus: "active", threadPath: path,
+      }) as never,
+    });
+
+    const writingSummary = await adapter.getSessionPaged("cx-paged", { view: "core" });
+    expect(writingSummary.status).toBe("running");
+    expect(writingSummary.messages.map(message => message.content)).toEqual(["q-live"]);
+
+    const marker = completedItem({ ...firstMarker, type: "ContextCompaction" });
+    await appendFile(path, [
+      JSON.stringify({ type: "compacted", payload: { message: "Private context handoff" } }),
+      marker,
+      completedItem(followUp),
+      marker,
+      "",
+    ].join("\n"));
+    const compacted = await adapter.getSessionPaged("cx-paged", { view: "core" });
+    expect(compacted.status).toBe("running");
+    expect(compacted.messages.map(message => message.content)).toEqual([
+      "q-live", JSON.stringify({ summary: "上下文已压缩" }), "继续",
+    ]);
+    expect(compacted.messages[1]).toMatchObject({
+      name: "__compaction_checkpoint__", historyId: "context-compaction:compact-1",
+    });
+    const index = await adapter.getQueryIndex("cx-paged");
+    expect(index?.entries.map(entry => entry.messageId)).toEqual([
+      compacted.messages[0].historyId, compacted.messages[2].historyId,
+    ]);
+
+    await appendFile(path, `${completedItem({
+      type: "AgentMessage", id: "answer-1", phase: "final_answer",
+      content: [{ type: "Text", text: "真正的回复" }],
+    })}\n`);
+    const answered = await adapter.getSessionPaged("cx-paged", { view: "core" });
+    expect(answered.status).toBe("idle");
+    expect(answered.messages.at(-1)?.content).toBe("真正的回复");
+    expect(requests.filter(request => request.params.itemsView === "full")).toHaveLength(0);
   });
 
   it("keeps before-pages contiguous with the latest page", async () => {

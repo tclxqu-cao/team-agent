@@ -25,7 +25,14 @@ export class DesktopUpdateService {
 
   constructor(private readonly dependencies: DesktopUpdateDependencies) {
     const platform = dependencies.packaged ? desktopPlatform(dependencies.platform, dependencies.arch) : null;
-    this.status = { phase: platform ? "idle" : "unavailable", currentVersion: dependencies.version };
+    this.status = platform
+      ? { phase: "idle", currentVersion: dependencies.version }
+      : {
+        phase: "unavailable", currentVersion: dependencies.version,
+        message: dependencies.packaged
+          ? "当前平台暂不支持应用内更新。"
+          : "开发版从本地源码运行。更新源码并重新构建后即可使用新版本。",
+      };
     this.checker = platform ? new UpdateChecker({
       currentVersion: dependencies.version, client: dependencies.edition, platform, fetch: dependencies.fetch, timeoutMs: 10_000,
     }) : null;
@@ -41,7 +48,10 @@ export class DesktopUpdateService {
   getStatus(): UpdateStatus { return structuredClone(this.status); }
   subscribe(listener: (status: UpdateStatus) => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener); }
   async check(): Promise<UpdateStatus> {
-    if (!this.installPromise) await this.checker?.refresh();
+    if (!this.installPromise) {
+      const checked = await this.checker?.refresh({ force: true });
+      if (checked?.message) return checked;
+    }
     return this.getStatus();
   }
 

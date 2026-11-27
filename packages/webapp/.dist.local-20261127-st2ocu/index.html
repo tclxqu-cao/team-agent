@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="theme-color" content="#f5f6fa" />
+  <title>agentroam</title>
+  <link rel="icon" type="image/svg+xml" href="./agentroam-icon.svg" />
+  <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png" />
+  <!-- Keep the calendar loading indicator available while the app bundle downloads. -->
+  <style>
+    #boot-status { padding: 48px 24px; font: 16px/1.7 system-ui; color: #334155; }
+    .calendar-boot { display: none; }
+    [data-calendar-boot] #boot-status {
+      position: fixed;
+      inset: 0;
+      display: grid;
+      align-content: center;
+      justify-items: center;
+      gap: 16px;
+      padding: 24px;
+      overflow: auto;
+      overflow-wrap: anywhere;
+      text-align: center;
+      background: #f5f6fa;
+    }
+    [data-calendar-boot] .app-boot { display: none; }
+    [data-calendar-boot] .calendar-boot { display: contents; }
+    .calendar-boot-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 6px);
+      gap: 5px;
+      padding: 9px;
+      border: 1px solid #a5b4fc;
+      border-top: 5px solid #4f6ef7;
+      border-radius: 9px;
+      background: #fff;
+    }
+    .calendar-boot-grid i {
+      width: 6px;
+      height: 6px;
+      border-radius: 2px;
+      background: #4f6ef7;
+      animation: calendar-boot-pulse 1.35s ease-in-out infinite backwards;
+    }
+    .calendar-boot-grid i:nth-child(2) { animation-delay: 90ms; }
+    .calendar-boot-grid i:nth-child(3) { animation-delay: 180ms; }
+    .calendar-boot-grid i:nth-child(4) { animation-delay: 270ms; }
+    .calendar-boot-grid i:nth-child(5) { animation-delay: 360ms; }
+    .calendar-boot-grid i:nth-child(6) { animation-delay: 450ms; }
+    @keyframes calendar-boot-pulse {
+      0%, 60%, 100% { opacity: .25; }
+      20% { opacity: 1; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .calendar-boot-grid i { animation: none; }
+    }
+  </style>
+<script>
+(function () {
+  var params = new URLSearchParams(window.location.search);
+  var view = params.get('view');
+  if (params.get('newSessionWindow') !== '1' && (view === 'calendar' || view === 'todo')) {
+    document.documentElement.setAttribute('data-calendar-boot', '');
+  }
+
+  function report(message) {
+    var status = document.getElementById('boot-status');
+    if (status) status.textContent = '启动未完成：' + message + '。请截图反馈后刷新重试。';
+  }
+  window.addEventListener('error', function (event) {
+    var target = event.target;
+    report(event.message || (target && (target.src || target.href)) || '资源加载失败');
+  }, true);
+  window.addEventListener('unhandledrejection', function (event) {
+    report(String(event.reason && event.reason.message || event.reason || '未知错误'));
+  });
+})();
+</script>
+  <script type="module" crossorigin src="./assets/index-YrEOkxAg.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-BAGzBXQc.css">
+</head>
+<body>
+  <div id="root">
+    <div id="boot-status" role="status">
+      <span class="app-boot">正在加载 AgentRoam…<br>流量中继下首次加载可能需要一分钟，请保持页面打开。</span>
+      <span class="calendar-boot">
+        <span class="calendar-boot-grid" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></span>
+        <span>正在打开日历…</span>
+      </span>
+    </div>
+  </div>
+</body>
+</html>

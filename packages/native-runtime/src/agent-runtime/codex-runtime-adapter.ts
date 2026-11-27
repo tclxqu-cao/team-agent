@@ -9,6 +9,7 @@ import {
   buildSessionQueryIndex,
   cleanEngineHistory,
   computeSessionHistoryRevision,
+  CONTEXT_COMPACTION_PROGRESS_ID,
   decodeSessionHistoryAnchor,
   normalizeToolPermissionMode,
   parsePersistedQuestionReplies,
@@ -216,7 +217,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
   private readonly imageStorageRoot: string;
   private readonly rolloutActivityReader: Pick<CodexRolloutActivityReader, "readMany">;
   private readonly rolloutCommentaryReader: Pick<CodexRolloutCommentaryReader, "read">;
-  private readonly rolloutUserMessageReader: Pick<CodexRolloutUserMessageReader, "read"> & Partial<Pick<CodexRolloutUserMessageReader, "readAsyncMessages" | "readCompletionDurations">>;
+  private readonly rolloutUserMessageReader: Pick<CodexRolloutUserMessageReader, "read"> & Partial<Pick<CodexRolloutUserMessageReader, "readTimelineItems" | "readCompletionDurations">>;
   private readonly agentMessagePhases = new Map<string, "commentary" | "final_answer">();
   private readonly emittedInstantToolItems = new Map<string, Set<string>>();
   private readonly todoMcp = new Map<string, NativeTodoMcpConfiguration>();
@@ -273,7 +274,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     imageStorageRoot?: string;
     rolloutActivityReader?: Pick<CodexRolloutActivityReader, "readMany">;
     rolloutCommentaryReader?: Pick<CodexRolloutCommentaryReader, "read">;
-    rolloutUserMessageReader?: Pick<CodexRolloutUserMessageReader, "read"> & Partial<Pick<CodexRolloutUserMessageReader, "readAsyncMessages" | "readCompletionDurations">>;
+    rolloutUserMessageReader?: Pick<CodexRolloutUserMessageReader, "read"> & Partial<Pick<CodexRolloutUserMessageReader, "readTimelineItems" | "readCompletionDurations">>;
     codexExecutable?: string;
     environment?: NodeJS.ProcessEnv;
     homeDir?: string;
@@ -424,6 +425,8 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       } = await this.discoveryClient.request("thread/list", {
         cursor,
         limit: 200,
+        // Omitting this filter lists only the app-server's configured provider.
+        modelProviders: [],
         sortKey: "recency_at",
         sortDirection: "desc",
       });
@@ -491,6 +494,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       {
         cursor: query.cursor ?? null,
         limit: workspacePageSize(query.limit),
+        modelProviders: [],
         sortKey: "recency_at",
         sortDirection: "desc",
         cwd: workspace.roots,
@@ -522,6 +526,7 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
       {
         cursor: query.cursor ?? null,
         limit: workspacePageSize(query.limit),
+        modelProviders: [],
         sortKey: "recency_at",
         sortDirection: "desc",
         cwd: [cwd],
@@ -578,9 +583,9 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
   /**
    * Source-paginated history over the native turn protocol.
    *
-   * The ordinal space counts userMessage/agentMessage items only — the summary
-   * view cannot see tool items, so tool-call carrier messages do not consume
-   * ordinals (unlike the legacy full conversion). Every windowed query kind
+   * The ordinal space counts visible user and assistant rows, including the
+   * compaction marker. Tool-call carrier messages do not consume ordinals.
+   * Every windowed query kind
    * (limit/before/after/anchor) and the query index MUST be served by this
    * path for the session; mixing with the legacy full-read space would
    * misalign cursors and anchors.
@@ -621,7 +626,12 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
 
     const isLatestCorePage = query.view === "core" && !query.before && !query.after && !query.anchor;
     if (isLatestCorePage && summary.status === "running" && meta.thread.path) {
-      const finalizing = await readCodexRolloutFinalizingAnswer(meta.thread.path);
+      const finalizing = await readCodexRolloutFinalizingAnswer(meta.thread.path, (candidate) => (
+        Boolean(candidate.itemId) && ascTurns.find(turn => turn.id === candidate.turnId)?.items.some(item => (
+          item.type === "agentMessage" && item.id === candidate.itemId && item.text === candidate.text
+          && item.delivery !== "async" && item.phase !== "commentary"
+        )) === true
+      ));
       if (finalizing) this.finalizingAnswers.set(nativeSessionId, finalizing);
     }
     const reconciliation = this.reconcileFinalizingAnswer(nativeSessionId, ascTurns);
@@ -630,14 +640,15 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     if (reconciliation.latestTurnFinalizing && summary.status === "running") {
       summary = { ...summary, status: "idle" };
     }
-    // The skeleton: every visible user/agent item in rollout order. This is
+    // The skeleton: every visible conversation row in rollout order. This is
     // the entire ordinal space — cheap (tens of KB) and hydration-independent.
     const questionHistory = codexQuestionHistory(ascTurns, nativeSessionId);
-    const skeleton: Array<{ turnId: string; role: "user" | "assistant" }> = [];
+    const skeleton: Array<{ turnId: string; role: "user" | "assistant"; compaction?: true }> = [];
     for (const turn of ascTurns) {
       const legacyFinalAgentMessage = codexLegacyFinalAgentMessage(turn);
       for (const item of turn.items ?? []) {
         if (item.type === "userMessage") skeleton.push({ turnId: turn.id, role: "user" });
+        else if (item.type === "contextCompaction") skeleton.push({ turnId: turn.id, role: "assistant", compaction: true });
         else if (item.id && questionHistory.has(item.id)) {
           skeleton.push(...questionHistory.get(item.id)!.map(() => ({ turnId: turn.id, role: "assistant" as const })));
         } else if (codexPlanText(item) || isCodexCoreAgentMessage(item, turn.status, legacyFinalAgentMessage)) {
@@ -862,20 +873,19 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
     if (!rolloutPath) return turns;
     const userMessages = await this.rolloutUserMessageReader.read(rolloutPath);
     const merged = mergeCodexSummaryUserMessages(turns, userMessages, readHandoffs);
-    const asyncMessages = await this.rolloutUserMessageReader.readAsyncMessages?.(rolloutPath) ?? [];
-    for (const message of [...asyncMessages].reverse()) {
+    const timelineItems = await this.rolloutUserMessageReader.readTimelineItems?.(rolloutPath) ?? [];
+    for (const message of [...timelineItems].reverse()) {
       const turn = merged.find(candidate => candidate.id === message.turnId);
       if (!turn) continue;
       const existing = turn.items.findIndex(item => item.id === message.item.id);
       const item = existing >= 0 ? { ...turn.items[existing], ...message.item } : message.item;
       if (existing >= 0) {
-        // Merging durable inputs groups user items first. Restore the question's
-        // rollout position even when the native summary already contains it.
         turn.items.splice(existing, 1);
       }
       const userIndex = turn.items.findIndex(item => item.type === "userMessage" && item.id === message.afterUserItemId);
       const lastUserIndex = turn.items.reduce((found, item, index) => item.type === "userMessage" ? index : found, -1);
-      turn.items.splice((userIndex >= 0 ? userIndex : lastUserIndex) + 1, 0, item);
+      const beforeInput = item.type === "contextCompaction" && !message.afterUserItemId;
+      turn.items.splice(beforeInput ? 0 : (userIndex >= 0 ? userIndex : lastUserIndex) + 1, 0, item);
     }
     return this.withCompletionDurations(merged, rolloutPath);
   }
@@ -1143,14 +1153,12 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
   }
 
   /**
-   * Ordinals follow the skeleton (user/agent items only). Within a turn:
-   * user-role messages map to the turn's userMessage entries in order, and
-   * the final answer assistant maps to the agentMessage entry. Tool-call and
-   * reasoning carrier messages take no ordinal.
+   * Ordinals follow the visible conversation rows in the skeleton. Compaction
+   * markers keep their event identity. Tool-call and reasoning carriers take no ordinal.
    */
   private assignNativeHistoryIds(
     messages: Message[],
-    skeleton: Array<{ role: "user" | "assistant" }>,
+    skeleton: Array<{ role: "user" | "assistant"; compaction?: true }>,
     start: number,
     end: number,
   ): void {
@@ -1165,7 +1173,9 @@ export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
         || message.presentation?.agentMessagePhase === "commentary"
       )) continue;
       if (skeleton[pointer]?.role !== role) continue;
-      message.historyId = sessionHistoryMessageId(pointer, message);
+      const isCompaction = message.name === "__compaction_checkpoint__";
+      if (Boolean(skeleton[pointer].compaction) !== isCompaction) continue;
+      if (!isCompaction) message.historyId = sessionHistoryMessageId(pointer, message);
       pointer += 1;
     }
   }
@@ -2753,6 +2763,8 @@ function codexSummaryTurnsToMessages(
           },
         });
         segmentIndex += 1;
+      } else if (item.type === "contextCompaction") {
+        messages.push(codexCompactionMessage(item.id));
       } else if (item.id && questionHistory.has(item.id)) {
         messages.push(...questionHistory.get(item.id)!);
       } else if (planText) {
@@ -2834,6 +2846,15 @@ function boundedToolArguments(
   };
 }
 
+function codexCompactionMessage(itemId?: string): Message {
+  return {
+    role: "assistant",
+    name: "__compaction_checkpoint__",
+    content: JSON.stringify({ summary: "上下文已压缩" }),
+    ...(itemId ? { historyId: `${CONTEXT_COMPACTION_PROGRESS_ID}:${itemId}` } : {}),
+  };
+}
+
 export async function codexTurnsToMessages(
   turns: CodexTurn[],
   options: CodexMessageConversionOptions = {},
@@ -2845,7 +2866,7 @@ export async function codexTurnsToMessages(
     for (const item of turn.items ?? []) {
       const planText = codexPlanText(item);
       if (item.type === "contextCompaction") {
-        messages.push({ role: "assistant", name: "__compaction_checkpoint__", content: JSON.stringify({ summary: "上下文已压缩" }) });
+        messages.push(codexCompactionMessage(item.id));
         continue;
       }
       if (item.type === "userMessage") {
@@ -3114,9 +3135,10 @@ export function codexProgressNotificationToEvent(message: RpcNotification): Extr
     const completed = message.method === "item/completed";
     return {
       type: "runtime_progress",
-      progressId: "context-compaction",
+      progressId: CONTEXT_COMPACTION_PROGRESS_ID,
+      ...(typeof item.id === "string" && item.id ? { itemId: item.id } : {}),
       phase: "status",
-      label: completed ? "上下文已压缩，继续处理" : "正在压缩上下文",
+      label: completed ? "上下文已压缩" : "正在压缩上下文",
       status: completed ? "completed" : "running",
     };
   }

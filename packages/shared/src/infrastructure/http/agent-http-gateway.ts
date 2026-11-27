@@ -23,6 +23,7 @@ import type {
 } from "../../domain/ports/agent-port";
 import type { DictationPort } from "../../domain/ports/dictation-port";
 import { ApiError, HttpClient, RequestTimeoutError, listOf } from "./http-client";
+import { createHttpUpdateApi } from "./http-update-api";
 
 import type { LocalSettingsRepository } from "../local/local-settings-repository";
 import { StreamingThinkFilter, stripThinkBlocks } from "./think-filter";
@@ -93,6 +94,7 @@ export interface AgentHttpGatewayOptions {
  */
 export class AgentHttpGateway {
   readonly sessionHistoryObservationMode: "sse" | "polling";
+  private readonly updates: ReturnType<typeof createHttpUpdateApi>;
   private readonly streams = new Map<string, EventSource>();
   private readonly nativeStreamCursors = new Map<string, NativeStreamCursor>();
   private readonly nativeFinalAnswerSnapshots = new Map<string, NativeFinalAnswerSnapshot>();
@@ -116,6 +118,7 @@ export class AgentHttpGateway {
     options: AgentHttpGatewayOptions = {},
   ) {
     this.sessionHistoryObservationMode = options.historyObservation ?? "sse";
+    this.updates = createHttpUpdateApi(http);
   }
 
   dictationStart(): Promise<{ ok: boolean; reason?: string }> {
@@ -822,15 +825,15 @@ export class AgentHttpGateway {
   }
 
   getUpdateStatus() {
-    return this.http.get<import("../../contracts/agent-api").UpdateStatus>("/api/update/status");
+    return this.updates.getUpdateStatus();
   }
 
   checkForUpdate() {
-    return this.http.post<import("../../contracts/agent-api").UpdateStatus>("/api/update/check", {});
+    return this.updates.checkForUpdate();
   }
 
   installUpdate() {
-    return this.http.post<import("../../contracts/agent-api").UpdateStatus>("/api/update/install", {});
+    return this.updates.installUpdate();
   }
 
   onUpdateStatus(_callback: (status: import("../../contracts/agent-api").UpdateStatus) => void): Unsubscribe {

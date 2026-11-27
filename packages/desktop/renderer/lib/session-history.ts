@@ -17,6 +17,7 @@ import {
   isCodexExecutionCarrier,
   type CodexLiveExecutionEvent,
 } from "./codex-execution-trace";
+import { CONTEXT_COMPACTION_PROGRESS_ID } from "./native-runtime-progress";
 
 export const SESSION_HISTORY_PAGE_SIZE = 50;
 /** Paging retains the complete latest user turn, including its tools and answer. */
@@ -221,9 +222,37 @@ export function mergeProgressiveSessionHistoryPage(
   const hasVisibleHistory = current.some((message) => !message.isQueued);
   if (traceWillFollow && hasVisibleHistory) {
     const retained = removeMisplacedCodexAnswers(current, refreshed);
-    return retainAnsweredSessionQuestions(current, uniqueSessionMessages(mergeCoreSessionHistory(retained, refreshed)));
+    const merged = mergeCoreSessionHistory(retained, refreshed);
+    return retainAnsweredSessionQuestions(current, uniqueSessionMessages(mergeCodexCompactionMarkers(merged, refreshed)));
   }
   return mergeRefreshedSessionHistory(current, refreshed);
+}
+
+function mergeCodexCompactionMarkers(current: ChatMessage[], refreshed: ChatMessage[]): ChatMessage[] {
+  const markers = refreshed.flatMap((message, index) => (
+    message.isCompactionSummary && message.id.startsWith(`${CONTEXT_COMPACTION_PROGRESS_ID}:`)
+      ? [{ message, index }] : []
+  ));
+  if (markers.length === 0) return current;
+
+  const markerIds = new Set(markers.map(({ message }) => message.id));
+  const merged = current.filter((message) => !markerIds.has(message.id));
+  const findAnchor = (anchor: ChatMessage) => merged.findIndex((message) => {
+    if (message.id === anchor.id) return true;
+    const segment = anchor.presentation?.executionTrace;
+    const currentSegment = message.presentation?.executionTrace;
+    return anchor.role === "user" && message.role === "user" && Boolean(segment && currentSegment
+      && segment.turnId === currentSegment.turnId && (segment.segmentIndex ?? 0) === (currentSegment.segmentIndex ?? 0));
+  });
+  for (const { message, index } of markers) {
+    const next = refreshed.slice(index + 1).find((entry) => findAnchor(entry) >= 0);
+    const previous = next ? undefined : refreshed.slice(0, index).reverse().find((entry) => findAnchor(entry) >= 0);
+    const queueStart = merged.findIndex((entry) => entry.isQueued);
+    const position = next ? findAnchor(next) : previous ? findAnchor(previous) + 1
+      : queueStart < 0 ? merged.length : queueStart;
+    merged.splice(position, 0, message);
+  }
+  return merged;
 }
 
 function removeMisplacedCodexAnswers(current: ChatMessage[], refreshed: ChatMessage[]): ChatMessage[] {
@@ -448,8 +477,8 @@ export function restoreSessionHistoryPage(detail: SessionHistoryDetail | null): 
   const restored = detail?.agentType === "zcode"
     ? collapseFailedZCodeRetries(restoreSessionMessages(detail, !isCodexCore))
     : restoreSessionMessages(detail, !isCodexCore);
-  const prefixStart = restored.findIndex((message) => (
-    (message.role === "user" && !message.isCompactionSummary)
+  const prefixStart = restored.findIndex((message) => !message.isCompactionSummary && (
+    message.role === "user"
     || (message.role === "assistant" && !message.askUser && !message.widget)
   ));
   const first = restored[prefixStart];
@@ -985,8 +1014,8 @@ function toChatMessage(message: NonNullable<SessionHistoryDetail["messages"]>[nu
       // Invalid legacy checkpoints render as an empty boundary marker.
     }
     return {
-      id: crypto.randomUUID(),
-      role: "user",
+      id: message.historyId ?? crypto.randomUUID(),
+      role: message.role === "assistant" ? "assistant" : "user",
       content: summary,
       name: message.name,
       isCompactionSummary: true,

@@ -34,6 +34,20 @@ export async function readUpdateState(path: string): Promise<DurableUpdateState 
   } catch { return null; }
 }
 
+const UPDATE_PHASE_LABELS: Record<DurableUpdatePhase, string> = {
+  downloading: "正在下载",
+  installing: "正在安装",
+  reconnecting: "正在启动新版服务",
+  complete: "更新已完成",
+  failed: "更新失败",
+};
+
+export function formatUpdateStatus(state: DurableUpdateState): string {
+  const label = UPDATE_PHASE_LABELS[state.phase] ?? "更新状态未知";
+  const detail = state.phase === "failed" && state.message ? ` · ${state.message}` : "";
+  return `AgentRoam CLI ${state.currentVersion} → ${state.targetVersion} · ${label}${detail}`;
+}
+
 export async function writeUpdateState(path: string, state: DurableUpdateState): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
   const temp = `${path}.${process.pid}.tmp`;

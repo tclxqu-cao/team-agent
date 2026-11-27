@@ -48,3 +48,55 @@ export function validateCliInstallManifest(value: unknown, platform: CliPlatform
   }
   return { fileName: expected, sha256: asset.sha256, ...(asset.size === undefined ? {} : { size: asset.size as number }) };
 }
+import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
+import { createWriteStream } from "node:fs";
+import { access, mkdtemp, readFile, rm } from "node:fs/promises";
+import { resolve } from "node:path";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
+import { updatePaths, type DurableUpdateState } from "./update-state.js";
+
+
+export function cliLauncherPath(dataDir: string, version: string): string {
+  return resolve(dataDir, "launcher", version, "node_modules", "agentroam", "bin", "agentroam.mjs");
+}
+
+export async function installCliLauncher(
+  state: Pick<DurableUpdateState, "dataDir" | "targetVersion" | "fileName" | "sha256" | "roots">,
+  fetchImpl: typeof fetch = fetch,
+  onInstalling?: () => Promise<void>,
+): Promise<string> {
+  const url = buildCliInstallScriptUrl(state.fileName);
+  const temporary = await mkdtemp(resolve(updatePaths(state.dataDir).directory, "installer-"));
+  try {
+    const installer = resolve(temporary, state.fileName);
+    const response = await fetchImpl(url, { signal: AbortSignal.timeout(60_000) });
+    if (!response.ok || !response.body) throw new Error("installer download failed");
+    await pipeline(Readable.fromWeb(response.body as import("node:stream/web").ReadableStream<Uint8Array>), createWriteStream(installer, { flags: "wx", mode: 0o700 }));
+    const actual = createHash("sha256").update(await readFile(installer)).digest("hex");
+    if (actual !== state.sha256) throw new Error("installer checksum mismatch");
+    await onInstalling?.();
+    const command = process.platform === "win32" ? "powershell.exe" : "/bin/sh";
+    const args = process.platform === "win32" ? ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", installer] : [installer];
+    const code = await new Promise<number | null>((done, reject) => {
+      const child = spawn(command, args, { stdio: "ignore", windowsHide: true, env: {
+        ...process.env,
+        AGENTROAM_VERSION: state.targetVersion,
+        AGENTROAM_DATA_DIR: state.dataDir,
+        AGENTROAM_ROOT: state.roots[0],
+        AGENTROAM_INSTALL_SKIP_SERVICE: "1",
+        AGENTROAM_INSTALL_DESKTOP: "no",
+        AGENTROAM_INSTALL_REMOTE_DESKTOP: "skip",
+      } });
+      child.once("error", reject);
+      child.once("exit", done);
+    });
+    if (code !== 0) throw new Error(`installer exited with code ${code}`);
+    const entry = cliLauncherPath(state.dataDir, state.targetVersion);
+    await access(entry);
+    return entry;
+  } finally {
+    await rm(temporary, { force: true, recursive: true }).catch(() => undefined);
+  }
+}

@@ -5,7 +5,7 @@ import type { LiteApi } from "./api";
 import { PermissionDialog } from "./PermissionDialog";
 import { useTunnelConnection } from "../lib/use-tunnel-connection";
 import { PairingRoutePicker, TunnelConnectionControl } from "../components/TunnelConnectionControl";
-import UpdateNotice from "../components/UpdateNotice";
+import UpdateNotice, { UpdateCheckButton } from "../components/UpdateNotice";
 
 export function LiteApp({ api = window.liteApi }: { api?: LiteApi }) {
   const [invitation, setInvitation] = useState<MobilePairingInvitation | null>(null);
@@ -43,9 +43,11 @@ export function LiteApp({ api = window.liteApi }: { api?: LiteApi }) {
   }, [api]);
   const expired = invitation !== null && invitation.expiresAt <= now;
   const tunnel = useTunnelConnection(api, { origin: invitation?.origin, busy: Boolean(route || invitation?.viaMesh) || busy || (!invitation && !error), onAddressChanged: () => void refresh() });
-  return <main className="lite-shell">
-    <header className="lite-brand"><Smartphone size={20} aria-hidden="true" /><span>AgentRoam <b>Lite</b></span></header>
-    <UpdateNotice api={api} product="AgentRoam Lite" scope="desktop-lite" inline />
+  return <UpdateNotice api={api} product="AgentRoam Lite" scope="desktop-lite"><main className="lite-shell">
+    <header className="lite-header">
+      <div className="lite-brand"><Smartphone size={20} aria-hidden="true" /><span>AgentRoam <b>Lite</b></span></div>
+      <UpdateCheckButton />
+    </header>
     <h1>扫码，连接这台电脑。</h1>
     <p className="lite-description">{invitation?.viaMesh ? "手机加入同一 Tailscale 组网后，用 AgentRoam App 扫码连接。" : <>打开手机 App 的扫码按钮，<br />或用手机相机扫描二维码。</>}</p>
     <PairingRoutePicker api={api} value={route} busy={busy || (!invitation && !error)} onChange={value => { setRoute(value); void refresh(value); }} />
@@ -60,5 +62,5 @@ export function LiteApp({ api = window.liteApi }: { api?: LiteApi }) {
     <div className="lite-actions"><button type="button" className="lite-primary" disabled={busy} onClick={() => void refresh()}><RefreshCw size={16} aria-hidden="true" />{busy ? "正在准备…" : "刷新二维码"}</button><button type="button" disabled={busy || !invitation} onClick={() => setPermissions(true)}><ShieldCheck size={16} aria-hidden="true" />重新授权</button></div>
     <footer>保持电脑在线，手机即可继续使用。</footer>
     {permissions && <PermissionDialog api={api} onClose={() => setPermissions(false)} />}
-  </main>;
+  </main></UpdateNotice>;
 }

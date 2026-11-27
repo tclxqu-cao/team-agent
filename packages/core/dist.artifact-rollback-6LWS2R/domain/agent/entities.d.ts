@@ -1,0 +1,288 @@
+import type { NativeSubagentActivity, SessionForkPoint, ToolCall, ToolResult } from '../model/entities.js';
+import type { CronTask } from '../cron/entities.js';
+import type { ThreadGoal } from '../goal/ThreadGoal.js';
+export declare const CONTEXT_COMPACTION_PROGRESS_ID = "context-compaction";
+export type AgentEventType = "thinking" | "tool_call" | "tool_result" | "text_chunk" | "text_done" | "context_usage" | "compacted" | "turn_aborted" | "error" | "done" | "todo_update" | "agent_dispatch" | "agent_started" | "agent_done" | "agent_progress" | "reasoning_summary_delta" | "runtime_progress" | "native_subagent_update" | "cron_update" | "ask_user" | "approval_resolved" | "show_widget" | "goal_updated" | "goal_cleared";
+export interface TodoItem {
+    id: string;
+    title: string;
+    agentName?: string;
+    status: "pending" | "in-progress" | "completed";
+    /** Titles of tasks that must be completed before this task can start */
+    dependsOn?: string[];
+    /** Optional deadline (UTC ms); overdue incomplete todos render dimmed on the calendar. */
+    dueAt?: number;
+}
+export interface ReasoningSummarySection {
+    itemId: string;
+    sectionIndex: number;
+    text: string;
+}
+export interface RuntimeProgress {
+    progressId: string;
+    kind?: "background-job";
+    phase: "thinking" | "tool" | "retry" | "status";
+    label: string;
+    detail?: string;
+    toolCallId?: string;
+    elapsedSeconds?: number;
+    current?: number;
+    total?: number;
+    /** Bounded, non-consuming preview of native job output. */
+    output?: string;
+    status?: "running" | "stopping" | "completed" | "killed" | "failed";
+    startedAt?: number;
+}
+export type AgentEvent = {
+    type: "thinking";
+    message: string;
+} | {
+    type: "tool_call";
+    toolCall: ToolCall;
+    turnId?: string;
+} | {
+    type: "tool_result";
+    result: ToolResult;
+    turnId?: string;
+} | {
+    type: "text_chunk";
+    text: string;
+    turnId?: string;
+    itemId?: string;
+    messagePhase?: "commentary" | "final_answer";
+} | {
+    type: "text_done";
+} | {
+    type: "context_usage";
+    usage: ContextUsageSnapshot;
+} | {
+    type: "compacted";
+    summary: string;
+    removedMessages: number;
+} | {
+    type: "turn_aborted";
+    usage?: TokenUsage;
+    durationMs?: number;
+    result?: import('./run-result.js').RunResult;
+} | {
+    type: "error";
+    message: string;
+    code?: string;
+    usage?: TokenUsage;
+    durationMs?: number;
+    result?: import('./run-result.js').RunResult;
+} | {
+    type: "done";
+    finalText: string;
+    usage?: TokenUsage;
+    durationMs?: number;
+    forkPoint?: SessionForkPoint;
+    result?: import('./run-result.js').RunResult;
+} | {
+    type: "todo_update";
+    todos: TodoItem[];
+} | {
+    type: "agent_dispatch";
+    agentName: string;
+    task: string;
+    subSessionId?: string;
+    agentId?: string;
+    role?: string;
+    parentSessionId?: string;
+} | {
+    type: "agent_started";
+    agentName: string;
+    subSessionId: string;
+    agentId?: string;
+    parentSessionId?: string;
+    startedAt?: string;
+} | {
+    type: "agent_done";
+    agentName: string;
+    subSessionId: string;
+    status: "completed" | "failed";
+    summary?: string;
+    error?: string;
+    code?: string;
+    agentId?: string;
+    parentSessionId?: string;
+    durationMs?: number;
+} | {
+    type: "agent_progress";
+    agentName: string;
+    subSessionId: string;
+    text: string;
+    agentId?: string;
+    parentSessionId?: string;
+    phase?: "thinking" | "assistant" | "tool";
+    toolName?: string;
+} | {
+    type: "reasoning_summary_delta";
+    itemId: string;
+    sectionIndex: number;
+    delta: string;
+    turnId?: string;
+} | ({
+    type: "runtime_progress";
+} & RuntimeProgress) | {
+    type: "native_subagent_update";
+    activity: NativeSubagentActivity;
+} | {
+    type: "cron_update";
+    tasks: CronTask[];
+} | {
+    type: "ask_user";
+    questionId: string;
+    question: string;
+    options?: Array<{
+        label: string;
+        description: string;
+    }>;
+    fields?: Array<{
+        name: string;
+        label: string;
+        description?: string;
+        type?: "text" | "secret";
+    }>;
+    multiSelect?: boolean;
+} | {
+    type: "approval_resolved";
+    questionId: string;
+} | {
+    type: "show_widget";
+    widgetType: string;
+    data: Record<string, unknown>;
+    widgetId: string;
+} | {
+    type: "goal_updated";
+    goal: ThreadGoal;
+} | {
+    type: "goal_cleared";
+    sessionId: string;
+};
+export type ContextUsageCategory = "systemBase" | "environment" | "projectContext" | "skills" | "memory" | "embeddedTools" | "conversationHistory" | "currentUserMessage" | "assistantMessages" | "toolCalls" | "toolResults" | "images" | "compactionSummary" | "nativeToolDefinitions" | "messageOverhead";
+export interface ContextUsageSegment {
+    category: ContextUsageCategory;
+    tokens: number;
+}
+export interface ContextUsageSnapshot {
+    requestIndex: number;
+    providerId: string;
+    modelId: string;
+    maxTokens: number;
+    totalTokens: number;
+    ratio: number;
+    estimationMode: "heuristic";
+    segments: ContextUsageSegment[];
+}
+export interface TokenUsage {
+    /** Total input, including cache reads and writes; cache counters are subsets. */
+    inputTokens: number;
+    outputTokens: number;
+    totalTokens: number;
+    cacheReadTokens?: number;
+    cacheWriteTokens?: number;
+    source?: "provider" | "runtime";
+    coverage?: "complete" | "partial";
+}
+export interface AgentConfig {
+    /** Private observer; failures must never affect the business run. */
+    diagnosticObserver?: (sessionId: string, observation: unknown) => void;
+    /** Optional durable, single-run recovery. Pending tool effects fail closed. */
+    runCheckpointStore?: import('./run-checkpoint.js').IRunCheckpointStore;
+    modelProvider: import("../model/entities.js").IModelProvider;
+    toolRegistry: import("../tool/entities.js").IToolRegistry;
+    toolExecutor: import("../tool/entities.js").IToolExecutor;
+    contextAssembler: import("../context/entities.js").IContextAssembler;
+    skillRegistry: import("../skill/entities.js").ISkillRegistry;
+    memoryStore: import("../memory/entities.js").IMemoryStore;
+    sessionStore?: import("../session/entities.js").ISessionStore;
+    workingDirectory: string;
+    /** Max tool-enabled ReAct iterations. One bounded tool-disabled finalization request may follow. */
+    maxIterations: number;
+    maxTokens: number;
+    /** Optional per-request output ceiling. Undefined keeps the legacy 1/8, max-16K heuristic. */
+    maxOutputTokens?: number;
+    systemPrompt?: string;
+    /** Token count threshold (0–1 fraction of maxTokens) that triggers AutoCompact. Default 0.6 */
+    compactThreshold?: number;
+    /** Max retries for retryable stream errors (timeout, rate limit, network). Default 0 */
+    streamMaxRetries?: number;
+    /** Tool name allowlist. Only these tools' definitions are sent to the LLM.
+     *  null = all tools visible. Tools registered AFTER construction (session tools,
+     *  MCP tools) are always visible regardless of this filter. */
+    enabledTools?: string[] | null;
+    /** Whether tools registered after loop construction bypass enabledTools. Default true. */
+    allowUnlistedDynamicTools?: boolean;
+    /** Skill name allowlist. Only these skills can be activated.
+     *  null = all skills available. */
+    enabledSkills?: string[] | null;
+    /** Skills explicitly selected by the caller for this run. Their prompts are
+     *  loaded before the first model request, after enabledSkills authorization. */
+    activatedSkills?: string[];
+    /** Reasoning intensity forwarded to the provider. "off"/undefined = provider default. */
+    reasoningEffort?: import("../model/entities.js").ReasoningEffort;
+}
+export interface IAgentLoop {
+    /** Run the agent loop, yielding events as they occur */
+    run(input: string, sessionId: string, images?: string[]): AsyncIterable<AgentEvent>;
+    /** Abort the current run */
+    abort(): void;
+    /**
+     * Compact the persisted session history on demand — same semantics as the
+     * automatic threshold compaction (summarize + persist a hidden checkpoint so
+     * the next run restores the compacted context). Returns null when there was
+     * nothing to compact. Optional: loop implementations choose whether to
+     * support it.
+     */
+    compactSession?(sessionId: string): Promise<SessionCompaction | null>;
+}
+/** Outcome of an on-demand history compaction. */
+export interface SessionCompaction {
+    summary: string;
+    removedMessages: number;
+}
+export interface IAgentFactory {
+    create(config: AgentConfig): IAgentLoop;
+}
+/** A variable that can be referenced as {{key}} in the system prompt */
+export interface ContextPlaceholder {
+    key: string;
+    description: string;
+    defaultValue: string;
+}
+/** Which built-in tools, skills, MCP servers and model profile an agent uses */
+export interface AgentCapabilities {
+    /** Model profile ID to use. Empty string = use the globally active profile. */
+    profileId: string;
+    /** Built-in tool names to enable. Empty array = all tools enabled. */
+    enabledTools: string[];
+    /** Skill names to enable. Empty array = all skills enabled. */
+    enabledSkills: string[];
+    /** MCP server IDs to enable. Empty array = all connected servers. */
+    enabledMCPServers: string[];
+}
+/** A saved agent configuration that can be activated for a session */
+export interface AgentDefinition {
+    id: string;
+    name: string;
+    description: string;
+    /** Role setting and work instructions — supports {{key}} placeholders */
+    systemPrompt: string;
+    contextPlaceholders: ContextPlaceholder[];
+    capabilities: AgentCapabilities;
+    /** Override max iterations; 0 means use the global setting */
+    maxIterations: number;
+    /** Automatically use this agent for new sessions */
+    isDefault: boolean;
+    created: string;
+    updated: string;
+}
+export interface IAgentDefinitionStore {
+    get(id: string): Promise<AgentDefinition | null>;
+    list(): Promise<AgentDefinition[]>;
+    create(agent: AgentDefinition): Promise<AgentDefinition>;
+    update(id: string, update: Partial<Omit<AgentDefinition, 'id' | 'created'>>): Promise<AgentDefinition>;
+    delete(id: string): Promise<void>;
+}
+//# sourceMappingURL=entities.d.ts.map

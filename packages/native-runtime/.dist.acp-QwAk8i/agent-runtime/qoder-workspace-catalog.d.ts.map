@@ -1,0 +1,1 @@
+{"version":3,"file":"qoder-workspace-catalog.d.ts","sourceRoot":"","sources":["../../src/agent-runtime/qoder-workspace-catalog.ts"],"names":[],"mappings":"AAMA,kFAAkF;AAClF,qBAAa,qBAAqB;IAGpB,OAAO,CAAC,QAAQ,CAAC,IAAI;IAFjC,OAAO,CAAC,QAAQ,CAAC,KAAK,CAAyD;gBAElD,IAAI,SAAwC;YAE3D,KAAK;IAqBb,IAAI,IAAI,OAAO,CAAC,MAAM,EAAE,CAAC;CAuChC"}

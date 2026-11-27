@@ -109,10 +109,10 @@ describe("Codex durable question cards", () => {
     const previous = await adapter.getSessionPaged(thread.id, { view: "core", limit: 2, before: latest.history?.olderCursor! });
     expect(previous.messages[1].presentation?.question).toMatchObject({ questionId: initialId, status: "answered", answer: "B" });
     const reader = new CodexRolloutUserMessageReader(17);
-    expect(await reader.readAsyncMessages(path)).toHaveLength(1);
-    expect(await reader.readAsyncMessages(path)).toHaveLength(1);
+    expect(await reader.readTimelineItems(path)).toHaveLength(1);
+    expect(await reader.readTimelineItems(path)).toHaveLength(1);
     await writeFile(path, "");
-    expect(await reader.readAsyncMessages(path)).toEqual([]);
+    expect(await reader.readTimelineItems(path)).toEqual([]);
   });
 });
 

@@ -109,6 +109,45 @@ describe("native live/history ownership", () => {
     expect(afterCompaction[1].historyPrefixId).toBe(complete[0].historyPrefixId);
   });
 
+  it("retains the native compaction marker identity when restoring a Codex core page", () => {
+    const restored = restoreSessionHistoryPage({
+      agentType: "codex",
+      messages: [
+        { role: "assistant", historyId: "context-compaction:compact-1",
+          name: "__compaction_checkpoint__", content: '{"summary":"上下文已压缩"}' },
+        { role: "user", historyId: "input", content: "继续", presentation: { executionTrace: { turnId: "turn" } } },
+      ],
+      history: { delivery: "core", revision: "revision" },
+    });
+    expect(restored[0]).toMatchObject({
+      id: "context-compaction:compact-1", role: "assistant", content: "上下文已压缩", isCompactionSummary: true,
+    });
+    expect(restored[1].id).toBe("input");
+    expect(restored[2].executionTrace?.turnId).toBe("turn");
+  });
+
+  it("merges a newly persisted compaction into an open Codex session without duplicating its live marker", () => {
+    const input = (id: string, segmentIndex: number) => ({
+      ...message(id, id),
+      presentation: { executionTrace: { turnId: "turn", segmentIndex } },
+    });
+    const first = input("first", 0);
+    const followUp = input("follow-up", 1);
+    const marker = {
+      ...assistant("context-compaction:compact-1", "上下文已压缩"),
+      isCompactionSummary: true,
+    };
+    const history = { delivery: "core", revision: "after-compaction" } as const;
+    const refreshed = [first, marker, followUp];
+    for (const current of [[first, followUp], [first, followUp, marker]]) {
+      const merged = mergeProgressiveSessionHistoryPage(current, refreshed, "core", history);
+      expect(merged.map(entry => entry.id)).toEqual(["first", marker.id, "follow-up"]);
+    }
+    const manual = [first, followUp, { ...message("queued", "wait"), isQueued: true }];
+    expect(mergeProgressiveSessionHistoryPage(manual, [marker], "core", history).map(entry => entry.id))
+      .toEqual(["first", "follow-up", marker.id, "queued"]);
+  });
+
   it("confirms an already admitted input on a Codex core page", () => {
     const current = [
       { ...message("local-input", "continue"), awaitingHistory: true },

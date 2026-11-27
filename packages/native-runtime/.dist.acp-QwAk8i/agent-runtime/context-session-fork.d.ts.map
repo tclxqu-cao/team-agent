@@ -1,0 +1,1 @@
+{"version":3,"file":"context-session-fork.d.ts","sourceRoot":"","sources":["../../src/agent-runtime/context-session-fork.ts"],"names":[],"mappings":"AAAA,OAAO,EAA2B,KAAK,SAAS,EAAE,KAAK,OAAO,EAAE,MAAM,aAAa,CAAC;AAIpF,wBAAgB,mBAAmB,CAAC,SAAS,EAAE,SAAS,GAAG,OAAO,CAEjE;AAED,mFAAmF;AACnF,wBAAgB,iBAAiB,CAAC,QAAQ,EAAE,OAAO,EAAE,EAAE,OAAO,EAAE,OAAO,GAAG,OAAO,EAAE,CAyBlF"}

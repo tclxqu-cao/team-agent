@@ -34,7 +34,7 @@ import { CapacitorNativeEnvironment } from "./mobile/infrastructure/capacitor-na
 import { LocalEndpointStorage } from "./mobile/infrastructure/local-endpoint-storage";
 import { HttpConnectivityProbe } from "./mobile/infrastructure/http-connectivity-probe";
 import UnpairedHome from "./mobile/presentation/UnpairedHome";
-import { AndroidUpdateNotice } from "./mobile/presentation/AndroidUpdateNotice";
+import { MobileUpdateNotice } from "./mobile/presentation/MobileUpdateNotice";
 import { mountNativeConsole, rememberNativeEndpoint } from "./mobile/presentation/native-console";
 import WorkspaceBoot from "../../shared/src/console/WorkspaceBoot";
 import "../../shared/src/console/neural-boot.css";
@@ -180,13 +180,13 @@ void (async () => {
 function showUnpairedHome(failure = ""): void {
   globalThis.fetch = nativeTransport;
   delete window.__agentroamNativeFrame;
-  root.render(<><UnpairedHome initialFailure={failure} onScan={async () => {
+  root.render(<MobileUpdateNotice><UnpairedHome initialFailure={failure} onScan={async () => {
     const raw = await scanPairingQr();
     if (!raw || !nativePairing) return;
     const endpoint = await nativePairing.pair(raw);
     rememberNativeEndpoint(endpoint);
     await boot(endpoint);
-  }} /><AndroidUpdateNotice /></>);
+  }} /></MobileUpdateNotice>);
 }
 
 async function boot(endpoint: ServerEndpoint | null): Promise<void> {

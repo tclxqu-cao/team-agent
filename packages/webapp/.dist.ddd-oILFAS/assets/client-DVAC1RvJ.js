@@ -1,0 +1,1 @@
+import{A as i}from"./index-DNCz7HR7.js";async function r(n,t){var o;if(!((o=window.agentApi)!=null&&o.collaboration))throw new Error("当前服务不支持协作群，请连接更新后的服务");return await window.agentApi.collaboration(n,t)}const e=i,p={idle:"未开始",running:"协作中",waiting:"等待你",stopping:"正在停止",stopped:"已停止",completed:"已完成",interrupted:"已中断"};export{e as A,p as D,r as c};
