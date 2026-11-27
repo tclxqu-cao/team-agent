@@ -1,6 +1,49 @@
 // Published release fallback for GitHub API outages or rate limits. Refresh on release.
 export const releaseSnapshot = [
   {
+    "tag_name": "desktop-lite-v0.2.0-preview.47",
+    "published_at": "2026-11-27T09:08:46Z",
+    "assets": [
+      {
+        "name": "AgentRoam-Lite-0.2.0-preview.47-arm64.dmg",
+        "size": 298801401,
+        "browser_download_url": "https://github.com/tclxqu-cao/team-agent/releases/download/desktop-lite-v0.2.0-preview.47/AgentRoam-Lite-0.2.0-preview.47-arm64.dmg"
+      },
+      {
+        "name": "AgentRoam-Lite-Setup-0.2.0-preview.47-x64.exe",
+        "size": 252534462,
+        "browser_download_url": "https://github.com/tclxqu-cao/team-agent/releases/download/desktop-lite-v0.2.0-preview.47/AgentRoam-Lite-Setup-0.2.0-preview.47-x64.exe"
+      }
+    ]
+  },
+  {
+    "tag_name": "desktop-v0.2.0-preview.47",
+    "published_at": "2026-11-27T08:58:30Z",
+    "assets": [
+      {
+        "name": "AgentRoam-0.2.0-preview.47-arm64.dmg",
+        "size": 300682673,
+        "browser_download_url": "https://github.com/tclxqu-cao/team-agent/releases/download/desktop-v0.2.0-preview.47/AgentRoam-0.2.0-preview.47-arm64.dmg"
+      },
+      {
+        "name": "AgentRoam-Setup-0.2.0-preview.47-x64.exe",
+        "size": 253978320,
+        "browser_download_url": "https://github.com/tclxqu-cao/team-agent/releases/download/desktop-v0.2.0-preview.47/AgentRoam-Setup-0.2.0-preview.47-x64.exe"
+      }
+    ]
+  },
+  {
+    "tag_name": "android-v0.2.0-preview.45",
+    "published_at": "2026-11-27T09:09:13Z",
+    "assets": [
+      {
+        "name": "AgentRoam-0.2.0-preview.45-android.apk",
+        "size": 32776906,
+        "browser_download_url": "https://github.com/tclxqu-cao/team-agent/releases/download/android-v0.2.0-preview.45/AgentRoam-0.2.0-preview.45-android.apk"
+      }
+    ]
+  },
+  {
     "tag_name": "desktop-lite-v0.2.0-preview.46",
     "published_at": "2026-11-26T17:07:43Z",
     "assets": [
