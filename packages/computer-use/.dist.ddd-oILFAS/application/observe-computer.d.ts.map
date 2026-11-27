@@ -1,1 +1,0 @@
-{"version":3,"file":"observe-computer.d.ts","sourceRoot":"","sources":["../../src/application/observe-computer.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,mBAAmB,EAAE,MAAM,mCAAmC,CAAC;AAC7E,OAAO,KAAK,EAAE,mBAAmB,EAAE,MAAM,mCAAmC,CAAC;AAE7E,qBAAa,sBAAsB;IACrB,OAAO,CAAC,QAAQ,CAAC,OAAO;gBAAP,OAAO,EAAE,mBAAmB;IAEzD,OAAO,CAAC,MAAM,CAAC,EAAE,WAAW,GAAG,OAAO,CAAC,mBAAmB,CAAC;CAG5D"}

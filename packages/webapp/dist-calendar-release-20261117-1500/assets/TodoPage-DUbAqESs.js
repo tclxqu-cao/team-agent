@@ -1,1 +1,0 @@
-import{j as o}from"./index-CfG_zXpp.js";import t from"./TodoView-D3W6aRTL.js";import"./list-todo-CDpV1guP.js";import"./bell-DIHHc8ZI.js";import"./x-BBXCR1S9.js";import"./check-CGOESH1e.js";function p(){return o.jsx(t,{initialTaskId:new URLSearchParams(location.search).get("task")??void 0})}export{p as default};

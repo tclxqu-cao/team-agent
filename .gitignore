@@ -75,3 +75,15 @@ packages/server/remote-authorization.json
 
 # 发布用二进制打包产物（2026-09-18）：vendor 下是 cloudflared 等预编译 tgz，不入库
 packages/*/vendor/
+
+# 版本化构建产物目录（发版/回滚时留下的快照，不应入库）
+packages/*/dist.*
+packages/*/dist-*
+packages/*/renderer-dist.*
+packages/*/.dist.*
+packages/*/.dist-*
+packages/desktop/.renderer-dist*
+packages/server/.next-*
+packages/*/.artifacts/
+packages/*/tmp/
+out/
